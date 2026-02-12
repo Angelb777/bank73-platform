@@ -93,15 +93,15 @@ app.use(express.static(path.join(__dirname, 'public')));
    ========================================================================= */
 const { MONGO_URI, PORT = 3000 } = process.env;
 if (!MONGO_URI) {
-  console.error('[Mongo] Faltó MONGO_URI en .env');
-  process.exit(1);
+  console.error('[Mongo] Falta MONGO_URI (Render env var).');
+  // No hacemos exit aquí: dejamos que el health muestre el estado y Render saque logs.
 }
 mongoose.set('strictQuery', true);
 mongoose.connect(MONGO_URI, {})
   .then(() => console.log('[Mongo] Conectado'))
   .catch((err) => {
-    console.error('[Mongo] Error de conexión:', err.message);
-    process.exit(1);
+  console.error('[Mongo] Error de conexión:', err.message);
+  // no process.exit en Render: así no entras en restart loop
   });
 
 /* =========================================================================
@@ -156,7 +156,7 @@ app.use('/api/auth', authRoutes);
    Rutas protegidas (TENANT -> AUTH -> [ACTIVE] -> ROUTER)
    Si prefieres no revalidar contra BD en todas, cambia requireActiveUser por authMw.
    ========================================================================= */
-const guard = [tenantMw, authMw, requireActiveUser];
+const guard = [authMw, requireActiveUser];
 
 app.use('/api/projects',   ...guard, projectRoutes);
 app.use('/api/milestones', ...guard, milestoneRoutes);
@@ -178,7 +178,7 @@ app.use('/api/permits', (req, _res, next) => {
 });
 
 // ✅ Permisos (plantillas + instancia por proyecto)
-app.use('/api/permits', tenantMw, authMw, permitRoutes);
+app.use('/api/permits', authMw, permitRoutes);
 
 // ✅ Proceso (plantillas + checklists)
 app.use('/api', tenantMw, authMw, requireActiveUser, processRoutes);
@@ -266,7 +266,7 @@ app.get('/portfolio', (_req, res) => res.sendFile(path.join(__dirname, 'public/p
 app.get('/project',   (_req, res) => res.sendFile(path.join(__dirname, 'public/project.html')));
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[HTTP] LAN: http://192.168.1.138:${PORT}`);
-  console.log(`[HTTP] Local: http://localhost:${PORT}`);
+  console.log(`[HTTP] Listening on 0.0.0.0:${PORT}`);
 });
+
 
