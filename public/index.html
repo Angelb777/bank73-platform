@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bank73 — Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- ✅ CSS con cache-busting (cambia v cuando quieras) -->
+  <link href="/css/base.css?v=20260211" rel="stylesheet" />
+  <link href="/css/theme.css?v=20260211" rel="stylesheet" />
+
+  <!-- Logo principal precargado -->
+  <link rel="preload" as="image" href="/assets/TrustForBanksLogo.png" />
+
+  <!-- ✅ Favicon -->
+  <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
+</head>
+
+<body class="bg-gradient">
+  <!-- DEBUG (para saber qué versión estás viendo) -->
+  <div style="position:fixed;bottom:6px;right:6px;font-size:12px;opacity:.5;z-index:9999">
+    INDEX_v20260211
+  </div>
+
+  <div class="login-wrap">
+    <div class="brand-panel">
+      <div class="brand-content">
+        <img class="brand-logo" src="/assets/TrustForBanksLogo.png" alt="TrustForBanks logo" />
+        <p class="brand-subtitle">Gestión de proyectos, documentación y KPIs para banca.</p>
+
+        <div class="brand-kpis">
+          <div class="kpi-pill">Multi-tenant</div>
+          <div class="kpi-pill">RBAC</div>
+          <div class="kpi-pill">KPIs en tiempo real</div>
+          <div class="kpi-pill">Documentos seguros</div>
+        </div>
+
+        <footer class="brand-footer">
+          <small>© <span id="y"></span> TrustForBanks</small>
+        </footer>
+      </div>
+    </div>
+
+    <main class="login-card glass">
+      <header class="login-header">
+        <h2>Bienvenido</h2>
+        <p class="muted">Inicia sesión para continuar</p>
+      </header>
+
+      <form id="loginForm" class="login-form">
+        <label>Email</label>
+        <input type="email" id="email" placeholder="exec@banco.com" required />
+
+        <label>Contraseña</label>
+        <div class="input-with-action">
+          <input type="password" id="password" placeholder="secret" required />
+          <button
+            type="button"
+            class="ghost small"
+            id="togglePwd"
+            aria-label="Mostrar contraseña"
+          >👁️</button>
+        </div>
+
+        <button type="submit" class="btn primary stretch" id="submitBtn">
+          Entrar
+          <span class="spinner" aria-hidden="true"></span>
+        </button>
+      </form>
+
+      <div class="login-meta">
+        <div id="msg" class="msg"></div>
+        <p class="small">
+          ¿No tienes cuenta?
+          <a class="link" href="/register">Crear una cuenta</a>
+        </p>
+      </div>
+    </main>
+  </div>
+
+  <div style="position:fixed;bottom:6px;right:6px;opacity:.5;z-index:9999">
+  INDEX_v20260211
+</div>
+
+  <!-- ✅ Scripts con cache-busting -->
+  <script src="/js/api.js?v=20260211"></script>
+  <script src="/js/login-ui.js?v=20260211"></script>
+  <script src="/js/auth.js?v=20260211"></script>
+</body>
+</html>

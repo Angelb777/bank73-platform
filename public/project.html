@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Proyecto — Bank73</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="/css/base.css" rel="stylesheet" />
+  <link href="/css/theme.css" rel="stylesheet" />
+  <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
+
+  <style>
+   /* ===== Ajustes existentes ===== */
+#pstatusSel { color:#000; background:#fff; }
+#pstatusSel option { color:#000; background:#fff; }
+
+/* ===== Proyecto: layout y componentes ===== */
+.proyecto-topbar {
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:space-between;
+}
+.proyecto-grid {
+  display:grid; grid-template-columns: minmax(0,1fr) 300px; gap:16px;
+}
+@media (max-width: 1100px) { .proyecto-grid { grid-template-columns: 1fr; } }
+
+/* Barras de progreso */
+.progress { background:#eceff4; height:8px; border-radius:6px; overflow:hidden; }
+.progress > div { height:100%; background:var(--accent, #3b82f6); width:0%; transition:width .25s ease; }
+.progress-sm { height:6px; }
+.progress-lg { height:10px; }
+
+/* Secciones de fase */
+.phase {
+  border:1px solid var(--phase-color, #e5e7eb);
+  border-left:6px solid var(--phase-color, #9ca3af);
+  border-radius:10px; padding:12px; background:#fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+.phase-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+.phase-title { display:flex; align-items:center; gap:10px; font-weight:700; }
+
+/* Toggle (accordion) */
+.phase-toggle { display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
+.chev { display:inline-block; transition:transform .18s ease; font-weight:700; }
+.phase.collapsed .chev { transform:rotate(-90deg); }
+.phase.collapsed .cl-list { display:none; }
+.phase.collapsed .progress { opacity:.85; } /* seguimos mostrando progreso */
+
+.phase-badge {
+  padding:2px 8px; border-radius:999px; font-size:.8rem; color:#111;
+  background: var(--phase-pale, #f3f4f6); border:1px solid var(--phase-color, #e5e7eb);
+}
+.phase-actions { display:flex; gap:8px; flex-wrap:wrap; }
+
+/* Tarjetas checklist */
+.cl-list { display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:12px; }
+.cl-card {
+  border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff; position:relative;
+  display:flex; flex-direction:column; gap:10px; box-shadow: 0 1px 1px rgba(0,0,0,.04);
+}
+.cl-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.cl-title { font-weight:700; line-height:1.2; }
+.role-badge {
+  padding:2px 8px; border-radius:8px; font-size:.75rem; color:#111;
+  border:1px solid var(--role-color, #e5e7eb); background:var(--role-pale, #f9fafb);
+}
+.status-badge {
+  padding:2px 8px; border-radius:999px; font-size:.7rem; border:1px solid #e5e7eb;
+  background:#f8fafc; color:#111;
+}
+.cl-meta { display:flex; gap:8px; flex-wrap:wrap; align-items:center; font-size:.8rem; color:#555; }
+.tag { padding:2px 6px; background:#f3f4f6; border:1px solid #e5e7eb; border-radius:999px; }
+.cl-actions { display:flex; gap:6px; flex-wrap:wrap; }
+.btn-xs { padding:6px 10px; font-size:.8rem; }
+.btn-ghost { background:#fff; border:1px solid #e5e7eb; }
+.btn-danger { background:#fee2e2; border:1px solid #fecaca; color:#991b1b; }
+.btn-success { background:#dcfce7; border:1px solid #bbf7d0; color:#166534; }
+.btn-warning { background:#fef9c3; border:1px solid #fde68a; color:#92400e; }
+
+/* Overlay bloqueado (más transparente) */
+.lock {
+  position:absolute; inset:0; background:rgba(255,255,255,.42); backdrop-filter: blur(.5px); border-radius:12px;
+  display:flex; align-items:center; justify-content:center; color:#111; font-weight:600; gap:8px;
+}
+.muted { color:#6b7280; }
+
+/* Subtareas */
+.subtasks { border-top:1px dashed #e5e7eb; padding-top:8px; display:flex; flex-direction:column; gap:6px; }
+.subtask { display:flex; align-items:center; gap:8px; }
+.subtask input[type="text"] { flex:1; }
+
+/* Documentos dentro de tarjeta */
+.doclist { display:flex; flex-direction:column; gap:6px; }
+.docrow { display:flex; align-items:center; justify-content:space-between; gap:8px; border:1px solid #eef2f7; border-radius:8px; padding:6px 8px; }
+.docrow .small { color:#6b7280; font-size:.8rem; }
+
+/* Selector de archivo compacto */
+.file-hidden { display:none; }
+.file-inline { display:flex; align-items:center; gap:8px; }
+.file-name { font-size:.8rem; color:#6b7280; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px; }
+
+/* Sidebar roles + semáforo */
+.roles-panel { border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff; position:sticky; top:12px; }
+.roles-header { display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:8px; }
+.role-row { display:flex; align-items:center; justify-content:space-between; padding:8px; border-radius:8px; cursor:pointer; border:1px solid #f1f5f9; background:#fff; }
+.role-row:hover { background:#f9fafb; }
+.light { font-size:1.1rem; font-weight:700; }
+.filter-on { outline:2px solid var(--role-color, #a3a3a3); }
+
+/* ===== Modal (pop-ups) totalmente legible ===== */
+.modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:9999; }
+.modal {
+  width:min(720px, 92vw); background:#ffffff; color:#0f172a;
+  border-radius:12px; padding:16px; border:1px solid #e5e7eb; box-shadow:0 20px 60px rgba(0,0,0,.25);
+}
+.modal-head b { color:#0f172a; }
+.modal-body { display:flex; flex-direction:column; gap:10px; max-height:70vh; overflow:auto; }
+.modal label { color:#0f172a; font-weight:600; }
+.modal input, .modal select, .modal textarea {
+  background:#ffffff; color:#0f172a; border:1px solid #cbd5e1; border-radius:8px; padding:8px;
+}
+.modal input::placeholder, .modal textarea::placeholder { color:#94a3b8; }
+.modal input:focus, .modal select:focus, .modal textarea:focus {
+  outline:none; border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.15);
+}
+.modal .btn { background:#111827; color:#ffffff; border:1px solid #111827; }
+.modal .btn:hover { filter:brightness(1.05); }
+.modal .btn.btn-ghost { background:#ffffff; color:#111827; border:1px solid #cbd5e1; }
+
+/* ===== Overrides de claridad SOLO dentro de la pestaña Proyecto ===== */
+#tab-proyecto{
+  --text:#0f172a;         /* texto principal */
+  --muted:#475569;        /* texto secundario */
+  --card-bg:#ffffff;      /* fondo de tarjetas */
+  --stroke:#e5e7eb;       /* bordes suaves */
+}
+#tab-proyecto .roles-panel,
+#tab-proyecto .cl-card{ background:var(--card-bg); border-color:var(--stroke); }
+#tab-proyecto .phase{ background:var(--card-bg); }
+#tab-proyecto .phase-title, #tab-proyecto .roles-panel b, #tab-proyecto .cl-title{ color:var(--text); }
+#tab-proyecto .muted{ color:var(--muted); }
+#tab-proyecto .phase-badge{ color:#111827; background:var(--phase-pale); border-color:var(--phase-color); }
+#tab-proyecto .role-badge{ color:#111827; border-color:var(--role-color); background:var(--role-pale); }
+#tab-proyecto .status-badge{ color:#111827; background:#f8fafc; border-color:#e2e8f0; }
+#tab-proyecto .cl-meta .tag{ color:#0f172a; background:#f8fafc; border-color:#e2e8f0; }
+#tab-proyecto .progress>div{ background:var(--phase-color, #3b82f6); }
+#tab-proyecto .btn{ background:#111827; color:#ffffff; border:1px solid #111827; border-radius:10px; }
+#tab-proyecto .btn:hover{ filter:brightness(1.04); }
+#tab-proyecto .btn-ghost{ background:#ffffff; color:#111827; border:1px solid #cbd5e1; }
+#tab-proyecto .btn-danger{ background:#fee2e2; color:#991b1b; border:1px solid #fecaca; }
+#tab-proyecto .btn-success{ background:#dcfce7; color:#166534; border:1px solid #bbf7d0; }
+#tab-proyecto .btn-warning{ background:#fef3c7; color:#92400e; border:1px solid #fde68a; }
+#tab-proyecto .lock{ background:rgba(255,255,255,.42); color:#111827; }
+
+/* ===== Tabs ===== */
+.tabs { display:flex; gap:8px; margin:10px 0 14px; }
+.tabs .tab{ background:#0f172a; color:#e5e7eb; border:1px solid #111827; padding:8px 12px; border-radius:10px; cursor:pointer; user-select:none; }
+.tabs .tab:hover{ filter:brightness(1.05); }
+.tabs .tab.active{ background:#2563eb; border-color:#1d4ed8; color:#fff; }
+
+/* Visibilidad de paneles de pestañas (robusto) */
+.tabpane{ display:none; }
+.tabpane.active{ display:block; }
+/* === Comercial: tarjetas bonitas === */
+#tab-comercial .unit-card{
+  position:relative;
+  border-radius:16px;
+  border:1px solid rgba(148,163,184,.25);
+  padding:14px 14px 12px;
+  background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01));
+  box-shadow:0 6px 18px rgba(2,6,23,.25);
+  transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+  border-left:8px solid var(--accent, #475569);
+}
+#tab-comercial .unit-card:hover{ transform:translateY(-2px); box-shadow:0 10px 28px rgba(2,6,23,.35); }
+
+#tab-comercial .unit-card .head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px; }
+#tab-comercial .unit-card .title{ display:flex; align-items:center; gap:8px; font-weight:800; }
+#tab-comercial .unit-card .status{
+  padding:2px 8px; font-size:.72rem; border-radius:999px; font-weight:700;
+  border:1px solid currentColor; color:var(--accent, #64748b); background:rgba(255,255,255,.04);
+}
+#tab-comercial .unit-card .meta{ color:#cbd5e1; font-size:.95rem; margin:.1rem 0 .15rem; }
+#tab-comercial .unit-card .price{ font-size:1.15rem; font-weight:900; letter-spacing:.2px; margin:.15rem 0 .35rem; }
+#tab-comercial .unit-card .badges{ display:flex; gap:6px; flex-wrap:wrap; }
+#tab-comercial .unit-card .chip{
+  padding:4px 8px; border-radius:999px; font-size:.78rem; line-height:1;
+  background:#0b1220; border:1px solid rgba(148,163,184,.28); color:#e2e8f0;
+}
+#tab-comercial .unit-card .chip.ghost{ color:#94a3b8; background:#0b1220; }
+
+#tab-comercial .unit-card .alert-ribbon{
+  position:absolute; top:10px; right:12px; background:#ef4444; color:#fff;
+  border-radius:8px; font-size:.72rem; font-weight:800; padding:2px 8px; box-shadow:0 2px 10px rgba(239,68,68,.45);
+}
+
+/* selección: checkbox bonito + glow */
+#tab-comercial .sel-wrap{ position:relative; width:22px; height:22px; display:inline-block; }
+#tab-comercial .sel{ position:absolute; inset:0; opacity:0; cursor:pointer; z-index:2; }
+#tab-comercial .sel-box{
+  position:absolute; inset:0; border-radius:8px; background:#0b1220;
+  border:2px solid rgba(148,163,184,.45);
+}
+#tab-comercial .sel:checked + .sel-box{
+  background:var(--accent, #3b82f6); border-color:var(--accent, #3b82f6);
+  box-shadow:0 0 0 3px rgba(59,130,246,.25);
+}
+#tab-comercial .sel:checked + .sel-box::after{
+  content:"✓"; position:absolute; inset:0; display:grid; place-items:center; color:#fff; font-weight:900; font-size:14px;
+}
+#tab-comercial .unit-card.selected{ outline:2px solid var(--accent, #3b82f6); box-shadow:0 0 0 4px rgba(59,130,246,.15), 0 10px 28px rgba(2,6,23,.35); }
+
+/* acentos por estado (según tu convención) */
+#tab-comercial .estado-disponible{      --accent:#22c55e; }  /* verde */
+#tab-comercial .estado-reservado{       --accent:#eab308; }  /* amarillo */
+#tab-comercial .estado-en_escrituracion{--accent:#3b82f6; }  /* azul */
+#tab-comercial .estado-escriturado{     --accent:#ef4444; }  /* rojo */
+#tab-comercial .estado-entregado{       --accent:#94a3b8; }  /* gris */
+
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><a class="link" href="/portfolio">← Volver</a> &nbsp; Proyecto</div>
+    <div><button id="logoutBtn" class="btn">Salir</button></div>
+  </div>
+
+  <div class="container">
+    <!-- ROLE-SEP: Banner para no aprobados (se controla desde project.js) -->
+    <div id="reviewBanner" class="alert" style="display:none; margin-bottom:10px;">
+      <b>Proyecto en revisión</b>: aún no está aprobado para perfiles no bancarios.
+    </div>
+
+    <div class="proyecto-topbar">
+      <h2 id="pname">Proyecto</h2>
+      <div class="status-controls">
+  <label for="pstatusSel" class="status-label">Estado</label>
+
+  <div class="select-wrap">
+    <select id="pstatusSel" class="select-clean">
+      <option value="EN_CURSO">EN_CURSO</option>
+      <option value="EN_MARCHA">EN_MARCHA</option>
+      <option value="PAUSADO">PAUSADO</option>
+      <option value="FINALIZADO">FINALIZADO</option>
+    </select>
+    <!-- chevron -->
+    <svg class="chev" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+    </svg>
+  </div>
+
+  <button id="saveStatusBtn" class="btn-primary">Guardar</button>
+</div>
+
+    </div>
+
+    <p id="pdesc" class="muted"></p>
+    <div class="kpi-row" id="kpis"></div>
+
+    <div class="tabs">
+      <button type="button" class="tab" data-tab="resumen" id="tabBtn-resumen">Resumen</button>
+      <button type="button" class="tab active" data-tab="proyecto" id="tabBtn-proyecto">Proyecto</button>
+      <button type="button" class="tab" data-tab="finanzas" id="tabBtn-finanzas">Finanzas</button>
+      <button type="button" class="tab" data-tab="comercial" id="tabBtn-comercial">Comercial</button>
+      <button type="button" class="tab" data-tab="docs" id="tabBtn-docs">Docs</button>
+      <button type="button" class="tab" data-tab="chat" id="tabBtn-chat">Chat</button>
+    </div>
+
+    <div class="tabpane" id="tab-resumen">
+
+  <!-- Cabecera + export -->
+  <section id="summaryHeader" class="row space-between">
+    <div>
+      <h2 id="summaryProjectName">Proyecto</h2>
+      <div class="small muted" id="summaryUpdatedAt">Actualizado: —</div>
+    </div>
+    <div class="row gap-8">
+      <a id="exportSummaryPdf"  class="btn btn-primary btn-sm"  href="#">PDF</a>
+      <a id="exportSummaryXlsx" class="btn btn-ghost  btn-sm"  href="#">Excel</a>
+    </div>
+    <div class="row gap-8" style="margin-top:10px;">
+    <input type="file" id="datoUnicoFile" accept=".xlsx,.xls" />
+    <button id="importDatoUnicoBtn" class="btn btn-primary btn-sm" type="button">Importar Dato Único</button>
+    </div>
+  </section>
+
+  <!-- KPIs -->
+  <section id="summaryKpis" class="kpis-grid"></section>
+
+  <!-- Progreso global (barra) -->
+  <div class="phase" style="--phase-color:#0ea5e9; margin-top:12px;">
+    <div class="phase-header">
+      <div class="phase-title">
+        <span>Progreso global del proyecto</span>
+        <span class="phase-badge" id="summaryProgressText">0% completado</span>
+      </div>
+    </div>
+    <div class="progress progress-lg">
+      <div id="summaryProgressBar" style="width:0%"></div>
+    </div>
+  </div>
+
+    <!-- Gráficas principales -->
+  <section class="grid-2" style="margin-top:16px;">
+
+  <div class="card">
+    <h3>Comparación por fase (Finanzas)</h3>
+    <canvas id="sumPhaseChart"></canvas>
+  </div>
+
+  <div class="card"><h3>Permisos por institución</h3><canvas id="sumPermitsByInstitution"></canvas></div>
+  <div class="card"><h3>CPP por banco</h3><canvas id="sumCppPie"></canvas></div>
+  <div class="card">
+  <div class="row" style="justify-content:space-between;align-items:center;">
+    <h3 style="margin:0;">Proformas por banco</h3>
+    <div class="small muted">Total: <b id="sumProformasTotal">0</b></div>
+  </div>
+  <canvas id="sumProformasBar"></canvas>
+  </div>
+
+  <div class="card"><h3>Estado de unidades</h3><canvas id="sumUnitsDonut"></canvas></div>
+  <div class="card"><h3>Ventas mensuales</h3><canvas id="sumSalesMonthly"></canvas></div>
+  <div class="card"><h3>Hipotecas por banco</h3><canvas id="sumMortgagesByBank"></canvas></div>
+
+    <!-- ✅ NUEVAS (banco-friendly) 
+    <div class="card"><h3>Alertas por severidad</h3><canvas id="sumAlertsSeverity"></canvas></div>
+    <div class="card"><h3>Expedientes atrasados por etapa</h3><canvas id="sumDelaysByStage"></canvas></div>
+  </section>-->
+
+  <!-- Alertas + Conclusiones -->
+  <section class="grid-2" style="margin-top:16px;">
+    <div class="card">
+      <h3>Vencimientos críticos (CPP / Permisos)</h3>
+      <div id="summaryAlerts"></div>
+    </div>
+    <div class="card">
+      <h3>Conclusiones</h3>
+      <ul id="summaryNotes" class="bullets"></ul>
+    </div>
+  </section>
+
+  <!-- Antes / Después -->
+  <section class="card" style="margin-top:16px;">
+  <div class="ba-two">
+    <div class="ba-col">
+      <h3>Antes</h3>
+      <div class="row gap-8">
+        <input id="baBeforeInput" type="file" multiple accept="image/*" />
+        <button id="baBeforeBtn" class="btn btn-primary btn-sm">Subir</button>
+      </div>
+      <div id="baBeforeGrid" class="ba-grid" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="ba-divider" aria-hidden="true"></div>
+
+    <div class="ba-col">
+      <h3>Después</h3>
+      <div class="row gap-8">
+        <input id="baAfterInput" type="file" multiple accept="image/*" />
+        <button id="baAfterBtn" class="btn btn-primary btn-sm">Subir</button>
+      </div>
+      <div id="baAfterGrid" class="ba-grid" style="margin-top:8px;"></div>
+    </div>
+  </div>
+</section>
+
+
+</div>
+
+    <div class="tabpane active" id="tab-proyecto">
+      <div class="phase" style="--phase-color:#0ea5e9;">
+        <div class="phase-header">
+          <div class="phase-title">
+            <span>Progreso global del proyecto</span>
+            <span class="phase-badge" id="globalProgressText">0% completado</span>
+          </div>
+          <div class="phase-actions">
+            <button class="btn btn-ghost btn-xs" id="verHistorialBtn">Ver historial</button>
+            <button class="btn btn-ghost btn-xs" id="configProyectoBtn">Configurar flujo</button>
+            <!-- NUEVO: expandir/colapsar todo -->
+            <button class="btn btn-ghost btn-xs" id="toggleAllPhasesBtn">Colapsar todo</button>
+          </div>
+        </div>
+        <div class="progress progress-lg"><div id="globalProgressBar" style="width:0%"></div></div>
+      </div>
+
+      <div class="proyecto-grid" style="margin-top:12px;">
+        <div id="phasesHost"></div>
+        <aside class="roles-panel">
+          <div class="roles-header">
+            <b>Roles & semáforo</b>
+            <div class="row" style="gap:6px;">
+              <button class="btn btn-ghost btn-xs" id="togglePendientesBtn">Solo pendientes: off</button>
+              <button class="btn btn-ghost btn-xs" id="limpiarFiltroRol">Limpiar rol</button>
+            </div>
+          </div>
+          <div id="rolesList" class="col" style="display:flex; flex-direction:column; gap:6px;"></div>
+        </aside>
+      </div>
+    </div>
+
+    <div class="tabpane" id="tab-finanzas">
+  <h2>Finanzas del Proyecto</h2>
+
+    <h3>KPIs del banco</h3>
+
+  <div class="grid-2" id="financeProjectKpis">
+    <div class="card">
+      <div class="label">Loan aprobado</div>
+      <input id="finLoanApproved" class="input" type="number" min="0" step="1" placeholder="0" />
+      <div class="small muted">Monto total aprobado por el banco.</div>
+    </div>
+
+    <div class="card">
+      <div class="label">Desembolsado</div>
+      <input id="finLoanDisbursed" class="input" type="number" min="0" step="1" placeholder="0" />
+      <div class="small muted">Monto ya desembolsado.</div>
+    </div>
+
+    <div class="card">
+      <div class="label">Budget aprobado</div>
+      <input id="finBudgetApproved" class="input" type="number" min="0" step="1" placeholder="0" />
+      <div class="small muted">Presupuesto total aprobado.</div>
+    </div>
+  </div>
+
+  <div class="row end" style="margin:10px 0 18px;">
+    <button class="btn primary" id="saveFinanceKpisBtn" type="button">Guardar KPIs</button>
+  </div>
+
+  <div class="row gap">
+    <div class="card kpi">
+      <div class="label">% Ejecución (real vs plan)</div>
+      <div class="value" id="kpiExec">—</div>
+    </div>
+    <div class="card kpi">
+      <div class="label">Intereses acumulados</div>
+      <div class="value" id="kpiIntereses">—</div>
+    </div>
+    <div class="card kpi">
+      <div class="label">Preventas acumuladas</div>
+      <div class="value" id="kpiPreventas">—</div>
+    </div>
+  </div>
+
+  <div id="financeAlerts" class="alert-list"></div>
+
+  <h3>Plan vs Real por fase</h3>
+<div class="card">
+  <div class="label">Comparación por fase (no acumulado)</div>
+  <canvas id="phaseChart" height="120"></canvas>
+</div>
+
+  <h3>Fases financieras</h3>
+  <div class="row end">
+    <button class="btn" id="addPhaseBtn">+ Nueva fase</button>
+  </div>
+  <div id="phasesList" class="accordion"></div>
+
+  <h3>Ejecución real acumulada</h3>
+  <div class="grid-2">
+    <div class="card">
+      <div class="label">Usos acumulados</div>
+      <table class="table" id="realUsesTable">
+        <thead><tr><th>Concepto</th><th class="right">Monto</th></tr></thead>
+        <tbody></tbody>
+        <tfoot><tr><td>Total</td><td class="right" id="realUsesTotal">0</td></tr></tfoot>
+      </table>
+    </div>
+    <div class="card">
+      <div class="label">Fuentes acumuladas</div>
+      <table class="table" id="realSourcesTable">
+        <thead><tr><th>Concepto</th><th class="right">Monto</th></tr></thead>
+        <tbody></tbody>
+        <tfoot><tr><td>Total</td><td class="right" id="realSourcesTotal">0</td></tr></tfoot>
+      </table>
+    </div>
+  </div>
+
+  <h3>Resumen acumulado (Plan por fases vs Real)</h3>
+<div class="grid-2">
+  <div class="card">
+    <div class="label">Plan acumulado por fases</div>
+    <div class="row gap">
+      <div class="kpi">
+        <div class="label">Usos plan</div>
+        <div class="value" id="accPlanUses">0</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Fuentes plan</div>
+        <div class="value" id="accPlanSources">0</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label">Real acumulado (sum de fases)</div>
+    <div class="row gap">
+      <div class="kpi">
+        <div class="label">Usos real</div>
+        <div class="value" id="accRealUses">0</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Fuentes real</div>
+        <div class="value" id="accRealSources">0</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  <div class="row gap end">
+    <a class="btn" id="exportXlsx" href="#">Exportar Excel</a>
+    <a class="btn" id="exportPdf"  href="#">Exportar PDF</a>
+  </div>
+</div>
+
+
+    <div class="tabpane" id="tab-comercial">
+  <div class="toolbar row" style="gap:8px; flex-wrap:wrap;">
+    <button id="btnCrearLote" class="btn">Crear en lote</button>
+    <button id="btnEditarSel" class="btn">Editar selección</button>
+    <button id="btnEliminarSel" class="btn btn-danger">Eliminar selección</button>
+    <button id="btnExportar" class="btn">Exportar</button>
+
+    <select id="filtroEstado">
+      <option value="">Todos</option>
+      <option value="disponible">Disponible</option>
+      <option value="reservado">Reservado</option>
+      <option value="en_escrituracion">En escrituración</option>
+      <option value="escriturado">Escriturado</option>
+      <option value="entregado">Entregado</option>
+    </select>
+    <input id="buscarUnidad" placeholder="Buscar (manzana/lote/modelo/cliente/banco/CPP)" />
+  </div>
+
+  <div id="kpisComercial" class="row gap" style="margin:8px 0"></div>
+  <div id="unitsGrid" class="grid"></div>
+
+  <!-- Modal crear en lote (simple) -->
+  <div id="modalCrearLote" class="modal-backdrop" style="display:none;">
+    <div class="modal">
+      <div class="modal-head">
+        <b>Crear unidades en lote</b>
+        <button class="btn btn-ghost btn-xs" id="modalCrearCerrar">Cerrar</button>
+      </div>
+      <div class="modal-body">
+        <label>Manzana</label>
+        <input id="cl-manzana" placeholder="A" />
+        <label>Cantidad</label>
+        <input id="cl-cantidad" type="number" min="1" value="10" />
+        <label>Modelo</label>
+        <input id="cl-modelo" placeholder="Modelo" />
+        <label>m²</label>
+        <input id="cl-m2" type="number" min="0" value="60" />
+        <label>Precio lista</label>
+        <input id="cl-precio" type="number" min="0" value="100000" />
+        <label>Estado inicial</label>
+        <select id="cl-estado">
+          <option value="disponible">Disponible</option>
+          <option value="reservado">Reservado</option>
+          <option value="en_escrituracion">En escrituración</option>
+        </select>
+      </div>
+      <div class="row" style="justify-content:flex-end; gap:8px;">
+        <button class="btn" id="cl-crear">Crear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal ficha unidad (editable) -->
+  <div id="fichaUnidadModal" class="modal-backdrop" style="display:none;">
+    <div class="modal" style="width:min(920px, 95vw);">
+      <div class="modal-head">
+        <b id="fichaTitulo">Unidad</b>
+        <button class="btn btn-ghost btn-xs" id="fichaCerrar">Cerrar</button>
+      </div>
+      <div class="modal-body" id="fichaContenido">
+        <!-- se rellena por JS -->
+      </div>
+      <div class="row" style="justify-content:flex-end; gap:8px;">
+        <button class="btn" id="fichaGuardar">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal edición por lote -->
+  <div id="modalBatch" class="modal-backdrop" style="display:none;">
+    <div class="modal" style="width:min(820px, 92vw);">
+      <div class="modal-head">
+        <b>Editar selección (lote)</b>
+        <button class="btn btn-ghost btn-xs" id="batchCerrar">Cerrar</button>
+      </div>
+      <div class="modal-body">
+        <div class="muted">Se aplicarán solo los campos que completes.</div>
+        <div class="grid-2">
+          <div>
+            <h4>Unit</h4>
+            <label>Estado</label>
+            <select id="b-estado">
+              <option value="">(no cambiar)</option>
+              <option value="disponible">Disponible</option>
+              <option value="reservado">Reservado</option>
+              <option value="en_escrituracion">En escrituración</option>
+              <option value="escriturado">Escriturado</option>
+              <option value="entregado">Entregado</option>
+            </select>
+            <label>Modelo</label><input id="b-modelo" />
+            <label>m²</label><input id="b-m2" type="number" />
+            <label>Precio lista</label><input id="b-precio" type="number" />
+          </div>
+          <div>
+            <h4>Comercial (Venta)</h4>
+            <label>Banco</label><input id="b-banco" />
+            <label>Status en Banco</label>
+<select id="b-statusBancoSel"></select>
+
+<div id="b-statusBancoOtherWrap" style="display:none; margin-top:6px;">
+  <input id="b-statusBancoOther" placeholder="Especificar (OTRO)..." />
+</div>
+            <label>N° CPP</label><input id="b-numCPP" />
+            <label>Valor</label><input id="b-valor" type="number" />
+          </div>
+        </div>
+      </div>
+      <div class="row" style="justify-content:flex-end; gap:8px;">
+        <button class="btn" id="batchAplicar">Aplicar cambios</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal eliminar por lote (PIN) -->
+  <div id="modalDel" class="modal-backdrop" style="display:none;">
+    <div class="modal" style="width:min(520px, 92vw);">
+      <div class="modal-head">
+        <b>Eliminar selección</b>
+        <button class="btn btn-ghost btn-xs" id="delCerrar">Cerrar</button>
+      </div>
+      <div class="modal-body">
+        <p>Confirma el borrado (soft delete). Ingresa el PIN:</p>
+        <input id="del-pin" type="password" placeholder="PIN" />
+      </div>
+      <div class="row" style="justify-content:flex-end; gap:8px;">
+        <button class="btn btn-danger" id="delAplicar">Eliminar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+    <div class="tabpane" id="tab-docs">
+  <form id="uploadForm" class="row">
+    <input type="file" id="file" />
+    <input type="date" id="expiry" />
+    <button class="btn" type="button" id="docsUploadBtn">Subir</button>
+  </form>
+
+  <!-- 👇 Añadido buscador y contador -->
+  <div class="docs-toolbar" style="margin:10px 0; display:flex; gap:12px; align-items:center;">
+    <input id="docsSearch" type="search" placeholder="Buscar documentos…" style="flex:1; padding:6px 10px;">
+    <span id="docsCount" class="small muted"></span>
+  </div>
+
+  <div id="docs"></div>
+</div>
+
+
+    <!-- 👇 Pestaña Chat -->
+<div class="tabpane" id="tab-chat">
+  <div class="chat-wrap">
+    <!-- Caja de composición -->
+    <form id="chatForm" class="chat-compose row" autocomplete="off">
+      <input id="chatInput" type="text" placeholder="Escribe un mensaje para el equipo…" maxlength="2000" />
+      <button id="chatSendBtn" class="btn" type="submit">Enviar</button>
+    </form>
+
+    <!-- Lista de mensajes -->
+    <div id="chatList" class="chat-list"></div>
+
+    <!-- Cargar más (paginación simple) -->
+    <div class="row center" style="margin-top:8px;">
+      <button id="chatLoadMore" class="btn btn-xs">Cargar mensajes anteriores</button>
+    </div>
+  </div>
+</div>
+
+
+  <div id="modalBackdrop" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-head">
+        <b id="modalTitle">Título</b>
+        <button id="modalClose" class="btn btn-ghost btn-xs">Cerrar</button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+      <div class="row" style="justify-content:flex-end; margin-top:8px;">
+        <button id="modalPrimary" class="btn">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/lib/chart.umd.min.js"></script>
+  <script src="/js/project.js?v=proceso-general-v6"><!-- ROLE-SEP: bump --></script>
+
+</body>
+</html>

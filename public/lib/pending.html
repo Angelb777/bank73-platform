@@ -1,0 +1,109 @@
+<!-- /public/lib/pending.html -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cuenta pendiente — TrustForBanks</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="/css/base.css" rel="stylesheet" />
+  <link href="/css/theme.css" rel="stylesheet" />
+  <style>
+    /* ROLE-SEP: estilos simples para vista de cuenta pendiente */
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
+      background: #0b0f14; color: #e6edf3; display: grid; place-items: center; min-height: 100dvh;
+    }
+    .card {
+      width: min(620px, 92vw); background: #0f1722; border: 1px solid #1f2937; border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.35); padding: 28px; text-align: center;
+    }
+    h1 { margin: 0 0 8px; font-size: 1.6rem; }
+    p  { margin: 6px 0; line-height: 1.55; opacity: .9; }
+    .badge {
+      display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: .85rem; letter-spacing: .2px;
+      margin: 10px 0 2px; background: #2a3648; border: 1px solid #334155;
+    }
+    .reason { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; opacity: .9; }
+    .actions { margin-top: 18px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      padding: 10px 14px; border-radius: 10px; border: 1px solid #334155; background: #111827; color: #e6edf3;
+      cursor: pointer; transition: transform .05s ease, background .2s ease;
+    }
+    .btn:hover { background: #0b1220; transform: translateY(-1px); }
+    .btn.primary { background: #1f6feb; border-color: #1f6feb; }
+    .btn.primary:hover { background: #1b63d3; }
+    small { display:block; margin-top: 14px; opacity: .7; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">ROLE-SEP · Verificación de cuenta</div>
+    <h1>Tu cuenta está pendiente de aprobación</h1>
+    <p>Un administrador debe revisar tu solicitud antes de que puedas acceder a la plataforma.</p>
+    <p class="reason" id="reasonText"></p>
+    <div class="actions">
+  <!-- Enlace real como fallback -->
+  <a class="btn" id="backLink" href="/">Volver al inicio</a>
+  <button class="btn primary" id="refreshBtn">Reintentar login</button>
+</div>
+
+<script>
+  // Texto de motivo
+  (function () {
+    const params = new URLSearchParams(location.search);
+    const r = (params.get('r') || '').toLowerCase();
+    const map = {
+      pending: 'Estado: pendiente de aprobación.',
+      blocked: 'Estado: bloqueado por administrador.',
+      forbidden: 'Acceso denegado.',
+      'no-role': 'Tu usuario no tiene rol asignado todavía.'
+    };
+    const txt = map[r] || '';
+    if (txt) document.getElementById('reasonText').textContent = txt;
+  })();
+
+  function clearAuthEverywhere() {
+    try {
+      if (window.API?.logout) window.API.logout();
+      if (window.API?.clearAuth) window.API.clearAuth();
+    } catch (_) {}
+
+    // Local & session storage
+    try {
+      ['tkn','role','status','tenant'].forEach(k => localStorage.removeItem(k));
+      ['tkn','role','status','tenant'].forEach(k => sessionStorage.removeItem(k));
+    } catch (_) {}
+
+    // Cookies típicas (ajusta nombres si usas otras)
+    try {
+      document.cookie.split(';').forEach(c => {
+        const [name] = c.split('=');
+        if (!name) return;
+        document.cookie = name.trim() + '=;expires=Thu, 01 Jan 1970 00:00:01 GMT;path=/';
+      });
+    } catch (_) {}
+  }
+
+  function goHome() {
+    clearAuthEverywhere();
+    const home = window.location.origin + '/?from=pending';
+    // assign para que al volver atrás no reaparezca pending
+    window.location.assign(home);
+  }
+
+  // Limpiar ANTES de seguir el enlace
+  document.getElementById('backLink').addEventListener('click', (e) => {
+    // Evita navegación inmediata, limpia, y luego navega
+    e.preventDefault();
+    goHome();
+  });
+
+  document.getElementById('refreshBtn').addEventListener('click', () => {
+    clearAuthEverywhere();
+    window.location.assign(window.location.origin + '/?from=pending');
+  });
+</script>
+
+</body>
+</html>

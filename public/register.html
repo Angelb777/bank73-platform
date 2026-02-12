@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Crear cuenta — Bank73</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="/css/base.css" rel="stylesheet" />
+  <link href="/css/theme.css" rel="stylesheet" />
+  <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
+</head>
+<body class="bg-gradient">
+  <div class="login-wrap">
+    <div class="brand-panel">
+      <div class="brand-content">
+        <img class="brand-logo" src="/assets/TrustForBanksLogo.png" alt="TrustForBanks logo" />
+        <p class="brand-subtitle">Crea tu acceso como Promotor.</p>
+      </div>
+    </div>
+
+    <main class="login-card glass">
+      <header class="login-header">
+        <h2>Crear cuenta</h2>
+        <p class="muted">Introduce tus credenciales</p>
+      </header>
+
+      <form id="registerForm" class="login-form">
+        <label>Nombre</label>
+        <input type="text" id="name" placeholder="Tu nombre" required />
+
+        <label>Email</label>
+        <input type="email" id="email" placeholder="tucorreo@dominio.com" required />
+
+        <label>Contraseña</label>
+        <div class="input-with-action">
+          <input type="password" id="password" placeholder="••••••••" required />
+          <button type="button" class="ghost small" id="togglePwd" aria-label="Mostrar contraseña">👁️</button>
+        </div>
+
+        <label>Rol solicitado</label>
+        <select id="roleRequested" required>
+        <option value="promoter">Promotor</option>
+        <option value="bank">Banco</option>
+        <option value="commercial">Comercial</option>
+        </select>
+
+
+        <button type="submit" class="btn primary stretch" id="submitBtn">
+          Crear cuenta
+          <span class="spinner" aria-hidden="true"></span>
+        </button>
+      </form>
+
+      <div class="login-meta">
+        <p class="muted small">Tenant: <code>bancodemo</code> (automático)</p>
+        <div id="msg" class="msg"></div>
+        <p class="small"><a class="link" href="/">¿Ya tienes cuenta? Inicia sesión</a></p>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/login-ui.js"></script>
+  <script src="/js/register.js"></script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Portfolio — Bank73</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="/css/base.css" rel="stylesheet" />
+  <link href="/css/theme.css" rel="stylesheet" />
+  <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
+  <style>
+    /* FAB y modal */
+    .fab {
+      position: fixed; right: 24px; bottom: 24px;
+      width: 56px; height: 56px; border-radius: 50%;
+      background: #0d6efd; color: white; font-size: 28px;
+      display: flex; align-items: center; justify-content: center;
+      border: none; box-shadow: 0 6px 16px rgba(0,0,0,0.2);
+      cursor: pointer;
+    }
+    .fab:hover { filter: brightness(0.95); }
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 50; }
+    .modal { background: #fff; color:#000; border-radius: 10px; width: 100%; max-width: 560px; padding: 20px; }
+    .modal .row { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 12px; }
+    .modal h3 { margin-top: 0; }
+    .modal-backdrop.show { display: flex; }
+    .modal input, .modal textarea, .modal select { border: 1px solid #ccc; background: #fff; color: #000; }
+    .muted { opacity:.7; font-size:.9rem; }
+    #noProjectsBanner { margin:20px 0; text-align:center; display:none; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">Portfolio</div>
+    <div>
+      <button id="logoutBtn" class="btn">Salir</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+      <h2>Proyectos</h2>
+    </div>
+    <div id="noProjectsBanner" class="muted">No tienes proyectos asignados o aprobados todavía.</div>
+    <div id="cards" class="grid"></div>
+  </div>
+
+  <!-- FAB empieza oculto, lo muestra JS solo a admin/bank -->
+  <button class="fab" id="fabPlus" title="Crear proyecto" style="display:none">+</button>
+
+  <div class="modal-backdrop" id="modalBackdrop">
+    <!-- añadido max-height, overflow y padding-bottom -->
+    <div class="modal" style="max-height:calc(100vh - 80px); overflow:auto; padding-bottom:96px;">
+      <h3>Crear nuevo proyecto</h3>
+
+      <div class="row" style="justify-content:flex-start; gap:12px; flex-wrap: wrap;">
+        <input id="pName" type="text" placeholder="Nombre del proyecto" style="flex: 1 1 240px;" />
+        <select id="pStatus" style="flex:0 0 180px;">
+          <option value="EN_CURSO">EN_CURSO</option>
+          <option value="EN_MARCHA">EN_MARCHA</option>
+          <option value="PAUSADO">PAUSADO</option>
+          <option value="FINALIZADO">FINALIZADO</option>
+        </select>
+        <textarea id="pDesc" rows="3" placeholder="Descripción" style="width:100%;"></textarea>
+      </div>
+
+      <div style="margin-top:12px;">
+        <div class="small muted">Asignaciones (al menos 1 promotor):</div>
+        <div class="row" style="flex-wrap: wrap; justify-content:flex-start;">
+          <div style="flex:1 1 250px;">
+            <label class="small muted">Promotores</label>
+            <select id="pPromoters" multiple size="6" style="width:100%;"></select>
+          </div>
+          <div style="flex:1 1 250px;">
+            <label class="small muted">Comerciales (opcional)</label>
+            <select id="pCommercials" multiple size="6" style="width:100%;"></select>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px;">
+        <div class="small muted">KPIs iniciales (opcional):</div>
+        <div class="row" style="flex-wrap: wrap; justify-content:flex-start;">
+          <input type="number" id="kLoanApproved" placeholder="Loan aprobado" />
+          <input type="number" id="kBudgetApproved" placeholder="Budget aprobado" />
+          <input type="number" id="kUnitsTotal" placeholder="Unidades totales" />
+          <!-- nuevo campo -->
+          <input type="number" id="kUnitsAvailable" placeholder="Unidades disponibles para la venta" />
+        </div>
+      </div>
+
+      <div class="row">
+        <button id="cancelCreate" class="btn ghost">Cancelar</button>
+        <button id="createProject" class="btn">Crear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ya no hace falta el script inline de controlFab -->
+  <script src="/js/api.js"></script>
+  <script src="/js/portfolio.js?v=single-view"></script>
+</body>
+</html>

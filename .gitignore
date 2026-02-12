@@ -1,0 +1,22 @@
+# Mongo local (NO subir)
+data/db
+data/
+*.lock
+*.wt
+*.bson
+*.log
+
+# Env / secretos
+.env
+
+# Dependencias
+node_modules
+
+# Builds
+dist
+build
+
+# OS
+.DS_Store
+
+uploads/

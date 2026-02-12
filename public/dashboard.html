@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin — Bank73</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="/css/base.css" rel="stylesheet" />
+  <link href="/css/theme.css" rel="stylesheet" />
+  <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
+  <style>
+    .badge { display:inline-block; padding:.25rem .5rem; border-radius:999px; font-size:.75rem; border:1px solid #334155; background:#0f1722; }
+    /* Usuarios */
+    .badge.pending { border-color:#f59e0b; color:#f59e0b; }
+    .badge.active { border-color:#22c55e; color:#22c55e; }
+    .badge.blocked { border-color:#ef4444; color:#ef4444; }
+    /* Proyectos (publishStatus) */
+    .badge.approved { border-color:#22c55e; color:#22c55e; }
+    .badge.rejected { border-color:#ef4444; color:#ef4444; }
+    .badge.draft { border-color:#64748b; color:#94a3b8; }
+
+    .toolbar { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+    .toolbar .input, .toolbar select { min-height:36px; }
+    .grid { display:grid; gap:16px; }
+    @media (min-width: 1024px) { .grid.cols-2 { grid-template-columns: 1fr 1fr; } }
+    .muted { opacity:.8; }
+    .table th, .table td { vertical-align: middle; }
+    .actions { display:flex; gap:.5rem; flex-wrap:wrap; }
+    .btn.small { padding:.35rem .6rem; font-size:.85rem; }
+    .input[disabled] { opacity:.7; }
+
+    /* Modal simple */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index: 70; }
+    .modal-backdrop.show { display:flex; }
+    .modal { background:#fff; color:#000; border-radius:10px; width:100%; max-width:720px; padding:20px; }
+    .modal h3 { margin-top:0; }
+    .modal .row { display:flex; gap:8px; align-items:center; justify-content:flex-end; margin-top:12px; }
+    .modal select, .modal input, .modal textarea { border:1px solid #ccc; background:#fff; color:#000; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">Administración</div>
+    <div class="toolbar">
+      <span id="whoami" class="badge">ADMIN</span>
+      <button id="logoutBtn" class="btn">Salir</button>
+    </div>
+  </div>
+
+  <main class="container">
+
+    <div id="notAdmin" class="card" style="display:none;">
+      <h2>Acceso restringido</h2>
+      <p>Sólo administradores pueden ver este panel.</p>
+      <div class="actions">
+        <a href="/portfolio" class="btn">Ir al portfolio</a>
+      </div>
+    </div>
+
+    <!-- APROBACIONES -->
+    <section class="card" id="approvalsCard">
+      <h2>Administrador de T4B</h2>
+      <p class="muted">Revisa y aprueba usuarios y proyectos pendientes</p>
+
+      <div class="grid cols-2">
+        <!-- Usuarios pendientes -->
+        <div>
+          <h3>Usuarios pendientes</h3>
+          <div class="toolbar">
+            <select id="roleSelectDefault" title="Rol por defecto al aprobar" class="input">
+              <option value="">— Rol al aprobar (opcional) —</option>
+              <option value="bank">Bank</option>
+              <option value="promoter">Promoter</option>
+              <option value="commercial">Commercial</option>
+              <option value="admin">Admin</option>
+            </select>
+            <button id="refreshPendingUsers" class="btn small">Refrescar</button>
+          </div>
+          <table class="table" id="pendingUsersTable">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Email</th>
+                <th>Solicitado</th>
+                <th>Estado</th>
+                <th style="width:280px;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="pendingUsersTbody"></tbody>
+          </table>
+        </div>
+
+        <!-- Proyectos pendientes -->
+        <div>
+          <h3>Proyectos pendientes</h3>
+          <div class="toolbar">
+            <button id="refreshPendingProjects" class="btn small">Refrescar</button>
+          </div>
+          <table class="table" id="pendingProjectsTable">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Descripción</th>
+                <th>Publicación</th>
+                <th style="width:200px;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="pendingProjectsTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- USUARIOS (lista completa) -->
+    <section class="card">
+      <h2>Usuarios</h2>
+      <p class="muted">Lista de usuarios del tenant. Puedes aprobar, bloquear o eliminar.</p>
+
+      <div class="toolbar">
+        <select id="usersStatusFilter" class="input">
+          <option value="">Todos</option>
+          <option value="pending">Pendientes</option>
+          <option value="active">Activos</option>
+          <option value="blocked">Bloqueados</option>
+        </select>
+        <input id="usersSearch" class="input" type="search" placeholder="Buscar por nombre o email..." />
+        <button id="refreshUsers" class="btn small">Refrescar</button>
+      </div>
+
+      <div id="msg" class="msg"></div>
+
+      <table class="table" id="usersTable">
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Email</th>
+            <th>Rol</th>
+            <th>Solicitado</th>
+            <th>Estado</th>
+            <th>Creado</th>
+            <th style="width:380px;">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="usersTbody"></tbody>
+      </table>
+    </section>
+
+    <!-- PROYECTOS (ADMIN - lista completa) -->
+    <section class="card">
+      <h2>Proyectos</h2>
+      <p class="muted">Lista completa de proyectos del tenant. Puedes asignar equipo o eliminar.</p>
+
+      <div class="toolbar">
+        <select id="allProjectsFilter" class="input" title="Filtrar por publicación">
+          <option value="">Todos</option>
+          <option value="pending">Pendientes</option>
+          <option value="approved">Aprobados</option>
+          <option value="rejected">Rechazados</option>
+          <option value="draft">Borrador</option>
+        </select>
+        <!-- buscador -->
+        <input id="allProjectsSearch" class="input" type="search" placeholder="Buscar por nombre, descripción o equipo..." />
+
+        <button id="refreshAllProjects" class="btn small">Refrescar</button>
+      </div>
+
+      <table class="table" id="allProjectsTable">
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Descripción</th>
+            <th>Publicación</th>
+            <th>Promotores</th>
+            <th>Comerciales</th>
+            <th style="width:320px;">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="allProjectsTbody"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <!-- Modal asignación -->
+<div class="modal-backdrop" id="assignModal">
+  <div class="modal">
+    <h3>Asignar equipo al proyecto</h3>
+    <div class="muted" id="assignProjectName" style="margin-bottom:10px;"></div>
+
+    <!-- scroll interno -->
+    <div class="modal-body">
+      <div id="assignRolesContainer"></div>
+    </div>
+
+    <div class="row">
+      <button id="assignCancel" class="btn ghost">Cancelar</button>
+      <button id="assignSave" class="btn">Guardar</button>
+    </div>
+  </div>
+</div>
+
+  <script>
+    (function guardAdmin() {
+      try {
+        const role = (localStorage.getItem('role') || '').toLowerCase();
+        const status = (localStorage.getItem('status') || '').toLowerCase();
+        if (role !== 'admin') {
+          document.getElementById('approvalsCard').style.display = 'none';
+          document.getElementById('notAdmin').style.display = 'block';
+        }
+        const who = document.getElementById('whoami');
+        if (who) who.textContent = (role || '—').toUpperCase();
+        if (status && status !== 'active') location.href = '/pending.html';
+      } catch (_) {}
+    })();
+  </script>
+
+  <script src="/js/api.js"></script>
+  <!-- Asegúrate de usar el JS MIX que te pasé -->
+  <script src="/js/dashboard.js?v=mix-usuarios-proyectos"></script>
+</body>
+</html>

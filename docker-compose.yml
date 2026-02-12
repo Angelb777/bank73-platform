@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  mongo:
+    image: mongo:6
+    container_name: trustforbanks-mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./data/db:/data/db
+
+  node:
+    image: node:18
+    container_name: trustforbanks-node
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: >
+      sh -c "node scripts/seed-process-template.js --apply=68f4e7a28a8e46d67c2ef669 && tail -f /dev/null"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/trustforbanks
+    depends_on:
+      - mongo
