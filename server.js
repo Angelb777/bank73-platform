@@ -11,7 +11,7 @@ const cron = require('node-cron');
 const jwt = require('jsonwebtoken');
 
 // Middlewares propios
-const authMw = require('./middleware/auth');               // exporta también requireActiveUser
+const authMw = require('./middleware/auth');
 const { requireActiveUser } = require('./middleware/auth');
 const errorMw = require('./middleware/error');
 
@@ -23,30 +23,27 @@ const documentRoutes = require('./routes/documents');
 const loanRoutes = require('./routes/loans');
 const budgetRoutes = require('./routes/budget');
 const inventoryRoutes = require('./routes/inventory');
-const financeRoutes = require('./routes/finance');   // << Finanzas
-const adminRoutes = require('./routes/admin');       // Admin
-const processRoutes = require('./routes/process');   // Proceso (plantillas + checklists)
+const financeRoutes = require('./routes/finance');
+const adminRoutes = require('./routes/admin');
+const processRoutes = require('./routes/process');
 
 // Comercial
 const unitsRoutes = require('./routes/units');
 const exportRoutes = require('./routes/export');
 const ventasRoutes = require('./routes/ventas');
 
-const permitRoutes   = require('./routes/permits');
-
-const chatRoutes   = require('./routes/chat');
+const permitRoutes = require('./routes/permits');
+const chatRoutes = require('./routes/chat');
 
 const app = express();
 
-// ------- Safety nets de proceso (no tumbar Node en dev) -------
-process.on('unhandledRejection', (reason, p) => {
+// ------- Safety nets de proceso -------
+process.on('unhandledRejection', (reason) => {
   console.error('[UNHANDLED REJECTION]', reason);
 });
 process.on('uncaughtException', (err) => {
   console.error('[UNCAUGHT EXCEPTION]', err);
-  // En producción podrías decidir process.exit(1); aquí lo dejamos vivo para no "echarte"
 });
-
 
 /* =========================================================================
    Seguridad / middlewares base
@@ -54,7 +51,6 @@ process.on('uncaughtException', (err) => {
 const isLanDev = (process.env.NODE_ENV !== 'production');
 
 if (isLanDev) {
-  // sin helmet en LAN/dev para evitar políticas raras mientras debug
   console.log('[SEC] helmet OFF (LAN/dev)');
 } else {
   app.use(helmet());
@@ -65,7 +61,7 @@ app.use(morgan('dev'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// DEV: no cachear HTML/CSS/JS (para que IP y localhost siempre carguen lo último)
+// DEV: no cachear HTML/CSS/JS
 app.use((req, res, next) => {
   if (
     req.path === '/' ||
@@ -92,16 +88,16 @@ app.use(express.static(path.join(__dirname, 'public')));
    Mongo
    ========================================================================= */
 const { MONGO_URI, PORT = 3000 } = process.env;
+
 if (!MONGO_URI) {
   console.error('[Mongo] Falta MONGO_URI (Render env var).');
-  // No hacemos exit aquí: dejamos que el health muestre el estado y Render saque logs.
 }
+
 mongoose.set('strictQuery', true);
 mongoose.connect(MONGO_URI, {})
   .then(() => console.log('[Mongo] Conectado'))
   .catch((err) => {
-  console.error('[Mongo] Error de conexión:', err.message);
-  // no process.exit en Render: así no entras en restart loop
+    console.error('[Mongo] Error de conexión:', err.message);
   });
 
 /* =========================================================================
@@ -113,9 +109,7 @@ app.get('/health', (req, res) => {
 });
 
 /* =========================================================================
-   TENANT middleware ROBUSTO (antes de cualquier ruta /api)
-   - Lee X-Tenant-Key o X-Tenant; si no viene, intenta sacarlo del JWT.
-   - Normaliza req.tenantKey y req.tenant = { key, tenantKey }.
+   TENANT middleware ROBUSTO (para /api)
    ========================================================================= */
 function tenantMw(req, _res, next) {
   let t =
@@ -125,7 +119,7 @@ function tenantMw(req, _res, next) {
     req.body?.tenantKey ||
     req.tenantKey;
 
-  // fallback: intentar leer del JWT si viene Authorization
+  // fallback JWT
   if (!t) {
     const authHeader = req.header('Authorization') || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -133,67 +127,66 @@ function tenantMw(req, _res, next) {
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         t = decoded?.tenantKey || t;
-      } catch (_) { /* noop: token inválido, seguimos sin tenant */ }
+      } catch (_) {}
     }
   }
 
-  req.tenantKey = t || req.tenantKey; // no pisar si ya estaba
-  // Exponer objeto compat
+  req.tenantKey = t || req.tenantKey;
   req.tenant = req.tenant || { key: req.tenantKey, tenantKey: req.tenantKey };
   next();
 }
 
-// Prefijo API con middleware de tenant (afecta a todo /api)
+// Prefijo API con tenantMw (AFECTA a todo /api)
 app.use('/api', tenantMw);
 
 /* =========================================================================
-   Rutas públicas de AUTH
-   - Importante: llegan con tenantMw ya ejecutado para firmar el token con ese tenant.
+   Rutas públicas AUTH
    ========================================================================= */
 app.use('/api/auth', authRoutes);
 
 /* =========================================================================
-   Rutas protegidas (TENANT -> AUTH -> [ACTIVE] -> ROUTER)
-   Si prefieres no revalidar contra BD en todas, cambia requireActiveUser por authMw.
+   Rutas protegidas
    ========================================================================= */
 const guard = [authMw, requireActiveUser];
 
-app.use('/api/projects',   ...guard, projectRoutes);
+app.use('/api/projects', ...guard, projectRoutes);
 app.use('/api/milestones', ...guard, milestoneRoutes);
-app.use('/api/documents',  ...guard, documentRoutes);
-app.use('/api/loans',      ...guard, loanRoutes);
-app.use('/api/budget',     ...guard, budgetRoutes);
-app.use('/api/inventory',  ...guard, inventoryRoutes);
+app.use('/api/documents', ...guard, documentRoutes);
+app.use('/api/loans', ...guard, loanRoutes);
+app.use('/api/budget', ...guard, budgetRoutes);
+app.use('/api/inventory', ...guard, inventoryRoutes);
 
-// Finanzas montado con el mismo guard
-app.use('/api',            ...guard, financeRoutes);
+// Finanzas
+app.use('/api', ...guard, financeRoutes);
 
-// Admin (el router valida rol ADMIN internamente)
-app.use('/api/admin',      ...guard, adminRoutes);
+// Admin
+app.use('/api/admin', ...guard, adminRoutes);
 
-// justo antes de: app.use('/api/permits', ...guard, permitRoutes);
+// TRACE permits
 app.use('/api/permits', (req, _res, next) => {
   console.log('[TRACE] /api/permits >>>', req.method, req.originalUrl);
   next();
 });
 
-// ✅ Permisos (plantillas + instancia por proyecto)
-app.use('/api/permits', authMw, permitRoutes);
+// Permisos
+app.use('/api/permits', ...guard, permitRoutes);
 
-// ✅ Proceso (plantillas + checklists)
-app.use('/api', tenantMw, authMw, requireActiveUser, processRoutes);
+// Proceso (plantillas + checklists)
+app.use('/api', ...guard, processRoutes);
 
 // Comercial
-app.use('/api/units',      ...guard, unitsRoutes);
-app.use('/api/export',     ...guard, exportRoutes);
-app.use('/api/ventas',     ...guard, ventasRoutes);
+app.use('/api/units', ...guard, unitsRoutes);
+app.use('/api/export', ...guard, exportRoutes);
+app.use('/api/ventas', ...guard, ventasRoutes);
 
-app.use('/api/chat',       ...guard, chatRoutes);
+// Chat
+app.use('/api/chat', ...guard, chatRoutes);
 
 /* =========================================================================
    SPA routes
    ========================================================================= */
-app.get('/register',  (_req, res) => res.sendFile(path.join(__dirname, 'public/register.html')));
+app.get('/register', (_req, res) => res.sendFile(path.join(__dirname, 'public/register.html')));
+
 app.get('/', (req, res) => {
   const file = path.join(__dirname, 'public/index.html');
 
@@ -206,18 +199,10 @@ app.get('/', (req, res) => {
   console.log('[SERVE /] host=', req.headers.host, 'ip=', req.ip, 'file=', file, 'stamp=', stamp);
   res.sendFile(file);
 });
-app.get('/dashboard', (_req, res) => res.sendFile(path.join(__dirname, 'public/dashboard.html'))); // Vista admin
+
+app.get('/dashboard', (_req, res) => res.sendFile(path.join(__dirname, 'public/dashboard.html')));
 app.get('/portfolio', (_req, res) => res.sendFile(path.join(__dirname, 'public/portfolio.html')));
-app.get('/project',   (_req, res) => res.sendFile(path.join(__dirname, 'public/project.html')));
-
-
-/* =========================================================================
-   Error handler
-   ========================================================================= */
-   // 404 al final (si no matcheó nada)
-app.use((req, res) => res.status(404).send('Not Found'));
-
-app.use(errorMw);
+app.get('/project', (_req, res) => res.sendFile(path.join(__dirname, 'public/project.html')));
 
 /* =========================================================================
    Cron diario (documentos próximos a expirar)
@@ -239,12 +224,9 @@ cron.schedule('0 2 * * *', async () => {
   }
 });
 
-
 /* =========================================================================
-   404 + Error handlers (AL FINAL)
+   Error handlers (AL FINAL)
    ========================================================================= */
-app.use((req, res) => res.status(404).send('Not Found'));
-
 app.use(errorMw);
 
 app.use((err, req, res, next) => {
@@ -270,6 +252,12 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ error: 'server_error' });
 });
 
+// 404 FINAL (después de rutas + error handlers)
+app.use((req, res) => res.status(404).send('Not Found'));
+
+/* =========================================================================
+   Listen
+   ========================================================================= */
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[HTTP] Listening on 0.0.0.0:${PORT}`);
 });
