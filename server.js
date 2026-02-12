@@ -191,39 +191,33 @@ app.use('/api/ventas',     ...guard, ventasRoutes);
 app.use('/api/chat',       ...guard, chatRoutes);
 
 /* =========================================================================
-   Error handler
+   SPA routes
    ========================================================================= */
-app.use(errorMw);
+app.get('/register',  (_req, res) => res.sendFile(path.join(__dirname, 'public/register.html')));
+app.get('/', (req, res) => {
+  const file = path.join(__dirname, 'public/index.html');
+
+  let stamp = 'NOFILE';
+  try {
+    const html = fs.readFileSync(file, 'utf8');
+    stamp = (html.match(/INDEX_v\d+/)?.[0]) || 'NOSTAMP';
+  } catch (_) {}
+
+  console.log('[SERVE /] host=', req.headers.host, 'ip=', req.ip, 'file=', file, 'stamp=', stamp);
+  res.sendFile(file);
+});
+app.get('/dashboard', (_req, res) => res.sendFile(path.join(__dirname, 'public/dashboard.html'))); // Vista admin
+app.get('/portfolio', (_req, res) => res.sendFile(path.join(__dirname, 'public/portfolio.html')));
+app.get('/project',   (_req, res) => res.sendFile(path.join(__dirname, 'public/project.html')));
+
 
 /* =========================================================================
-   Error handler (fallback por si errorMw no captura todo)
+   Error handler
    ========================================================================= */
-app.use((err, req, res, next) => {
-  if (res.headersSent) return next(err);
-  console.error('[ERROR FALLBACK]', err);
+   // 404 al final (si no matcheó nada)
+app.use((req, res) => res.status(404).send('Not Found'));
 
-  if (err?.name === 'ValidationError') {
-    // No tumbar el server: devolver 400 con detalle
-    return res.status(400).json({
-      error: 'validation_error',
-      details: Object.fromEntries(
-        Object.entries(err.errors || {}).map(([k, v]) => [k, v?.message || String(v)])
-      )
-    });
-  }
-
-  // Mongoose cast/objectId inválido
-  if (err?.name === 'CastError') {
-    return res.status(400).json({ error: 'bad_request', detail: 'ID inválido' });
-  }
-
-  // Auth habitual
-  if (err?.status === 401) return res.status(401).json({ error: 'unauthorized' });
-  if (err?.status === 403) return res.status(403).json({ error: 'forbidden' });
-
-  return res.status(500).json({ error: 'server_error' });
-});
-
+app.use(errorMw);
 
 /* =========================================================================
    Cron diario (documentos próximos a expirar)
@@ -245,28 +239,37 @@ cron.schedule('0 2 * * *', async () => {
   }
 });
 
+
 /* =========================================================================
-   SPA routes
+   404 + Error handlers (AL FINAL)
    ========================================================================= */
-app.get('/register',  (_req, res) => res.sendFile(path.join(__dirname, 'public/register.html')));
-app.get('/', (req, res) => {
-  const file = path.join(__dirname, 'public/index.html');
+app.use((req, res) => res.status(404).send('Not Found'));
 
-  let stamp = 'NOFILE';
-  try {
-    const html = fs.readFileSync(file, 'utf8');
-    stamp = (html.match(/INDEX_v\d+/)?.[0]) || 'NOSTAMP';
-  } catch (_) {}
+app.use(errorMw);
 
-  console.log('[SERVE /] host=', req.headers.host, 'ip=', req.ip, 'file=', file, 'stamp=', stamp);
-  res.sendFile(file);
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  console.error('[ERROR FALLBACK]', err);
+
+  if (err?.name === 'ValidationError') {
+    return res.status(400).json({
+      error: 'validation_error',
+      details: Object.fromEntries(
+        Object.entries(err.errors || {}).map(([k, v]) => [k, v?.message || String(v)])
+      )
+    });
+  }
+
+  if (err?.name === 'CastError') {
+    return res.status(400).json({ error: 'bad_request', detail: 'ID inválido' });
+  }
+
+  if (err?.status === 401) return res.status(401).json({ error: 'unauthorized' });
+  if (err?.status === 403) return res.status(403).json({ error: 'forbidden' });
+
+  return res.status(500).json({ error: 'server_error' });
 });
-app.get('/dashboard', (_req, res) => res.sendFile(path.join(__dirname, 'public/dashboard.html'))); // Vista admin
-app.get('/portfolio', (_req, res) => res.sendFile(path.join(__dirname, 'public/portfolio.html')));
-app.get('/project',   (_req, res) => res.sendFile(path.join(__dirname, 'public/project.html')));
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[HTTP] Listening on 0.0.0.0:${PORT}`);
 });
-
-
