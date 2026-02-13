@@ -3375,6 +3375,7 @@ function openPhaseEditor(ph = null) {
   const btnExportar = document.getElementById('btnExportar');
   const btnBatch = document.getElementById('btnEditarSel');
   const btnDel = document.getElementById('btnEliminarSel');
+  const btnSelectAll = document.getElementById('btnSelectAll');
 
   // Modales
   const modalCrear = document.getElementById('modalCrearLote');
@@ -3724,6 +3725,40 @@ function collectChecklistPayload() {
     ventasMap = new Map((ventas||[]).map(v => [String(v.unitId), v]));
   }
 
+  function updateSelectAllLabel() {
+  if (!btnSelectAll) return;
+  const total = (unitsCache || []).length;
+  btnSelectAll.textContent = (selected.size >= total && total > 0) ? 'Deseleccionar todo' : 'Seleccionar todo';
+}
+
+function selectAllVisible() {
+  // Selecciona todas las unidades visibles en el grid (unitsCache ya está filtrado por estado/búsqueda)
+  unitsCache.forEach(u => selected.add(String(u._id)));
+
+  // Marca checks + clase selected en UI
+  grid.querySelectorAll('.unit-card').forEach(card => {
+    card.classList.add('selected');
+    const cb = card.querySelector('.sel');
+    if (cb) cb.checked = true;
+  });
+
+  updateSelectAllLabel();
+}
+
+function deselectAllVisible() {
+  // Quita del set las visibles
+  unitsCache.forEach(u => selected.delete(String(u._id)));
+
+  grid.querySelectorAll('.unit-card').forEach(card => {
+    card.classList.remove('selected');
+    const cb = card.querySelector('.sel');
+    if (cb) cb.checked = false;
+  });
+
+  updateSelectAllLabel();
+}
+
+
   async function loadUnits() {
     const estado = filtroEstado ? filtroEstado.value : '';
     const q = buscarInput ? buscarInput.value : '';
@@ -3809,9 +3844,10 @@ Array.from(grid.querySelectorAll('.unit-card')).forEach(el => {
 
   const cb = el.querySelector('.sel');
   cb.addEventListener('change', () => {
-    if (cb.checked){ selected.add(id); el.classList.add('selected'); }
-    else { selected.delete(id); el.classList.remove('selected'); }
-  });
+  if (cb.checked){ selected.add(id); el.classList.add('selected'); }
+  else { selected.delete(id); el.classList.remove('selected'); }
+  updateSelectAllLabel();
+});
 });
   }
   window.loadUnits = loadUnits;
@@ -4316,6 +4352,16 @@ modalFicha.style.display = 'flex';
         await loadUnits();
       } catch (e) { alert('Error creando unidades: ' + e.message); }
     });
+  }
+
+  if (btnSelectAll) {
+  btnSelectAll.addEventListener('click', () => {
+    const total = (unitsCache || []).length;
+    if (!total) return;
+
+    if (selected.size >= total) deselectAllVisible();
+    else selectAllVisible();
+  });
   }
 
   // Carga inicial
