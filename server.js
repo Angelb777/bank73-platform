@@ -152,7 +152,14 @@ app.use('/api/auth', authRoutes);
    ========================================================================= */
 const guard = [authMw, requireActiveUser];
 
+// ✅ 1) Projects primero
 app.use('/api/projects', ...guard, projectRoutes);
+
+// ✅ 2) IMPORTANTÍSIMO: monta processRoutes también bajo /api/projects
+//    para que /api/projects/:id/process/apply-template NO se quede atrapado en projectRoutes
+app.use('/api/projects', ...guard, processRoutes);
+
+// Resto igual
 app.use('/api/milestones', ...guard, milestoneRoutes);
 app.use('/api/documents', ...guard, documentRoutes);
 app.use('/api/loans', ...guard, loanRoutes);
@@ -174,7 +181,7 @@ app.use('/api/permits', (req, _res, next) => {
 // Permisos
 app.use('/api/permits', ...guard, permitRoutes);
 
-// Proceso (plantillas + checklists)
+// ✅ 3) Mantén processRoutes también en /api para /api/process/templates/active
 app.use('/api', ...guard, processRoutes);
 
 // Comercial

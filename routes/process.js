@@ -86,7 +86,7 @@ router.post('/process/templates/:version/activate', async (req, res) => {
    ========================================================================= */
 
 // POST /api/projects/:projectId/process/apply-template?version=1
-router.post('/projects/:projectId/process/apply-template', async (req, res) => {
+router.post('/:projectId/process/apply-template', async (req, res) => {
   const { projectId } = req.params;
   const version = req.query.version ? Number(req.query.version) : null;
 
