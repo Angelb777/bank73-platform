@@ -113,9 +113,13 @@
           const name = document.getElementById('pName').value.trim();
           const description = document.getElementById('pDesc').value.trim();
           const status = document.getElementById('pStatus').value;
-          const loanApproved = Number(document.getElementById('kLoanApproved').value || 0);
-          const budgetApproved = Number(document.getElementById('kBudgetApproved').value || 0);
-          const unitsTotal = Number(document.getElementById('kUnitsTotal').value || 0);
+          const kLoan = document.getElementById('kLoanApproved');
+const kBudg = document.getElementById('kBudgetApproved');
+// OJO: kUnitsTotal ya no existe -> NO lo usamos
+
+const loanApproved = kLoan ? Number(kLoan.value || 0) : 0;
+const budgetApproved = kBudg ? Number(kBudg.value || 0) : 0;
+
 
           const assignedPromoters = Array.from(selPromoters?.selectedOptions || []).map(o => o.value);
           const assignedCommercials = Array.from(selCommercials?.selectedOptions || []).map(o => o.value);
@@ -124,22 +128,22 @@
           if (!assignedPromoters.length) return alert('Debes seleccionar al menos un promotor.');
 
           const payload = {
-            name,
-            description,
-            status,
-            loanApproved,
-            budgetApproved,
-            unitsTotal,
-            assignedPromoters,
-            assignedCommercials
-          };
+  name,
+  description,
+  status,
+  loanApproved,
+  budgetApproved,
+  assignedPromoters,
+  assignedCommercials
+};
+
 
           await API.post('/api/projects', payload);
 
           closeModal();
-          ['pName','pDesc','kLoanApproved','kBudgetApproved','kUnitsTotal'].forEach(id => {
-            const el = document.getElementById(id); if (el) el.value = '';
-          });
+          ['pName','pDesc','kLoanApproved','kBudgetApproved'].forEach(id => {
+  const el = document.getElementById(id); if (el) el.value = '';
+});
           if (selPromoters) selPromoters.selectedIndex = -1;
           if (selCommercials) selCommercials.selectedIndex = -1;
           document.getElementById('pStatus').value = 'EN_CURSO';
