@@ -7,7 +7,6 @@ router.use((req, _res, next) => {
 });
 const mongoose = require('mongoose');
 
-const ProcessTemplate = require('../models/ProcessTemplate');
 const ProjectChecklist = require('../models/ProjectChecklist');
 
 // ===== Helpers generales =====
@@ -73,22 +72,29 @@ router.get('/process/debug-templates', async (req, res) => {
 
 // GET /api/process/templates/active
 router.get('/process/templates/active', async (req, res) => {
-  const tpl = await ProcessTemplate.findOne({ active: true }).lean();
+  const col = mongoose.connection.db.collection('processTemplates');
+  const tpl = await col.findOne({ active: true });
   if (!tpl) return res.status(404).json({ error: 'No hay plantilla activa' });
   res.json(tpl);
 });
 
+
 // (Opcional admin) activar plantilla por versión
 router.post('/process/templates/:version/activate', async (req, res) => {
   const { version } = req.params;
-  await ProcessTemplate.updateMany({}, { $set: { active: false } });
-  const tpl = await ProcessTemplate.findOneAndUpdate(
+  const col = mongoose.connection.db.collection('processTemplates');
+
+  await col.updateMany({}, { $set: { active: false } });
+  const r = await col.findOneAndUpdate(
     { version: Number(version) },
     { $set: { active: true } },
-    { new: true }
+    { returnDocument: 'after' } // driver nativo
   );
+
+  const tpl = r && (r.value || r);
   if (!tpl) return res.status(404).json({ error: 'Versión no encontrada' });
-  res.json({ ok: true, template: tpl });
+
+  res.json({ ok: true, template: { _id: tpl._id, version: tpl.version, active: tpl.active } });
 });
 
 /* =========================================================================
@@ -97,7 +103,7 @@ router.post('/process/templates/:version/activate', async (req, res) => {
 
 // POST /api/projects/:projectId/process/apply-template?version=1
 // POST /api/projects/:projectId/process/apply-template?version=1
-router.post('/:projectId/process/apply-template', async (req, res) => {
+router.post('/projects/:projectId/process/apply-template', async (req, res) => {
   const { projectId } = req.params;
   const version = req.query.version ? Number(req.query.version) : null;
 
@@ -108,17 +114,29 @@ router.post('/:projectId/process/apply-template', async (req, res) => {
   const projectIdObj = new mongoose.Types.ObjectId(projectId);
 
   // ✅ 2) Cargar plantilla
-  const tpl = version
-    ? await ProcessTemplate.findOne({ version }).lean()
-    : await ProcessTemplate.findOne({ active: true }).lean();
+  // ✅ Cargar plantilla SIN depender del Model (evita líos de collection/model)
+const col = mongoose.connection.db.collection('processTemplates');
 
-  if (!tpl) return res.status(404).json({ error: 'Plantilla no disponible' });
+const tpl = version
+  ? await col.findOne({ version: Number(version) })
+  : await col.findOne({ active: true });
 
-  // ✅ 3) Evitar duplicados (IMPORTANTE: usa ObjectId)
-  const existing = await ProjectChecklist
-    .find({ projectId: projectIdObj })
-    .select('templateKey')
-    .lean();
+if (!tpl) {
+  const dbg = {
+    db: mongoose.connection.db.databaseName,
+    col: 'processTemplates',
+    count: await col.countDocuments({}),
+    activeCount: await col.countDocuments({ active: true }),
+    want: version ? { version: Number(version) } : { active: true }
+  };
+  return res.status(404).json({ error: 'Plantilla no disponible', dbg });
+}
+
+
+
+const existing = await ProjectChecklist
+  .find({ projectId: projectIdObj }, { templateKey: 1, title: 1 }).lean();
+
 
   const existingKeys = new Set(existing.map(e => e.templateKey).filter(Boolean));
 
@@ -183,6 +201,10 @@ router.get('/projects/:projectId/checklists', async (req, res) => {
 // acepta roleOwner y visibleToRoles; mantiene "role" legacy para compat
 router.post('/projects/:projectId/checklists', async (req, res) => {
   const { projectId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+    return res.status(400).json({ error: 'projectId inválido' });
+  }
+  const projectIdObj = new mongoose.Types.ObjectId(projectId);
   const {
     title,
     phase,
@@ -201,8 +223,8 @@ router.post('/projects/:projectId/checklists', async (req, res) => {
         ? visibleToRoles.split(',').map(s => norm(s.trim()))
         : []);
 
-  const doc = await ProjectChecklist.create({
-    projectId,
+    const doc = await ProjectChecklist.create({
+    projectId: projectIdObj,
     title,
     phase,
     role, // legacy (solo informativo)
