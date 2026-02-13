@@ -57,6 +57,16 @@ function buildChecklistVisibilityQuery(req, base = {}) {
   return { ...base, _id: { $exists: false } };
 }
 
+// DEBUG SOLO PARA TI (borralo luego)
+router.get('/process/debug-templates', async (req, res) => {
+  const dbName = mongoose.connection?.db?.databaseName;
+  const col = mongoose.connection?.db?.collection('processTemplates');
+  const count = col ? await col.countDocuments({}) : -1;
+  const activeCount = col ? await col.countDocuments({ active: true }) : -1;
+  const active = col ? await col.findOne({ active: true }, { projection: { version: 1, active: 1 } }) : null;
+  res.json({ ok: true, dbName, count, activeCount, active });
+});
+
 /* =========================================================================
    PLANTILLAS
    ========================================================================= */
