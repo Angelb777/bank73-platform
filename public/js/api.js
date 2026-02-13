@@ -25,7 +25,7 @@ const API = (() => {
    * - silent=true: no lanza alert ni throw, devuelve { ok:false, error }
    */
   async function request(path, { method='GET', headers={}, body=null, isForm=false, silent=false } = {}) {
-    const h = { 'X-Tenant': TENANT, ...headers };
+    const h = { 'x-tenant': TENANT, ...headers };        
     const token = getToken();
     if (token) h['Authorization'] = 'Bearer ' + token;
     if (!isForm) h['Content-Type'] = 'application/json';

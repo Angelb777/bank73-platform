@@ -96,18 +96,30 @@ router.post('/process/templates/:version/activate', async (req, res) => {
    ========================================================================= */
 
 // POST /api/projects/:projectId/process/apply-template?version=1
+// POST /api/projects/:projectId/process/apply-template?version=1
 router.post('/:projectId/process/apply-template', async (req, res) => {
   const { projectId } = req.params;
   const version = req.query.version ? Number(req.query.version) : null;
 
+  // ✅ 1) Validar ObjectId
+  if (!mongoose.Types.ObjectId.isValid(projectId)) {
+    return res.status(400).json({ error: 'projectId inválido' });
+  }
+  const projectIdObj = new mongoose.Types.ObjectId(projectId);
+
+  // ✅ 2) Cargar plantilla
   const tpl = version
-    ? await ProcessTemplate.findOne({ version })
-    : await ProcessTemplate.findOne({ active: true });
+    ? await ProcessTemplate.findOne({ version }).lean()
+    : await ProcessTemplate.findOne({ active: true }).lean();
 
   if (!tpl) return res.status(404).json({ error: 'Plantilla no disponible' });
 
-  // Evitar duplicados: consulta los que ya existan por templateKey
-  const existing = await ProjectChecklist.find({ projectId }).select('templateKey').lean();
+  // ✅ 3) Evitar duplicados (IMPORTANTE: usa ObjectId)
+  const existing = await ProjectChecklist
+    .find({ projectId: projectIdObj })
+    .select('templateKey')
+    .lean();
+
   const existingKeys = new Set(existing.map(e => e.templateKey).filter(Boolean));
 
   const toInsert = [];
@@ -119,27 +131,23 @@ router.post('/:projectId/process/apply-template', async (req, res) => {
       ? step.visibleToRoles.map(r => norm(r))
       : [];
 
-    const doc = {
-      projectId,
+    toInsert.push({
+      projectId: projectIdObj,               // ✅ ObjectId real
       templateKey: step.key,
       title: step.title,
       phase: step.phase,
       level: step.level,
       orderInLevel: step.orderInLevel || 0,
-      // legacy (no usado ya para permisos, se conserva si tu front lo muestra)
       role: step.role,
-      // nuevos campos de ACL
       roleOwner,
       visibleToRoles,
-
       prerequisitesKeys: step.prerequisites || [],
       status: 'PENDIENTE',
       createdBy: userName(req),
       subtasks: (step.type === 'GROUP' && Array.isArray(step.subtasksTemplate))
         ? step.subtasksTemplate.map(st => ({ title: st.title }))
         : []
-    };
-    toInsert.push(doc);
+    });
   }
 
   if (toInsert.length) await ProjectChecklist.insertMany(toInsert);
@@ -153,7 +161,14 @@ router.post('/:projectId/process/apply-template', async (req, res) => {
 // GET /api/projects/:projectId/checklists
 router.get('/projects/:projectId/checklists', async (req, res) => {
   const { projectId } = req.params;
-  const base = { projectId };
+
+  if (!mongoose.Types.ObjectId.isValid(projectId)) {
+    return res.status(400).json({ error: 'projectId inválido' });
+  }
+  const projectIdObj = new mongoose.Types.ObjectId(projectId);
+
+  const base = { projectId: projectIdObj };
+
   const q = buildChecklistVisibilityQuery(req, base);
 
   const list = await ProjectChecklist
