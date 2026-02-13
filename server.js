@@ -95,7 +95,10 @@ if (!MONGO_URI) {
 
 mongoose.set('strictQuery', true);
 mongoose.connect(MONGO_URI, {})
-  .then(() => console.log('[Mongo] Conectado'))
+  .then(() => {
+    console.log('[Mongo] Conectado');
+    console.log('[Mongo] DB NAME =>', mongoose.connection.db.databaseName);
+  })
   .catch((err) => {
     console.error('[Mongo] Error de conexión:', err.message);
   });

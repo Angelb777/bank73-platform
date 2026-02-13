@@ -73,15 +73,18 @@ async function seedTemplate(jsonPath) {
   if (!fs.existsSync(jsonPath)) throw new Error('No se encontró data/process_template.v1.json');
   const json = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
 
-  // eliminamos plantillas previas con la misma versión
-  await ProcessTemplate.deleteMany({ version: json.version });
+  // ✅ fuerza que quede activa siempre
+  json.active = true;
 
-  // insertamos desde cero (sin filtro)
+  // elimina misma versión y crea
+  await ProcessTemplate.deleteMany({ version: json.version });
   const tpl = await ProcessTemplate.create(json);
 
-  if (json.active) {
-    await ProcessTemplate.updateMany({ version: { $ne: json.version } }, { $set: { active: false } });
-  }
+  // ✅ deja SOLO esta activa
+  await ProcessTemplate.updateMany(
+    { _id: { $ne: tpl._id } },
+    { $set: { active: false } }
+  );
 
   return tpl;
 }
@@ -161,7 +164,7 @@ async function applyTemplateToProject(projectId, template) {
     await mongoose.connect(MONGO_URI, {});
     console.log('[Mongo] Conectado');
 
-    const jsonPath = path.resolve(process.cwd(), 'data/process_template.v1.json');
+    const jsonPath = path.resolve(__dirname, '../data/process_template.v1.json');
     console.log('[DEBUG] Leyendo plantilla desde:', jsonPath);
 
     const tpl = await seedTemplate(jsonPath);
