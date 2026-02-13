@@ -9,6 +9,11 @@ const { requireRole, requireProjectAccess } = require('../middleware/rbac');
 
 const router = express.Router();
 
+router.use((req, _res, next) => {
+  console.log('[TRACE permits.js]', req.method, req.originalUrl);
+  next();
+});
+
 /**
  * Copia req.params.projectId -> req.params.id para middlewares
  * que esperan "id" (p. ej. requireProjectAccess).

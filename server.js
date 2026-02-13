@@ -172,6 +172,8 @@ app.use('/api', ...guard, financeRoutes);
 // Admin
 app.use('/api/admin', ...guard, adminRoutes);
 
+console.log('[MOUNT] /api/permits routes mounted ✅');
+
 // TRACE permits
 app.use('/api/permits', (req, _res, next) => {
   console.log('[TRACE] /api/permits >>>', req.method, req.originalUrl);
@@ -263,7 +265,11 @@ app.use((err, req, res, next) => {
 });
 
 // 404 FINAL (después de rutas + error handlers)
-app.use((req, res) => res.status(404).send('Not Found'));
+app.use((req, res) => {
+  console.log('[404 FINAL]', req.method, req.originalUrl);
+  res.status(404).send('Not Found');
+});
+
 
 /* =========================================================================
    Listen
