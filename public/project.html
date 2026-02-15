@@ -399,117 +399,173 @@
     </div>
 
     <div class="tabpane" id="tab-finanzas">
-  <h2>Finanzas del Proyecto</h2>
 
+  <!-- HEADER -->
+  <div class="row between" style="align-items:center;">
+    <h2 style="margin:0;">Finanzas del Proyecto</h2>
+    <div class="row gap end">
+      <a class="btn" id="exportXlsx" href="#">Exportar Excel</a>
+      <a class="btn" id="exportPdf"  href="#">Exportar PDF</a>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       KPIs (ARRIBA DEL TODO)
+       ========================================================= -->
+  <div style="margin-top:20px;">
     <h3>KPIs del banco</h3>
 
-  <div class="grid-2" id="financeProjectKpis">
-    <div class="card">
-      <div class="label">Loan aprobado</div>
-      <input id="finLoanApproved" class="input" type="number" min="0" step="1" placeholder="0" />
-      <div class="small muted">Monto total aprobado por el banco.</div>
+    <div class="grid-2" id="financeProjectKpis">
+      <div class="card">
+        <div class="label">Loan aprobado</div>
+        <input id="finLoanApproved" class="input" type="number" min="0" step="1" placeholder="0" />
+        <div class="small muted">Monto total aprobado por el banco.</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Desembolsado</div>
+        <input id="finLoanDisbursed" class="input" type="number" min="0" step="1" placeholder="0" />
+        <div class="small muted">Monto ya desembolsado.</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Budget aprobado</div>
+        <input id="finBudgetApproved" class="input" type="number" min="0" step="1" placeholder="0" />
+        <div class="small muted">Presupuesto total aprobado.</div>
+      </div>
     </div>
 
-    <div class="card">
-      <div class="label">Desembolsado</div>
-      <input id="finLoanDisbursed" class="input" type="number" min="0" step="1" placeholder="0" />
-      <div class="small muted">Monto ya desembolsado.</div>
-    </div>
-
-    <div class="card">
-      <div class="label">Budget aprobado</div>
-      <input id="finBudgetApproved" class="input" type="number" min="0" step="1" placeholder="0" />
-      <div class="small muted">Presupuesto total aprobado.</div>
-    </div>
-  </div>
-
-  <div class="row end" style="margin:10px 0 18px;">
-    <button class="btn primary" id="saveFinanceKpisBtn" type="button">Guardar KPIs</button>
-  </div>
-
-  <div class="row gap">
-    <div class="card kpi">
-      <div class="label">% Ejecución (real vs plan)</div>
-      <div class="value" id="kpiExec">—</div>
-    </div>
-    <div class="card kpi">
-      <div class="label">Intereses acumulados</div>
-      <div class="value" id="kpiIntereses">—</div>
-    </div>
-    <div class="card kpi">
-      <div class="label">Preventas acumuladas</div>
-      <div class="value" id="kpiPreventas">—</div>
+    <div class="row end" style="margin:10px 0 22px;">
+      <button class="btn primary" id="saveFinanceKpisBtn" type="button">
+        Guardar KPIs
+      </button>
     </div>
   </div>
-
-  <div id="financeAlerts" class="alert-list"></div>
-
-  <h3>Plan vs Real por fase</h3>
-<div class="card">
-  <div class="label">Comparación por fase (no acumulado)</div>
-  <canvas id="phaseChart" height="120"></canvas>
-</div>
-
-  <h3>Fases financieras</h3>
-  <div class="row end">
-    <button class="btn" id="addPhaseBtn">+ Nueva fase</button>
-  </div>
-  <div id="phasesList" class="accordion"></div>
-
-  <h3>Ejecución real acumulada</h3>
-  <div class="grid-2">
-    <div class="card">
-      <div class="label">Usos acumulados</div>
-      <table class="table" id="realUsesTable">
-        <thead><tr><th>Concepto</th><th class="right">Monto</th></tr></thead>
-        <tbody></tbody>
-        <tfoot><tr><td>Total</td><td class="right" id="realUsesTotal">0</td></tr></tfoot>
-      </table>
-    </div>
-    <div class="card">
-      <div class="label">Fuentes acumuladas</div>
-      <table class="table" id="realSourcesTable">
-        <thead><tr><th>Concepto</th><th class="right">Monto</th></tr></thead>
-        <tbody></tbody>
-        <tfoot><tr><td>Total</td><td class="right" id="realSourcesTotal">0</td></tr></tfoot>
-      </table>
-    </div>
+  
+  <!-- =========================================================
+       1) FASES PLAN (Estimación)
+       ========================================================= -->
+  <div class="row between" style="margin-top:14px; align-items:center;">
+    <h3 style="margin:0;">Fases del PLAN (estimación)</h3>
+    <button class="btn" id="addPhasePlanBtn" type="button">+ Nueva fase (PLAN)</button>
   </div>
 
-  <h3>Resumen acumulado (Plan por fases vs Real)</h3>
-<div class="grid-2">
-  <div class="card">
-    <div class="label">Plan acumulado por fases</div>
+  <div class="small muted" style="margin:6px 0 12px;">
+    Define el presupuesto por fases. Aquí editas <b>PLAN — Usos</b> y <b>PLAN — Fuentes</b>.
+  </div>
+
+  <!-- Contenedor tarjetas PLAN -->
+  <div id="phasesPlanList" class="grid-2"></div>
+
+  <!-- =========================================================
+       2) FASES REAL (Ejecución)
+       ========================================================= -->
+  <div class="row between" style="margin-top:22px; align-items:center;">
+    <h3 style="margin:0;">Fases REAL (ejecución)</h3>
+    <button class="btn" id="addPhaseRealBtn" type="button">+ Iniciar fase (REAL)</button>
+  </div>
+
+  <div class="small muted" style="margin:6px 0 12px;">
+    Registra la ejecución real conforme avanza el proyecto. Aquí editas <b>REAL — Usos</b> y <b>REAL — Fuentes</b>.
+  </div>
+
+  <!-- Contenedor tarjetas REAL -->
+  <div id="phasesRealList" class="grid-2"></div>
+
+  <!-- (Fallback / compat) Mantengo tu contenedor original por si tu JS lo usa todavía -->
+  <div id="phasesList" class="accordion" style="display:none;"></div>
+
+  <!-- =========================================================
+       3) ALERTAS + KPIs (resumen rápido)
+       ========================================================= -->
+  <div style="margin-top:26px;">
+    <h3>Alertas</h3>
+    <div id="financeAlerts" class="alert-list"></div>
+  </div>
+
     <div class="row gap">
-      <div class="kpi">
-        <div class="label">Usos plan</div>
-        <div class="value" id="accPlanUses">0</div>
+      <div class="card kpi">
+        <div class="label">% Ejecución (real vs plan)</div>
+        <div class="value" id="kpiExec">—</div>
       </div>
-      <div class="kpi">
-        <div class="label">Fuentes plan</div>
-        <div class="value" id="accPlanSources">0</div>
+      <div class="card kpi">
+        <div class="label">Intereses acumulados</div>
+        <div class="value" id="kpiIntereses">—</div>
+      </div>
+      <div class="card kpi">
+        <div class="label">Preventas acumuladas</div>
+        <div class="value" id="kpiPreventas">—</div>
       </div>
     </div>
   </div>
 
-  <div class="card">
-    <div class="label">Real acumulado (sum de fases)</div>
-    <div class="row gap">
-      <div class="kpi">
-        <div class="label">Usos real</div>
-        <div class="value" id="accRealUses">0</div>
+  <!-- =========================================================
+       4) GRÁFICO (Plan vs Real por fase)
+       ========================================================= -->
+  <div style="margin-top:22px;">
+    <h3>Plan vs Real por fase</h3>
+    <div class="card">
+      <div class="label">Comparación por fase (no acumulado)</div>
+      <canvas id="phaseChart" height="120"></canvas>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       5) ACUMULADOS (REAL) + RESUMEN ACUMULADO
+       ========================================================= -->
+  <div style="margin-top:22px;">
+    <h3>Ejecución real acumulada</h3>
+    <div class="grid-2">
+      <div class="card">
+        <div class="label">Usos acumulados</div>
+        <table class="table" id="realUsesTable">
+          <thead><tr><th>Concepto</th><th class="right">Monto</th></tr></thead>
+          <tbody></tbody>
+          <tfoot><tr><td>Total</td><td class="right" id="realUsesTotal">0</td></tr></tfoot>
+        </table>
       </div>
-      <div class="kpi">
-        <div class="label">Fuentes real</div>
-        <div class="value" id="accRealSources">0</div>
+      <div class="card">
+        <div class="label">Fuentes acumuladas</div>
+        <table class="table" id="realSourcesTable">
+          <thead><tr><th>Concepto</th><th class="right">Monto</th></tr></thead>
+          <tbody></tbody>
+          <tfoot><tr><td>Total</td><td class="right" id="realSourcesTotal">0</td></tr></tfoot>
+        </table>
       </div>
     </div>
   </div>
-</div>
 
-  <div class="row gap end">
-    <a class="btn" id="exportXlsx" href="#">Exportar Excel</a>
-    <a class="btn" id="exportPdf"  href="#">Exportar PDF</a>
+  <div style="margin-top:22px;">
+    <h3>Resumen acumulado (Plan por fases vs Real)</h3>
+    <div class="grid-2">
+      <div class="card">
+        <div class="label">Plan acumulado por fases</div>
+        <div class="row gap">
+          <div class="kpi">
+            <div class="label">Usos plan</div>
+            <div class="value" id="accPlanUses">0</div>
+          </div>
+          <div class="kpi">
+            <div class="label">Fuentes plan</div>
+            <div class="value" id="accPlanSources">0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="label">Real acumulado (sum de fases)</div>
+        <div class="row gap">
+          <div class="kpi">
+            <div class="label">Usos real</div>
+            <div class="value" id="accRealUses">0</div>
+          </div>
+          <div class="kpi">
+            <div class="label">Fuentes real</div>
+            <div class="value" id="accRealSources">0</div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 

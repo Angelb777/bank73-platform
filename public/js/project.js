@@ -2800,6 +2800,38 @@ async function loadFinance() {
     FINANCE_KPIS = res.kpis;
     window.FINANCE_KPIS = FINANCE_KPIS;
 
+    // ✅ Guardamos FINANCE en window para el modal "Iniciar REAL" (dropdown de fases)
+    window.FINANCE = FINANCE;
+
+    // ================================
+    // ✅ Bind botones PLAN / REAL (solo 1 vez)
+    // ================================
+    const planBtn = document.getElementById('addPhasePlanBtn');
+    if (planBtn && !planBtn.dataset.bound) {
+      planBtn.addEventListener('click', () => {
+        openPhaseEditor(null, 'plan');
+      });
+      planBtn.dataset.bound = '1';
+    }
+
+    const realBtn = document.getElementById('addPhaseRealBtn');
+    if (realBtn && !realBtn.dataset.bound) {
+      realBtn.addEventListener('click', () => {
+        openPhaseEditor(null, 'real');
+      });
+      realBtn.dataset.bound = '1';
+    }
+
+    // (Legacy) si aún existe el botón antiguo, lo desactivamos para evitar confusión
+    const legacyBtn = document.getElementById('addPhaseBtn');
+    if (legacyBtn && !legacyBtn.dataset.bound) {
+      legacyBtn.addEventListener('click', () => {
+        // Por defecto, crear fase debe ser PLAN
+        openPhaseEditor(null, 'plan');
+      });
+      legacyBtn.dataset.bound = '1';
+    }
+
     // KPIs del proyecto (cabecera)
     if (res.project) fillFinanceKpiInputsFromProject(res.project);
     else {
@@ -3000,16 +3032,68 @@ function renderPhaseChart(phases, canvasId = 'phaseChart') {
 // Render: fases (cards) con PLAN vs REAL + desembolso
 // -------------------------
 function renderPhases(phases = []) {
-  const wrap = document.getElementById('phasesList');
-  if (!wrap) return;
+  const wrapPlan = document.getElementById('phasesPlanList');
+  const wrapReal = document.getElementById('phasesRealList');
 
-  wrap.innerHTML = '';
-  wrap.classList.add('fin-phases-grid');
+  // Fallback compat: si no existen los nuevos contenedores, usa el antiguo
+  const wrapLegacy = document.getElementById('phasesList');
+
+  if (!wrapPlan || !wrapReal) {
+    // Si aún no has pegado el HTML nuevo, no rompas nada:
+    if (!wrapLegacy) return;
+    wrapLegacy.innerHTML = '<div class="small muted">⚠️ Faltan contenedores #phasesPlanList y #phasesRealList en el HTML.</div>';
+    return;
+  }
+
+  wrapPlan.innerHTML = '';
+  wrapReal.innerHTML = '';
 
   const dateFmt = (d) => {
     if (!d) return '—';
     const dt = (d instanceof Date) ? d : new Date(d);
     return isNaN(dt.getTime()) ? '—' : dt.toISOString().slice(0,10);
+  };
+
+  const makeCardShell = ({ variant, ph, titleRight = '' }) => {
+    const card = document.createElement('div');
+    card.className = 'card fin-phase-card';
+    card.dataset.variant = variant; // plan | real
+
+    const st = getPhaseStatus(ph);
+
+    // Badge: para REAL, si está solicitado, lo marcamos claro
+    const disbReq = !!ph?.disbRequested;
+    const disbBadge = disbReq
+      ? `<span class="fin-tag danger">Desembolso solicitado</span>`
+      : '';
+
+    // Tono status solo lo muestro en REAL (para no ensuciar PLAN)
+    const statusBadge = (variant === 'real')
+      ? `<span class="fin-tag ${st.tone}">${st.label}</span>`
+      : `<span class="fin-tag neutral">Estimación</span>`;
+
+    card.innerHTML = `
+      <div class="fin-phase-head">
+        <div class="fin-phase-left">
+          <div class="fin-phase-name">${ph?.name || 'Fase'}</div>
+          <div class="fin-phase-dates">${dateFmt(ph?.startDate)} → ${dateFmt(ph?.endDate)}</div>
+          <div class="fin-phase-badges">
+            ${statusBadge}
+            ${variant === 'real' ? disbBadge : ''}
+          </div>
+        </div>
+
+        <div class="fin-phase-actions">
+          <button class="btn btn-ghost btn-xs" data-act="edit">${variant === 'plan' ? 'Editar plan' : 'Editar real'}</button>
+          <button class="btn btn-ghost btn-xs btn-danger" data-act="del">Eliminar</button>
+        </div>
+      </div>
+
+      <div class="fin-phase-body">
+        ${titleRight}
+      </div>
+    `;
+    return card;
   };
 
   (phases || []).forEach(ph => {
@@ -3019,78 +3103,33 @@ function renderPhases(phases = []) {
     const realSrcsTotal = sumItems(ph?.sources);
 
     const disbExpected = Number(ph?.disbExpected || 0);
-    const disbActual = Number(ph?.disbActual || 0);
+    const disbActual   = Number(ph?.disbActual || 0);
 
-    const st = getPhaseStatus(ph);
-
-    const card = document.createElement('div');
-    card.className = 'fin-card';
-
-    const header = document.createElement('div');
-    header.className = 'fin-phase-header';
-    header.innerHTML = `
-      <div class="fin-phase-title">
-        <div class="name">${ph?.name || 'Fase'}</div>
-        <div class="dates">${dateFmt(ph?.startDate)} → ${dateFmt(ph?.endDate)}</div>
-        <div class="fin-phase-badges">
-          <span class="fin-tag ${st.tone}">${st.label}</span>
+    // -------------------------
+    // CARD PLAN (estimación)
+    // -------------------------
+    const planBody = `
+      <div class="fin-kpi-grid">
+        <div class="fin-kpi">
+          <div class="label">Usos plan</div>
+          <div class="value">${fmt(planUsesTotal)}</div>
+        </div>
+        <div class="fin-kpi">
+          <div class="label">Fuentes plan</div>
+          <div class="value">${fmt(planSrcsTotal)}</div>
         </div>
       </div>
-      <div class="fin-actions">
-        <button class="btn btn-ghost btn-xs" data-act="edit">Editar</button>
-        <button class="btn btn-ghost btn-xs btn-danger" data-act="del">Eliminar</button>
+      <div class="small muted" style="margin-top:8px;">
+        Edita el plan de esta fase (usos/fuentes estimados).
       </div>
     `;
 
-    const body = document.createElement('div');
-    body.className = 'fin-phase-body';
-    body.innerHTML = `
-      <div class="fin-cols">
-        <section class="fin-section">
-          <h5>PLAN (estimación) — fase</h5>
-          <div class="fin-mini">
-            <div>Usos plan: <b>${fmt(planUsesTotal)}</b></div>
-            <div>Fuentes plan: <b>${fmt(planSrcsTotal)}</b></div>
-          </div>
-        </section>
+    const planCard = makeCardShell({ variant: 'plan', ph, titleRight: planBody });
 
-        <section class="fin-section">
-          <h5>REAL (ejecución) — fase</h5>
-          <div class="fin-mini">
-            <div>Usos real: <b>${fmt(realUsesTotal)}</b></div>
-            <div>Fuentes real: <b>${fmt(realSrcsTotal)}</b></div>
-          </div>
-        </section>
-      </div>
+    // Actions PLAN
+    planCard.querySelector('[data-act="edit"]')?.addEventListener('click', () => openPhaseEditor(ph, 'plan'));
 
-      <div class="fin-cols" style="margin-top:10px;">
-        <section class="fin-section">
-          <h5>Desembolso (banco)</h5>
-          <div class="fin-mini">
-            <div>Esperado: <b>${fmt(disbExpected)}</b></div>
-            <div>Real: <b>${fmt(disbActual)}</b></div>
-          </div>
-          <div class="row gap" style="margin-top:8px; align-items:center;">
-            <button class="btn btn-warning btn-xs" data-act="request">Solicitar desembolso</button>
-            <button class="btn btn-ghost btn-xs" data-act="clearRequest">Marcar como resuelto</button>
-          </div>
-        </section>
-
-        <section class="fin-section">
-          <h5>Detalle rápido</h5>
-          <div class="fin-mini">
-            <div>Intereses: <b>${fmt(ph?.interesesDevengados || 0)}</b></div>
-            <div>Aportes: <b>${fmt(ph?.aportesPropios || 0)}</b></div>
-            <div>Preventas: <b>${fmt(ph?.preventas || 0)}</b></div>
-          </div>
-        </section>
-      </div>
-    `;
-
-    // Actions
-    header.querySelector('[data-act="edit"]')?.addEventListener('click', () => openPhaseEditor(ph));
-
-    header.querySelector('[data-act="del"]')?.addEventListener('click', async () => {
+    planCard.querySelector('[data-act="del"]')?.addEventListener('click', async () => {
       if (!ph?._id) return alert('Fase inválida');
       if (!confirm('¿Eliminar fase?')) return;
       try {
@@ -3102,7 +3141,70 @@ function renderPhases(phases = []) {
       }
     });
 
-    body.querySelector('[data-act="request"]')?.addEventListener('click', async () => {
+    wrapPlan.appendChild(planCard);
+
+    // ✅ NO mostrar REAL si está vacío y aún no ha empezado
+const today = new Date();
+const startedByDate = ph?.startDate ? (new Date(ph.startDate) <= today) : false;
+const hasRealData =
+  (realUsesTotal > 0) ||
+  (realSrcsTotal > 0) ||
+  (disbExpected > 0) ||
+  (disbActual > 0) ||
+  !!ph?.disbRequested;
+
+if (!hasRealData && !startedByDate) {
+  // Solo mostramos PLAN, pero NO mostramos esta fase en la lista REAL
+  return;
+}
+
+    // -------------------------
+    // CARD REAL (ejecución)
+    // -------------------------
+    const realBody = `
+      <div class="fin-kpi-grid">
+        <div class="fin-kpi">
+          <div class="label">Usos real</div>
+          <div class="value">${fmt(realUsesTotal)}</div>
+        </div>
+        <div class="fin-kpi">
+          <div class="label">Fuentes real</div>
+          <div class="value">${fmt(realSrcsTotal)}</div>
+        </div>
+      </div>
+
+      <div class="fin-line" style="margin-top:10px;">
+        <div class="label">Desembolso (banco)</div>
+        <div class="row between" style="align-items:center;">
+          <div class="small">
+            Esperado: <b>${fmt(disbExpected)}</b> · Real: <b>${fmt(disbActual)}</b>
+          </div>
+          <div class="row gap">
+            <button class="btn btn-warning btn-xs" data-act="request">Solicitar</button>
+            <button class="btn btn-ghost btn-xs" data-act="clearRequest">Resuelto</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const realCard = makeCardShell({ variant: 'real', ph, titleRight: realBody });
+
+    // Actions REAL
+    realCard.querySelector('[data-act="edit"]')?.addEventListener('click', () => openPhaseEditor(ph, 'real'));
+
+    realCard.querySelector('[data-act="del"]')?.addEventListener('click', async () => {
+      if (!ph?._id) return alert('Fase inválida');
+      if (!confirm('¿Eliminar fase?')) return;
+      try {
+        await API.del(`/api/projects/${id}/finance/phases/${ph._id}`);
+        await loadFinance();
+      } catch (e) {
+        console.error(e);
+        alert('No se pudo eliminar la fase');
+      }
+    });
+
+    realCard.querySelector('[data-act="request"]')?.addEventListener('click', async () => {
       // Pedimos el monto esperado (si está a 0) o confirmamos solicitud
       const current = Number(ph?.disbExpected || 0);
       let expected = current;
@@ -3127,7 +3229,7 @@ function renderPhases(phases = []) {
       }
     });
 
-    body.querySelector('[data-act="clearRequest"]')?.addEventListener('click', async () => {
+    realCard.querySelector('[data-act="clearRequest"]')?.addEventListener('click', async () => {
       try {
         await API.put(`/api/projects/${id}/finance/phases/${ph._id}`, {
           disbRequested: false,
@@ -3140,62 +3242,74 @@ function renderPhases(phases = []) {
       }
     });
 
-    card.appendChild(header);
-    card.appendChild(body);
-    wrap.appendChild(card);
+    wrapReal.appendChild(realCard);
   });
+
+  // Mantén el legacy oculto vacío (por si tu CSS/JS lo toca)
+  if (wrapLegacy) wrapLegacy.innerHTML = '';
 }
+
 
 // -------------------------
 // Modal: crear/editar fase con 4 tablas:
 // PLAN usos/fuentes + REAL usos/fuentes + desembolso esperado/real
-// -------------------------
-function openPhaseEditor(ph = null) {
+// (SIMPLIFICADO: quitamos Intereses/Aportes/Preventas para evitar duplicidad)
+function openPhaseEditor(ph = null, focus = 'plan') {
   const isEdit = !!ph;
 
-  const phaseData = {
-    name: ph?.name || '',
-    startDate: ph ? new Date(ph.startDate).toISOString().slice(0,10) : '',
-    endDate:   ph ? new Date(ph.endDate).toISOString().slice(0,10)   : '',
+  // Necesario para "Iniciar REAL" sin crear fase nueva:
+  const allPhases = (window.FINANCE?.phases || []);
 
-    // PLAN
-    planUses: Array.isArray(ph?.planUses) ? ph.planUses.slice() : [],
-    planSources: Array.isArray(ph?.planSources) ? ph.planSources.slice() : [],
-
-    // REAL
-    uses: Array.isArray(ph?.uses) ? ph.uses.slice() : [],
-    sources: Array.isArray(ph?.sources) ? ph.sources.slice() : [],
-
-    // KPIs
-    interesesDevengados: Number(ph?.interesesDevengados || 0),
-    aportesPropios:      Number(ph?.aportesPropios || 0),
-    preventas:           Number(ph?.preventas || 0),
-    alertDaysBefore:     Number.isFinite(ph?.alertDaysBefore) ? ph.alertDaysBefore : 15,
-
-    // Desembolso
-    disbExpected: Number(ph?.disbExpected || 0),
-    disbActual:   Number(ph?.disbActual || 0),
-    disbRequested: !!ph?.disbRequested,
-  };
-
-  const tbl = (id, rows) => `
-    <table class="table" id="${id}">
+  const tbl = (tableId, rows) => `
+    <table class="table" id="${tableId}">
       <thead><tr><th>Partida</th><th class="right">Monto</th><th></th></tr></thead>
       <tbody>
-        ${rows.map(r => `
+        ${(rows || []).map(r => `
           <tr>
-            <td><input class="input" type="text" value="${r.name||''}" placeholder="Partida"/></td>
+            <td><input class="input" type="text" value="${(r.name||'').replace(/"/g,'&quot;')}" placeholder="Partida"/></td>
             <td class="right"><input class="input amount" type="number" value="${Number(r.amount||0)}"/></td>
             <td class="right"><button class="btn btn-ghost btn-xs js-del-row">✕</button></td>
           </tr>
         `).join('')}
       </tbody>
-      <tfoot><tr><td>Total</td><td class="right" id="${id}-total">0</td><td></td></tr></tfoot>
+      <tfoot><tr><td>Total</td><td class="right" id="${tableId}-total">0</td><td></td></tr></tfoot>
     </table>
-    <button class="btn btn-ghost btn-xs js-add-row" data-target="${id}">+ Añadir</button>
+    <button class="btn btn-ghost btn-xs js-add-row" data-target="${tableId}">+ Añadir</button>
   `;
 
-  openModal(isEdit ? 'Editar fase' : 'Nueva fase', `
+  // Datos base
+  const phaseData = {
+    name: ph?.name || '',
+    startDate: ph ? new Date(ph.startDate).toISOString().slice(0,10) : '',
+    endDate:   ph ? new Date(ph.endDate).toISOString().slice(0,10)   : '',
+
+    planUses: Array.isArray(ph?.planUses) ? ph.planUses.slice() : [],
+    planSources: Array.isArray(ph?.planSources) ? ph.planSources.slice() : [],
+
+    uses: Array.isArray(ph?.uses) ? ph.uses.slice() : [],
+    sources: Array.isArray(ph?.sources) ? ph.sources.slice() : [],
+
+    alertDaysBefore: Number.isFinite(ph?.alertDaysBefore) ? ph.alertDaysBefore : 15,
+
+    disbExpected: Number(ph?.disbExpected || 0),
+    disbActual:   Number(ph?.disbActual || 0),
+    disbRequested: !!ph?.disbRequested,
+    disbRequestedAt: ph?.disbRequestedAt || null,
+  };
+
+  // Título y botón
+  const title =
+    focus === 'plan'
+      ? (isEdit ? 'Editar fase (PLAN)' : 'Nueva fase (PLAN)')
+      : (isEdit ? 'Editar fase (REAL)' : 'Iniciar fase (REAL)');
+
+  const cta =
+    isEdit ? 'Guardar' : (focus === 'plan' ? 'Crear' : 'Guardar');
+
+  // =========================
+  // HTML del modal (SEPARADO)
+  // =========================
+  const htmlPlan = `
     <div class="grid-2">
       <div>
         <label>Nombre</label>
@@ -3212,40 +3326,7 @@ function openPhaseEditor(ph = null) {
       </div>
     </div>
 
-    <div class="grid-3" style="margin-top:8px;">
-      <div>
-        <label>Intereses devengados (fase)</label>
-        <input id="ph-int" type="number" class="input" value="${phaseData.interesesDevengados}"/>
-      </div>
-      <div>
-        <label>Aportes propios (fase)</label>
-        <input id="ph-aportes" type="number" class="input" value="${phaseData.aportesPropios}"/>
-      </div>
-      <div>
-        <label>Preventas (fase)</label>
-        <input id="ph-preventas" type="number" class="input" value="${phaseData.preventas}"/>
-      </div>
-    </div>
-
-    <div class="grid-3" style="margin-top:8px;">
-      <div>
-        <label>Desembolso esperado (banco)</label>
-        <input id="ph-disb-exp" type="number" class="input" value="${phaseData.disbExpected}"/>
-      </div>
-      <div>
-        <label>Desembolso real (banco)</label>
-        <input id="ph-disb-act" type="number" class="input" value="${phaseData.disbActual}"/>
-      </div>
-      <div>
-        <label>Solicitado</label>
-        <select id="ph-disb-req" class="input">
-          <option value="false" ${phaseData.disbRequested ? '' : 'selected'}>No</option>
-          <option value="true"  ${phaseData.disbRequested ? 'selected' : ''}>Sí</option>
-        </select>
-      </div>
-    </div>
-
-    <div style="margin-top:8px;">
+    <div style="margin-top:10px;">
       <label>Alertar X días antes del fin</label>
       <input id="ph-alert" type="number" class="input" value="${phaseData.alertDaysBefore}" min="0"/>
     </div>
@@ -3255,18 +3336,42 @@ function openPhaseEditor(ph = null) {
 
     <h4 style="margin-top:12px;">PLAN (estimación) — Fuentes</h4>
     ${tbl('ph-plan-sources', phaseData.planSources)}
+  `;
+
+  const htmlReal = `
+    ${(!isEdit) ? `
+      <div style="margin-bottom:10px;">
+        <label>Selecciona una fase del PLAN</label>
+        <select id="ph-pick-existing" class="input">
+          ${allPhases.map(p => `
+            <option value="${p._id}">
+              ${p?.name || 'Fase'} (${(p?.startDate||'').slice(0,10)} → ${(p?.endDate||'').slice(0,10)})
+            </option>
+          `).join('')}
+        </select>
+        <div class="small muted" style="margin-top:6px;">
+          Esto registra ejecución REAL para una fase ya estimada.
+        </div>
+      </div>
+    ` : ''}
+
+    <div style="margin-top:10px;">
+      <label>Alertar X días antes del fin</label>
+      <input id="ph-alert" type="number" class="input" value="${phaseData.alertDaysBefore}" min="0"/>
+    </div>
 
     <h4 style="margin-top:14px;">REAL (ejecución) — Usos</h4>
     ${tbl('ph-real-uses', phaseData.uses)}
 
     <h4 style="margin-top:12px;">REAL (ejecución) — Fuentes</h4>
     ${tbl('ph-real-sources', phaseData.sources)}
-  `, isEdit ? 'Guardar' : 'Crear', async () => {
+  `;
 
+  openModal(title, (focus === 'plan') ? htmlPlan : htmlReal, cta, async () => {
     const collect = (tableId) => {
       const tbody = document.querySelector(`#${tableId} tbody`);
       const rows = [];
-      tbody.querySelectorAll('tr').forEach(tr => {
+      tbody?.querySelectorAll('tr')?.forEach(tr => {
         const name = tr.querySelector('input[type="text"]')?.value?.trim();
         const amt  = Number(tr.querySelector('input.amount')?.value || 0);
         if (name) rows.push({ name, amount: amt });
@@ -3274,41 +3379,55 @@ function openPhaseEditor(ph = null) {
       return rows;
     };
 
-    const payload = {
-      name: document.getElementById('ph-name').value.trim() || 'Fase',
-      startDate: document.getElementById('ph-start').value,
-      endDate:   document.getElementById('ph-end').value,
-
-      // PLAN
-      planUses:    collect('ph-plan-uses'),
-      planSources: collect('ph-plan-sources'),
-
-      // REAL
-      uses:    collect('ph-real-uses'),
-      sources: collect('ph-real-sources'),
-
-      // KPIs
-      interesesDevengados: Number(document.getElementById('ph-int').value || 0),
-      aportesPropios:      Number(document.getElementById('ph-aportes').value || 0),
-      preventas:           Number(document.getElementById('ph-preventas').value || 0),
-      alertDaysBefore:     Number(document.getElementById('ph-alert').value || 15),
-
-      // Desembolso por fase
-      disbExpected: Number(document.getElementById('ph-disb-exp').value || 0),
-      disbActual:   Number(document.getElementById('ph-disb-act').value || 0),
-      disbRequested: document.getElementById('ph-disb-req').value === 'true',
-      disbRequestedAt: (document.getElementById('ph-disb-req').value === 'true')
-        ? (ph?.disbRequestedAt || new Date().toISOString())
-        : null
-    };
-
-    if (!payload.startDate || !payload.endDate) {
-      alert('Inicio y fin son obligatorios'); return;
-    }
-
+    // =========================
+    // GUARDADO — SEPARADO
+    // =========================
     try {
-      if (isEdit) await API.put(`/api/projects/${id}/finance/phases/${ph._id}`, payload);
-      else        await API.post(`/api/projects/${id}/finance/phases`, payload);
+      if (focus === 'plan') {
+        // Crear/editar PLAN
+        const payload = {
+          name: document.getElementById('ph-name').value.trim() || 'Fase',
+          startDate: document.getElementById('ph-start').value,
+          endDate:   document.getElementById('ph-end').value,
+          alertDaysBefore: Number(document.getElementById('ph-alert').value || 15),
+          planUses: collect('ph-plan-uses'),
+          planSources: collect('ph-plan-sources'),
+        };
+
+        if (!payload.startDate || !payload.endDate) {
+          alert('Inicio y fin son obligatorios');
+          return;
+        }
+
+        if (isEdit) {
+          // solo toca PLAN, no toca REAL
+          await API.put(`/api/projects/${id}/finance/phases/${ph._id}`, payload);
+        } else {
+          await API.post(`/api/projects/${id}/finance/phases`, payload);
+        }
+      }
+
+      if (focus === 'real') {
+        // Editar REAL / iniciar REAL
+        const targetId = isEdit
+          ? ph._id
+          : (document.getElementById('ph-pick-existing')?.value);
+
+        if (!targetId) {
+          alert('Selecciona una fase del PLAN');
+          return;
+        }
+
+        const payload = {
+  alertDaysBefore: Number(document.getElementById('ph-alert').value || 15),
+  uses: collect('ph-real-uses'),
+  sources: collect('ph-real-sources'),
+  // ✅ No tocamos desembolsos aquí (se gestionan desde la tarjeta con "Solicitar/Resuelto")
+};
+
+        // solo toca REAL, no toca PLAN
+        await API.put(`/api/projects/${id}/finance/phases/${targetId}`, payload);
+      }
 
       modalBackdrop.style.display = 'none';
       await loadFinance();
@@ -3318,9 +3437,12 @@ function openPhaseEditor(ph = null) {
     }
   });
 
-  // Totales en modal
+  // =========================
+  // Totales y tablas (solo las que existan)
+  // =========================
   const recalcTotal = (tableId) => {
     const tbody = document.querySelector(`#${tableId} tbody`);
+    if (!tbody) return;
     const total = [...tbody.querySelectorAll('input.amount')].reduce((a, inp) => a + Number(inp.value || 0), 0);
     const cell = document.getElementById(`${tableId}-total`);
     if (cell) cell.textContent = total.toLocaleString('es-ES');
@@ -3328,20 +3450,24 @@ function openPhaseEditor(ph = null) {
 
   const hookTable = (tableId) => {
     const box = modalBody;
+
     box.addEventListener('click', (ev) => {
       const btnAdd = ev.target.closest('.js-add-row');
       const btnDel = ev.target.closest('.js-del-row');
 
       if (btnAdd && btnAdd.dataset.target === tableId) {
         const tbody = document.querySelector(`#${tableId} tbody`);
+        if (!tbody) return;
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td><input class="input" type="text" placeholder="Partida"/></td>
           <td class="right"><input class="input amount" type="number" value="0"/></td>
-          <td class="right"><button class="btn btn-ghost btn-xs js-del-row">✕</button></td>`;
+          <td class="right"><button class="btn btn-ghost btn-xs js-del-row">✕</button></td>
+        `;
         tbody.appendChild(tr);
         recalcTotal(tableId);
       }
+
       if (btnDel && btnDel.closest(`#${tableId}`)) {
         btnDel.closest('tr')?.remove();
         recalcTotal(tableId);
@@ -3355,11 +3481,13 @@ function openPhaseEditor(ph = null) {
     recalcTotal(tableId);
   };
 
+  // Solo engancha las que existan en el modal actual
   hookTable('ph-plan-uses');
   hookTable('ph-plan-sources');
   hookTable('ph-real-uses');
   hookTable('ph-real-sources');
 }
+
 
 // ====== Comercial ======
 (function initComercial() {

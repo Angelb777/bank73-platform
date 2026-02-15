@@ -938,3 +938,277 @@ a.btn, .btn { text-decoration: none; }
 .fin-kpi .dot{ width:8px; height:8px; border-radius:50%; background: var(--primary,#5aa2ff); }
 .fin-kpi.warn .dot{ background: var(--warn,#f59e0b); }
 .fin-kpi.ok .dot{ background: var(--ok,#10b981); }
+
+
+/* =========================================================
+   FINANZAS — Tarjetas Plan vs Real (mejorado)
+   Sustituye el bloque anterior por este
+   ========================================================= */
+
+/* Variables “tema” para finanzas (no rompe nada si no existen) */
+:root{
+  --fin-plan: 255, 159, 28;   /* naranja */
+  --fin-real: 56, 189, 248;   /* azul cielo */
+  --fin-card: var(--card-bg, #141a2b);
+  --fin-border: var(--card-border, rgba(255,255,255,.08));
+  --fin-text: rgba(255,255,255,.92);
+  --fin-muted: rgba(255,255,255,.72);
+}
+
+/* Card base */
+.fin-phase-card{
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--fin-card);
+  border: 1px solid var(--fin-border);
+  padding: 14px;
+  box-shadow: 0 14px 36px rgba(0,0,0,.32);
+  transform: translateZ(0);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+
+/* Hover elegante */
+.fin-phase-card:hover{
+  transform: translateY(-2px);
+  box-shadow: 0 18px 44px rgba(0,0,0,.40);
+}
+
+/* Barra lateral de color (PLAN/REAL) */
+.fin-phase-card::before{
+  content:"";
+  position:absolute;
+  left:0;
+  top:0;
+  bottom:0;
+  width: 6px;
+  background: rgba(255,255,255,.10);
+}
+
+/* Brillo suave arriba (como “glass”) */
+.fin-phase-card::after{
+  content:"";
+  position:absolute;
+  left:-20%;
+  right:-20%;
+  top:-60%;
+  height: 160px;
+  background: radial-gradient(closest-side, rgba(255,255,255,.12), transparent 70%);
+  opacity: .45;
+  pointer-events:none;
+}
+
+/* Variantes */
+.fin-phase-card[data-variant="plan"]{
+  border-color: rgba(var(--fin-plan), .30);
+  box-shadow: 0 14px 36px rgba(0,0,0,.32), 0 0 0 1px rgba(var(--fin-plan), .10) inset;
+}
+.fin-phase-card[data-variant="plan"]::before{
+  background: linear-gradient(180deg, rgba(var(--fin-plan), .95), rgba(var(--fin-plan), .25));
+}
+
+.fin-phase-card[data-variant="real"]{
+  border-color: rgba(var(--fin-real), .30);
+  box-shadow: 0 14px 36px rgba(0,0,0,.32), 0 0 0 1px rgba(var(--fin-real), .10) inset;
+}
+.fin-phase-card[data-variant="real"]::before{
+  background: linear-gradient(180deg, rgba(var(--fin-real), .95), rgba(var(--fin-real), .25));
+}
+
+/* Header con “banda” sutil */
+.fin-phase-head{
+  position: relative;
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 10px 12px 12px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.07);
+}
+
+/* Degradado del header según variante */
+.fin-phase-card[data-variant="plan"] .fin-phase-head{
+  background:
+    linear-gradient(90deg, rgba(var(--fin-plan), .12), rgba(255,255,255,.03) 55%),
+    rgba(255,255,255,.03);
+  border-color: rgba(var(--fin-plan), .18);
+}
+
+.fin-phase-card[data-variant="real"] .fin-phase-head{
+  background:
+    linear-gradient(90deg, rgba(var(--fin-real), .12), rgba(255,255,255,.03) 55%),
+    rgba(255,255,255,.03);
+  border-color: rgba(var(--fin-real), .18);
+}
+
+.fin-phase-left .fin-phase-name{
+  font-size: 1.20rem;
+  font-weight: 900;
+  letter-spacing: .2px;
+  line-height: 1.1;
+  color: var(--fin-text);
+}
+
+.fin-phase-left .fin-phase-dates{
+  opacity: .9;
+  font-size: .92rem;
+  margin-top: 4px;
+  color: var(--fin-muted);
+}
+
+/* Badges más “premium” */
+.fin-phase-badges{
+  display:flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.fin-tag{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 800;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.92);
+  box-shadow: 0 6px 14px rgba(0,0,0,.18);
+}
+
+/* Píldora con punto de color según variante */
+.fin-tag::before{
+  content:"";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.35);
+  box-shadow: 0 0 0 3px rgba(255,255,255,.06);
+}
+
+.fin-phase-card[data-variant="plan"] .fin-tag::before{ background: rgba(var(--fin-plan), .95); }
+.fin-phase-card[data-variant="real"] .fin-tag::before{ background: rgba(var(--fin-real), .95); }
+
+.fin-tag.neutral{
+  background: rgba(255,255,255,.06);
+}
+
+.fin-tag.danger{
+  background: rgba(239, 68, 68, .14);
+  border-color: rgba(239, 68, 68, .30);
+}
+.fin-tag.danger::before{ background: rgba(239, 68, 68, .95); }
+
+/* Acciones (botones) */
+.fin-phase-actions{
+  display:flex;
+  gap: 8px;
+  align-items:center;
+}
+
+/* Body */
+.fin-phase-body{
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+
+/* KPIs dentro de la card */
+.fin-kpi-grid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.fin-kpi{
+  background: rgba(255,255,255,.045);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 14px;
+  padding: 10px 12px;
+  transition: border-color .15s ease, transform .15s ease;
+}
+
+.fin-phase-card:hover .fin-kpi{
+  border-color: rgba(255,255,255,.11);
+}
+
+.fin-kpi .label{
+  font-size: .82rem;
+  opacity: .9;
+  color: var(--fin-muted);
+}
+
+.fin-kpi .value{
+  margin-top: 4px;
+  font-size: 1.28rem;
+  font-weight: 950;
+  color: var(--fin-text);
+}
+
+.fin-line .label{
+  font-weight: 900;
+  margin-bottom: 6px;
+}
+
+/* Botones compactos (si no existen ya) */
+.btn.btn-xs{
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: .82rem;
+}
+
+/* Responsive */
+@media (max-width: 900px){
+  .fin-kpi-grid{ grid-template-columns: 1fr; }
+  .fin-phase-head{ padding: 10px; }
+}
+
+/* =========================================================
+   FINANZAS — Grid horizontal (3 por fila)
+   ========================================================= */
+
+/* Contenedores de listas (PLAN / REAL) */
+#phasesPlanList,
+#phasesRealList{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+  margin-top: 12px;
+}
+
+/* Responsive */
+@media (max-width: 1100px){
+  #phasesPlanList,
+  #phasesRealList{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px){
+  #phasesPlanList,
+  #phasesRealList{ grid-template-columns: 1fr; }
+}
+
+/* La card dentro del grid: que no se estire raro */
+.fin-phase-card{
+  height: auto;
+  min-height: 170px;
+}
+
+/* Compactar el body un pelín para que quepan mejor */
+.fin-phase-body{
+  padding-top: 10px;
+}
+
+/* Ajuste: KPIs en columna en cards pequeñas */
+.fin-kpi-grid{
+  grid-template-columns: 1fr;
+}
+
+/* Si hay “desembolso” y botones, que no se rompa */
+.fin-phase-card .row.gap{
+  flex-wrap: wrap;
+}
+
