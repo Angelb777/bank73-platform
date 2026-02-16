@@ -2251,21 +2251,44 @@ function semaphoreForRole(roleKey) {
     const phaseRaw = c.phase || c.phaseKey || c.fase || c.category || '';
     const roleRaw  = c.roleOwner || c.role || c.ownerRole || c.responsable || c.asignado || (Array.isArray(c.visibleToRoles) ? c.visibleToRoles[0] : '') || '';
     const st = (c.status || '').toUpperCase();
-    const completed = c.completed === true || st === 'COMPLETADO' || st === 'DONE';
-    return {
-      _id: c._id || c.id,
-      title: c.title || c.name || 'Checklist',
-      phase: canonPhase(phaseRaw || 'PREESTUDIOS'),
-      role:  canonRole(roleRaw || 'TECNICO'),
-      status: completed ? 'COMPLETADO' : (st === 'EN_PROCESO' || st === 'IN_PROGRESS' ? 'EN_PROCESO' : 'PENDIENTE'),
-      order: pickOrder(c),
-      dueDate: c.dueDate || c.vencimiento || null,
-      validated: !!c.validated,
-      notes: Array.isArray(c.notes) ? c.notes : [],
-      subtasks: Array.isArray(c.subtasks) ? c.subtasks : (Array.isArray(c.children) ? c.children : []),
-      documents: Array.isArray(c.documents) ? c.documents : [],
-      createdAt: c.createdAt, updatedAt:c.updatedAt, completedAt:c.completedAt, validatedAt:c.validatedAt
-    };
+
+const rawSubs = Array.isArray(c.subtasks)
+  ? c.subtasks
+  : (Array.isArray(c.children) ? c.children : []);
+
+const subs = (rawSubs || []).map(s => ({
+  ...s,
+  completed: !!s.completed
+}));
+
+// ✅ Status REAL derivado de subtareas (si existen)
+let derivedStatus = null;
+if (subs.length) {
+  const done = subs.filter(s => !!s.completed).length;
+  if (done === subs.length) derivedStatus = 'COMPLETADO';
+  else if (done > 0) derivedStatus = 'EN_PROCESO';
+  else derivedStatus = 'PENDIENTE';
+}
+
+// Si no hay subtareas, usa el status backend
+const backendCompleted = (c.completed === true || st === 'COMPLETADO' || st === 'DONE');
+const status = derivedStatus || (backendCompleted ? 'COMPLETADO'
+  : (st === 'EN_PROCESO' || st === 'IN_PROGRESS' ? 'EN_PROCESO' : 'PENDIENTE'));
+
+return {
+  _id: c._id || c.id,
+  title: c.title || c.name || 'Checklist',
+  phase: canonPhase((c.phase || c.phaseKey || c.fase || c.category || '') || 'PREESTUDIOS'),
+  role:  canonRole((c.roleOwner || c.role || c.ownerRole || c.responsable || c.asignado || (Array.isArray(c.visibleToRoles) ? c.visibleToRoles[0] : '') || '') || 'TECNICO'),
+  status,
+  order: pickOrder(c),
+  dueDate: c.dueDate || c.vencimiento || null,
+  validated: !!c.validated,
+  notes: Array.isArray(c.notes) ? c.notes : [],
+  subtasks: subs,
+  documents: Array.isArray(c.documents) ? c.documents : [],
+  createdAt: c.createdAt, updatedAt:c.updatedAt, completedAt:c.completedAt, validatedAt:c.validatedAt
+};
   }
 
   // ====== Render Proyecto ======
@@ -2417,9 +2440,13 @@ rolesList.querySelectorAll('.role-row').forEach(el=>{
       <div class="subtasks">
         ${(cl.subtasks||[]).map(s => `
           <label class="subtask">
-            <input type="checkbox" class="js-subtoggle" data-id="${cl._id}" data-sid="${s._id||s.id||s.title}" ${s.completed ? 'checked':''} ${disabled ? 'disabled' : ''}/>
-            <span>${s.title || s.name}</span>
-            <span class="small muted">Vence: ${fmtDate(s.dueDate)}</span>
+            <input type="checkbox" class="js-subtoggle subtask-check"
+  data-id="${cl._id}"
+  data-sid="${s._id||s.id||s.title}"
+  ${s.completed ? 'checked':''}
+  ${disabled ? 'disabled' : ''}
+/>
+            <span class="subtask-title">${s.title || s.name}</span>
           </label>
         `).join('')}
         <div class="row">
@@ -2436,7 +2463,9 @@ rolesList.querySelectorAll('.role-row').forEach(el=>{
 
 
       <div class="cl-actions">
-        <button class="btn btn-success btn-xs js-complete" data-id="${cl._id}" ${disabled ? 'disabled' : ''}>Completar</button>
+        <button class="btn btn-success btn-xs js-complete" data-id="${cl._id}" ${disabled ? 'disabled' : ''}>
+        ${cl.status === 'COMPLETADO' ? 'Descompletar' : 'Completar'}
+        </button>
         <button class="btn btn-warning btn-xs js-validate" data-id="${cl._id}" ${disabled ? 'disabled' : ''}>Validar</button>
         <button class="btn btn-ghost btn-xs js-notes" data-id="${cl._id}">Notas</button>
         <button class="btn btn-ghost btn-xs js-edit" data-id="${cl._id}" ${disabled ? 'disabled' : ''}>Editar</button>
@@ -2493,22 +2522,41 @@ rolesList.querySelectorAll('.role-row').forEach(el=>{
     btn.onclick = () => openCreateChecklist(btn.dataset.phase);
   });
 
-  // Completar checklist (solo si ACTIVO)
+
+  // Completar / Descompletar checklist (toggle)
   document.querySelectorAll('.js-complete').forEach(btn => {
-    btn.onclick = async () => {
-      const idCL = btn.dataset.id;
-      if (!isActiveById(idCL)) {
-        alert('Este checklist está bloqueado hasta validar los anteriores de la fase (o desbloquéalo manualmente tocando la tarjeta).');
-        return;
+   btn.onclick = async () => {
+    const idCL = btn.dataset.id;
+
+    if (!isActiveById(idCL)) {
+      alert('Este checklist está bloqueado hasta validar los anteriores de la fase (o desbloquéalo manualmente tocando la tarjeta).');
+      return;
+    }
+
+    const cl = state.checklists.find(c => c._id === idCL);
+    const isDone = (cl?.status === 'COMPLETADO');
+
+    if (isDone) {
+      // ✅ DESCOMPLETAR
+      try {
+        // si algún día creas endpoint /uncomplete lo usas aquí
+        await API.put(`/api/checklists/${idCL}`, { status: 'PENDIENTE' });
+      } catch {
+        await API.put(`/api/checklists/${idCL}`, { completed: false, status: 'PENDIENTE' });
       }
+    } else {
+      // ✅ COMPLETAR
       try {
         await API.post(`/api/checklists/${idCL}/complete`, { force: false });
       } catch {
         await API.put(`/api/checklists/${idCL}`, { status: 'COMPLETADO' });
       }
-      await reloadProyecto();
-    };
+    }
+
+    await reloadProyecto();
+   };
   });
+
 
   // Validar checklist (solo si ACTIVO y rol permitido)
   document.querySelectorAll('.js-validate').forEach(btn => {
