@@ -1744,6 +1744,26 @@ async function loadSummary() {
     // evitar caché del navegador
     const res = await API.get(`/api/projects/${id}/summary?ts=${Date.now()}`);
 
+    // 🔥 recalcular progreso EXACTAMENTE igual que Proyecto
+try {
+  const raw = await API.get(`/api/projects/${id}/checklists?ts=${Date.now()}`);
+  const list = (raw?.checklists || raw || []);
+
+  const filtered = list.filter(c => true); // igual que globalProgress (sin onlyPending)
+  const total = filtered.reduce((acc, c) => acc + checklistProgress(c), 0);
+  const pct = filtered.length ? Math.round(total / filtered.length) : 0;
+
+  res.kpis = res.kpis || {};
+  res.kpis.progressPct = pct;
+
+  res.progress = res.progress || {};
+  res.progress.globalPct = pct;
+
+  console.log('[Resumen] Progreso recalculado:', pct);
+} catch (e) {
+  console.warn('Error recalculando progreso', e);
+}
+
     // ===== Exportación (RESUMEN) => POST + incluir gráficas (canvas) =====
     const exl = document.getElementById('exportSummaryXlsx');
     const pdf = document.getElementById('exportSummaryPdf');
