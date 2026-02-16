@@ -1260,3 +1260,47 @@ a.btn, .btn { text-decoration: none; }
   font-weight: 600 !important;
   line-height: 1.2 !important;
 }
+
+.fin-phase-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.fin-btn {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: #e8f0ff;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  backdrop-filter: blur(6px);
+}
+
+.fin-btn:hover {
+  background: rgba(120,170,255,0.15);
+  border-color: rgba(120,170,255,0.4);
+  transform: translateY(-1px);
+}
+
+.fin-btn:active {
+  transform: translateY(0px);
+}
+
+/* EDITAR */
+.fin-btn-edit {
+  color: #9ecbff;
+}
+
+/* ELIMINAR */
+.fin-btn-del {
+  color: #ff9b9b;
+  border-color: rgba(255,120,120,0.15);
+}
+
+.fin-btn-del:hover {
+  background: rgba(255,80,80,0.15);
+  border-color: rgba(255,80,80,0.5);
+}

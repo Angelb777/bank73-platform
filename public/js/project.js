@@ -3152,9 +3152,13 @@ function renderPhases(phases = []) {
         </div>
 
         <div class="fin-phase-actions">
-          <button class="btn btn-ghost btn-xs" data-act="edit">${variant === 'plan' ? 'Editar plan' : 'Editar real'}</button>
-          <button class="btn btn-ghost btn-xs btn-danger" data-act="del">Eliminar</button>
-        </div>
+  <button class="fin-btn fin-btn-edit" data-act="edit">
+    ${variant === 'plan' ? 'Editar plan' : 'Editar real'}
+  </button>
+  <button class="fin-btn fin-btn-del" data-act="del">
+    Eliminar
+  </button>
+</div>
       </div>
 
       <div class="fin-phase-body">
@@ -3604,7 +3608,7 @@ function openPhaseEditor(ph = null, focus = 'plan') {
 
     setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
   }
-  
+
   const tab = document.getElementById('tab-comercial');
   if (!tab) return;
 
