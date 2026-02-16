@@ -3559,6 +3559,52 @@ function openPhaseEditor(ph = null, focus = 'plan') {
 
 // ====== Comercial ======
 (function initComercial() {
+    // ===== Export helpers (Comercial) =====
+  function buildAuthTenantHeaders() {
+    let token = '';
+    if (window.API && typeof API.getToken === 'function') {
+      token = API.getToken() || '';
+    } else {
+      token =
+        localStorage.getItem('token') ||
+        localStorage.getItem('jwt') ||
+        localStorage.getItem('accessToken') ||
+        '';
+    }
+
+    const tenantKey =
+      localStorage.getItem('tenantKey') ||
+      localStorage.getItem('tenant') ||
+      '';
+
+    const headers = {};
+    if (token) headers['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+    if (tenantKey) headers['x-tenant-key'] = tenantKey;
+    return headers;
+  }
+
+  async function downloadFile(url, filename) {
+    const headers = buildAuthTenantHeaders();
+
+    const res = await fetch(url, { method: 'GET', headers });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`Export falló (${res.status}): ${txt || 'sin detalle'}`);
+    }
+
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+  }
+  
   const tab = document.getElementById('tab-comercial');
   if (!tab) return;
 
@@ -3568,7 +3614,8 @@ function openPhaseEditor(ph = null, focus = 'plan') {
   const filtroEstado = document.getElementById('filtroEstado');
   const buscarInput = document.getElementById('buscarUnidad');
   const btnCrear = document.getElementById('btnCrearLote');
-  const btnExportar = document.getElementById('btnExportar');
+  const btnExportarCsv = document.getElementById('btnExportarCsv');
+  const btnExportarExcel = document.getElementById('btnExportarExcel');
   const btnBatch = document.getElementById('btnEditarSel');
   const btnDel = document.getElementById('btnEliminarSel');
   const btnSelectAll = document.getElementById('btnSelectAll');
@@ -4515,7 +4562,30 @@ modalFicha.style.display = 'flex';
   if (filtroEstado) filtroEstado.addEventListener('change', loadUnits);
   if (buscarInput) buscarInput.addEventListener('input', () => { clearTimeout(window.__deb); window.__deb = setTimeout(loadUnits, 250); });
 
-  if (btnExportar) btnExportar.addEventListener('click', () => { window.location.href = `/api/export/comercial.csv?projectId=${id}`; });
+  if (btnExportarCsv) {
+  btnExportarCsv.addEventListener('click', async () => {
+    try {
+      const url = `/api/export/comercial.csv?projectId=${encodeURIComponent(id)}`;
+      await downloadFile(url, `comercial_${id}.csv`);
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'Error exportando CSV');
+    }
+  });
+}
+
+if (btnExportarExcel) {
+  btnExportarExcel.addEventListener('click', async () => {
+    try {
+      const url = `/api/export/comercial.xlsx?projectId=${encodeURIComponent(id)}`;
+      await downloadFile(url, `comercial_${id}.xlsx`);
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'Error exportando Excel');
+    }
+  });
+}
+
   if (btnCrear) btnCrear.addEventListener('click', () => modalCrear.style.display='flex');
   if (modalCrearCerrar) modalCrearCerrar.addEventListener('click', () => modalCrear.style.display='none');
   if (btnBatch) btnBatch.addEventListener('click', openBatch);
