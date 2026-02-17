@@ -2307,7 +2307,12 @@ return {
   if (limpiarFiltroRolBtn) limpiarFiltroRolBtn.onclick = () => { state.filterRole = null; renderProyecto(); };
   if (togglePendientesBtn) togglePendientesBtn.onclick = () => {
     state.onlyPending = !state.onlyPending;
-    togglePendientesBtn.textContent = `Solo pendientes: ${state.onlyPending ? 'on' : 'off'}`;
+    if (togglePendientesBtn) {
+  togglePendientesBtn.classList.toggle('is-on', state.onlyPending);
+  const st = togglePendientesBtn.querySelector('.state');
+  if (st) st.textContent = state.onlyPending ? 'on' : 'off';
+   }
+
     renderProyecto();
   };
   if (toggleAllPhasesBtn) toggleAllPhasesBtn.onclick = () => {
@@ -2322,35 +2327,36 @@ return {
     globalProgressBar.style.width = `${g}%`;
 
     // Roles panel
-const distinctRoles = Array.from(new Set(state.checklists.map(c => c.role))).sort();
-const roleKeys = distinctRoles.length ? distinctRoles : Object.keys(ROLE_COLORS);
+   const distinctRoles = Array.from(new Set(state.checklists.map(c => c.role))).sort();
+   const roleKeys = distinctRoles.length ? distinctRoles : Object.keys(ROLE_COLORS);
 
-rolesList.innerHTML = roleKeys.map(rk => {
-  const rm = roleMeta(rk);
-  const sem = semaphoreForRole(rk);
+   rolesList.innerHTML = roleKeys.map(rk => {
+   const rm = roleMeta(rk);
+   const sem = semaphoreForRole(rk);
 
-  // métricas para tooltip
-  const now = Date.now();
-  const activePend = state.checklists.filter(c =>
+   // métricas para tooltip
+   const now = Date.now();
+   const activePend = state.checklists.filter(c =>
     c.role === rk && isChecklistActive(c) && c.status !== 'COMPLETADO'
-  );
-  const cntActive  = activePend.length;
-  const cntOverdue = activePend.filter(c => c.dueDate && new Date(c.dueDate).getTime() < now).length;
-  const ttl = (cntActive > 0)
+   );
+   const cntActive  = activePend.length;
+   const cntOverdue = activePend.filter(c => c.dueDate && new Date(c.dueDate).getTime() < now).length;
+   const ttl = (cntActive > 0)
     ? `Activos pendientes: ${cntActive} · Vencidos: ${cntOverdue}`
     : 'Sin tareas activas pendientes';
 
-  const cls = (state.filterRole === rk) ? 'role-row filter-on' : 'role-row';
-  return `<div class="${cls}" data-role="${rk}" style="--role-color:${rm.color}" title="${ttl}">
+   const cls = (state.filterRole === rk) ? 'role-row filter-on' : 'role-row';
+   return `<div class="${cls}" data-role="${rk}" style="--role-color:${rm.color}" title="${ttl}">
     <div class="row"><span class="role-badge" style="--role-color:${rm.color};--role-pale:${rm.pale}">${rm.label}</span></div>
-    <div class="light" title="${ttl}">${sem}</div>
-  </div>`;
-}).join('');
+    <div class="light" title="${ttl}">
+    <span class="sem-dot ${semClassFromEmoji(sem)}" aria-hidden="true"></span>
+    </div>
+   </div>`;
+   }).join('');
 
-rolesList.querySelectorAll('.role-row').forEach(el=>{
-  el.onclick = () => { state.filterRole = el.dataset.role; renderProyecto(); };
-});
-
+   rolesList.querySelectorAll('.role-row').forEach(el=>{
+   el.onclick = () => { state.filterRole = el.dataset.role; renderProyecto(); };
+   });
 
     // Fases
     phasesHost.innerHTML = PHASES.map(ph => renderPhase(ph)).join('');
@@ -2360,6 +2366,12 @@ rolesList.querySelectorAll('.role-row').forEach(el=>{
     if (toggleAllPhasesBtn) {
       toggleAllPhasesBtn.textContent = state.collapsed.size ? 'Expandir todo' : 'Colapsar todo';
     }
+  }
+
+  function semClassFromEmoji(sem) {
+  if (sem === '🟢') return 'ok';
+  if (sem === '🟡') return 'warn';
+  return 'danger'; // 🔴 o cualquier cosa
   }
 
   function renderPhase(ph) {

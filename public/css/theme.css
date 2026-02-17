@@ -1304,3 +1304,244 @@ a.btn, .btn { text-decoration: none; }
   background: rgba(255,80,80,0.15);
   border-color: rgba(255,80,80,0.5);
 }
+
+/* =========================================================
+   PROYECTO — Roles & Semáforo (premium, sin emojis)
+   ========================================================= */
+
+.roles-panel{
+  background: rgba(255,255,255,.03);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+/* Cada fila */
+.role-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.02);
+  transition: transform .08s ease, border-color .15s ease, background .15s ease;
+  cursor: pointer;
+}
+
+.role-row:hover{
+  background: rgba(255,255,255,.04);
+  border-color: rgba(255,255,255,.14);
+  transform: translateY(-1px);
+}
+
+.role-row.filter-on{
+  background: linear-gradient(90deg, rgba(90,162,255,.14), rgba(255,255,255,.02));
+  border-color: rgba(90,162,255,.28);
+}
+
+/* Badge del rol: que no “salte” */
+.role-row .role-badge{
+  display:inline-flex;
+  align-items:center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.03);
+  font-weight: 700;
+  letter-spacing: .2px;
+}
+
+/* Semáforo: dot con halo */
+.role-row .light{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.02);
+}
+
+/* El dot real */
+.sem-dot{
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 4px rgba(255,255,255,.04);
+  position: relative;
+}
+
+/* Estados */
+.sem-dot.ok{
+  background: var(--ok);
+  box-shadow:
+    0 0 0 4px rgba(16,185,129,.12),
+    0 8px 18px rgba(16,185,129,.18);
+}
+
+.sem-dot.warn{
+  background: var(--warn);
+  box-shadow:
+    0 0 0 4px rgba(245,158,11,.12),
+    0 8px 18px rgba(245,158,11,.14);
+}
+
+.sem-dot.danger{
+  background: var(--danger);
+  box-shadow:
+    0 0 0 4px rgba(239,68,68,.12),
+    0 8px 18px rgba(239,68,68,.16);
+}
+
+/* Pulso muy sutil SOLO para rojo */
+.sem-dot.danger::after{
+  content:"";
+  position:absolute;
+  inset:-8px;
+  border-radius:999px;
+  border: 1px solid rgba(239,68,68,.28);
+  opacity:.0;
+  transform: scale(.85);
+  animation: semPulse 1.8s ease-out infinite;
+}
+
+@keyframes semPulse{
+  0%   { opacity:.0; transform: scale(.85); }
+  35%  { opacity:.65; }
+  100% { opacity:0; transform: scale(1.35); }
+}
+
+/* Accesibilidad: si el usuario prefiere menos animación */
+@media (prefers-reduced-motion: reduce){
+  .sem-dot.danger::after{ animation:none; }
+}
+
+/* =========================================================
+   ROLES PANEL — BOTONES (Pendientes toggle + Limpiar)
+   (VERSIÓN LIMPIA / COMPACTA / SIN DUPLICADOS)
+   ========================================================= */
+
+/* Contenedor: que no se pegue a los bordes del panel */
+.roles-actions{
+  width: 100%;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+
+  /* 👇 margen interno para que NO toquen el borde derecho */
+  padding-right: 8px;
+  padding-top: 2px;
+  padding-bottom: 6px;
+  box-sizing: border-box;
+}
+
+/* Base común a ambos botones: compactos y coherentes */
+.role-toggle,
+.role-clear{
+  appearance:none;
+  display:inline-flex;
+  align-items:center;
+  gap: 8px;
+
+  padding: 8px 10px !important;   /* 👈 tamaño compacto */
+  border-radius: 14px !important; /* 👈 pill elegante, no gigante */
+
+  background: rgba(255,255,255,.78) !important;
+  border: 1px solid rgba(15,23,42,.14) !important;
+
+  font-weight: 900;
+  color: #111827;
+
+  box-shadow: 0 6px 14px rgba(0,0,0,.10); /* 👈 sombra suave */
+  cursor: pointer;
+
+  transition: transform .12s ease, background .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+
+.role-toggle:hover,
+.role-clear:hover{
+  transform: translateY(-1px);
+  background: #ffffff !important;
+  border-color: rgba(15,23,42,.18) !important;
+  box-shadow: 0 10px 22px rgba(0,0,0,.13);
+}
+
+.role-toggle:active,
+.role-clear:active{
+  transform: translateY(0px);
+}
+
+/* Texto del botón */
+.role-toggle .txt{
+  font-size: inherit;   /* 👈 usa el mismo tamaño que el botón base */
+  font-weight: inherit; /* 👈 mismo peso que limpiar */
+}
+
+/* Off/On pequeño */
+.role-toggle .state{
+  font-weight: 900;
+  font-size: .88rem;
+  color: #64748b;
+}
+
+/* Switch mini */
+.role-toggle .pill{
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(15,23,42,.18);
+  background: rgba(15,23,42,.07);
+  position: relative;
+  flex: 0 0 40px;
+}
+
+.role-toggle .pill::after{
+  content:"";
+  position:absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 6px 14px rgba(0,0,0,.18);
+  transition: transform .18s ease;
+}
+
+/* Estado ON */
+.role-toggle.is-on .pill{
+  background: rgba(90,162,255,.22);
+  border-color: rgba(90,162,255,.40);
+}
+.role-toggle.is-on .pill::after{
+  transform: translateX(18px);
+}
+.role-toggle.is-on .state{
+  color: #2563eb;
+}
+
+/* Limpiar: mismo look, un pelín más “acción” pero sin hacerse rojo */
+.role-clear{
+  justify-content:center;
+  min-width: 92px; /* para que no quede enano */
+}
+
+/* Si quieres marcarlo cuando hay filtro activo (opcional) */
+.role-clear.active{
+  background: rgba(239,68,68,.10) !important;
+  border-color: rgba(239,68,68,.26) !important;
+}
+
+/* Responsive: en móvil, que no reviente */
+@media (max-width: 520px){
+  .roles-actions{
+    justify-content: flex-end;
+    padding-right: 0;
+  }
+}
