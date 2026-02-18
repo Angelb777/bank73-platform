@@ -1545,3 +1545,24 @@ a.btn, .btn { text-decoration: none; }
     padding-right: 0;
   }
 }
+
+/* Cuando la tarjeta está FINALIZADA (verde), fuerza texto legible */
+.card.status-FINALIZADO,
+.card.status-FINALIZADO * {
+  color: #0b0b0b;          /* texto oscuro */
+}
+
+/* En concreto, los muted NO deben ir con opacity en verde */
+.card.status-FINALIZADO .muted,
+.card.status-FINALIZADO .small {
+  opacity: 1;
+  color: rgba(0,0,0,.72);
+}
+
+/* Opcional: mejora contraste de la barra de progreso en verde */
+.card.status-FINALIZADO .progress {
+  background: rgba(0,0,0,.14);
+}
+.card.status-FINALIZADO .progress > div {
+  background: rgba(255,255,255,.35);
+}
