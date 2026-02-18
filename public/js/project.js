@@ -422,6 +422,60 @@ const PERMIT_LABEL = {
   approved: 'Aprobado', rejected: 'Rechazado', waived: 'No aplica'
 };
 
+// ====== Permisos: agregación para gráficas (buckets) ======
+function permitBucket(status) {
+  const s = String(status || '').toLowerCase().trim();
+
+  if (s === 'pending') return 'pending';
+
+  // ✅ TODO lo "intermedio" cuenta como "En trámite"
+  if (s === 'in_progress' || s === 'submitted') return 'inProcess';
+
+  if (s === 'approved') return 'approved';
+  if (s === 'rejected') return 'rejected';
+
+  // waived = no aplica (no lo contamos en la gráfica)
+  return 'waived';
+}
+
+function buildPermitsByInstitution(items = []) {
+  const map = {}; // institución -> contadores
+
+  for (const it of items) {
+    const inst = (it.institution || '—').trim();
+    if (!map[inst]) {
+      map[inst] = { institution: inst, pending: 0, inProcess: 0, approved: 0, rejected: 0 };
+    }
+
+    const b = permitBucket(it.status);
+    if (b === 'pending')   map[inst].pending++;
+    if (b === 'inProcess') map[inst].inProcess++;
+    if (b === 'approved')  map[inst].approved++;
+    if (b === 'rejected')  map[inst].rejected++;
+  }
+
+  // orden: los que más tienen primero
+  return Object.values(map).sort((a,b) =>
+    (b.pending+b.inProcess+b.approved+b.rejected) - (a.pending+a.inProcess+a.approved+a.rejected)
+  );
+}
+
+function updatePermitsByInstitutionChart() {
+  // si no hay chart creado, no hacemos nada
+  if (!__sumCharts?.p2) return;
+
+  const inst = buildPermitsByInstitution(__permits?.items || []);
+
+  __sumCharts.p2.data.labels = inst.map(x => x.institution);
+  __sumCharts.p2.data.datasets[0].data = inst.map(x => x.pending);
+  __sumCharts.p2.data.datasets[1].data = inst.map(x => x.inProcess);
+  __sumCharts.p2.data.datasets[2].data = inst.map(x => x.approved);
+  __sumCharts.p2.data.datasets[3].data = inst.map(x => x.rejected);
+
+  __sumCharts.p2.update();
+}
+
+
 function permitProgress(pp) {
   if (!pp?.items?.length) return 0;
   const total = pp.items.filter(i => i.status !== 'waived').length || 0;
@@ -499,7 +553,9 @@ applyBtn.onclick = async () => {
   }
 
   // ya había permisos → render
-  renderPermitsModal();
+renderPermitsModal();
+updatePermitsByInstitutionChart(); // ✅ para que el resumen use __permits ya cargado
+
 }
 
 // ===== Helpers de Permisos (fases, dependencias) =====
@@ -743,6 +799,7 @@ function renderPermitsModal() {
         await apiPermitsPatchItem(code, { status });
         __permits = await apiPermitsGetProject(true);
         renderPermitsModal();
+        updatePermitsByInstitutionChart();
       } catch (e) {
         console.error(e);
         alert('No se pudo actualizar el estado.');
@@ -1498,15 +1555,22 @@ if (ctx('sumProgressByPhase')) {
 // ---------- Permisos por institución (apilada) ----------
 sumDestroy('p2');
 if (ctx('sumPermitsByInstitution')) {
-  const inst = (permitsByInstitution || []);
+
+  // 1) Si tenemos __permits (cargado por modal), recalculamos perfecto desde items
+  // 2) Si NO, usamos lo que trae el backend (payload.permitsByInstitution) para no dejarlo vacío
+  const inst = (__permits?.items?.length)
+    ? buildPermitsByInstitution(__permits.items)
+    : (permitsByInstitution || []);
+
   __sumCharts.p2 = new Chart(ctx('sumPermitsByInstitution'), {
     type: 'bar',
     data: {
       labels: inst.map(x => x.institution),
       datasets: [
-        { label: 'Pendiente', data: inst.map(x => toNum(x.pending)), stack: 's' },
-        { label: 'Trámite',   data: inst.map(x => toNum(x.inProcess)), stack: 's' },
-        { label: 'Aprobado',  data: inst.map(x => toNum(x.approved)), stack: 's' }
+        { label: 'Pendiente',  data: inst.map(x => toNum(x.pending)),   stack: 's' },
+        { label: 'En trámite', data: inst.map(x => toNum(x.inProcess)), stack: 's' },
+        { label: 'Aprobado',   data: inst.map(x => toNum(x.approved)),  stack: 's' },
+        { label: 'Rechazado',  data: inst.map(x => toNum(x.rejected)),  stack: 's' },
       ]
     },
     options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } }
