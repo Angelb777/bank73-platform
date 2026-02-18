@@ -543,6 +543,7 @@ applyBtn.onclick = async () => {
     await apiPermitsInit(tplId);                // POST
     __permits = await apiPermitsGetProject();   // GET
     renderPermitsModal();
+    updatePermitsByInstitutionChart();
   } catch (e) {
     console.error('[Permits] init error', e);
     alert(`No se pudo instanciar la plantilla de permisos:\n${e.message || e}`);
@@ -1374,6 +1375,15 @@ async function renderSummaryUI(payload){
   // 1) Datos base
   const project    = payload.project || {};
   const headerKpis = payload.headerKpis || {};
+
+    // ✅ Cargar permisos reales para que la gráfica salga bien "de primeras"
+  try {
+    if (!__permits?.items?.length) {
+      __permits = await apiPermitsGetProject(true); // GET permisos del proyecto
+    }
+  } catch (e) {
+    console.warn('[Summary] No se pudieron cargar permisos para gráfica', e);
+  }
 
     // 2) Pintar cabecera (los cuadros)
   // ✅ Prioridad: lo persistido en Project (se actualiza al importar)
