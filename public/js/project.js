@@ -1752,9 +1752,12 @@ if (ctx('sumDelaysByStage')) {
 }
 
 // ---------- Alertas + conclusiones ----------
+// ✅ Solo mostrar vencimientos de documentos ACTIVOS (no cumplidos / no reemplazados)
+const isActiveDoc = (a) => String(a?.status || '').toUpperCase() === 'ACTIVE';
 const alertsDiv = document.getElementById('summaryAlerts');
 if (alertsDiv) {
-  alertsDiv.innerHTML = (alerts?.expiries || [])
+  alertsDiv.innerHTML = (alerts?.expiries || []).filter(isActiveDoc)
+    .sort((a,b) => new Date(a.due || 0) - new Date(b.due || 0))
     .slice(0, 10)
     .map(a =>
       `<div class="row space-between small" style="padding:6px 8px;border:1px solid #eee;border-radius:8px;margin-bottom:6px;">
@@ -1819,7 +1822,7 @@ async function loadSummary() {
     const res = await API.get(`/api/projects/${id}/summary?ts=${Date.now()}`);
 
     // 🔥 recalcular progreso EXACTAMENTE igual que Proyecto
-try {
+ try {
   const raw = await API.get(`/api/projects/${id}/checklists?ts=${Date.now()}`);
   const list = (raw?.checklists || raw || []);
 
@@ -4725,196 +4728,90 @@ if (btnExportarExcel) {
 })();
 
 
-  // ====== Docs (pestaña Docs general) ======
-async function loadDocs() {
-  const docsDiv    = document.getElementById('docs');
-  const uploadForm = document.getElementById('uploadForm');
-  if (!docsDiv) return;
+  // ======================
+// ====== DOCS (Bank73)
+// ======================
 
-  const partial = ['tecnico','legal','commercial'].includes(myRole);
-  if (uploadForm) uploadForm.style.display = partial ? 'none' : '';
+let _allDocs = []; // cache
 
-  // 1) Trae todos los docs del proyecto
-  const list = await API.get('/api/documents?projectId=' + id).catch(() => []);
+function normStatus(s){ return String(s||'ACTIVE').toUpperCase(); }
+function isActiveDoc(d){ return normStatus(d.status) === 'ACTIVE'; }
 
-  // 2) Filtro por roles (si hay restricciones de checklist)
-  let filtered = Array.isArray(list) ? list.slice() : [];
-  const allowed = (state.allowedChecklistRoles || []).slice();
-  const clMap = new Map((state.checklists || []).map(c => [String(c._id), (c.role || c.roleOwner || '').toLowerCase()]));
+function docExpiryMeta(d){
+  const expTs = d.expiryDate ? new Date(d.expiryDate).getTime() : null;
+  const now   = Date.now();
+  const soon  = now + 30*24*60*60*1000;
 
-  if (allowed.length) {
-    filtered = filtered.filter(d => {
-      // Docs de unidad SIEMPRE visibles (cuando hay unitId)
-      if (d.unitId) return true;
+  if (!expTs) return { expTs:null, label:'—', cls:'', state:'NO_EXPIRY' };
 
-      // Docs con checklist: comprobar si el rol del checklist está permitido
-      if (d.checklistId) {
-        const r = (clMap.get(String(d.checklistId)) || '').toLowerCase();
-        return r && allowed.includes(r);
-      }
-
-      // Otros “huérfanos”: visibles solo para roles full
-      return !partial;
-    });
-  }
-
-  // 3) Render
-  if (!filtered.length) {
-    docsDiv.innerHTML = '<div class="small muted">No hay documentos</div>';
-    return;
-  }
-
-  const MB = 1024 * 1024;
-  const soon = Date.now() + 30*24*60*60*1000; // 30 días
-
-  docsDiv.innerHTML = filtered.map(d => {
-    const expTs = d.expiryDate ? new Date(d.expiryDate).getTime() : null;
-    const expWarn = expTs && expTs < soon ? 'warn' : '';
-    const expText = d.expiryDate ? new Date(d.expiryDate).toISOString().slice(0,10) : '—';
-    const sizeStr = (d.size >= MB) ? (d.size/MB).toFixed(2) + ' MB' : Math.round((d.size||0)/1024) + ' KB';
-
-    return `
-      <div class="doc">
-        <div class="doc-info">
-          <b>${escapeHtml(d.originalname || d.title || d.name || 'Documento')}</b>
-          <div class="small muted">${escapeHtml(d.mimetype || '')} — ${sizeStr}</div>
-          <div class="small ${expWarn}">Expira: ${expText}</div>
-          <div class="chips">${docChips(d)}</div>
-        </div>
-        <div class="doc-actions">
-          <a class="btn" href="/${d.path}" target="_blank">Ver</a>
-          <a class="btn" href="/api/documents/${d._id}/download">Descargar</a>
-          ${renderDeleteBtn(d)}
-        </div>
-      </div>
-    `;
-  }).join('');
-  }
-
-  function canDeleteDoc() {
-  // Si quieres que TODOS puedan ver el botón y que el PIN haga el control,
-  // retorna true aquí y el backend decidirá con el PIN.
-  return ['admin','bank','promoter','gerencia','socios','financiero','contable','legal','tecnico','commercial'].includes(myRole);
+  const expText = new Date(d.expiryDate).toISOString().slice(0,10);
+  if (expTs < now)  return { expTs, label:expText, cls:'danger', state:'EXPIRED' };
+  if (expTs < soon) return { expTs, label:expText, cls:'warn',   state:'SOON' };
+  return { expTs, label:expText, cls:'', state:'OK' };
 }
 
+function findChecklistTitle(idCL) {
+  if (!idCL) return '—';
+  const x = String(idCL);
+  const hit = (state.checklists || []).find(c => String(c._id) === x);
+  return hit?.title || '—';
+}
+
+function docChips(d){
+  const chips = [];
+  if (d.checklistId) chips.push(`<span class="chip">Checklist: ${escapeHtml(findChecklistTitle(d.checklistId))}</span>`);
+  if (d.unitTag)     chips.push(`<span class="chip">Unidad: ${escapeHtml(d.unitTag)}</span>`);
+  if (d.baTag)       chips.push(`<span class="chip ${d.baTag === 'BEFORE' ? 'chip-gray' : 'chip-green'}">${escapeHtml(d.baTag)}</span>`);
+  if (d.permitCode)  chips.push(`<span class="chip">Permiso: ${escapeHtml(d.permitCode)}</span>`);
+  return chips.join(' ');
+}
+
+function canDeleteDoc() {
+  return ['admin','bank','promoter','gerencia','socios','financiero','contable','legal','tecnico','commercial'].includes(myRole);
+}
 function renderDeleteBtn(d){
   if (!canDeleteDoc()) return '';
   return `<button class="btn btn-danger" data-del="${d._id}">Eliminar</button>`;
 }
 
-// Delegación de eventos para eliminar
-document.addEventListener('click', async (ev) => {
-  const btn = ev.target.closest('button[data-del]');
-  if (!btn) return;
-  const id = btn.getAttribute('data-del');
-  if (!id) return;
+// ✅ NUEVO: botón Cumplir
+function canCompleteDoc(){
+  // Ajusta si quieres: por ejemplo solo bank/promoter/admin/gerencia…
+  return ['admin','bank','promoter','gerencia','socios','financiero','contable','legal','tecnico','commercial'].includes(myRole);
+}
+function renderCompleteBtn(d){
+  const st = normStatus(d.status);
+  if (!canCompleteDoc()) return '';
+  if (st !== 'ACTIVE') return '';
+if (!d.expiryDate) return ''; // ✅ si no hay vencimiento, no tiene sentido “cumplir”
+return `<button class="btn" data-complete="${d._id}">Cumplir</button>`;
+}
 
-  // pide PIN solo una vez
-  const pin = prompt('Introduce el PIN para eliminar (configurable en .env como DELETE_DOCS_PIN):', '');
-  if (pin === null) return;
+// ✅ NUEVO: botón Reemplazar (sube nuevo y archiva el viejo)
+function canReplaceDoc(){
+  return ['admin','bank','promoter','gerencia','socios','financiero','contable'].includes(myRole);
+}
+function renderReplaceBtn(d){
+  const st = normStatus(d.status);
+  if (!canReplaceDoc()) return '';
+  if (st !== 'ACTIVE') return '';
+if (!d.expiryDate) return ''; // ✅ solo si tiene vencimiento
+return `<button class="btn" data-replace="${d._id}">Reemplazar</button>`;
+}
 
-  try {
-    const res = await fetch(`/api/documents/${encodeURIComponent(id)}?pin=${encodeURIComponent(pin)}`, {
-      method: 'DELETE',
-      headers: { ...tenantHeaders(), ...authHeaders() }
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(()=> ({}));
-      if (j?.error === 'pin_invalid') throw new Error('PIN inválido');
-      throw new Error(j?.error || `HTTP ${res.status}`);
-    }
-    // quitar del DOM
-    const card = btn.closest('.ba-item') || btn.closest('.doc');
-if (card) card.remove();
+function renderStatusPill(d){
+  const st = normStatus(d.status);
+  if (st === 'COMPLETED') return `<span class="pill pill-gray">CUMPLIDO</span>`;
+  if (st === 'REPLACED')  return `<span class="pill pill-gray">REEMPLAZADO</span>`;
+  return `<span class="pill pill-blue">ACTIVO</span>`;
+}
 
-  } catch (e) {
-    alert('No se pudo eliminar: ' + (e.message || ''));
-  }
-  });
-
-  async function loadBeforeAfterGallery() {
-  const beforeGrid = document.getElementById('baBeforeGrid');
-  const afterGrid  = document.getElementById('baAfterGrid');
-  if (!beforeGrid || !afterGrid) return;
-
-  beforeGrid.innerHTML = '<div class="small muted">Cargando…</div>';
-  afterGrid.innerHTML  = '<div class="small muted">Cargando…</div>';
-
-  const list = await API
-    .get(`/api/documents?projectId=${id}&category=beforeAfter`)
-    .catch(() => []);
-
-  if (!list.length) {
-    beforeGrid.innerHTML = '<div class="small muted">Sin imágenes</div>';
-    afterGrid.innerHTML  = '<div class="small muted">Sin imágenes</div>';
-    return;
-  }
-
-  const groups = { BEFORE: [], AFTER: [] };
-
-  for (const d of list) {
-    const tag = (d.baTag || d.tag || '').toUpperCase();
-    if (tag === 'BEFORE') groups.BEFORE.push(d);
-    if (tag === 'AFTER')  groups.AFTER.push(d);
-  }
-
-  beforeGrid.innerHTML = groups.BEFORE.length
-    ? groups.BEFORE.map(renderBAItem).join('')
-    : '<div class="small muted">Sin imágenes</div>';
-
-  afterGrid.innerHTML = groups.AFTER.length
-    ? groups.AFTER.map(renderBAItem).join('')
-    : '<div class="small muted">Sin imágenes</div>';
-  }
-
-
-  function renderBAItem(d){
-  const isImg = (d.mimetype||'').startsWith('image/');
-  const thumb = isImg ? `/${d.path}` : '/assets/file-generic.svg';
-
-  const docId = d._id || d.id; // por si viene con uno u otro
-  const href  = `/${d.path}`;
-  const title = escapeHtml(d.originalname || d.title || 'archivo');
-
-  return `
-    <div class="ba-item" style="position:relative;">
-      <a href="${href}" target="_blank" title="${title}">
-        <img src="${thumb}" alt="">
-      </a>
-
-      <button
-        type="button"
-        class="btn btn-danger btn-xs"
-        data-del="${docId}"
-        title="Eliminar"
-        style="position:absolute; top:6px; right:6px; z-index:2;"
-      >✕</button>
-    </div>
-  `;
-  } 
-
-  function findChecklistTitle(idCL) {
-  if (!idCL) return '—';
-  const x = String(idCL);
-  const hit = (state.checklists || []).find(c => String(c._id) === x);
-  return hit?.title || '—';
-  }
-
-  function docChips(d){
-  const chips = [];
-  if (d.checklistId) chips.push(`<span class="chip">Checklist: ${findChecklistTitle(d.checklistId)}</span>`);
-  if (d.unitTag)     chips.push(`<span class="chip">Unidad: ${d.unitTag}</span>`);
-  if (d.baTag)       chips.push(`<span class="chip ${d.baTag === 'BEFORE' ? 'chip-gray' : 'chip-green'}">${d.baTag}</span>`);
-  return chips.join(' ');
-  }
-
-  let _allDocs = []; // cache
-
-  function matchesDocQuery(d, q){
+function matchesDocQuery(d, q){
   if (!q) return true;
   q = q.toLowerCase();
   const fields = [
     d.originalname, d.title, d.filename, d.mimetype, d.unitTag,
+    d.permitCode, d.permitTitle,
     findChecklistTitle(d.checklistId)
   ];
   return fields.some(v => String(v || '').toLowerCase().includes(q));
@@ -4934,7 +4831,7 @@ async function loadDocs({ q } = {}) {
     _allDocs = await API.get('/api/documents?projectId=' + id).catch(()=>[]);
   }
 
-  // Filtro por roles (tu lógica existente; simplificado aquí)
+  // Filtro por roles (tu lógica)
   const allowed = (state.allowedChecklistRoles || []);
   const clMap = new Map((state.checklists || []).map(c => [String(c._id), (c.role || c.roleOwner || '').toLowerCase()]));
   let filtered = _allDocs.filter(d => {
@@ -4947,33 +4844,49 @@ async function loadDocs({ q } = {}) {
     return !partial;
   });
 
-  // Filtro por query del buscador
+  // Filtro por query
   if (q && q.trim()) filtered = filtered.filter(d => matchesDocQuery(d, q));
 
-  // Render
   if (!filtered.length) {
     docsDiv.innerHTML = '<div class="small muted">No hay documentos</div>';
     if (countEl) countEl.textContent = '';
     return;
   }
 
-  const MB = 1024*1024, soon = Date.now() + 30*24*60*60*1000;
+  const MB = 1024*1024;
+
   docsDiv.innerHTML = filtered.map(d => {
-    const expTs = d.expiryDate ? new Date(d.expiryDate).getTime() : null;
-    const expWarn = expTs && expTs < soon ? 'warn' : '';
-    const expText = d.expiryDate ? new Date(d.expiryDate).toISOString().slice(0,10) : '—';
     const sizeStr = (d.size >= MB) ? (d.size/MB).toFixed(2)+' MB' : Math.round((d.size||0)/1024)+' KB';
+    const exp = docExpiryMeta(d);
+
+    // Texto “Expira” + clases según estado
+    const expLine = d.expiryDate
+      ? `<div class="small ${exp.cls}">Expira: ${exp.label}</div>`
+      : `<div class="small muted">Expira: —</div>`;
+
+    // Si está completado, mostrar info auditoría
+    const st = normStatus(d.status);
+    const extra = (st === 'COMPLETED' && d.completedAt)
+      ? `<div class="small muted">Cumplido: ${new Date(d.completedAt).toISOString().slice(0,10)} ${d.completionNote ? '— ' + escapeHtml(d.completionNote) : ''}</div>`
+      : '';
+
     return `
       <div class="doc">
         <div class="doc-info">
-          <b>${escapeHtml(d.originalname || d.title || d.name || 'Documento')}</b>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <b>${escapeHtml(d.originalname || d.title || d.name || 'Documento')}</b>
+            ${renderStatusPill(d)}
+          </div>
           <div class="small muted">${escapeHtml(d.mimetype || '')} — ${sizeStr}</div>
-          <div class="small ${expWarn}">Expira: ${expText}</div>
+          ${expLine}
+          ${extra}
           <div class="chips">${docChips(d)}</div>
         </div>
         <div class="doc-actions">
           <a class="btn" href="/${d.path}" target="_blank">Ver</a>
           <a class="btn" href="/api/documents/${d._id}/download">Descargar</a>
+          ${renderCompleteBtn(d)}
+          ${renderReplaceBtn(d)}
           ${renderDeleteBtn(d)}
         </div>
       </div>
@@ -4983,7 +4896,7 @@ async function loadDocs({ q } = {}) {
   if (countEl) countEl.textContent = `${filtered.length} / ${_allDocs.length}`;
 }
 
-// wire del input (debounce)
+// wire buscador (debounce)
 (function(){
   const inp = document.getElementById('docsSearch');
   if (!inp) return;
@@ -4994,32 +4907,8 @@ async function loadDocs({ q } = {}) {
   });
 })();
 
-
-  // ====== Acciones generales ======
-  async function updateProjectStatus(newStatus) {
-    try { await API.put(`/api/projects/${id}/status`, { status: newStatus }); }
-    catch { await API.put(`/api/projects/${id}`, { status: newStatus }); }
-  }
-  if (saveBtn && statusSel) {
-    saveBtn.addEventListener('click', async () => {
-      try {
-        await updateProjectStatus(statusSel.value);
-        await loadProject();
-        alert('Estado actualizado');
-      } catch (e) { alert('Error al actualizar estado: ' + e.message); }
-    });
-  }
-  if (startBtn && statusSel) {
-    startBtn.addEventListener('click', async () => {
-      try {
-        await updateProjectStatus('EN_MARCHA');
-        await loadProject();
-        alert('Proyecto puesto en marcha');
-      } catch (e) { alert('Error al poner en marcha: ' + e.message); }
-    });
-  }
-
-  function wireDocsUpload() {
+// ===== Upload normal (tu lógica, con pequeño extra para "replaces") =====
+function wireDocsUpload() {
   const form = document.getElementById('uploadForm');
   const btn  = document.getElementById('docsUploadBtn');
   const fileEl = document.getElementById('file');
@@ -5028,8 +4917,8 @@ async function loadDocs({ q } = {}) {
   if (!form || !btn || !fileEl) return;
 
   form.addEventListener('submit', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
+    e.preventDefault();
+    e.stopPropagation();
   });
 
   btn.addEventListener('click', async (e) => {
@@ -5040,8 +4929,8 @@ async function loadDocs({ q } = {}) {
     if (!f) return alert('Selecciona un archivo primero');
 
     const fd = new FormData();
-    fd.append('projectId', id);               // 👈 clave
-    fd.append('file', f);                     // 👈 debe llamarse "file" (tu multer lo acepta)
+    fd.append('projectId', id);
+    fd.append('file', f);
     if (expEl && expEl.value) fd.append('expiryDate', expEl.value);
 
     btn.disabled = true;
@@ -5050,11 +4939,7 @@ async function loadDocs({ q } = {}) {
     try {
       const res = await fetch('/api/documents/upload', {
         method: 'POST',
-        headers: {
-          ...tenantHeaders(),
-          // ⚠️ MUY IMPORTANTE: NO pongas Content-Type aquí cuando usas FormData
-          ...authHeaders(), // si authHeaders mete Content-Type json, dime y lo ajustamos
-        },
+        headers: { ...tenantHeaders(), ...authHeaders() },
         body: fd
       });
 
@@ -5063,14 +4948,11 @@ async function loadDocs({ q } = {}) {
         throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
       }
 
-      // limpiar
       fileEl.value = '';
       if (expEl) expEl.value = '';
 
-      // refrescar lista (si usas cache, resetea)
       _allDocs = [];
       await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
-
       alert('Documento subido');
     } catch (err) {
       console.error('[Docs Upload] error', err);
@@ -5082,8 +4964,120 @@ async function loadDocs({ q } = {}) {
   });
 }
 
-// Llamar una vez al cargar la página
+// ===== Delegación: Eliminar / Cumplir / Reemplazar =====
+document.addEventListener('click', async (ev) => {
+
+  // ---- eliminar ----
+  const delBtn = ev.target.closest('button[data-del]');
+  if (delBtn) {
+    const docId = delBtn.getAttribute('data-del');
+    if (!docId) return;
+
+    const pin = prompt('Introduce el PIN para eliminar (configurable en .env como DELETE_DOCS_PIN):', '');
+    if (pin === null) return;
+
+    try {
+      const res = await fetch(`/api/documents/${encodeURIComponent(docId)}?pin=${encodeURIComponent(pin)}`, {
+        method: 'DELETE',
+        headers: { ...tenantHeaders(), ...authHeaders() }
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(()=> ({}));
+        if (j?.error === 'pin_invalid') throw new Error('PIN inválido');
+        throw new Error(j?.error || `HTTP ${res.status}`);
+      }
+
+      // refrescar cache + UI
+      _allDocs = [];
+      await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+
+    } catch (e) {
+      alert('No se pudo eliminar: ' + (e.message || ''));
+    }
+    return;
+  }
+
+  // ---- cumplir ----
+  const compBtn = ev.target.closest('button[data-complete]');
+  if (compBtn) {
+    const docId = compBtn.getAttribute('data-complete');
+    if (!docId) return;
+
+    const note = prompt('Nota (opcional): ¿qué se cumplió / cómo se resolvió?', '');
+    if (note === null) return; // ✅ si cancelas, NO se cumple
+
+    try {
+      const res = await fetch(`/api/documents/${encodeURIComponent(docId)}/complete`, {
+        method: 'PATCH',
+        headers: { 'Content-Type':'application/json', ...tenantHeaders(), ...authHeaders() },
+        body: JSON.stringify({ note })
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(()=> ({}));
+        throw new Error(j?.error || j?.message || `HTTP ${res.status}`);
+      }
+
+      _allDocs = [];
+      await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+
+    } catch (e) {
+      alert('No se pudo marcar como cumplido: ' + (e.message || ''));
+    }
+    return;
+  }
+
+  // ---- reemplazar ----
+  const repBtn = ev.target.closest('button[data-replace]');
+  if (repBtn) {
+    const docId = repBtn.getAttribute('data-replace');
+    if (!docId) return;
+
+    // Abrimos un input file “al vuelo”
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '*/*';
+    input.onchange = async () => {
+      const f = input.files && input.files[0];
+      if (!f) return;
+
+      // fecha opcional
+      const expiry = prompt('Fecha de vencimiento del NUEVO documento (YYYY-MM-DD) o vacío:', '') || '';
+
+      const fd = new FormData();
+      fd.append('projectId', id);
+      fd.append('file', f);
+      if (expiry.trim()) fd.append('expiryDate', expiry.trim());
+
+      // 👇 clave: este upload reemplaza a docId
+      fd.append('replaces', docId);
+
+      try {
+        const res = await fetch('/api/documents/upload', {
+          method: 'POST',
+          headers: { ...tenantHeaders(), ...authHeaders() },
+          body: fd
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(()=> ({}));
+          throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
+        }
+
+        _allDocs = [];
+        await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+        alert('Reemplazo subido. El documento anterior queda archivado.');
+
+      } catch (e) {
+        alert('No se pudo reemplazar: ' + (e.message || ''));
+      }
+    };
+    input.click();
+    return;
+  }
+});
+
+// Llamadas iniciales
 wireDocsUpload();
+// (tu loadProject o init debe llamar a loadDocs)
 
 // ====== Chat (pestaña Chat) ======
 let chatBeforeCursor = null; // para paginación "cargar más"

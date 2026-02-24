@@ -5,6 +5,7 @@ const fs = require('fs');
 const multer = require('multer');
 const mongoose = require('mongoose');
 const { requireRole, requireProjectAccess } = require('../middleware/rbac');
+
 const Document = require('../models/Document');
 const Project = require('../models/Project');
 const ProjectChecklist = require('../models/ProjectChecklist');
@@ -29,12 +30,10 @@ const storage = multer.diskStorage({
 const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 const multiUpload = upload.fields([{ name: 'files', maxCount: 20 }, { name: 'file', maxCount: 1 }]);
 
-
 /* =========================
    Helpers de rol/ACL
    ========================= */
 function norm(s) { return (s || '').toString().toLowerCase(); }
-function toObjectId(id) { return new mongoose.Types.ObjectId(id); }
 
 const FULL_ACCESS_ROLES = [
   'admin', 'bank', 'promoter', 'gerencia', 'socios', 'financiero', 'contable'
@@ -44,21 +43,6 @@ const LIMITED_ROLES = ['legal', 'tecnico', 'commercial'];
 function isFullAccess(role) { return FULL_ACCESS_ROLES.includes(norm(role)); }
 function isLimited(role) { return LIMITED_ROLES.includes(norm(role)); }
 
-async function loadDocAndAttachProject(req, res, next) {
-  try {
-    const tenantKey = req.tenantKey;
-    const docId = req.params.id;
-    const doc = await Document.findOne({ _id: docId, tenantKey }).lean();
-    if (!doc) return res.status(404).json({ error: 'Documento no encontrado' });
-    req.params.docId = docId;
-    req.params.id = doc.projectId;
-    next();
-  } catch (e) {
-    console.error('[documents.loadDocAndAttachProject] error:', e);
-    res.status(500).json({ error: e.message });
-  }
-}
-
 function safeOid(id) {
   try { return new mongoose.Types.ObjectId(id); }
   catch { return null; }
@@ -66,6 +50,26 @@ function safeOid(id) {
 
 function escapeRegex(s = '') {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function loadDocAndAttachProject(req, res, next) {
+  try {
+    const tenantKey = req.tenantKey;
+    const docId = req.params.id;
+    const doc = await Document.findOne({ _id: docId, tenantKey }).lean();
+    if (!doc) return res.status(404).json({ error: 'Documento no encontrado' });
+
+    // guardamos docId real
+    req.params.docId = docId;
+
+    // y “pegamos” el projectId para que requireProjectAccess funcione
+    req.params.id = doc.projectId;
+
+    next();
+  } catch (e) {
+    console.error('[documents.loadDocAndAttachProject] error:', e);
+    res.status(500).json({ error: e.message });
+  }
 }
 
 function buildDocsQuery(req) {
@@ -82,11 +86,9 @@ function buildDocsQuery(req) {
     else and.push({ _id: { $exists: false } });
   }
 
-  // ✅ NUEVO: filtro por permitCode
+  // filtro por permitCode (si lo usas)
   const permitCode = (req.query.permitCode || '').trim();
-  if (permitCode) {
-    and.push({ permitCode });
-  }
+  if (permitCode) and.push({ permitCode });
 
   if (req.query.unitId) {
     const uid = safeOid(String(req.query.unitId));
@@ -117,7 +119,9 @@ function buildDocsQuery(req) {
         { title: rx },
         { filename: rx },
         { unitTag: rx },
-        { mimetype: rx }
+        { mimetype: rx },
+        { permitCode: rx },
+        { permitTitle: rx }
       ]
     });
   }
@@ -158,6 +162,7 @@ function buildDocsQuery(req) {
 
 /* =========================================================================
    SUBIDA DE DOCUMENTOS
+   - Soporta replaces: al subir nuevo doc, marca el anterior como REPLACED
    ========================================================================= */
 function attachProjectIdParam(req, _res, next) {
   const pid = req.body?.projectId || req.query?.projectId;
@@ -167,37 +172,6 @@ function attachProjectIdParam(req, _res, next) {
     req.params.id = pid;
   }
   next();
-}
-
-async function deleteDocHandler(req, res) {
-  try {
-    const role = norm(req.user?.role);
-    const tenantKey = req.tenantKey;
-    const docId = req.params.docId || req.params.id;
-
-    const pin = (req.body?.pin || req.query?.pin || '').toString().trim();
-    const expectedPin = process.env.DELETE_DOCS_PIN || '2580';
-    if (!isFullAccess(role)) {
-      if (pin !== expectedPin) {
-        return res.status(403).json({ error: 'pin_invalid' });
-      }
-    }
-
-    const doc = await Document.findOne({ _id: docId, tenantKey }).lean();
-    if (!doc) return res.status(404).json({ error: 'Documento no encontrado' });
-
-    await Document.deleteOne({ _id: docId, tenantKey });
-
-    const absPath = path.isAbsolute(doc.path) ? doc.path : path.join(__dirname, '..', doc.path);
-    if (fs.existsSync(absPath)) {
-      try { fs.unlinkSync(absPath); } catch {}
-    }
-
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('[documents.delete] error:', e);
-    res.status(500).json({ error: e.message });
-  }
 }
 
 router.post(
@@ -216,19 +190,25 @@ router.post(
       const checklistId = req.body?.checklistId || req.query?.checklistId || null;
       const unitId      = req.body?.unitId      || req.query?.unitId      || null;
 
-      // ✅ NUEVO: permitCode/permitTitle
-      const permitCode  = (req.body?.permitCode || req.query?.permitCode || '').trim() || undefined;
+      const permitCode  = (req.body?.permitCode  || req.query?.permitCode  || '').trim() || undefined;
       const permitTitle = (req.body?.permitTitle || req.query?.permitTitle || '').trim() || undefined;
+
+      // ✅ NUEVO: reemplazo (doc anterior)
+      const replacesRaw = (req.body?.replaces || req.query?.replaces || '').toString().trim();
+      const replacesOid = replacesRaw ? safeOid(replacesRaw) : null;
+      if (replacesRaw && !replacesOid) {
+        return res.status(400).json({ error: 'replaces inválido' });
+      }
 
       const categoryRaw = (req.body?.category || req.query?.category || '').trim();
       const baTagRaw    = (req.body?.baTag    || req.query?.baTag    || '').toUpperCase().trim();
       const category    = categoryRaw || undefined;
       const baTag       = (baTagRaw === 'BEFORE' || baTagRaw === 'AFTER') ? baTagRaw : undefined;
 
-      let   { expiryDate, visibleToRoles } = req.body || {};
+      let { expiryDate, visibleToRoles } = req.body || {};
 
-      if (!tenantKey)  return res.status(400).json({ error: 'Falta tenantKey' });
-      if (!projectId)  return res.status(400).json({ error: 'Falta projectId' });
+      if (!tenantKey) return res.status(400).json({ error: 'Falta tenantKey' });
+      if (!projectId) return res.status(400).json({ error: 'Falta projectId' });
 
       const proj = await Project.findOne({ _id: projectId, tenantKey }).select('_id').lean();
       if (!proj) return res.status(404).json({ error: 'project_not_found' });
@@ -242,14 +222,14 @@ router.post(
 
       // ---- ACL ----
       const nrm = s => (s || '').toString().toLowerCase().trim();
-      const FULL   = ['admin','bank','promoter','gerencia','socios','financiero','contable'];
-      const LIMITED= ['legal','tecnico','commercial'];
+      const FULL    = ['admin','bank','promoter','gerencia','socios','financiero','contable'];
+      const LIMITED = ['legal','tecnico','commercial'];
 
       let acl = Array.isArray(visibleToRoles)
         ? visibleToRoles.map(nrm).filter(Boolean)
         : (typeof visibleToRoles === 'string' && visibleToRoles.trim()
-            ? visibleToRoles.split(',').map(nrm).filter(Boolean)
-            : null);
+          ? visibleToRoles.split(',').map(nrm).filter(Boolean)
+          : null);
 
       if (checklistId && (!acl || !acl.length)) {
         const cl = await ProjectChecklist
@@ -298,15 +278,26 @@ router.post(
         return res.status(400).json({ error: 'Falta archivo(s)' });
       }
 
+      // Si viene replaces, verificamos que el doc pertenece al mismo proyecto/tenant
+      let replacedDoc = null;
+      if (replacesOid) {
+        replacedDoc = await Document.findOne({ _id: replacesOid, tenantKey }).lean();
+        if (!replacedDoc) return res.status(404).json({ error: 'doc_to_replace_not_found' });
+
+        // mismo proyecto
+        if (String(replacedDoc.projectId) !== String(projectId)) {
+          return res.status(400).json({ error: 'replaces_not_same_project' });
+        }
+      }
+
       const created = [];
       for (const f of files) {
         const doc = await Document.create({
           tenantKey,
           projectId: new mongoose.Types.ObjectId(projectId),
 
-          // ✅ Guardamos el vínculo con el trámite
-          permitCode: permitCode || undefined,
-          permitTitle: permitTitle || undefined,
+          permitCode,
+          permitTitle,
 
           checklistId: checklistId ? new mongoose.Types.ObjectId(checklistId) : undefined,
           unitId: unitOid || undefined,
@@ -319,14 +310,28 @@ router.post(
           size:         f.size,
 
           expiryDate:   expiry,
+
           uploadedBy:   userId,
           uploaderRole: uploaderRole,
           visibleToRoles: acl,
 
           category,
           baTag,
-          tag: baTag
+          tag: baTag,
+
+          // ✅ Nuevos campos de ciclo de vida
+          status: 'ACTIVE',
+          replaces: replacesOid || undefined
         });
+
+        // si reemplazamos, marcamos el anterior como REPLACED apuntando al nuevo
+        if (replacesOid) {
+          await Document.updateOne(
+            { _id: replacesOid, tenantKey },
+            { $set: { status: 'REPLACED', replacedBy: doc._id } }
+          );
+        }
+
         created.push(doc.toObject());
       }
 
@@ -351,6 +356,42 @@ router.get('/', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+/* =========================================================================
+   ✅ Marcar como CUMPLIDO
+   ========================================================================= */
+router.patch(
+  '/:id/complete',
+  requireRole('admin','bank','promoter','gerencia','socios','financiero','contable','legal','tecnico','commercial'),
+  loadDocAndAttachProject,
+  requireProjectAccess({ commercialOnlySales: false }),
+  async (req, res) => {
+    try {
+      const tenantKey = req.tenantKey;
+      const docId = req.params.docId || req.params.id;
+
+      const note = (req.body?.note || '').toString().trim();
+      const userId = req.user?.userId || req.user?._id;
+
+      const doc = await Document.findOne({ _id: docId, tenantKey });
+      if (!doc) return res.status(404).json({ error: 'Documento no encontrado' });
+
+      const st = String(doc.status || 'ACTIVE').toUpperCase();
+      if (st === 'REPLACED') return res.status(400).json({ error: 'doc_replaced' });
+
+      doc.status = 'COMPLETED';
+      doc.completedAt = new Date();
+      doc.completedBy = userId;
+      doc.completionNote = note || undefined;
+
+      await doc.save();
+      res.json({ ok: true });
+    } catch (e) {
+      console.error('[documents.complete] error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  }
+);
 
 /* =========================================================================
    Descargar
@@ -379,7 +420,7 @@ router.get('/:id/download', async (req, res) => {
 });
 
 /* =========================================================================
-   Borrado
+   Borrado (PIN)
    ========================================================================= */
 async function deleteDocHandler(req, res) {
   try {
@@ -390,9 +431,7 @@ async function deleteDocHandler(req, res) {
     const pin = (req.body?.pin || req.query?.pin || '').toString().trim();
     const expectedPin = process.env.DELETE_DOCS_PIN || '2580';
     if (!isFullAccess(role)) {
-      if (pin !== expectedPin) {
-        return res.status(403).json({ error: 'pin_invalid' });
-      }
+      if (pin !== expectedPin) return res.status(403).json({ error: 'pin_invalid' });
     }
 
     const doc = await Document.findOne({ _id: docId, tenantKey }).lean();

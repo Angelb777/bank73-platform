@@ -1566,3 +1566,10 @@ a.btn, .btn { text-decoration: none; }
 .card.status-FINALIZADO .progress > div {
   background: rgba(255,255,255,.35);
 }
+
+/* Vencimientos criticos */
+.pill{ padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700; }
+.pill-blue{ background:#2b5cff33; border:1px solid #2b5cff66; color:#cfe0ff; }
+.pill-gray{ background:#ffffff14; border:1px solid #ffffff22; color:#cfd3da; }
+.small.danger{ color:#ff7b7b; }
+.small.warn{ color:#ffd36e; }

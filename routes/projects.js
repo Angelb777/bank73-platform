@@ -710,11 +710,27 @@ const permitsByInstitution = Object.values(byInst)
     const t = new Date(d).getTime() - now;
     if (t <= d90) expiries.push({ type:'CPP', name:`${v.numCPP||'CPP'} — ${v.banco||''}`, bank: v.banco||'', due: d });
   }
-  for (const d of (documents||[])) {
-    if (!d.expiryDate) continue;
-    const t = new Date(d.expiryDate).getTime() - now;
-    if (t <= d90) expiries.push({ type:'Documento', name: d.originalname || d.name || 'Documento', due: d.expiryDate });
+  for (const d of (documents || [])) {
+  if (!d.expiryDate) continue;
+
+  // ✅ SOLO docs activos cuentan como vencimiento crítico
+  // - Si status no existe (docs viejos), lo tratamos como ACTIVE
+  const st = String(d.status || 'ACTIVE').toUpperCase();
+  if (st !== 'ACTIVE') continue;
+
+  const t = new Date(d.expiryDate).getTime() - now;
+  if (t <= d90) {
+    expiries.push({
+      type: 'Documento',
+      name: d.originalname || d.name || 'Documento',
+      due: d.expiryDate,
+
+      // ✅ útil para debug/filtrado en front si quieres
+      status: st,
+      docId: d._id
+    });
   }
+}
   expiries.sort((a,b)=> new Date(a.due) - new Date(b.due));
   const notes = [];
   if (kpis.loan.approved && kpis.loan.disbursed < kpis.loan.approved)
@@ -915,11 +931,27 @@ const [checklists, documents, ventas, units, permits, financePhases] = await Pro
       const t = new Date(d).getTime() - now;
       if (t <= d90) expiries.push({ type:'CPP', name:`${v.numCPP||'CPP'} — ${v.banco||''}`, due: d });
     }
-    for (const d of (documents||[])) {
-      if (!d.expiryDate) continue;
-      const t = new Date(d.expiryDate).getTime() - now;
-      if (t <= d90) expiries.push({ type:'Documento', name: d.originalname || d.name || 'Documento', due: d.expiryDate });
-    }
+    for (const d of (documents || [])) {
+  if (!d.expiryDate) continue;
+
+  // ✅ SOLO docs activos cuentan como vencimiento crítico
+  // - Si status no existe (docs viejos), lo tratamos como ACTIVE
+  const st = String(d.status || 'ACTIVE').toUpperCase();
+  if (st !== 'ACTIVE') continue;
+
+  const t = new Date(d.expiryDate).getTime() - now;
+  if (t <= d90) {
+    expiries.push({
+      type: 'Documento',
+      name: d.originalname || d.name || 'Documento',
+      due: d.expiryDate,
+
+      // ✅ útil para debug/filtrado en front si quieres
+      status: st,
+      docId: d._id
+    });
+  }
+}
     expiries.sort((a,b)=> new Date(a.due) - new Date(b.due));
 
     const summary = {

@@ -13,6 +13,10 @@ const documentSchema = new mongoose.Schema({
   // ❖ Proyecto
   checklistId: { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectChecklist', index: true },
 
+  // ✅ Permisos / Trámites (si lo usas)
+  permitCode:  { type: String, index: true },
+  permitTitle: { type: String },
+
   // ❖ Archivo
   originalname: String,
   filename:     String,
@@ -31,10 +35,23 @@ const documentSchema = new mongoose.Schema({
   // ❖ ACL por roles
   visibleToRoles: [{ type: String }],
 
-  // ❖ 🔴 Campos necesarios para “Antes / Después”
+  // ❖ Antes / Después
   category:  { type: String, index: true },                 // ej. 'beforeAfter'
   baTag:     { type: String, enum: ['BEFORE','AFTER'], index: true },
-  tag:       { type: String }                                // compat front (BEFORE/AFTER)
+  tag:       { type: String },                              // compat front (BEFORE/AFTER)
+
+  // ✅ Ciclo de vida del vencimiento
+  status: { type: String, enum: ['ACTIVE','COMPLETED','REPLACED'], default: 'ACTIVE', index: true },
+
+  // ✅ Auditoría de cumplimiento
+  completedAt: { type: Date },
+  completedBy: { type: mongoose.Schema.Types.ObjectId }, // si no tienes modelo User formal, así vale
+  completionNote: { type: String },
+
+  // ✅ Reemplazos (historial)
+  replaces:   { type: mongoose.Schema.Types.ObjectId, ref: 'Document' },
+  replacedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Document' },
+
 }, { timestamps: true });
 
 documentSchema.pre('validate', function (next) {
@@ -52,7 +69,9 @@ documentSchema.index({ tenantKey: 1, projectId: 1, createdAt: -1 });
 documentSchema.index({ tenantKey: 1, checklistId: 1, createdAt: -1 });
 documentSchema.index({ tenantKey: 1, unitId: 1, createdAt: -1 });
 documentSchema.index({ tenantKey: 1, visibleToRoles: 1 });
-// Para A/D
 documentSchema.index({ tenantKey: 1, category: 1, baTag: 1, createdAt: -1 });
+
+// ✅ Para Resumen “Vencimientos críticos”
+documentSchema.index({ tenantKey: 1, projectId: 1, status: 1, expiryDate: 1 });
 
 module.exports = mongoose.model('Document', documentSchema);
