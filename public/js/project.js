@@ -1278,7 +1278,7 @@ function renderBeforeAfter(items){
         <figcaption class="small" style="margin-top:6px">${it.label||'Foto'}</figcaption>
         <div class="row space-between small muted">
           <span>${getTag(it)}</span>
-          <button class="btn btn-ghost btn-xs" onclick="deleteBA('${it._id}')">Eliminar</button>
+          <button class="btn btn-ghost btn-xs js-ba-delete" data-id="${it._id}">Eliminar</button>
         </div>
       </figure>
     `).join('');
@@ -1355,6 +1355,72 @@ async function uploadBA(which, files) {
   await refreshBeforeAfter();
 }
 
+// ✅ Bind global: borrar fotos Antes/Después
+(function bindBADeleteOnce(){
+  if (window.__BA_DELETE_BOUND__) return;
+  window.__BA_DELETE_BOUND__ = true;
+
+  // roles que NO necesitan PIN (igual que FULL_ACCESS_ROLES del backend)
+  const FULL = ['admin','bank','promoter','gerencia','socios',];
+
+  const getRole = () => {
+    try {
+      // si tienes API.getAuth() úsalo
+      const a = (typeof API !== 'undefined' && typeof API.getAuth === 'function') ? API.getAuth() : null;
+      const r = (a?.role || localStorage.getItem('role') || '').toString().toLowerCase().trim();
+      return r;
+    } catch {
+      return (localStorage.getItem('role') || '').toString().toLowerCase().trim();
+    }
+  };
+
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.js-ba-delete');
+    if (!btn) return;
+
+    const docId = btn.dataset.id;
+    if (!docId) return;
+
+    if (!confirm('¿Eliminar esta imagen?')) return;
+
+    const role = getRole();
+    const needsPin = !FULL.includes(role);
+
+    // ✅ si NO es rol alto, pedimos PIN
+    let pin = '';
+    if (needsPin) {
+      pin = prompt('Introduce el PIN para borrar:') || '';
+      pin = pin.trim();
+      if (!pin) return; // cancelado / vacío
+    }
+
+    try {
+      // ✅ manda pin por query (más robusto que body en DELETE)
+      const url = needsPin
+        ? `/api/documents/${docId}?pin=${encodeURIComponent(pin)}`
+        : `/api/documents/${docId}`;
+
+      const resp = await fetch(url, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: {
+          ...(typeof authHeaders === 'function' ? authHeaders() : {}),
+          ...(typeof tenantHeaders === 'function' ? tenantHeaders() : {})
+        }
+      });
+
+      if (!resp.ok) {
+        const txt = await resp.text().catch(()=> '');
+        throw new Error(`No se pudo eliminar (HTTP ${resp.status}) ${txt}`);
+      }
+
+      await refreshBeforeAfter();
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Error eliminando');
+    }
+  });
+})();
 
 function wireBAUploads(){
   const bInput = document.getElementById('baBeforeInput');
@@ -1363,11 +1429,6 @@ function wireBAUploads(){
   const aBtn   = document.getElementById('baAfterBtn');
   if (bBtn && bInput) bBtn.onclick = ()=> uploadBA('BEFORE', bInput.files);
   if (aBtn && aInput) aBtn.onclick = ()=> uploadBA('AFTER',  aInput.files);
-}
-
-async function deleteBA(docId){
-  await fetch(`/api/documents/${docId}?pin=2580`, { method:'DELETE', credentials:'include' });
-  await refreshBeforeAfter();
 }
 
 async function renderSummaryUI(payload){
@@ -1774,6 +1835,7 @@ if (notesUl) {
 }
 
 // Antes / Después
+wireBADeleteDelegation();      // ✅ bind 1 sola vez
 await loadBeforeAfterGallery();
 addInfoBadges();
 wireInfoTooltips();
