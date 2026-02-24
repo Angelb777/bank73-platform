@@ -31,10 +31,27 @@
     /* Modal simple */
     .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index: 70; }
     .modal-backdrop.show { display:flex; }
-    .modal { background:#fff; color:#000; border-radius:10px; width:100%; max-width:720px; padding:20px; }
+    .modal { background:#fff; color:#000; border-radius:10px; width:100%; max-width:820px; padding:20px; }
     .modal h3 { margin-top:0; }
     .modal .row { display:flex; gap:8px; align-items:center; justify-content:flex-end; margin-top:12px; }
     .modal select, .modal input, .modal textarea { border:1px solid #ccc; background:#fff; color:#000; }
+
+    /* ✅ NUEVO: body scroll interno del modal */
+    .modal-body{
+      max-height: calc(100vh - 260px);
+      overflow: auto;
+      padding-right: 6px;
+    }
+
+    /* ✅ NUEVO: roles en grid 2 columnas */
+    #assignRolesContainer{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 860px){
+      #assignRolesContainer{ grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -157,9 +174,7 @@
           <option value="rejected">Rechazados</option>
           <option value="draft">Borrador</option>
         </select>
-        <!-- buscador -->
         <input id="allProjectsSearch" class="input" type="search" placeholder="Buscar por nombre, descripción o equipo..." />
-
         <button id="refreshAllProjects" class="btn small">Refrescar</button>
       </div>
 
@@ -180,22 +195,21 @@
   </main>
 
   <!-- Modal asignación -->
-<div class="modal-backdrop" id="assignModal">
-  <div class="modal">
-    <h3>Asignar equipo al proyecto</h3>
-    <div class="muted" id="assignProjectName" style="margin-bottom:10px;"></div>
+  <div class="modal-backdrop" id="assignModal">
+    <div class="modal">
+      <h3>Asignar equipo al proyecto</h3>
+      <div class="muted" id="assignProjectName" style="margin-bottom:10px;"></div>
 
-    <!-- scroll interno -->
-    <div class="modal-body">
-      <div id="assignRolesContainer"></div>
-    </div>
+      <div class="modal-body">
+        <div id="assignRolesContainer"></div>
+      </div>
 
-    <div class="row">
-      <button id="assignCancel" class="btn ghost">Cancelar</button>
-      <button id="assignSave" class="btn">Guardar</button>
+      <div class="row">
+        <button id="assignCancel" class="btn ghost">Cancelar</button>
+        <button id="assignSave" class="btn">Guardar</button>
+      </div>
     </div>
   </div>
-</div>
 
   <script>
     (function guardAdmin() {
@@ -214,7 +228,6 @@
   </script>
 
   <script src="/js/api.js"></script>
-  <!-- Asegúrate de usar el JS MIX que te pasé -->
   <script src="/js/dashboard.js?v=mix-usuarios-proyectos"></script>
 </body>
 </html>

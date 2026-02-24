@@ -7,6 +7,7 @@
   <link href="/css/base.css" rel="stylesheet" />
   <link href="/css/theme.css" rel="stylesheet" />
   <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
+
   <style>
     /* FAB y modal */
     .fab {
@@ -16,39 +17,189 @@
       display: flex; align-items: center; justify-content: center;
       border: none; box-shadow: 0 6px 16px rgba(0,0,0,0.2);
       cursor: pointer;
+      z-index: 60;
     }
     .fab:hover { filter: brightness(0.95); }
-    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 50; }
-    .modal { background: #fff; color:#000; border-radius: 10px; width: 100%; max-width: 560px; padding: 20px; }
-    .modal .row { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 12px; }
-    .modal h3 { margin-top: 0; }
+
+    .modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4);
+      display: none;
+      align-items: center; justify-content: center;
+      z-index: 50;
+    }
     .modal-backdrop.show { display: flex; }
+
+    .modal {
+      background: #fff; color:#000;
+      border-radius: 10px;
+      width: 100%;
+      max-width: 760px;
+      padding: 20px;
+    }
+    .modal .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: flex-end;
+      margin-top: 12px;
+    }
+    .modal h3 { margin-top: 0; }
     .modal input, .modal textarea, .modal select { border: 1px solid #ccc; background: #fff; color: #000; }
+
     .muted { opacity:.7; font-size:.9rem; }
     #noProjectsBanner { margin:20px 0; text-align:center; display:none; }
+
+    /* =========================
+       TOPBAR: izquierda/centro/derecha
+       ========================= */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    /* Izquierda fija */
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 0 0 auto;
+      min-width: 140px; /* para que no baile */
+    }
+
+    /* Centro ocupa y centra */
+    .topbar-center {
+      flex: 1 1 auto;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-width: 240px;
+    }
+
+    /* Derecha fija */
+    .topbar-right {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      min-width: 140px; /* para equilibrar y ayudar al centrado */
+    }
+
+    /* Buscador minimal negro */
+    .topbar-search{
+  width: min(520px, 60vw);
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+
+  /* ✅ integrado: azul oscuro MUY sutil (no cantoso) */
+  background: rgba(255,255,255,0.04);
+
+  /* borde fino tipo “hairline” */
+  border: 1px solid rgba(255,255,255,0.08);
+
+  /* un pelín de blur sin pasarse */
+  backdrop-filter: blur(4px);
+
+  color: rgba(235,245,255,0.92);
+  outline: none;
+  font-size: 14px;
+  letter-spacing: .2px;
+
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+
+.topbar-search::placeholder{
+  color: rgba(200,220,255,.38);
+}
+
+.topbar-search:focus{
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(140,180,255,0.18);
+  box-shadow: 0 0 0 2px rgba(90,140,255,0.10);
+}
+
+    @media (max-width: 720px) {
+      .topbar-left, .topbar-right { min-width: 90px; }
+      .topbar-search { width: min(520px, 86vw); }
+    }
+
+    /* =========================
+       ASIGNEES GRID (modal)
+       ========================= */
+    .assignees-grid {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    @media (max-width: 720px) {
+      .assignees-grid { grid-template-columns: 1fr; }
+    }
+
+    .hint {
+      margin-top: 8px;
+      font-size: 12px;
+      opacity: .65;
+    }
+
+    .required-badge{
+      display:inline-block;
+      margin-left: 8px;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(13,110,253,.12);
+      color: #0d6efd;
+      border: 1px solid rgba(13,110,253,.25);
+      vertical-align: middle;
+    }
   </style>
 </head>
+
 <body>
+  <!-- TOPBAR -->
   <div class="topbar">
-    <div class="brand">Portfolio</div>
-    <div>
+    <div class="topbar-left">
+      <div class="brand">Portfolio</div>
+    </div>
+
+    <div class="topbar-center">
+      <!-- ✅ 1 SOLO buscador -->
+      <input
+        id="portfolioSearch"
+        class="topbar-search"
+        type="search"
+        placeholder="Buscar proyecto..."
+        autocomplete="off"
+      />
+    </div>
+
+    <div class="topbar-right">
       <button id="logoutBtn" class="btn">Salir</button>
     </div>
   </div>
 
+  <!-- CONTENIDO -->
   <div class="container">
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
       <h2>Proyectos</h2>
     </div>
-    <div id="noProjectsBanner" class="muted">No tienes proyectos asignados o aprobados todavía.</div>
+
+    <div id="noProjectsBanner" class="muted">
+      No tienes proyectos asignados o aprobados todavía.
+    </div>
+
     <div id="cards" class="grid"></div>
   </div>
 
   <!-- FAB empieza oculto, lo muestra JS solo a admin/bank -->
   <button class="fab" id="fabPlus" title="Crear proyecto" style="display:none">+</button>
 
+  <!-- MODAL -->
   <div class="modal-backdrop" id="modalBackdrop">
-    <!-- añadido max-height, overflow y padding-bottom -->
     <div class="modal" style="max-height:calc(100vh - 80px); overflow:auto; padding-bottom:96px;">
       <h3>Crear nuevo proyecto</h3>
 
@@ -64,16 +215,22 @@
       </div>
 
       <div style="margin-top:12px;">
-        <div class="small muted">Asignaciones (al menos 1 promotor):</div>
-        <div class="row" style="flex-wrap: wrap; justify-content:flex-start;">
-          <div style="flex:1 1 250px;">
-            <label class="small muted">Promotores</label>
-            <select id="pPromoters" multiple size="6" style="width:100%;"></select>
-          </div>
-          <div style="flex:1 1 250px;">
-            <label class="small muted">Comerciales (opcional)</label>
-            <select id="pCommercials" multiple size="6" style="width:100%;"></select>
-          </div>
+        <div class="small muted">
+          Asignaciones
+          <span class="required-badge">Promotor obligatorio</span>
+        </div>
+
+        <!-- ✅ aquí el JS pintará TODOS los roles con buscador + select -->
+        <div id="assigneesContainer" class="assignees-grid"></div>
+
+        <div class="hint">
+          Tip: Escribe en el buscador de cada rol para filtrar.
+        </div>
+
+        <!-- legacy oculto (por si el backend/JS viejo lo buscaba) -->
+        <div style="display:none">
+          <select id="pPromoters" multiple size="6" style="width:100%;"></select>
+          <select id="pCommercials" multiple size="6" style="width:100%;"></select>
         </div>
       </div>
 
@@ -84,7 +241,6 @@
     </div>
   </div>
 
-  <!-- ya no hace falta el script inline de controlFab -->
   <script src="/js/api.js"></script>
   <script src="/js/portfolio.js?v=single-view"></script>
 </body>

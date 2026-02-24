@@ -507,13 +507,22 @@ function applyProjectsFilters(list) {
   } catch (e) {
     allProjectsTbody.innerHTML = `<tr><td colspan="6" class="muted">Error al cargar: ${e.message}</td></tr>`;
   }
-}
+ }
 
-function createRoleSelect(role, candidates = [], preselectedIds = []) {
+ function createRoleSelect(role, candidates = [], preselectedIds = []) {
   const wrap = document.createElement('div');
+
   const label = document.createElement('label');
   label.className = 'small muted';
   label.textContent = ROLE_LABEL(role);
+
+  // ✅ NUEVO: buscador por rol
+  const search = document.createElement('input');
+  search.type = 'search';
+  search.className = 'input small';
+  search.placeholder = `Buscar ${ROLE_LABEL(role)}...`;
+  search.style.width = '100%';
+  search.style.margin = '6px 0 8px 0';
 
   const sel = document.createElement('select');
   sel.className = 'input';
@@ -532,8 +541,29 @@ function createRoleSelect(role, candidates = [], preselectedIds = []) {
     sel.appendChild(opt);
   });
 
+  // ✅ NUEVO: filtro de options
+  const norm = (s) => (s || '').toString().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+  const applyFilter = () => {
+    const q = norm(search.value);
+    Array.from(sel.options).forEach(o => {
+      if (!q) { o.hidden = false; return; }
+      o.hidden = !norm(o.textContent).includes(q);
+    });
+  };
+
+  // pequeño debounce para no recalcular cada tecla súper rápido
+  let t = null;
+  search.addEventListener('input', () => {
+    clearTimeout(t);
+    t = setTimeout(applyFilter, 100);
+  });
+
   wrap.appendChild(label);
+  wrap.appendChild(search); // 👈 encima del select
   wrap.appendChild(sel);
+
   return wrap;
 }
 
