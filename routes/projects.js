@@ -1587,6 +1587,11 @@ const normHeader = (s) => String(s || '')
   .trim()
   .toUpperCase();
 
+// === Detectar columnas duplicadas "DIAS TRANSCURRIDOS" ===
+const idxDiasTrans = header
+  .map((h, i) => normHeader(h) === 'DIAS TRANSCURRIDOS' ? i : -1)
+  .filter(i => i >= 0);
+
 // Mapa: headerNormalizado -> headerOriginal
 const headerMap = new Map();
 for (const h of header) headerMap.set(normHeader(h), h);
@@ -1619,6 +1624,17 @@ const get = (rowObj, names) => {
       };
 
       const norm = s => String(s||'').trim().toLowerCase();
+
+      const parseBool = (v) => {
+  const t = String(v ?? '').trim().toUpperCase();
+  if (!t || t === '-' || t === 'N/A') return false;
+
+  if (['SI','S','YES','Y','TRUE','1','X','OK'].includes(t)) return true;
+  if (['NO','N','FALSE','0'].includes(t)) return false;
+
+  // Si te llega "PEND", "PF", etc: por defecto NO (para no marcar checks falsos)
+  return false;
+};
 
       // 1) precarga unidades existentes para mapear unitId por (manzana|lote)
       const existingUnits = await Unit.find({ tenantKey, projectId: id, deletedAt: null }).lean();
@@ -1740,6 +1756,10 @@ await setUnitEstado(unit._id, estado);
           statusBanco:  String(get(rowObj, ['STATUS EN BANCO','STATUS  EN BANCO']) || '').trim(),
           numCPP:       String(get(rowObj, ['N° CPP','Nº CPP','NUM CPP']) || '').trim(),
           valor:        asNum(get(rowObj, ['VALOR'])) || 0,
+          aperturaCtaBanco: parseBool(get(rowObj, ['APERTURA CTA BANCO'])),
+          primeraMensual:   parseBool(get(rowObj, ['1RA MENSUAL', 'PRIMERA MENSUAL'])),
+          pagoMinuta:       parseBool(get(rowObj, ['PAGO MINUTA'])),
+          tiempoAprobacionDias: asNum(get(rowObj, ['TIEMPO DE APROBACION','TIEMPO APROBACION'])),
 
           entregaExpedienteBanco: asDate(get(rowObj, ['ENTREGA DE EXPEDIENTE A BANCO'])),
           recibidoCPP:            asDate(get(rowObj, ['RECIBIDO DE CPP'])),
@@ -1755,50 +1775,72 @@ await setUnitEstado(unit._id, estado);
           pagare:          String(get(rowObj, ['PAGARE']) || '').trim(),
           fechaFirma:      asDate(get(rowObj, ['FECHA FIRMA'])),
 
-          protocoloFirmaCliente:      !!get(rowObj, ['PROTOCOLO FIRMA CLIENTE']),
-          fechaEntregaBanco:          asDate(get(rowObj, ['FECHA ENTREGA BANCO'])),
-          protocoloFirmaRLBancoInter: !!get(rowObj, ['PROTOCOLO FIRMA RL BANCO INTER']),
+          protocoloFirmaCliente:      parseBool(get(rowObj, ['PROTOCOLO FIRMA CLIENTE','PROTOCOLO FIRMA DE CLIENTE'])),
+          fechaEntregaBanco: asDate(get(rowObj, ['FECHA DE ENTREGA A BANCO','FECHA ENTREGA BANCO'])),
+          protocoloFirmaRLBancoInter: parseBool(get(rowObj, ['PROTOCOLO FIRMA RL BANCO INTER','PROTOC. FIRMA DE RL, BANCO INTER'])),
           fechaRegresoBanco:          asDate(get(rowObj, ['FECHA REGRESO BANCO'])),
-          diasTranscurridosBanco:     asNum(get(rowObj, ['DIAS TRANSCURRIDOS BANCO'])),
+          diasTranscurridosBanco:     asNum(idxDiasTrans[0] !== undefined ? r[idxDiasTrans[0]] : undefined),
 
-          fechaEntregaProtocoloBancoCli: asDate(get(rowObj, ['FECHA ENTREGA PROTOCOLO BANCO CLI'])),
-          firmaProtocoloBancoCliente:    !!get(rowObj, ['FIRMA PROTOCOLO BANCO CLIENTE']),
-          fechaRegresoProtocoloBancoCli: asDate(get(rowObj, ['FECHA REGRESO PROTOCOLO BANCO CLI'])),
-          diasTranscurridosProtocolo:    asNum(get(rowObj, ['DIAS TRANSCURRIDOS PROTOCOLO'])),
+          fechaEntregaProtocoloBancoCli: asDate(get(rowObj, [
+  'FECHA ENTREGA PROTOCOLO BANCO CLIENTE',
+  'FECHA ENTREGA PROTOCOLO BANCO CLI'
+])),
+          firmaProtocoloBancoCliente: parseBool(get(rowObj, ['FIRMA PROTOCOLO BANCO CLIENTE','FIRMA PROTOC. BANCO CLIENT'])),
+          fechaRegresoProtocoloBancoCli: asDate(get(rowObj, [
+  'FECHA REGRESO PROTOCOLO BANCO CLIENTE',
+  'FECHA REGRESO PROTOCOLO BANCO CLI'
+])),
+          diasTranscurridosProtocolo: asNum(idxDiasTrans[1] !== undefined ? r[idxDiasTrans[1]] : undefined),
 
-          cierreNotaria:     asDate(get(rowObj, ['CIERRE DE NOTARIA'])),
+          cierreNotaria: parseBool(get(rowObj, ['CIERRE DE NOTARIA'])),
           fechaPagoImpuesto: asDate(get(rowObj, ['FECHA DE PAGO DE IMPUESTO'])),
-          ingresoRP:         asDate(get(rowObj, ['INGRESO AL RP'])),
+          ingresoRP:     parseBool(get(rowObj, ['INGRESO AL RP'])),
           fechaInscripcion:  asDate(get(rowObj, ['FECHA DE INSCRIPCION'])),
 
-          solicitudDesembolso: asDate(get(rowObj, ['SOLICITUD DE DESEMBOLSO'])),
+          solicitudDesembolso: parseBool(get(rowObj, ['SOLICITUD DE DESEMBOLSO'])),
           fechaRecibidoCheque: asDate(get(rowObj, ['FECHA DE RECIBIDO DE CK'])),
 
           expedienteMIVI:      String(get(rowObj, ['EXPEDIENTE MIVI']) || '').trim(),
-          entregaExpMIVI:      asDate(get(rowObj, ['ENTREGA EXP MIVI'])),
+          entregaExpMIVI: asDate(get(rowObj, [
+  'FECHA DE ENTREGA DE EXPEDIENTE MIVI',
+  'FECHA ENTREGA EXPEDIENTE MIVI',
+  'ENTREGA EXP MIVI'
+])),
           resolucionMIVI:      String(get(rowObj, ['N° DE RESOLUCION MIVI','RESOLUCION MIVI']) || '').trim(),
-          fechaResolucionMIVI: asDate(get(rowObj, ['FECHA RESOLUCION MIVI'])),
+          fechaResolucionMIVI: asDate(get(rowObj, [
+  'FECHA RESOLUCION',
+  'FECHA RESOLUCION MIVI'
+])),
           solicitudMiviDesembolso: asDate(get(rowObj, ['SOLICITUD MIVI DESEMBOLSO'])),
-          desembolsoMivi:      asNum(get(rowObj, ['DESEMBOLSO MIVI'])),
-          fechaPagoMivi:       asDate(get(rowObj, ['FECHA PAGO MIVI'])),
+          desembolsoMivi: String(get(rowObj, ['DESEMBOLSO MIVI']) || '').trim(),
+          fechaPagoMivi: asDate(get(rowObj, ['FECHA DE PAGO MIVI','FECHA PAGO MIVI'])),
 
-          enConstruccion:       !!get(rowObj, ['EN CONSTRUCCION']),
+          enConstruccion:       parseBool(get(rowObj, ['EN CONSTRUCCION'])),
           faseConstruccion:     String(get(rowObj, ['FASE CONSTRUCCION']) || '').trim(),
-          permisoConstruccionNum:String(get(rowObj, ['N° RESOLUCION']) || '').trim(),
-          permisoOcupacion:     !!get(rowObj, ['PERMISO OCUPACION']),
-          permisoOcupacionNum:  String(get(rowObj, ['PERMISO OCUPACION NUM']) || '').trim(),
-          constructora:         String(get(rowObj, ['CONSTRUCTORA']) || '').trim(),
+          permisoConstruccionNum: String(get(rowObj, [
+  'PERMISOS DE CONSTRUCCION N° RESOLUCION',
+  'PERMISO DE CONSTRUCCION N° RESOLUCION',
+  'PERMISOS DE CONSTRUCCION NRO RESOLUCION',
+  'PERMISOS DE CONSTRUCCION Nº RESOLUCION'
+]) || '').trim(),
+          permisoOcupacion:     parseBool(get(rowObj, ['PERMISO DE OCUPACION','PERMISO OCUPACION'])),
+          permisoOcupacionNum: String(get(rowObj, [
+  'N° PERMISO DE OCUPACION',
+  'Nº PERMISO DE OCUPACION',
+  'NUMERO PERMISO DE OCUPACION'
+]) || '').trim(),
+          constructora: String(get(rowObj, ['CONSTUCTOR','CONSTRUCTOR','CONSTRUCTORA']) || '').trim(),
 
-          pazSalvoGesproban: !!get(rowObj, ['PAZ Y SALVO GESPROBAN']),
-          pazSalvoPromotora: !!get(rowObj, ['PAZ Y SALVO PROMOTORA']),
+          pazSalvoGesproban:    parseBool(get(rowObj, ['PAZ Y SALVO GESPROBAN'])),
+          pazSalvoPromotora:    parseBool(get(rowObj, ['PAZ Y SALVO PROMOTORA'])),
 
           mLiberacion:  String(get(rowObj, ['M. DE LIBERACION']) || '').trim(),
           mSegregacion: String(get(rowObj, ['M. SEGREGACION']) || '').trim(),
           mPrestamo:    String(get(rowObj, ['M. PRESTAMO']) || '').trim(),
-          solicitudAvaluo: asDate(get(rowObj, ['SOLICITUD AVALUO'])),
-          avaluoRealizado: asDate(get(rowObj, ['AVALUO REALIZADO'])),
-          entregaCasa:     asDate(get(rowObj, ['ENTREGA DE CASA'])),
-          entregaANATI:    asDate(get(rowObj, ['ENTREGA ANATI'])),
+          solicitudAvaluo: String(get(rowObj, ['SOLICITUD DE AVALUO','SOLICITUD AVALUO']) || '').trim(),
+avaluoRealizado: String(get(rowObj, ['AVALUO REALIZADO']) || '').trim(),
+entregaCasa:     String(get(rowObj, ['ENTREGA DE CASA']) || '').trim(),
+entregaANATI:    String(get(rowObj, ['ENTREGA ANATI']) || '').trim(),
 
           comentario: String(get(rowObj, ['COMENTARIO']) || '').trim(),
         };

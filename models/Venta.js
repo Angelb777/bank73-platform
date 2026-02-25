@@ -40,10 +40,15 @@ const VentaSchema = new mongoose.Schema({
   fechaVencimientoCPP:    { type: Date },   // FECHA DE VENCIMIENTO CCP
   vencimientoCPPBnMivi:   { type: Date },   // VENCIMIENTO CPP BN-MIVI
 
+  aperturaCtaBanco: { type: Boolean, default: false }, // APERTURA CTA BANCO
+  primeraMensual:   { type: Boolean, default: false }, // 1RA MENSUAL
+  pagoMinuta:       { type: Boolean, default: false }, // PAGO MINUTA
+  tiempoAprobacionDias: { type: Number }, // TIEMPO DE APROBACION
+
   // ====== Contrato / Protocolo ======
   fechaContratoCliente:   { type: Date },                 // FECHA CONTRATO FIRMADO POR CLIENTE
   estatusContrato:        { type: String, default: '' },  // ESTATUS CTTO
-  pagare:                 { type: String, default: '' },  // Si prefieres, cambia a Boolean
+  pagare:                 { type: String, default: '' },  // en Excel puede ser texto
   fechaFirma:             { type: Date },                 // FECHA FIRMA
 
   protocoloFirmaCliente:        { type: Boolean, default: false },
@@ -57,12 +62,13 @@ const VentaSchema = new mongoose.Schema({
   fechaRegresoProtocoloBancoCli:  { type: Date },
   diasTranscurridosProtocolo:     { type: Number },
 
-  cierreNotaria:       { type: Date }, // CIERRE DE NOTARIA
+  cierreNotaria:     { type: Boolean, default: false },
   fechaPagoImpuesto:   { type: Date }, // FECHA DE PAGO DE IMPUESTO
-  ingresoRP:           { type: Date }, // INGRESO AL RP
+  ingresoRP:         { type: Boolean, default: false },
   fechaInscripcion:    { type: Date }, // FECHA DE INSCRIPCION
 
-  solicitudDesembolso: { type: Date }, // SOLICITUD DE DESEMBOLSO (banco)
+  // ⬇️ ANTES era Date. Ahora es SI/NO en Excel y lo pintas como checkbox.
+  solicitudDesembolso: { type: Boolean, default: false }, // SOLICITUD DE DESEMBOLSO (banco)
   fechaRecibidoCheque: { type: Date }, // FECHA DE RECIBIDO DE CK
 
   // ====== MIVI ======
@@ -71,16 +77,18 @@ const VentaSchema = new mongoose.Schema({
   resolucionMIVI:          { type: String, default: '' }, // N° DE RESOLUCION MIVI
   fechaResolucionMIVI:     { type: Date },
   solicitudMiviDesembolso: { type: Date },
-  desembolsoMivi:          { type: Number },
+
+  // ⬇️ ANTES era Number. En Excel es texto (PEND / SIN MIVI / SI)
+  desembolsoMivi:          { type: String, default: '' },
   fechaPagoMivi:           { type: Date },
 
   // ====== Obra / Permisos ======
   enConstruccion:         { type: Boolean, default: false },
   faseConstruccion:       { type: String, default: '' },
-  permisoConstruccionNum: { type: String, default: '' }, // N° RESOLUCION
+  permisoConstruccionNum: { type: String, default: '' }, // PERMISOS DE CONSTRUCCION N° RESOLUCION
   permisoOcupacion:       { type: Boolean, default: false },
   permisoOcupacionNum:    { type: String, default: '' },
-  constructora:           { type: String, default: '' },  
+  constructora:           { type: String, default: '' },
 
   // ====== Paz y salvo ======
   pazSalvoGesproban: { type: Boolean, default: false },
@@ -90,10 +98,12 @@ const VentaSchema = new mongoose.Schema({
   mLiberacion:       { type: String, default: '' }, // M. DE LIBERACION
   mSegregacion:      { type: String, default: '' }, // M. SEGREGACION
   mPrestamo:         { type: String, default: '' }, // M. PRESTAMO
-  solicitudAvaluo:   { type: Date },
-  avaluoRealizado:   { type: Date },
-  entregaCasa:       { type: Date },  // ENTREGA DE CASA
-  entregaANATI:      { type: Date },  // ENTREGA ANATI
+
+  // ⬇️ ANTES eran Date. En Excel son textos tipo SI/NO/PEND/-
+  solicitudAvaluo:   { type: String, default: '' },
+  avaluoRealizado:   { type: String, default: '' },
+  entregaCasa:       { type: String, default: '' },  // ENTREGA DE CASA
+  entregaANATI:      { type: String, default: '' },  // ENTREGA ANATI
 
   comentario:        { type: String, default: '' },
 

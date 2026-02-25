@@ -4412,6 +4412,10 @@ const htmlBancoCPP = seccion('Banco / CPP', [
   inputDate('fv-fechaValorCPP','Fecha valor CPP', v.fechaValorCPP),
   inputDate('fv-fechaVencimientoCPP','Vencimiento CPP', v.fechaVencimientoCPP),
   inputDate('fv-vencimientoCPPBnMivi','Vencimiento CPP BN-MIVI', v.vencimientoCPPBnMivi),
+  inputChk('fv-aperturaCtaBanco','Apertura cta banco', !!v.aperturaCtaBanco),
+  inputChk('fv-primeraMensual','1ra mensual', !!v.primeraMensual),
+  inputChk('fv-pagoMinuta','Pago minuta', !!v.pagoMinuta),
+  inputNum('fv-tiempoAprobacionDias','Tiempo de aprobación (días)', v.tiempoAprobacionDias || 0),
 ].join(''));
 
 const htmlContrato = seccion('Contrato / Protocolo / Notaría / RP', [
@@ -4427,11 +4431,11 @@ const htmlContrato = seccion('Contrato / Protocolo / Notaría / RP', [
   inputChk('fv-firmaProtocoloBancoCliente','Firma protocolo banco cliente', !!v.firmaProtocoloBancoCliente),
   inputDate('fv-fechaRegresoProtocoloBancoCli','Regreso protocolo banco cliente', v.fechaRegresoProtocoloBancoCli),
   inputNum('fv-diasTranscurridosProtocolo','Días transcurridos protocolo', v.diasTranscurridosProtocolo),
-  inputDate('fv-cierreNotaria','Cierre de notaría', v.cierreNotaria),
+  inputChk('fv-cierreNotaria','Cierre de notaría', !!v.cierreNotaria),
   inputDate('fv-fechaPagoImpuesto','Fecha pago impuestos', v.fechaPagoImpuesto),
-  inputDate('fv-ingresoRP','Ingreso al RP', v.ingresoRP),
+  inputChk('fv-ingresoRP','Ingreso al RP', !!v.ingresoRP),
   inputDate('fv-fechaInscripcion','Fecha inscripción', v.fechaInscripcion),
-  inputDate('fv-solicitudDesembolso','Solicitud desembolso (banco)', v.solicitudDesembolso),
+  inputChk('fv-solicitudDesembolso','Solicitud desembolso (banco)', !!v.solicitudDesembolso),
   inputDate('fv-fechaRecibidoCheque','Fecha recibido cheque', v.fechaRecibidoCheque),
 ].join(''));
 
@@ -4441,7 +4445,7 @@ const htmlMivi = seccion('MIVI', [
   input('fv-resolucionMIVI','N° Resolución MIVI', v.resolucionMIVI||''),
   inputDate('fv-fechaResolucionMIVI','Fecha resolución', v.fechaResolucionMIVI),
   inputDate('fv-solicitudMiviDesembolso','Solicitud MIVI desembolso', v.solicitudMiviDesembolso),
-  inputNum('fv-desembolsoMivi','Desembolso MIVI', v.desembolsoMivi),
+  input('fv-desembolsoMivi','Desembolso MIVI', v.desembolsoMivi||''),
   inputDate('fv-fechaPagoMivi','Fecha pago MIVI', v.fechaPagoMivi),
 ].join(''));
 
@@ -4457,10 +4461,10 @@ const htmlLegal = seccion('Legal / Permisos / Obra / Otros', [
   input('fv-mLiberacion','M. Liberación', v.mLiberacion||''),
   input('fv-mSegregacion','M. Segregación', v.mSegregacion||''),
   input('fv-mPrestamo','M. Préstamo', v.mPrestamo||''),
-  inputDate('fv-solicitudAvaluo','Solicitud de avalúo', v.solicitudAvaluo),
-  inputDate('fv-avaluoRealizado','Avalúo realizado', v.avaluoRealizado),
-  inputDate('fv-entregaCasa','Entrega de casa', v.entregaCasa),
-  inputDate('fv-entregaANATI','Entrega ANATI', v.entregaANATI),
+  input('fv-solicitudAvaluo','Solicitud de avalúo', v.solicitudAvaluo||''),
+  input('fv-avaluoRealizado','Avalúo realizado', v.avaluoRealizado||''),
+  input('fv-entregaCasa','Entrega de casa', v.entregaCasa||''),
+  input('fv-entregaANATI','Entrega ANATI', v.entregaANATI||''),
   input('fv-comentario','Comentario', v.comentario||''),
 ].join(''));
 
@@ -4513,10 +4517,6 @@ initStatusBancoUI(
   v.statusBanco || '',
   { includeEmpty: false }
 );
-
-views.appendChild(viewFicha);
-views.appendChild(viewChk);
-views.appendChild(viewDocs);
 
 // Visibilidad inicial
 viewFicha.style.display = '';
@@ -4591,6 +4591,11 @@ modalFicha.style.display = 'flex';
     fechaVencimientoCPP:    vDate('fv-fechaVencimientoCPP'),
     vencimientoCPPBnMivi:   vDate('fv-vencimientoCPPBnMivi'),
 
+    aperturaCtaBanco: vChk('fv-aperturaCtaBanco'),
+    primeraMensual:   vChk('fv-primeraMensual'),
+    pagoMinuta:       vChk('fv-pagoMinuta'),
+    tiempoAprobacionDias: vNum('fv-tiempoAprobacionDias'),
+
     // Contrato / Protocolo / Notaría / RP / Desembolso
     estatusContrato:              vVal('fv-estatusContrato'),
     pagare:                       vVal('fv-pagare'),
@@ -4604,11 +4609,11 @@ modalFicha.style.display = 'flex';
     firmaProtocoloBancoCliente:   vChk('fv-firmaProtocoloBancoCliente'),
     fechaRegresoProtocoloBancoCli:vDate('fv-fechaRegresoProtocoloBancoCli'),
     diasTranscurridosProtocolo:   vNum('fv-diasTranscurridosProtocolo'),
-    cierreNotaria:                vDate('fv-cierreNotaria'),
+    cierreNotaria: vChk('fv-cierreNotaria'),
     fechaPagoImpuesto:            vDate('fv-fechaPagoImpuesto'),
-    ingresoRP:                    vDate('fv-ingresoRP'),
+    ingresoRP:     vChk('fv-ingresoRP'),
     fechaInscripcion:             vDate('fv-fechaInscripcion'),
-    solicitudDesembolso:          vDate('fv-solicitudDesembolso'),
+    solicitudDesembolso:          vChk('fv-solicitudDesembolso'),
     fechaRecibidoCheque:          vDate('fv-fechaRecibidoCheque'),
 
     // MIVI
@@ -4617,11 +4622,11 @@ modalFicha.style.display = 'flex';
     resolucionMIVI:          vVal('fv-resolucionMIVI'),
     fechaResolucionMIVI:     vDate('fv-fechaResolucionMIVI'),
     solicitudMiviDesembolso: vDate('fv-solicitudMiviDesembolso'),
-    desembolsoMivi:          vNum('fv-desembolsoMivi'),
+    desembolsoMivi:               vVal('fv-desembolsoMivi'),
     fechaPagoMivi:           vDate('fv-fechaPagoMivi'),
 
     // Legal / Obra / Otros
-    enConstruccion:         vChk('fv-enConstruccion'),
+    enConstruccion:       vChk('fv-enConstruccion'),
     faseConstruccion:       vVal('fv-faseConstruccion'),
     permisoConstruccionNum: vVal('fv-permisoConstruccionNum'),
     permisoOcupacion:       vChk('fv-permisoOcupacion'),
@@ -4632,10 +4637,10 @@ modalFicha.style.display = 'flex';
     mLiberacion:            vVal('fv-mLiberacion'),
     mSegregacion:           vVal('fv-mSegregacion'),
     mPrestamo:              vVal('fv-mPrestamo'),
-    solicitudAvaluo:        vDate('fv-solicitudAvaluo'),
-    avaluoRealizado:        vDate('fv-avaluoRealizado'),
-    entregaCasa:            vDate('fv-entregaCasa'),
-    entregaANATI:           vDate('fv-entregaANATI'),
+    solicitudAvaluo:              vVal('fv-solicitudAvaluo'),
+avaluoRealizado:              vVal('fv-avaluoRealizado'),
+entregaCasa:                  vVal('fv-entregaCasa'),
+entregaANATI:                 vVal('fv-entregaANATI'),
     comentario:             vVal('fv-comentario'),
   };
 
