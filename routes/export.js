@@ -18,12 +18,10 @@ function toCSV(rows) {
   const esc = (v) => {
     if (v == null) return '';
     const s = String(v).replace(/\r?\n/g, ' ').trim();
-    // Excel ES: separador ;  -> escapamos si hay " ; o saltos
     return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
 
   const sep = ';';
-
   return [
     headers.join(sep),
     ...rows.map(r => headers.map(h => esc(r[h])).join(sep))
@@ -34,35 +32,50 @@ function safeStr(v) {
   if (v == null) return '';
   return String(v).replace(/\r?\n/g, ' ').trim();
 }
+
 function toDateOrNull(d) {
   if (!d) return null;
   const x = new Date(d);
   return Number.isNaN(x.getTime()) ? null : x;
 }
-function numOr0(v) {
+
+function numOrNull(v) {
+  if (v === '' || v == null) return null;
   const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
+  return Number.isFinite(n) ? n : null;
 }
+
 function moneyOrNull(v) {
   if (v === '' || v == null) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
+
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
-function normalizeEstado(e) {
-  const s = String(e || '').toLowerCase().trim();
-  return s || 'disponible';
+function yesNo(v) {
+  return v ? 'SI' : 'NO';
 }
 
-function estadoStyle(estado) {
-  const e = normalizeEstado(estado);
-  // ARGB: FF + RRGGBB
-  if (e === 'entregado') return { fill: 'FFE8F5E9', font: 'FF1B5E20' };        // verde
-  if (e === 'reservado') return { fill: 'FFFFF8E1', font: 'FF8D6E00' };        // ámbar
-  if (e === 'en_escrituracion') return { fill: 'FFE3F2FD', font: 'FF0D47A1' }; // azul
-  if (e === 'escriturado') return { fill: 'FFF3E5F5', font: 'FF4A148C' };      // morado
-  return { fill: null, font: null };
+function fmtDateDMY(d) {
+  if (!d) return '';
+  const x = new Date(d);
+  if (Number.isNaN(x.getTime())) return '';
+  const dd = String(x.getUTCDate()).padStart(2,'0');
+  const mm = String(x.getUTCMonth()+1).padStart(2,'0');
+  const yyyy = String(x.getUTCFullYear());
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function colLetter(n) {
+  // 1 -> A
+  let s = '';
+  while (n > 0) {
+    const m = (n - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
 }
 
 // =========================
@@ -86,35 +99,99 @@ async function loadComercialData({ projectId, tenantKey }) {
   const ventas = await Venta.find(ventasFilter).lean();
   const ventasMap = new Map((ventas || []).map(v => [String(v.unitId), v]));
 
-  // filas “canon” para export
+  // ✅ Cabeceras EXACTAS del Excel "DATO UNICO EXPEDIENTES EJEMPLO.xlsx"
   const rows = (units || []).map(u => {
     const v = ventasMap.get(String(u._id)) || {};
-    const unidad = `${safeStr(u.manzana)}-${safeStr(u.lote)}`.replace(/^-|-$/g, '');
 
     return {
-      Unidad: unidad,
-      Modelo: safeStr(u.modelo),
-      Metros2: numOr0(u.m2),
-      Estado: safeStr(u.estado),
-      PrecioLista: numOr0(u.precioLista ?? u.price ?? 0),
+      'LOTE': safeStr(u.lote || v.lote),
+      'MANZANA': safeStr(u.manzana || v.manzana),
 
-      Cliente: safeStr(u.clienteId?.nombre || v.clienteNombre),
-      Cedula: safeStr(v.cedula),
-      Empresa: safeStr(v.empresa),
-      ValorVenta: moneyOrNull(v.valor),
+      'CLIENTE': safeStr(u.clienteId?.nombre || v.clienteNombre),
+      'CEDULA': safeStr(v.cedula),
+      'EMPRESA': safeStr(v.empresa),
 
-      Banco: safeStr(v.banco),
-      OficialBanco: safeStr(v.oficialBanco),
-      StatusBanco: safeStr(v.statusBanco),
-      NumeroCPP: safeStr(v.numCPP),
+      'BANCO': safeStr(v.banco),
+      'ENTREGA DE EXPEDIENTE A BANCO': toDateOrNull(v.entregaExpedienteBanco),
+      'OFICIAL DE BANCO': safeStr(v.oficialBanco),
+      'STATUS EN BANCO': safeStr(v.statusBanco),
+      'N° CPP': safeStr(v.numCPP),
+      'RECIBIDO DE CPP': toDateOrNull(v.recibidoCPP),
+      'PLAZO APROBACION': numOrNull(v.plazoAprobacionDias),
+      'FECHA VALOR DE CPP': toDateOrNull(v.fechaValorCPP),
+      'FECHA DE VENCIMIENTO CCP': toDateOrNull(v.fechaVencimientoCPP),
+      'VALOR': moneyOrNull(v.valor),
 
-      EntregaExpedienteBanco: toDateOrNull(v.entregaExpedienteBanco),
-      RecibidoCPP: toDateOrNull(v.recibidoCPP),
-      VencimientoCPP: toDateOrNull(v.fechaVencimientoCPP),
-      FechaInscripcion: toDateOrNull(v.fechaInscripcion),
-      CierreNotaria: toDateOrNull(v.cierreNotaria),
+      // ✅ nuevas (SI/NO) + tiempo
+      'APERTURA CTA BANCO': yesNo(!!v.aperturaCtaBanco),
+      '1RA MENSUAL': yesNo(!!v.primeraMensual),
+      'PAGO MINUTA': yesNo(!!v.pagoMinuta),
 
-      Comentario: safeStr(v.comentario)
+      'FECHA CONTRATO FIRMADO POR CLIENTE': toDateOrNull(v.fechaContratoCliente),
+      'ESTATUS CTTO': safeStr(v.estatusContrato),
+
+      'EXPEDIENTE MIVI          ': safeStr(v.expedienteMIVI), // respeta espacios del header original
+      'FECHA DE ENTREGA DE EXPEDIENTE MIVI': toDateOrNull(v.entregaExpMIVI),
+      'N° DE RESOLUCION MIVI': safeStr(v.resolucionMIVI),
+      'FECHA RESOLUCION': toDateOrNull(v.fechaResolucionMIVI),
+
+      'TIEMPO DE APROBACION': numOrNull(v.tiempoAprobacionDias),
+      'VENCIMIENTO CPP BN-MIVI': toDateOrNull(v.vencimientoCPPBnMivi),
+
+      'M. DE LIBERACION': safeStr(v.mLiberacion),
+      'M. SEGREGACION': safeStr(v.mSegregacion),
+      'M. PRESTAMO': safeStr(v.mPrestamo),
+
+      'SOLICITUD DE AVALUO': safeStr(v.solicitudAvaluo),
+      'AVALUO REALIZADO': safeStr(v.avaluoRealizado),
+
+      'EN CONSTRUCCION': yesNo(!!v.enConstruccion),
+      'FASE CONSTRUCCION': safeStr(v.faseConstruccion),
+      'PERMISOS DE CONSTRUCCION N° RESOLUCION': safeStr(v.permisoConstruccionNum),
+      'PERMISO DE OCUPACIÓN': yesNo(!!v.permisoOcupacion),
+      'N° PERMISO DE OCUPACION': safeStr(v.permisoOcupacionNum),
+      'CONSTUCTOR': safeStr(v.constructora), // en Excel está mal escrito así
+
+      'PAZ Y SALVO GESPROBAN': yesNo(!!v.pazSalvoGesproban),
+      'PAZ Y SALVO PROMOTORA': yesNo(!!v.pazSalvoPromotora),
+
+      'PAGARE': safeStr(v.pagare),
+      'FECHA FIRMA': toDateOrNull(v.fechaFirma),
+
+      'PROTOCOLO FIRMA DE CLIENTE': yesNo(!!v.protocoloFirmaCliente),
+      'FECHA DE ENTREGA A BANCO': toDateOrNull(v.fechaEntregaBanco),
+      'PROTOC. FIRMA DE RL, BANCO INTER': yesNo(!!v.protocoloFirmaRLBancoInter),
+      'FECHA REGRESO BANCO': toDateOrNull(v.fechaRegresoBanco),
+
+      // Excel tiene 3 "DIAS TRANSCURRIDOS"
+      'DIAS TRANSCURRIDOS': numOrNull(v.diasTranscurridosBanco),
+
+      'FECHA ENTREGA PROTOCOLO BANCO CLIENTE': toDateOrNull(v.fechaEntregaProtocoloBancoCli),
+      'FIRMA PROTOC. BANCO CLIENT': yesNo(!!v.firmaProtocoloBancoCliente),
+      'FECHA REGRESO PROTOCOLO BANCO CLIENTE': toDateOrNull(v.fechaRegresoProtocoloBancoCli),
+
+      // segundo DIAS
+      'DIAS TRANSCURRIDOS ': numOrNull(v.diasTranscurridosProtocolo), // ojo: clave distinta (espacio) para no pisar
+
+      // estos 3 en tu modelo final son boolean (SI/NO)
+      'CIERRE DE NOTARIA': yesNo(!!v.cierreNotaria),
+      'FECHA DE PAGO DE IMPUESTO': toDateOrNull(v.fechaPagoImpuesto),
+      'INGRESO AL RP': yesNo(!!v.ingresoRP),
+      'FECHA DE INSCRIPCION': toDateOrNull(v.fechaInscripcion),
+
+      'SOLICITUD DE DESEMBOLSO': yesNo(!!v.solicitudDesembolso),
+      'FECHA DE RECIBIDO DE CK': toDateOrNull(v.fechaRecibidoCheque),
+
+      'SOLICITUD MIVI DESEMBOLSO': toDateOrNull(v.solicitudMiviDesembolso),
+      'DESEMBOLSO MIVI': safeStr(v.desembolsoMivi),
+      'FECHA DE PAGO MIVI': toDateOrNull(v.fechaPagoMivi),
+
+      // tercer DIAS TRANSCURRIDOS (no existe en tu schema → lo dejamos vacío)
+      'DIAS TRANSCURRIDOS  ': null,
+
+      'ENTREGA DE CASA': safeStr(v.entregaCasa),
+      'ENTREGA ANATI': safeStr(v.entregaANATI),
+      'COMENTARIO': safeStr(v.comentario),
     };
   });
 
@@ -130,24 +207,41 @@ router.get('/comercial.csv', async (req, res) => {
     if (!projectId) return res.status(400).json({ error: 'projectId requerido' });
 
     const tenantKey = req.tenantKey;
-
     const rows = await loadComercialData({ projectId, tenantKey });
 
-    // CSV espera strings, convertimos fechas a YYYY-MM-DD
-    const rowsCsv = rows.map(r => ({
-      ...r,
-      EntregaExpedienteBanco: r.EntregaExpedienteBanco ? r.EntregaExpedienteBanco.toISOString().slice(0,10) : '',
-      RecibidoCPP:            r.RecibidoCPP            ? r.RecibidoCPP.toISOString().slice(0,10) : '',
-      VencimientoCPP:         r.VencimientoCPP         ? r.VencimientoCPP.toISOString().slice(0,10) : '',
-      FechaInscripcion:       r.FechaInscripcion       ? r.FechaInscripcion.toISOString().slice(0,10) : '',
-      CierreNotaria:          r.CierreNotaria          ? r.CierreNotaria.toISOString().slice(0,10) : '',
-    }));
+    // CSV: fechas a dd/mm/yyyy
+    const dateKeys = [
+      'ENTREGA DE EXPEDIENTE A BANCO',
+      'RECIBIDO DE CPP',
+      'FECHA VALOR DE CPP',
+      'FECHA DE VENCIMIENTO CCP',
+      'FECHA CONTRATO FIRMADO POR CLIENTE',
+      'FECHA DE ENTREGA DE EXPEDIENTE MIVI',
+      'FECHA RESOLUCION',
+      'VENCIMIENTO CPP BN-MIVI',
+      'FECHA FIRMA',
+      'FECHA DE ENTREGA A BANCO',
+      'FECHA REGRESO BANCO',
+      'FECHA ENTREGA PROTOCOLO BANCO CLIENTE',
+      'FECHA REGRESO PROTOCOLO BANCO CLIENTE',
+      'FECHA DE PAGO DE IMPUESTO',
+      'FECHA DE INSCRIPCION',
+      'FECHA DE RECIBIDO DE CK',
+      'SOLICITUD MIVI DESEMBOLSO',
+      'FECHA DE PAGO MIVI',
+    ];
+
+    const rowsCsv = rows.map(r => {
+      const x = { ...r };
+      for (const k of dateKeys) x[k] = x[k] ? fmtDateDMY(x[k]) : '';
+      return x;
+    });
 
     const csv = toCSV(rowsCsv);
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="comercial_${projectId}.csv"`);
-    res.send('\ufeff' + csv); // BOM para acentos
+    res.send('\ufeff' + csv);
   } catch (e) {
     console.error('[EXPORT comercial.csv] ERROR:', e);
     res.status(500).json({ error: e.message });
@@ -155,7 +249,7 @@ router.get('/comercial.csv', async (req, res) => {
 });
 
 // =========================
-// ✅ XLSX PRO: /api/export/comercial.xlsx
+// ✅ XLSX: /api/export/comercial.xlsx
 // =========================
 router.get('/comercial.xlsx', async (req, res) => {
   try {
@@ -170,61 +264,39 @@ router.get('/comercial.xlsx', async (req, res) => {
     wb.created = new Date();
 
     const ws = wb.addWorksheet('Comercial', {
-      views: [{ state: 'frozen', xSplit: 0, ySplit: 5 }] // congela título+meta+cabecera
+      views: [{ state: 'frozen', xSplit: 0, ySplit: 5 }]
     });
 
+    // Columnas (mismo orden que keys del row)
+    const headers = rows[0] ? Object.keys(rows[0]) : [];
+    const columns = headers.map(h => ({ header: h, key: h, width: Math.min(Math.max(h.length + 2, 12), 45) }));
+    ws.columns = columns;
+
+    // Ajuste merges dinámicos (A..end)
+    const endCol = colLetter(Math.max(columns.length, 1));
+
     // Título
-    ws.mergeCells('A1:T1');
-    const titleCell = ws.getCell('A1');
-    titleCell.value = `Bank73 — Export Comercial`;
-    titleCell.font = { bold: true, size: 16, color: { argb: 'FF0B1F3A' } };
-    titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+    ws.mergeCells(`A1:${endCol}1`);
+    ws.getCell('A1').value = `Bank73 — Export Comercial (Formato Dato Único)`;
+    ws.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FF0B1F3A' } };
+    ws.getCell('A1').alignment = { vertical: 'middle', horizontal: 'left' };
 
     // Meta
-    ws.mergeCells('A2:T2');
+    ws.mergeCells(`A2:${endCol}2`);
     ws.getCell('A2').value = `ProjectId: ${projectId}${tenantKey ? ` | Tenant: ${tenantKey}` : ''}`;
     ws.getCell('A2').font = { size: 10, color: { argb: 'FF455A64' } };
 
-    ws.mergeCells('A3:T3');
+    ws.mergeCells(`A3:${endCol}3`);
     ws.getCell('A3').value = `Generado: ${new Date().toISOString().replace('T',' ').slice(0,19)} UTC`;
     ws.getCell('A3').font = { size: 10, color: { argb: 'FF455A64' } };
 
-    // fila separadora
     ws.getRow(4).height = 6;
 
-    // Columnas
-    const columns = [
-      { header: 'Unidad', key: 'Unidad', width: 12 },
-      { header: 'Modelo', key: 'Modelo', width: 14 },
-      { header: 'Metros2', key: 'Metros2', width: 10 },
-      { header: 'Estado', key: 'Estado', width: 14 },
-      { header: 'PrecioLista', key: 'PrecioLista', width: 12 },
-
-      { header: 'Cliente', key: 'Cliente', width: 22 },
-      { header: 'Cedula', key: 'Cedula', width: 14 },
-      { header: 'Empresa', key: 'Empresa', width: 16 },
-      { header: 'ValorVenta', key: 'ValorVenta', width: 12 },
-
-      { header: 'Banco', key: 'Banco', width: 16 },
-      { header: 'OficialBanco', key: 'OficialBanco', width: 18 },
-      { header: 'StatusBanco', key: 'StatusBanco', width: 16 },
-      { header: 'NumeroCPP', key: 'NumeroCPP', width: 14 },
-
-      { header: 'EntregaExpedienteBanco', key: 'EntregaExpedienteBanco', width: 18 },
-      { header: 'RecibidoCPP', key: 'RecibidoCPP', width: 14 },
-      { header: 'VencimientoCPP', key: 'VencimientoCPP', width: 14 },
-      { header: 'FechaInscripcion', key: 'FechaInscripcion', width: 14 },
-      { header: 'CierreNotaria', key: 'CierreNotaria', width: 14 },
-
-      { header: 'Comentario', key: 'Comentario', width: 28 }
-    ];
-    ws.columns = columns;
-
-    // Cabecera en fila 5
+    // Cabecera (fila 5)
     const headerRowIndex = 5;
     ws.getRow(headerRowIndex).values = columns.map(c => c.header);
     const headerRow = ws.getRow(headerRowIndex);
-    headerRow.height = 22;
+    headerRow.height = 26;
     headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
     headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
 
@@ -238,14 +310,35 @@ router.get('/comercial.xlsx', async (req, res) => {
       };
     });
 
-    // Datos desde fila 6
     const startDataRow = headerRowIndex + 1;
 
+    // Identificar columnas que son fecha para formato dd/mm/yyyy
+    const dateCols = new Set([
+      'ENTREGA DE EXPEDIENTE A BANCO',
+      'RECIBIDO DE CPP',
+      'FECHA VALOR DE CPP',
+      'FECHA DE VENCIMIENTO CCP',
+      'FECHA CONTRATO FIRMADO POR CLIENTE',
+      'FECHA DE ENTREGA DE EXPEDIENTE MIVI',
+      'FECHA RESOLUCION',
+      'VENCIMIENTO CPP BN-MIVI',
+      'FECHA FIRMA',
+      'FECHA DE ENTREGA A BANCO',
+      'FECHA REGRESO BANCO',
+      'FECHA ENTREGA PROTOCOLO BANCO CLIENTE',
+      'FECHA REGRESO PROTOCOLO BANCO CLIENTE',
+      'FECHA DE PAGO DE IMPUESTO',
+      'FECHA DE INSCRIPCION',
+      'FECHA DE RECIBIDO DE CK',
+      'SOLICITUD MIVI DESEMBOLSO',
+      'FECHA DE PAGO MIVI',
+    ]);
+
+    // Render filas
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       const row = ws.addRow(r);
 
-      // zebra
       const isOdd = i % 2 === 1;
       const zebraFill = isOdd ? 'FFF7F9FC' : null;
 
@@ -257,57 +350,46 @@ router.get('/comercial.xlsx', async (req, res) => {
           right: { style: 'thin', color: { argb: 'FFE0E0E0' } }
         };
 
-        // wrap en texto largo
-        const wrapCols = [6, 8, 11, 19];
-        if (wrapCols.includes(colNumber)) {
-          cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
-        } else {
-          cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: false };
-        }
-
         if (zebraFill) {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebraFill } };
         }
+
+        // wrap para textos largos
+        cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: false };
       });
 
-      // Estado color (col 4)
-      const st = estadoStyle(r.Estado);
-      if (st.fill) {
-        const stateCell = row.getCell(4);
-        stateCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: st.fill } };
-        stateCell.font = { color: { argb: st.font }, bold: true };
-        stateCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-      }
+      // Formato fechas
+      for (let c = 1; c <= columns.length; c++) {
+        const key = columns[c - 1].key;
+        if (!dateCols.has(key)) continue;
 
-      // formatos numéricos
-      row.getCell(3).numFmt = '0';
-      row.getCell(3).alignment = { vertical: 'middle', horizontal: 'right' };
-
-      row.getCell(5).numFmt = '#,##0.00';
-      row.getCell(5).alignment = { vertical: 'middle', horizontal: 'right' };
-
-      row.getCell(9).numFmt = '#,##0.00';
-      row.getCell(9).alignment = { vertical: 'middle', horizontal: 'right' };
-
-      // fechas 14..18
-      for (const c of [14, 15, 16, 17, 18]) {
         const cell = row.getCell(c);
         if (cell.value instanceof Date) {
-          cell.numFmt = 'yyyy-mm-dd';
+          cell.numFmt = 'dd/mm/yyyy';
           cell.alignment = { vertical: 'middle', horizontal: 'center' };
         } else {
           cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        }
+      }
+
+      // Formato numérico para VALOR
+      const idxValor = headers.indexOf('VALOR') + 1;
+      if (idxValor > 0) {
+        const c = row.getCell(idxValor);
+        if (typeof c.value === 'number') {
+          c.numFmt = '#,##0.00';
+          c.alignment = { vertical: 'middle', horizontal: 'right' };
         }
       }
     }
 
-    // filtro cabecera
+    // Filtro
     ws.autoFilter = {
       from: { row: headerRowIndex, column: 1 },
       to: { row: headerRowIndex, column: columns.length }
     };
 
-    // auto width con límites
+    // Auto width con límites
     columns.forEach((col, idx) => {
       const colIndex = idx + 1;
       let maxLen = col.header.length;
@@ -316,13 +398,13 @@ router.get('/comercial.xlsx', async (req, res) => {
         if (rowNumber < startDataRow) return;
         const v = row.getCell(colIndex).value;
         const s =
-          v instanceof Date ? 'yyyy-mm-dd' :
+          v instanceof Date ? 'dd/mm/yyyy' :
           v == null ? '' :
           String(v);
         maxLen = Math.max(maxLen, s.length);
       });
 
-      ws.getColumn(colIndex).width = clamp(maxLen + 2, col.width || 10, 45);
+      ws.getColumn(colIndex).width = clamp(maxLen + 2, col.width || 12, 55);
     });
 
     const filename = `comercial_${projectId}.xlsx`;
