@@ -337,7 +337,7 @@ function applyProjectsFilters(list) {
       </select>
       <button class="btn small approve" data-id="${u._id}">Aprobar</button>
       <button class="btn small" data-action="block" data-id="${u._id}">Bloquear</button>
-      <button class="danger small" data-action="delete" data-id="${u._id}">Eliminar</button>
+      <button class="btn danger small" data-action="delete" data-id="${u._id}">Eliminar</button>
     </div>
   </td>
 `;
@@ -377,7 +377,7 @@ function applyProjectsFilters(list) {
             <select class="input role-inline" data-id="${u._id}">
             ${renderRoleOptions(u.role)}
             </select>
-            <button class="danger small" data-action="delete" data-id="${u._id}">Eliminar</button>
+            <button class="btn danger small" data-action="delete" data-id="${u._id}">Eliminar</button>
           </div>
         </td>
       `;
@@ -407,7 +407,7 @@ function applyProjectsFilters(list) {
         <td>
           <div class="actions">
             <button class="btn small" data-project-approve="${p._id}">Aprobar</button>
-            <button class="danger small" data-project-reject="${p._id}">Rechazar</button>
+            <button class="btn danger small" data-project-reject="${p._id}">Rechazar</button>
           </div>
         </td>
       `;
@@ -442,9 +442,9 @@ function applyProjectsFilters(list) {
           <button class="btn small" data-project-edit="${p._id}">Editar</button>
           ${st === 'pending' ? `
             <button class="btn small" data-project-approve="${p._id}">Aprobar</button>
-            <button class="danger small" data-project-reject="${p._id}">Rechazar</button>
+            <button class="btn danger small" data-project-reject="${p._id}">Rechazar</button>
           ` : ''}
-          <button class="danger small" data-project-delete="${p._id}">Eliminar</button>
+          <button class="btn danger small" data-project-delete="${p._id}">Eliminar</button>
         </div>
       </td>
     `;

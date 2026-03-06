@@ -1572,4 +1572,57 @@ a.btn, .btn { text-decoration: none; }
 .pill-blue{ background:#2b5cff33; border:1px solid #2b5cff66; color:#cfe0ff; }
 .pill-gray{ background:#ffffff14; border:1px solid #ffffff22; color:#cfd3da; }
 .small.danger{ color:#ff7b7b; }
+button.small.danger{ color:#fff !important; }
 .small.warn{ color:#ffd36e; }
+
+
+.toolbar { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+.toolbar .input, .toolbar select { min-height:36px; }
+
+.container{
+  max-width: 1600px;
+  width: min(1600px, calc(100% - 48px));
+}
+
+.grid { display:grid; gap:16px; }
+
+@media (min-width: 1024px) {
+  .grid.cols-2 { grid-template-columns: 1.25fr .95fr; }
+}
+
+.muted { opacity:.8; }
+
+.table th,
+.table td {
+  vertical-align: middle;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.actions {
+  display:flex;
+  gap:.4rem;
+  flex-wrap:wrap;
+  align-items:center;
+}
+
+.actions select,
+.actions .input,
+.actions button{
+  min-width: 0;
+}
+
+.btn.small {
+  padding:.32rem .55rem;
+  font-size:.82rem;
+}
+
+.input[disabled] { opacity:.7; }
+
+.truncate{
+  display:block;
+  width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}

@@ -2031,43 +2031,59 @@ const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
     if (importBtn && !importBtn.dataset.bound) {
       importBtn.dataset.bound = '1';
       importBtn.addEventListener('click', async () => {
-        try {
-          const input = document.getElementById('datoUnicoFile');
-          const f = input?.files?.[0];
-          if (!f) return alert('Selecciona el Excel primero');
+  if (importBtn.disabled) return;
 
-          const fd = new FormData();
-          fd.append('file', f);
+  try {
+    const input = document.getElementById('datoUnicoFile');
+    const f = input?.files?.[0];
+    if (!f) return alert('Selecciona el Excel primero');
 
-          const resp3 = await fetch(`/api/projects/${id}/import-dato-unico`, {
-            method: 'POST',
-            body: fd,
-            headers: {
-              ...(typeof authHeaders === 'function' ? authHeaders() : {}),
-              ...(typeof tenantHeaders === 'function' ? tenantHeaders() : {}),
-            }
-          });
+    // 🔒 bloquear botón
+    importBtn.disabled = true;
+    const originalText = importBtn.innerText;
+    importBtn.innerText = 'Importando...';
 
-          if (!resp3.ok) {
-            const txt = await resp3.text().catch(() => '');
-            console.error(txt);
-            return alert('Error importando Dato Único (mira consola)');
-          }
+    const fd = new FormData();
+    fd.append('file', f);
 
-          const json = await resp3.json();
-          alert(`Importado: ${json.ventasUpserted} ventas / ${json.unitsUpserted} unidades`);
+    const resp3 = await fetch(`/api/projects/${id}/import-dato-unico`, {
+      method: 'POST',
+      body: fd,
+      headers: {
+        ...(typeof authHeaders === 'function' ? authHeaders() : {}),
+        ...(typeof tenantHeaders === 'function' ? tenantHeaders() : {}),
+      }
+    });
 
-          // recargar resumen/gráficas
-          await loadSummary();
-          await refreshTopHeaderKpis();
-          if (typeof loadCommercial === 'function') {
-  await loadCommercial();
-}
-        } catch (err) {
-          console.error(err);
-          alert(err.message || 'Error importando Dato Único');
-        }
-      });
+    if (!resp3.ok) {
+      const txt = await resp3.text().catch(() => '');
+      console.error(txt);
+      alert('Error importando Dato Único (mira consola)');
+      return;
+    }
+
+    const json = await resp3.json();
+
+    alert(`Importado: ${json.ventasUpserted} ventas / ${json.unitsUpserted} unidades`);
+
+    await loadSummary();
+    await refreshTopHeaderKpis();
+    if (typeof loadCommercial === 'function') {
+      await loadCommercial();
+    }
+
+  } catch (err) {
+    console.error(err);
+    alert(err.message || 'Error importando Dato Único');
+
+  } finally {
+
+    // 🔓 desbloquear botón
+    importBtn.disabled = false;
+    importBtn.innerText = 'Importar Dato Único';
+
+  }
+});
     }
 
     // Wire de subida Antes/Después
