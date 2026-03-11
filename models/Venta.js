@@ -27,11 +27,21 @@ const VentaSchema = new mongoose.Schema({
   empresa:       { type: String, default: '' },
 
   // ====== Banco / CPP ======
-  banco:          { type: String, default: '' },
-  oficialBanco:   { type: String, default: '' },
-  statusBanco:    { type: String, default: '' },
-  numCPP:         { type: String, default: '' },
-  valor:          { type: Number, default: 0 },
+  banco:        { type: String, default: '' },
+  oficialBanco: { type: String, default: '' },
+  statusBanco:  { type: String, default: '' },
+  numCPP:       { type: String, default: '' },
+
+  // NUEVOS CAMPOS
+  // Monto hipotecario / financiamiento aprobado por el banco
+  montoFinanciamientoCPP: { type: Number, default: 0 },
+
+  // Precio real de venta de la unidad
+  precioVenta: { type: Number, default: 0 },
+
+  // LEGACY:
+  // Se mantiene para compatibilidad con imports/vistas antiguas
+  valor: { type: Number, default: 0 },
 
   entregaExpedienteBanco: { type: Date },   // ENTREGA DE EXPEDIENTE A BANCO
   recibidoCPP:            { type: Date },   // RECIBIDO DE CPP
@@ -62,9 +72,9 @@ const VentaSchema = new mongoose.Schema({
   fechaRegresoProtocoloBancoCli:  { type: Date },
   diasTranscurridosProtocolo:     { type: Number },
 
-  cierreNotaria:     { type: Boolean, default: false },
+  cierreNotaria:       { type: Boolean, default: false },
   fechaPagoImpuesto:   { type: Date }, // FECHA DE PAGO DE IMPUESTO
-  ingresoRP:         { type: Boolean, default: false },
+  ingresoRP:           { type: Boolean, default: false },
   fechaInscripcion:    { type: Date }, // FECHA DE INSCRIPCION
 
   // ⬇️ ANTES era Date. Ahora es SI/NO en Excel y lo pintas como checkbox.
@@ -107,7 +117,10 @@ const VentaSchema = new mongoose.Schema({
 
   comentario:        { type: String, default: '' },
 
-  // ====== Checklist (✅ NUEVO) ======
+  // ====== Soft delete ======
+  deletedAt:         { type: Date, default: null },
+
+  // ====== Checklist ======
   checklist: { type: [ChecklistStepSchema], default: [] }
 
 }, { timestamps: true });

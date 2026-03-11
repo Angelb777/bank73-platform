@@ -1431,24 +1431,105 @@ function wireBAUploads(){
   if (aBtn && aInput) aBtn.onclick = ()=> uploadBA('AFTER',  aInput.files);
 }
 
-async function renderSummaryUI(payload){
+function formatNum(v) {
+  const n = Number(v || 0);
+  return n.toLocaleString('es-PA');
+}
 
+function formatMoney(v) {
+  const n = Number(v || 0);
+  return n.toLocaleString('es-PA', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  });
+}
+
+function calcTotal(arr, key = 'count') {
+  return (arr || []).reduce((acc, x) => acc + Number(x?.[key] || 0), 0);
+}
+
+function renderChartSummary(containerId, items, {
+  labelKey = 'label',
+  valueKey = 'value',
+  totalLabel = 'Total',
+  formatter = formatNum
+} = {}) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  const total = (items || []).reduce((acc, x) => acc + Number(x?.[valueKey] || 0), 0);
+
+  if (!items || !items.length) {
+    el.innerHTML = `<div class="small muted">Sin datos</div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="summary-mini-box">
+      ${(items || []).map(item => `
+        <div class="summary-mini-row">
+          <span class="summary-mini-label">${item[labelKey] ?? '—'}</span>
+          <span class="summary-mini-value">${formatter(item[valueKey])}</span>
+        </div>
+      `).join('')}
+      <div class="summary-mini-row summary-mini-total">
+        <span class="summary-mini-label">${totalLabel}</span>
+        <span class="summary-mini-value">${formatter(total)}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderMiniKpiBox(containerId, rows = []) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  if (!rows.length) {
+    el.innerHTML = `<div class="small muted">Sin resumen disponible</div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="summary-resume-box">
+      ${rows.map(r => `
+        <div class="summary-resume-item">
+          <div class="summary-resume-title">${r.title}</div>
+          <div class="summary-resume-value">${r.value}</div>
+          ${r.sub ? `<div class="summary-resume-sub">${r.sub}</div>` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+async function renderSummaryUI(payload) {
   // 1) Datos base
-  const project    = payload.project || {};
+  const project = payload.project || {};
   const headerKpis = payload.headerKpis || {};
 
-    // ✅ Cargar permisos reales para que la gráfica salga bien "de primeras"
+  // ✅ Cargar permisos reales para que la gráfica salga bien desde el inicio
   try {
     if (!__permits?.items?.length) {
-      __permits = await apiPermitsGetProject(true); // GET permisos del proyecto
+      __permits = await apiPermitsGetProject(true);
     }
   } catch (e) {
     console.warn('[Summary] No se pudieron cargar permisos para gráfica', e);
   }
 
-    // 2) Pintar cabecera (los cuadros)
-  // ✅ Prioridad: lo persistido en Project (se actualiza al importar)
-  // fallback: headerKpis (por si algún proyecto viejo aún no tiene números guardados)
+  // 2) Datos de series PRIMERO
+  const progressByPhase      = payload.progressByPhase      || [];
+  const permitsByInstitution = payload.permitsByInstitution || [];
+  const cppByBank            = payload.cppByBank            || [];
+  const proformasByBank      = payload.proformasByBank      || [];
+  const unitsByStatus        = payload.unitsByStatus        || [];
+  const salesMonthly         = payload.salesMonthly         || [];
+  const disbursements        = payload.disbursements        || { planCum: [], realCum: [] };
+  const mortgagesByBank      = payload.mortgagesByBank      || [];
+  const alerts               = payload.alerts               || { expiries: [], notes: [], bySeverity: [] };
+  const beforeAfter          = payload.beforeAfter          || [];
+  const financePhases        = payload?.finance?.phases     || [];
+
+  // 3) Cabecera fija
   const headerKpisFixed = {
     ...headerKpis,
     unitsTotal: (project.unitsTotal ?? headerKpis.unitsTotal ?? 0),
@@ -1457,388 +1538,497 @@ async function renderSummaryUI(payload){
 
   renderHeaderKpis(project, headerKpisFixed);
 
-  // 3) Texto “x/y unidades vendidas (%)”
-  const sold  = headerKpisFixed.unitsSold  ?? 0;
+  // 4) Texto unidades vendidas
+  const sold = headerKpisFixed.unitsSold ?? 0;
   const total = headerKpisFixed.unitsTotal ?? 0;
-  const pct   = total ? Math.round(100 * sold / total) : 0;
+  const pct = total ? Math.round(100 * sold / total) : 0;
   const unitsTxt = document.getElementById('summaryUnits');
   if (unitsTxt) unitsTxt.textContent = `${sold}/${total} unidades vendidas (${pct}%)`;
 
-  // 4) KPIs (fallback SOLO si backend no envía payload.kpis)
-  const kpis = payload.kpis || (()=>{
-    // ✅ Absorción 3m (frontend) si backend no lo trae / viene 0
-if (!kpis.absorption3m || Number(kpis.absorption3m) === 0) {
-  const calc = calcAbsorption3mFromSalesMonthly(salesMonthly);
-  if (calc) kpis.absorption3m = calc;
-}
-    const progressPct = Number(payload?.progress?.globalPct || 0);
-    return {
-      progressPct,
-      units: {
-        total: project.unitsTotal||0,
-        available: project.unitsAvailable||0,
-        sold: project.unitsSold||0,
-        escrituradas: project.unitsDeeded||0
-      },
-      absorption3m: project.absorption3m || 0,
-      avgTicket: project.avgTicket || 0,
-      inventoryValue: project.inventoryValue || 0,
-      loan: {
-        approved: project.loanApproved||0,
-        disbursed: project.loanDisbursed||0,
-        pct: (project.loanApproved
-              ? Math.round(100*(project.loanDisbursed||0)/project.loanApproved)
-              : 0)
-      },
-      cpp: { active: project.cppActive||0, due30: project.cppDue30||0, due60: project.cppDue60||0, due90: project.cppDue90||0 },
-      permits: { approved: project.permitsApproved||0, inProcess: project.permitsInProcess||0, pending: project.permitsPending||0, pct: project.permitsPct||0 },
-      appraisal: { avg: project.appraisalAvg||0, min: project.appraisalMin||0, max: project.appraisalMax||0 },
-      clientMortgages30d: project.clientMortgages30d||0
-    };
-  })();
+  // 5) KPIs
+  let kpis = payload.kpis || {
+    progressPct: Number(payload?.progress?.globalPct || 0),
+    units: {
+      total: project.unitsTotal || 0,
+      available: project.unitsAvailable || 0,
+      sold: project.unitsSold || 0,
+      escrituradas: project.unitsDeeded || 0
+    },
+    absorption3m: project.absorption3m || 0,
+    avgTicket: project.avgTicket || 0,
+    inventoryValue: project.inventoryValue || 0,
+    loan: {
+      approved: project.loanApproved || 0,
+      disbursed: project.loanDisbursed || 0,
+      pct: (project.loanApproved
+        ? Math.round(100 * (project.loanDisbursed || 0) / project.loanApproved)
+        : 0)
+    },
+    cpp: {
+      active: project.cppActive || 0,
+      due30: project.cppDue30 || 0,
+      due60: project.cppDue60 || 0,
+      due90: project.cppDue90 || 0
+    },
+    permits: {
+      approved: project.permitsApproved || 0,
+      inProcess: project.permitsInProcess || 0,
+      pending: project.permitsPending || 0,
+      pct: project.permitsPct || 0
+    },
+    appraisal: {
+      avg: project.appraisalAvg || 0,
+      min: project.appraisalMin || 0,
+      max: project.appraisalMax || 0
+    },
+    clientMortgages30d: project.clientMortgages30d || 0,
+    delaysByStage: []
+  };
 
-  const progressByPhase      = payload.progressByPhase      || [];
-  const permitsByInstitution = payload.permitsByInstitution || [];
-  const cppByBank            = payload.cppByBank            || [];
-  const proformasByBank      = payload.proformasByBank      || [];
-  const unitsByStatus        = payload.unitsByStatus        || [];
-  const salesMonthly         = payload.salesMonthly         || [];
-  const disbursements        = payload.disbursements        || { planCum:[], realCum:[] };
-  const mortgagesByBank      = payload.mortgagesByBank      || [];
-  const alerts               = payload.alerts               || { expiries:[], notes:[] };
-  const beforeAfter          = payload.beforeAfter          || [];
-  const financePhases = payload?.finance?.phases || [];
+  // ✅ Si no viene absorción, la calculamos desde ventas mensuales
+  if (!kpis.absorption3m || Number(kpis.absorption3m) === 0) {
+    kpis.absorption3m = calcAbsorption3mFromSalesMonthly(salesMonthly);
+  }
 
   renderPhaseChart(financePhases, 'sumPhaseChart');
 
-  // Cabecera
+  // Cabecera textual
   const name = project.name || 'Proyecto';
-  document.getElementById('summaryProjectName').textContent = name;
-  document.getElementById('summaryUpdatedAt').textContent = 'Actualizado: ' + (new Date(project?.updatedAt||Date.now())).toLocaleString();
-  
+  const projectNameEl = document.getElementById('summaryProjectName');
+  const updatedAtEl = document.getElementById('summaryUpdatedAt');
 
-  // KPIs
+  if (projectNameEl) projectNameEl.textContent = name;
+  if (updatedAtEl) updatedAtEl.textContent = 'Actualizado: ' + (new Date(project?.updatedAt || Date.now())).toLocaleString();
+
+  // Tarjetas KPI
   const u = kpis.units || {};
   const loan = kpis.loan || {};
-  const cpp  = kpis.cpp  || {};
-  const app  = kpis.appraisal || {};
+  const cpp = kpis.cpp || {};
+  const app = kpis.appraisal || {};
+
   const cards = [
-  kpiCard('Progreso global', (kpis.progressPct||0) + '%'),
-  kpiCard('Unidades', `${u.total||0} totales`, `${u.available||0} disp · ${u.sold||0} vend · ${u.escrituradas||0} escr.`),
-  kpiCard('Absorción 3m', (kpis.absorption3m||0)+' u/mes'),
-  kpiCard('Ticket promedio', (kpis.avgTicket||0).toLocaleString()),
-  (kpis.inventoryValue ? kpiCard('Inventario a valor', (kpis.inventoryValue||0).toLocaleString()) : ''),
-  kpiCard('CPP', `${cpp.active||0} activos`, `30d:${cpp.due30||0} · 60d:${cpp.due60||0} · 90d:${cpp.due90||0}`),
-  kpiCard('Permisos', `${kpis.permits?.approved||0} A / ${kpis.permits?.inProcess||0} T / ${kpis.permits?.pending||0} P`, (kpis.permits?.pct||0)+'%'),
-  ((app.avg || app.min || app.max) ? kpiCard('Avalúo promedio', (app.avg||0).toLocaleString(), `min ${app.min||0} · max ${app.max||0}`) : ''),
-  kpiCard('Hipotecas 30d', kpis.clientMortgages30d||0)
-].filter(Boolean);
-  document.getElementById('summaryKpis').innerHTML = cards.join('');
+    kpiCard('Progreso global', (kpis.progressPct || 0) + '%'),
+    kpiCard('Unidades', `${u.total || 0} totales`, `${u.available || 0} disp · ${u.sold || 0} vend · ${u.escrituradas || 0} escr.`),
+    kpiCard('Absorción 3m', (kpis.absorption3m || 0) + ' u/mes'),
+    kpiCard('Ticket promedio', formatMoney(kpis.avgTicket || 0)),
+    (kpis.inventoryValue ? kpiCard('Inventario a valor', formatMoney(kpis.inventoryValue || 0)) : ''),
+    kpiCard('CPP', `${cpp.active || 0} activos`, `30d:${cpp.due30 || 0} · 60d:${cpp.due60 || 0} · 90d:${cpp.due90 || 0}`),
+    kpiCard('Permisos', `${kpis.permits?.approved || 0} A / ${kpis.permits?.inProcess || 0} T / ${kpis.permits?.pending || 0} P`, (kpis.permits?.pct || 0) + '%'),
+    ((app.avg || app.min || app.max) ? kpiCard('Avalúo promedio', formatMoney(app.avg || 0), `min ${formatMoney(app.min || 0)} · max ${formatMoney(app.max || 0)}`) : ''),
+    kpiCard('Hipotecas 30d', kpis.clientMortgages30d || 0)
+  ].filter(Boolean);
 
-  // ================================
-// Gráfica de FINANZAS dentro del RESUMEN
-// ================================
-try {
-  const fin = await API.get(`/api/projects/${id}/finance?ts=${Date.now()}`);
-  const phases = fin?.finance?.phases || [];
+  const summaryKpisEl = document.getElementById('summaryKpis');
+  if (summaryKpisEl) summaryKpisEl.innerHTML = cards.join('');
 
-  if (phases.length) {
-    renderPhaseChart(phases, 'sumPhaseChart');
-  } else {
-    console.warn('[Resumen] Finanzas sin fases');
+  // Resumen general extra
+  renderMiniKpiBox('summaryResumeBox', [
+    {
+      title: 'Ventas',
+      value: `${sold}/${total}`,
+      sub: `${pct}% vendido`
+    },
+    {
+      title: 'CPP activos',
+      value: String(cpp.active || 0),
+      sub: `30d:${cpp.due30 || 0} · 60d:${cpp.due60 || 0} · 90d:${cpp.due90 || 0}`
+    },
+    {
+      title: 'Hipotecas',
+      value: String(calcTotal(mortgagesByBank, 'count')),
+      sub: `${mortgagesByBank.length} bancos`
+    },
+    {
+      title: 'Proformas',
+      value: String(calcTotal(proformasByBank, 'count')),
+      sub: `${proformasByBank.length} bancos`
+    }
+  ]);
+
+  // Finanzas
+  try {
+    const fin = await API.get(`/api/projects/${id}/finance?ts=${Date.now()}`);
+    const phases = fin?.finance?.phases || [];
+    if (phases.length) {
+      renderPhaseChart(phases, 'sumPhaseChart');
+    } else {
+      console.warn('[Resumen] Finanzas sin fases');
+    }
+  } catch (e) {
+    console.error('[Resumen] Error cargando fases de finanzas', e);
   }
-} catch (e) {
-  console.error('[Resumen] Error cargando fases de finanzas', e);
-}
 
+  // Barra progreso global
+  const progressPct = Number(kpis?.progressPct || 0);
+  const spT = document.getElementById('summaryProgressText');
+  const spB = document.getElementById('summaryProgressBar');
+  if (spT) spT.textContent = `${progressPct}% completado`;
+  if (spB) spB.style.width = `${progressPct}%`;
 
-  // Progreso global (barra bajo KPIs)
-const progressPct = Number(kpis?.progressPct || 0);
-const spT = document.getElementById('summaryProgressText');
-const spB = document.getElementById('summaryProgressBar');
-if (spT) spT.textContent = `${progressPct}% completado`;
-if (spB) spB.style.width = `${progressPct}%`;
+  // Helpers locales
+  const toNum = (v) => {
+    if (v === null || v === undefined || v === '') return 0;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+    const s = String(v).trim().replace(/\./g, '').replace(',', '.');
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  };
 
-  // ====== FIX GRÁFICAS: normalizadores (para que no dependan del backend perfecto) ======
-const toNum = (v) => {
-  if (v === null || v === undefined || v === '') return 0;
-  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
-  // "1.234,56" o "1234.56"
-  const s = String(v).trim().replace(/\./g, '').replace(',', '.');
-  const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
-};
+  const toStr = (v) => (v === null || v === undefined) ? '' : String(v).trim();
 
-const toStr = (v) => (v === null || v === undefined) ? '' : String(v).trim();
+  const monthKey = (m) => {
+    const s = toStr(m).replace('/', '-');
+    if (/^\d{4}-\d{2}$/.test(s)) return s;
+    const mmYYYY = s.match(/^(\d{2})-(\d{4})$/);
+    if (mmYYYY) return `${mmYYYY[2]}-${mmYYYY[1]}`;
+    return s;
+  };
 
-// Ordena "YYYY-MM" o "YYYY/MM" o "MM/YYYY" (si viene raro)
-const monthKey = (m) => {
-  const s = toStr(m).replace('/', '-');
-  // si ya viene YYYY-MM
-  if (/^\d{4}-\d{2}$/.test(s)) return s;
-  // si viene MM-YYYY
-  const mmYYYY = s.match(/^(\d{2})-(\d{4})$/);
-  if (mmYYYY) return `${mmYYYY[2]}-${mmYYYY[1]}`;
-  return s; // fallback
-};
+  const sortByMonth = (arr) =>
+    (arr || []).slice().sort((a, b) => monthKey(a.month).localeCompare(monthKey(b.month)));
 
-const sortByMonth = (arr) =>
-  (arr || []).slice().sort((a, b) => monthKey(a.month).localeCompare(monthKey(b.month)));
+  const uniq = (arr) => Array.from(new Set(arr || []));
 
-const uniq = (arr) => Array.from(new Set(arr || []));
+  const ctx = (id) => {
+    const el = document.getElementById(id);
+    return (el && typeof Chart !== 'undefined') ? el.getContext('2d') : null;
+  };
 
-// Helpers
-const ctx = (id) => {
-  const el = document.getElementById(id);
-  return (el && typeof Chart !== 'undefined') ? el.getContext('2d') : null;
-};
+  function calcAbsorption3mFromSalesMonthly(salesMonthly) {
+    const sm = sortByMonth(salesMonthly).map(x => ({
+      month: monthKey(x.month),
+      units: toNum(x.units)
+    }));
 
-function calcAbsorption3mFromSalesMonthly(salesMonthly) {
-  const sm = sortByMonth(salesMonthly).map(x => ({
-    month: monthKey(x.month),
-    units: toNum(x.units)
-  }));
+    const last3 = sm.slice(-3);
+    if (!last3.length) return 0;
 
-  // Nos quedamos con los últimos 3 meses que existan
-  const last3 = sm.slice(-3);
-  if (!last3.length) return 0;
+    const sum = last3.reduce((a, x) => a + (x.units || 0), 0);
+    const avg = sum / last3.length;
+    return Math.round(avg * 10) / 10;
+  }
 
-  const sum = last3.reduce((a, x) => a + (x.units || 0), 0);
-  const avg = sum / last3.length;
-
-  // 1 decimal para que quede bonito (puedes cambiarlo a Math.round si quieres entero)
-  return Math.round(avg * 10) / 10;
-}
-
-// ---------- Progreso por fase ----------
-sumDestroy('p1');
-if (ctx('sumProgressByPhase')) {
-  __sumCharts.p1 = new Chart(ctx('sumProgressByPhase'), {
-    type: 'bar',
-    data: {
-      labels: (progressByPhase || []).map(x => x.phase),
-      datasets: [{ label: '% completado', data: (progressByPhase || []).map(x => toNum(x.pct)) }]
-    },
-    options: { responsive: true, scales: { y: { beginAtZero: true, max: 100 } } }
-  });
-}
-
-// ---------- Permisos por institución (apilada) ----------
-sumDestroy('p2');
-if (ctx('sumPermitsByInstitution')) {
-
-  // 1) Si tenemos __permits (cargado por modal), recalculamos perfecto desde items
-  // 2) Si NO, usamos lo que trae el backend (payload.permitsByInstitution) para no dejarlo vacío
-  const inst = (__permits?.items?.length)
-    ? buildPermitsByInstitution(__permits.items)
-    : (permitsByInstitution || []);
-
-  __sumCharts.p2 = new Chart(ctx('sumPermitsByInstitution'), {
-    type: 'bar',
-    data: {
-      labels: inst.map(x => x.institution),
-      datasets: [
-        { label: 'Pendiente',  data: inst.map(x => toNum(x.pending)),   stack: 's' },
-        { label: 'En trámite', data: inst.map(x => toNum(x.inProcess)), stack: 's' },
-        { label: 'Aprobado',   data: inst.map(x => toNum(x.approved)),  stack: 's' },
-        { label: 'Rechazado',  data: inst.map(x => toNum(x.rejected)),  stack: 's' },
-      ]
-    },
-    options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } }
-  });
-}
-
-// ---------- CPP por banco (pie) ----------
-sumDestroy('p3');
-if (ctx('sumCppPie')) {
-  __sumCharts.p3 = new Chart(ctx('sumCppPie'), {
-    type: 'pie',
-    data: {
-      labels: (cppByBank || []).map(x => x.bank),
-      datasets: [{ data: (cppByBank || []).map(x => toNum(x.count)) }]
-    },
-    options: { responsive: true, plugins: { legend: { position: 'right' } } }
-  });
-}
-
-// ---------- Proformas por banco ----------
-sumDestroy('p4');
-
-const pfLabels = (proformasByBank || []).map(x => x.bank);
-const pfData   = (proformasByBank || []).map(x => toNum(x.count));
-
-const pfTotal = pfData.reduce((a,v)=>a + (Number(v)||0), 0);
-const elTot = document.getElementById('sumProformasTotal');
-if (elTot) elTot.textContent = pfTotal;
-
-if (ctx('sumProformasBar')) {
-  __sumCharts.p4 = new Chart(ctx('sumProformasBar'), {
-    type: 'bar',
-    data: {
-      labels: pfLabels,
-      datasets: [{
-        label: 'Proformas',
-        data: pfData
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (c) => ` ${c.label}: ${c.parsed.y}`
-          }
-        }
+  // ---------- Progreso por fase ----------
+  sumDestroy('p1');
+  if (ctx('sumProgressByPhase')) {
+    __sumCharts.p1 = new Chart(ctx('sumProgressByPhase'), {
+      type: 'bar',
+      data: {
+        labels: progressByPhase.map(x => x.phase),
+        datasets: [{
+          label: '% completado',
+          data: progressByPhase.map(x => toNum(x.pct))
+        }]
       },
-      scales: {
-        y: {
-          beginAtZero: true,
-          ticks: { precision: 0 }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true, max: 100 } }
+      }
+    });
+  }
+  renderChartSummary('sumProgressByPhaseSummary',
+    progressByPhase.map(x => ({ label: x.phase, value: toNum(x.pct) })),
+    { totalLabel: 'Suma', formatter: (v) => `${v}%` }
+  );
+
+  // ---------- Permisos por institución ----------
+  sumDestroy('p2');
+  if (ctx('sumPermitsByInstitution')) {
+    const inst = (__permits?.items?.length)
+      ? buildPermitsByInstitution(__permits.items)
+      : permitsByInstitution;
+
+    __sumCharts.p2 = new Chart(ctx('sumPermitsByInstitution'), {
+      type: 'bar',
+      data: {
+        labels: inst.map(x => x.institution),
+        datasets: [
+          { label: 'Pendiente',  data: inst.map(x => toNum(x.pending)),   stack: 's' },
+          { label: 'En trámite', data: inst.map(x => toNum(x.inProcess)), stack: 's' },
+          { label: 'Aprobado',   data: inst.map(x => toNum(x.approved)),  stack: 's' },
+          { label: 'Rechazado',  data: inst.map(x => toNum(x.rejected)),  stack: 's' },
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { stacked: true },
+          y: { stacked: true, beginAtZero: true }
         }
       }
-    }
-  });
-}
+    });
 
-// ---------- Estado de unidades (donut) ----------
-sumDestroy('p5');
-if (ctx('sumUnitsDonut')) {
-  __sumCharts.p5 = new Chart(ctx('sumUnitsDonut'), {
-    type: 'doughnut',
-    data: {
-      labels: (unitsByStatus || []).map(x => x.status),
-      datasets: [{ data: (unitsByStatus || []).map(x => toNum(x.count)) }]
-    },
-    options: { responsive: true, plugins: { legend: { position: 'right' } } }
-  });
-}
+    renderChartSummary('sumPermitsByInstitutionSummary',
+      inst.map(x => ({
+        label: x.institution,
+        value: toNum(x.pending) + toNum(x.inProcess) + toNum(x.approved) + toNum(x.rejected)
+      })),
+      { totalLabel: 'Total permisos' }
+    );
+  }
 
-// ---------- Ventas mensuales (FIX: orden y números) ----------
-sumDestroy('p6');
-if (ctx('sumSalesMonthly')) {
-  const sm = sortByMonth(salesMonthly).map(x => ({
-    month: monthKey(x.month),
-    units: toNum(x.units)
-  }));
+  // ---------- CPP por banco ----------
+  sumDestroy('p3');
+  if (ctx('sumCppPie')) {
+    __sumCharts.p3 = new Chart(ctx('sumCppPie'), {
+      type: 'pie',
+      data: {
+        labels: cppByBank.map(x => x.bank),
+        datasets: [{ data: cppByBank.map(x => toNum(x.count)) }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom' }
+        }
+      }
+    });
+  }
+  renderChartSummary('sumCppPieSummary',
+    cppByBank.map(x => ({ label: x.bank, value: toNum(x.count) })),
+    { totalLabel: 'Total CPP' }
+  );
 
-  __sumCharts.p6 = new Chart(ctx('sumSalesMonthly'), {
-    type: 'line',
-    data: {
-      labels: sm.map(x => x.month),
-      datasets: [{ label: 'Unidades', data: sm.map(x => x.units), tension: .3 }]
-    },
-    options: { responsive: true, scales: { y: { beginAtZero: true } } }
-  });
-}
+  // ---------- Proformas por banco ----------
+  sumDestroy('p4');
+  const pfLabels = proformasByBank.map(x => x.bank);
+  const pfData = proformasByBank.map(x => toNum(x.count));
 
-// ---------- Desembolsos plan vs real (FIX: alinear meses + ordenar + números) ----------
-sumDestroy('p7');
-if (ctx('sumDisbPlanReal')) {
-  const planRaw = sortByMonth(disbursements?.planCum || []).map(x => ({
-    month: monthKey(x.month),
-    amount: toNum(x.amount)
-  }));
-  const realRaw = sortByMonth(disbursements?.realCum || []).map(x => ({
-    month: monthKey(x.month),
-    amount: toNum(x.amount)
-  }));
+  const pfTotal = pfData.reduce((a, v) => a + (Number(v) || 0), 0);
+  const elTot = document.getElementById('sumProformasTotal');
+  if (elTot) elTot.textContent = pfTotal;
 
-  const months = uniq([
-    ...planRaw.map(x => x.month),
-    ...realRaw.map(x => x.month)
-  ]).sort((a, b) => a.localeCompare(b));
+  if (ctx('sumProformasBar')) {
+    __sumCharts.p4 = new Chart(ctx('sumProformasBar'), {
+      type: 'bar',
+      data: {
+        labels: pfLabels,
+        datasets: [{
+          label: 'Proformas',
+          data: pfData
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (c) => ` ${c.label}: ${c.parsed.y}`
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: { precision: 0 }
+          }
+        }
+      }
+    });
+  }
+  renderChartSummary('sumProformasBarSummary',
+    proformasByBank.map(x => ({ label: x.bank, value: toNum(x.count) })),
+    { totalLabel: 'Total proformas' }
+  );
 
-  const planMap = new Map(planRaw.map(x => [x.month, x.amount]));
-  const realMap = new Map(realRaw.map(x => [x.month, x.amount]));
+  // ---------- Estado de unidades ----------
+  sumDestroy('p5');
+  if (ctx('sumUnitsDonut')) {
+    __sumCharts.p5 = new Chart(ctx('sumUnitsDonut'), {
+      type: 'doughnut',
+      data: {
+        labels: unitsByStatus.map(x => x.status),
+        datasets: [{ data: unitsByStatus.map(x => toNum(x.count)) }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom' }
+        }
+      }
+    });
+  }
+  renderChartSummary('sumUnitsDonutSummary',
+    unitsByStatus.map(x => ({ label: x.status, value: toNum(x.count) })),
+    { totalLabel: 'Total unidades' }
+  );
 
-  __sumCharts.p7 = new Chart(ctx('sumDisbPlanReal'), {
-    type: 'line',
-    data: {
-      labels: months,
-      datasets: [
-        { label: 'Plan', data: months.map(m => planMap.get(m) ?? 0), tension: .3 },
-        { label: 'Real', data: months.map(m => realMap.get(m) ?? 0), tension: .3 }
-      ]
-    },
-    options: { responsive: true, scales: { y: { beginAtZero: true } } }
-  });
-}
+  // ---------- Ventas mensuales ----------
+  sumDestroy('p6');
+  if (ctx('sumSalesMonthly')) {
+    const sm = sortByMonth(salesMonthly).map(x => ({
+      month: monthKey(x.month),
+      units: toNum(x.units)
+    }));
 
-// ---------- Hipotecas por banco ----------
-sumDestroy('p8');
-if (ctx('sumMortgagesByBank')) {
-  __sumCharts.p8 = new Chart(ctx('sumMortgagesByBank'), {
-    type: 'bar',
-    data: {
-      labels: (mortgagesByBank || []).map(x => x.bank),
-      datasets: [{ label: 'Hipotecas', data: (mortgagesByBank || []).map(x => toNum(x.count)) }]
-    },
-    options: { responsive: true, scales: { y: { beginAtZero: true } } }
-  });
-}
+    __sumCharts.p6 = new Chart(ctx('sumSalesMonthly'), {
+      type: 'line',
+      data: {
+        labels: sm.map(x => x.month),
+        datasets: [{
+          label: 'Unidades',
+          data: sm.map(x => x.units),
+          tension: .3
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true } }
+      }
+    });
 
-// ---------- Alertas por severidad ----------
-sumDestroy('p9');
-if (ctx('sumAlertsSeverity')) {
-  const sev = (alerts?.bySeverity || []);
-  __sumCharts.p9 = new Chart(ctx('sumAlertsSeverity'), {
-    type: 'bar',
-    data: {
-      labels: sev.map(x => x.severity),
-      datasets: [{
-        label: 'Alertas',
-        data: sev.map(x => toNum(x.count))
-      }]
-    },
-    options: { responsive: true, scales: { y: { beginAtZero: true } } }
-  });
-}
+    renderChartSummary('sumSalesMonthlySummary',
+      sm.map(x => ({ label: x.month, value: x.units })),
+      { totalLabel: 'Total ventas' }
+    );
+  }
 
-// ---------- Expedientes atrasados por etapa ----------
-sumDestroy('p10');
-if (ctx('sumDelaysByStage')) {
-  const d = (kpis?.delaysByStage || []);
-  __sumCharts.p10 = new Chart(ctx('sumDelaysByStage'), {
-    type: 'bar',
-    data: {
-      labels: d.map(x => x.stage),
-      datasets: [{
-        label: 'Expedientes atrasados',
-        data: d.map(x => toNum(x.count))
-      }]
-    },
-    options: { responsive: true, scales: { y: { beginAtZero: true } } }
-  });
-}
+  // ---------- Desembolsos plan vs real ----------
+  sumDestroy('p7');
+  if (ctx('sumDisbPlanReal')) {
+    const planRaw = sortByMonth(disbursements?.planCum || []).map(x => ({
+      month: monthKey(x.month),
+      amount: toNum(x.amount)
+    }));
+    const realRaw = sortByMonth(disbursements?.realCum || []).map(x => ({
+      month: monthKey(x.month),
+      amount: toNum(x.amount)
+    }));
 
-// ---------- Alertas + conclusiones ----------
-// ✅ Solo mostrar vencimientos de documentos ACTIVOS (no cumplidos / no reemplazados)
-const isActiveDoc = (a) => String(a?.status || '').toUpperCase() === 'ACTIVE';
-const alertsDiv = document.getElementById('summaryAlerts');
-if (alertsDiv) {
-  alertsDiv.innerHTML = (alerts?.expiries || []).filter(isActiveDoc)
-    .sort((a,b) => new Date(a.due || 0) - new Date(b.due || 0))
-    .slice(0, 10)
-    .map(a =>
-      `<div class="row space-between small" style="padding:6px 8px;border:1px solid #eee;border-radius:8px;margin-bottom:6px;">
-        <div>${a.type} — <b>${a.name || a.bank || a.institution || ''}</b></div>
-        <div>${a.due ? new Date(a.due).toISOString().slice(0, 10) : '—'}</div>
-      </div>`
-    )
-    .join('') || '<div class="small muted">Sin vencimientos próximos</div>';
-}
+    const months = uniq([
+      ...planRaw.map(x => x.month),
+      ...realRaw.map(x => x.month)
+    ]).sort((a, b) => a.localeCompare(b));
 
-const notesUl = document.getElementById('summaryNotes');
-if (notesUl) {
-  notesUl.innerHTML = (alerts?.notes || []).map(n => `<li>${n}</li>`).join('') || '<li class="muted">Sin observaciones</li>';
-}
+    const planMap = new Map(planRaw.map(x => [x.month, x.amount]));
+    const realMap = new Map(realRaw.map(x => [x.month, x.amount]));
 
-// Antes / Después
-wireBADeleteDelegation();      // ✅ bind 1 sola vez
-await loadBeforeAfterGallery();
-addInfoBadges();
-wireInfoTooltips();
+    __sumCharts.p7 = new Chart(ctx('sumDisbPlanReal'), {
+      type: 'line',
+      data: {
+        labels: months,
+        datasets: [
+          { label: 'Plan', data: months.map(m => planMap.get(m) ?? 0), tension: .3 },
+          { label: 'Real', data: months.map(m => realMap.get(m) ?? 0), tension: .3 }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  }
+
+  // ---------- Hipotecas por banco ----------
+  sumDestroy('p8');
+  if (ctx('sumMortgagesByBank')) {
+    __sumCharts.p8 = new Chart(ctx('sumMortgagesByBank'), {
+      type: 'bar',
+      data: {
+        labels: mortgagesByBank.map(x => x.bank),
+        datasets: [{
+          label: 'Hipotecas',
+          data: mortgagesByBank.map(x => toNum(x.count))
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  }
+  renderChartSummary('sumMortgagesByBankSummary',
+    mortgagesByBank.map(x => ({ label: x.bank, value: toNum(x.count) })),
+    { totalLabel: 'Total hipotecas' }
+  );
+
+  // ---------- Alertas por severidad ----------
+  sumDestroy('p9');
+  if (ctx('sumAlertsSeverity')) {
+    const sev = alerts?.bySeverity || [];
+    __sumCharts.p9 = new Chart(ctx('sumAlertsSeverity'), {
+      type: 'bar',
+      data: {
+        labels: sev.map(x => x.severity),
+        datasets: [{
+          label: 'Alertas',
+          data: sev.map(x => toNum(x.count))
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+
+    renderChartSummary('sumAlertsSeveritySummary',
+      sev.map(x => ({ label: x.severity, value: toNum(x.count) })),
+      { totalLabel: 'Total alertas' }
+    );
+  }
+
+  // ---------- Expedientes atrasados por etapa ----------
+  sumDestroy('p10');
+  if (ctx('sumDelaysByStage')) {
+    const d = kpis?.delaysByStage || [];
+    __sumCharts.p10 = new Chart(ctx('sumDelaysByStage'), {
+      type: 'bar',
+      data: {
+        labels: d.map(x => x.stage),
+        datasets: [{
+          label: 'Expedientes atrasados',
+          data: d.map(x => toNum(x.count))
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+
+    renderChartSummary('sumDelaysByStageSummary',
+      d.map(x => ({ label: x.stage, value: toNum(x.count) })),
+      { totalLabel: 'Total atrasados' }
+    );
+  }
+
+  // Alertas / conclusiones
+  const isActiveDoc = (a) => String(a?.status || '').toUpperCase() === 'ACTIVE';
+  const alertsDiv = document.getElementById('summaryAlerts');
+  if (alertsDiv) {
+    alertsDiv.innerHTML = (alerts?.expiries || []).filter(isActiveDoc)
+      .sort((a, b) => new Date(a.due || 0) - new Date(b.due || 0))
+      .slice(0, 10)
+      .map(a =>
+        `<div class="row space-between small" style="padding:6px 8px;border:1px solid #eee;border-radius:8px;margin-bottom:6px;">
+          <div>${a.type} — <b>${a.name || a.bank || a.institution || ''}</b></div>
+          <div>${a.due ? new Date(a.due).toISOString().slice(0, 10) : '—'}</div>
+        </div>`
+      )
+      .join('') || '<div class="small muted">Sin vencimientos próximos</div>';
+  }
+
+  const notesUl = document.getElementById('summaryNotes');
+  if (notesUl) {
+    notesUl.innerHTML = (alerts?.notes || []).map(n => `<li>${n}</li>`).join('') || '<li class="muted">Sin observaciones</li>';
+  }
+
+  // Antes / Después
+  wireBADeleteDelegation();
+  await loadBeforeAfterGallery();
+  addInfoBadges();
+  wireInfoTooltips();
 }
 
 async function syncUnitsSoldFromPortfolio() {
@@ -4404,13 +4594,14 @@ const htmlUnidad = `
       <label>Precio lista</label><input id="fu-precio" type="number" value="${u.precioLista||0}">
     </div>
     <div>
-      <h4>Cliente (resumen)</h4>
-      ${input('fv-clienteNombre','Cliente', v.clienteNombre||'')}
-      ${input('fv-cedula','Cédula', v.cedula||'')}
-      ${input('fv-empresa','Empresa', v.empresa||'')}
-      ${inputNum('fv-valor','Valor', v.valor||0)}
-      ${inputDate('fv-fechaContratoCliente','Fecha contrato firmado por cliente', v.fechaContratoCliente)}
-    </div>
+  <h4>Cliente (resumen)</h4>
+  ${input('fv-clienteNombre','Cliente', v.clienteNombre||'')}
+  ${input('fv-cedula','Cédula', v.cedula||'')}
+  ${input('fv-empresa','Empresa', v.empresa||'')}
+  ${inputNum('fv-precioVenta','Precio de venta', v.precioVenta || u.precioLista || 0)}
+  ${inputNum('fv-montoFinanciamientoCPP','Monto financiamiento CPP', v.montoFinanciamientoCPP || v.valor || 0)}
+  ${inputDate('fv-fechaContratoCliente','Fecha contrato firmado por cliente', v.fechaContratoCliente)}
+</div>
   </div>
 `;
 
@@ -4590,10 +4781,16 @@ modalFicha.style.display = 'flex';
 
     // Cliente
     clienteNombre: vVal('fv-clienteNombre'),
-    cedula:        vVal('fv-cedula'),
-    empresa:       vVal('fv-empresa'),
-    valor:         vNum('fv-valor'),
-    fechaContratoCliente: vDate('fv-fechaContratoCliente'),
+cedula:        vVal('fv-cedula'),
+empresa:       vVal('fv-empresa'),
+
+precioVenta: vNum('fv-precioVenta'),
+montoFinanciamientoCPP: vNum('fv-montoFinanciamientoCPP'),
+
+// legacy
+valor: vNum('fv-montoFinanciamientoCPP'),
+
+fechaContratoCliente: vDate('fv-fechaContratoCliente'),
 
     // Banco / CPP
     banco:          vVal('fv-banco'),

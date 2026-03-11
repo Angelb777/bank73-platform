@@ -1626,3 +1626,108 @@ button.small.danger{ color:#fff !important; }
   text-overflow:ellipsis;
   white-space:nowrap;
 }
+
+/* ===== RESUMEN: estilo integrado con el tema oscuro ===== */
+
+#tab-resumen .summary-chart-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+#tab-resumen .summary-chart-card h3 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  color: var(--text);
+}
+
+#tab-resumen .summary-chart-box {
+  position: relative;
+  width: 100%;
+  height: 260px;
+}
+
+#tab-resumen .summary-chart-card.chart-card-sm .summary-chart-box {
+  height: 580px;
+}
+
+#tab-resumen .summary-chart-box canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+#tab-resumen .summary-chart-summary {
+  margin-top: 14px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  padding-top: 12px;
+}
+
+#tab-resumen .summary-mini-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#tab-resumen .summary-mini-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  font-size: 13px;
+}
+
+#tab-resumen .summary-mini-total {
+  font-weight: 700;
+  border-bottom: 0;
+  padding-top: 10px;
+}
+
+#tab-resumen .summary-mini-label {
+  color: var(--text-muted);
+}
+
+#tab-resumen .summary-mini-value {
+  color: var(--text);
+  font-weight: 700;
+}
+
+#tab-resumen .summary-resume-wrap {
+  margin: 14px 0 18px;
+}
+
+#tab-resumen .summary-resume-box {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+#tab-resumen .summary-resume-item {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: var(--shadow);
+}
+
+#tab-resumen .summary-resume-title {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+#tab-resumen .summary-resume-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+#tab-resumen .summary-resume-sub {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}

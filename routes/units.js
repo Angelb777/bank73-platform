@@ -3,12 +3,13 @@ const router = express.Router();
 const mongoose = require('mongoose');
 
 const Unit = require('../models/Unit');
+const Venta = require('../models/Venta');
 const Project = require('../models/Project'); // ROLE-SEP
 const requirePin = require('../utils/requirePin');
 
 const { requireProjectAccess } = require('../middleware/rbac'); // ROLE-SEP
 
-// ✅ NUEVO: recalcular KPIs comerciales y persistir en Project
+// ✅ recalcular KPIs comerciales y persistir en Project
 const { recomputeCommercialKpis } = require('../services/comercial_kpis');
 
 // ROLE-SEP: marcar este router como "units" para el guard de comerciales
@@ -38,8 +39,6 @@ async function attachProjectByUnitId(req, res, next) {
   try {
     const { id } = req.params;
 
-    // 👇 OJO: por seguridad, ideal filtrar también por tenantKey
-    // pero mantengo tu lógica y sólo verifico el proyecto con tenantKey.
     const unit = await Unit.findById(id).lean();
     if (!unit) return res.status(404).json({ error: 'Unidad no encontrada' });
 
@@ -47,14 +46,14 @@ async function attachProjectByUnitId(req, res, next) {
     if (!proj) return res.status(404).json({ error: 'Proyecto no encontrado' });
 
     req.project = proj;
-    req._unit = unit; // opcional
+    req._unit = unit;
     next();
   } catch (e) {
     return res.status(400).json({ error: 'ID inválido' });
   }
 }
 
-// ✅ NUEVO: helper “no rompas la operación si falla el recálculo”
+// ✅ helper “no rompas la operación si falla el recálculo”
 async function syncProjectKpisSafe(req, projectId) {
   try {
     await recomputeCommercialKpis({ tenantKey: req.tenantKey, projectId });
@@ -68,8 +67,8 @@ async function syncProjectKpisSafe(req, projectId) {
    ========================================================================= */
 router.post(
   '/batch',
-  attachProjectByProjectId,                                  // ROLE-SEP
-  requireProjectAccess({ promoterCanEditAssigned: true }),   // ROLE-SEP
+  attachProjectByProjectId,
+  requireProjectAccess({ promoterCanEditAssigned: true }),
   async (req, res) => {
     try {
       const { projectId, manzana, cantidad, modelo, m2, precioLista, estado } = req.body;
@@ -80,8 +79,10 @@ router.post(
       const lotes = Array.from({ length: parseInt(cantidad, 10) }, (_, i) => String(i + 1));
 
       const docs = lotes.map(lote => ({
-        tenantKey: req.tenantKey, 
-        projectId, manzana, lote,
+        tenantKey: req.tenantKey,
+        projectId,
+        manzana,
+        lote,
         modelo: modelo || '',
         m2: m2 || 0,
         precioLista: precioLista || 0,
@@ -96,7 +97,6 @@ router.post(
 
       const created = await Unit.insertMany(docs, { ordered: false });
 
-      // ✅ NUEVO: recalcula totals/sold y los guarda en Project
       await syncProjectKpisSafe(req, projectId);
 
       res.json(created);
@@ -111,8 +111,8 @@ router.post(
    ========================================================================= */
 router.get(
   '/',
-  attachProjectByProjectId,                 // ROLE-SEP
-  requireProjectAccess(),                   // ROLE-SEP
+  attachProjectByProjectId,
+  requireProjectAccess(),
   async (req, res) => {
     try {
       const { projectId, estado, manzana, q } = req.query;
@@ -137,35 +137,57 @@ router.get(
   }
 );
 
-
-// PATCH /api/units/batch
+/* =========================================================================
+   PATCH /api/units/batch
+   ========================================================================= */
 router.patch(
   '/batch',
   attachProjectByProjectId,
   requireProjectAccess({ promoterCanEditAssigned: true }),
   async (req, res) => {
-    const { ids = [], update = {} } = req.body || {};
-    if (!ids.length) return res.status(400).json({ error: 'ids requerido' });
+    try {
+      const { ids = [], update = {} } = req.body || {};
+      if (!ids.length) return res.status(400).json({ error: 'ids requerido' });
 
-    // Mantén la lógica espejo del PATCH individual:
-    const set = { ...update };
-    if (set.precioLista != null) set.price = set.precioLista;
-    if (set.estado) set.status = String(set.estado).toUpperCase();
+      const set = { ...update };
+      if (set.precioLista != null) set.price = set.precioLista;
+      if (set.estado) set.status = String(set.estado).toUpperCase();
 
-    const ops = ids.map(_id => ({
-      updateOne: { filter: { _id }, update: { $set: set } }
-    }));
+      const ops = ids.map(_id => ({
+        updateOne: {
+          filter: { _id },
+          update: { $set: set }
+        }
+      }));
 
-    const r = await Unit.bulkWrite(ops, { ordered: false });
+      const r = await Unit.bulkWrite(ops, { ordered: false });
 
-    // ✅ NUEVO: batch edit también actualiza KPIs
-    await syncProjectKpisSafe(req, req.project._id);
+      // ✅ si cambia el precio de la unidad, sincronizamos también Venta.valor
+      if (set.precioLista != null) {
+        await Venta.updateMany(
+          {
+            tenantKey: req.tenantKey,
+            projectId: req.project._id,
+            unitId: { $in: ids }
+          },
+          {
+            $set: { valor: Number(set.precioLista || 0) }
+          }
+        );
+      }
 
-    res.json({ matched: r.matchedCount, modified: r.modifiedCount });
+      await syncProjectKpisSafe(req, req.project._id);
+
+      res.json({ matched: r.matchedCount, modified: r.modifiedCount });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
   }
 );
 
-// DELETE /api/units/batch
+/* =========================================================================
+   DELETE /api/units/batch
+   ========================================================================= */
 router.delete(
   '/batch',
   attachProjectByProjectId,
@@ -174,18 +196,39 @@ router.delete(
     const bad = requirePin(req, res);
     if (bad) return;
 
-    const { ids = [] } = req.body || {};
-    if (!ids.length) return res.status(400).json({ error: 'ids requerido' });
+    try {
+      const { ids = [] } = req.body || {};
+      if (!ids.length) return res.status(400).json({ error: 'ids requerido' });
 
-    const r = await Unit.updateMany(
-      { _id: { $in: ids } },
-      { $set: { deletedAt: new Date() } }
-    );
+      const now = new Date();
 
-    // ✅ NUEVO
-    await syncProjectKpisSafe(req, req.project._id);
+      // 1) soft delete unidades
+      const r = await Unit.updateMany(
+        {
+          tenantKey: req.tenantKey,
+          projectId: req.project._id,
+          _id: { $in: ids }
+        },
+        { $set: { deletedAt: now } }
+      );
 
-    res.json({ modified: r.modifiedCount });
+      // 2) soft delete ventas asociadas a esas unidades
+      await Venta.updateMany(
+        {
+          tenantKey: req.tenantKey,
+          projectId: req.project._id,
+          unitId: { $in: ids },
+          deletedAt: null
+        },
+        { $set: { deletedAt: now } }
+      );
+
+      await syncProjectKpisSafe(req, req.project._id);
+
+      res.json({ modified: r.modifiedCount });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
   }
 );
 
@@ -194,8 +237,8 @@ router.delete(
    ========================================================================= */
 router.get(
   '/:id',
-  attachProjectByUnitId,     // ROLE-SEP
-  requireProjectAccess(),    // ROLE-SEP
+  attachProjectByUnitId,
+  requireProjectAccess(),
   async (req, res) => {
     try {
       const u = await Unit.findById(req.params.id).populate('clienteId');
@@ -212,8 +255,8 @@ router.get(
    ========================================================================= */
 router.patch(
   '/:id',
-  attachProjectByUnitId,                                     // ROLE-SEP
-  requireProjectAccess({ promoterCanEditAssigned: true }),   // ROLE-SEP
+  attachProjectByUnitId,
+  requireProjectAccess({ promoterCanEditAssigned: true }),
   async (req, res) => {
     try {
       const update = { ...req.body };
@@ -228,10 +271,28 @@ router.patch(
         update.code = `${m}-${l}`;
       }
 
-      const u = await Unit.findByIdAndUpdate(req.params.id, update, { new: true });
+      const u = await Unit.findByIdAndUpdate(
+        req.params.id,
+        { $set: update },
+        { new: true }
+      );
+
       if (!u) return res.status(404).json({ error: 'No encontrada' });
 
-      // ✅ NUEVO: al cambiar estado o lo que sea, recalcula KPIs del proyecto
+      // ✅ si cambia el precio de la unidad, sincronizamos también Venta.valor
+      if (update.precioLista != null) {
+        await Venta.updateOne(
+          {
+            tenantKey: req.tenantKey,
+            projectId: u.projectId,
+            unitId: u._id
+          },
+          {
+            $set: { valor: Number(update.precioLista || 0) }
+          }
+        );
+      }
+
       await syncProjectKpisSafe(req, u.projectId);
 
       res.json(u);
@@ -246,21 +307,38 @@ router.patch(
    ========================================================================= */
 router.delete(
   '/:id',
-  attachProjectByUnitId,                                     // ROLE-SEP
-  requireProjectAccess({ promoterCanEditAssigned: true }),   // ROLE-SEP
+  attachProjectByUnitId,
+  requireProjectAccess({ promoterCanEditAssigned: true }),
   async (req, res) => {
     const bad = requirePin(req, res);
     if (bad) return;
 
     try {
-      const u = await Unit.findByIdAndUpdate(
-        req.params.id,
-        { deletedAt: new Date() },
+      const now = new Date();
+
+      const u = await Unit.findOneAndUpdate(
+        {
+          _id: req.params.id,
+          tenantKey: req.tenantKey,
+          projectId: req.project._id
+        },
+        { $set: { deletedAt: now } },
         { new: true }
       );
+
       if (!u) return res.status(404).json({ error: 'No encontrada' });
 
-      // ✅ NUEVO
+      // soft delete venta asociada
+      await Venta.updateMany(
+        {
+          tenantKey: req.tenantKey,
+          projectId: u.projectId,
+          unitId: u._id,
+          deletedAt: null
+        },
+        { $set: { deletedAt: now } }
+      );
+
       await syncProjectKpisSafe(req, u.projectId);
 
       res.json({ success: true, id: u._id });
@@ -269,6 +347,5 @@ router.delete(
     }
   }
 );
-
 
 module.exports = router;

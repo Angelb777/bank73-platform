@@ -2,62 +2,66 @@
 const express = require('express');
 const router = express.Router();
 
-const Venta   = require('../models/Venta');
+const Venta = require('../models/Venta');
 const Project = require('../models/Project'); // ROLE-SEP
-const Unit    = require('../models/Unit');    // ROLE-SEP
+const Unit = require('../models/Unit'); // ROLE-SEP
 const { requireProjectAccess } = require('../middleware/rbac'); // ROLE-SEP
+const { recomputeCommercialKpis } = require('../services/comercial_kpis');
 
 // --- Whitelist de campos permitidos (coincide con tu schema Venta) ---
 const ALLOWED_FIELDS = new Set([
   // básicos
-  'clienteNombre','cedula','empresa','banco','oficialBanco','statusBanco','numCPP','valor',
+  'clienteNombre', 'cedula', 'empresa', 'banco', 'oficialBanco', 'statusBanco', 'numCPP',
+  'montoFinanciamientoCPP', 'precioVenta', 'valor',
   'fechaContratoCliente',
 
   // espejo unidad (opcional para reportes)
-  'manzana','lote',
+  'manzana', 'lote',
 
   // banco / cpp
-  'entregaExpedienteBanco','recibidoCPP','plazoAprobacionDias','fechaValorCPP',
-  'fechaVencimientoCPP','vencimientoCPPBnMivi',
+  'entregaExpedienteBanco', 'recibidoCPP', 'plazoAprobacionDias', 'fechaValorCPP',
+  'fechaVencimientoCPP', 'vencimientoCPPBnMivi',
 
   // contrato / protocolo / notaría / RP / desembolso
-  'estatusContrato','pagare','fechaFirma','protocoloFirmaCliente','fechaEntregaBanco',
-  'protocoloFirmaRLBancoInter','fechaRegresoBanco','diasTranscurridosBanco',
-  'fechaEntregaProtocoloBancoCli','firmaProtocoloBancoCliente',
-  'fechaRegresoProtocoloBancoCli','diasTranscurridosProtocolo',
-  'cierreNotaria','fechaPagoImpuesto','ingresoRP','fechaInscripcion',
-  'solicitudDesembolso','fechaRecibidoCheque',
+  'estatusContrato', 'pagare', 'fechaFirma', 'protocoloFirmaCliente', 'fechaEntregaBanco',
+  'protocoloFirmaRLBancoInter', 'fechaRegresoBanco', 'diasTranscurridosBanco',
+  'fechaEntregaProtocoloBancoCli', 'firmaProtocoloBancoCliente',
+  'fechaRegresoProtocoloBancoCli', 'diasTranscurridosProtocolo',
+  'cierreNotaria', 'fechaPagoImpuesto', 'ingresoRP', 'fechaInscripcion',
+  'solicitudDesembolso', 'fechaRecibidoCheque',
 
   // MIVI
-  'expedienteMIVI','entregaExpMIVI','resolucionMIVI','fechaResolucionMIVI',
-  'solicitudMiviDesembolso','desembolsoMivi','fechaPagoMivi',
+  'expedienteMIVI', 'entregaExpMIVI', 'resolucionMIVI', 'fechaResolucionMIVI',
+  'solicitudMiviDesembolso', 'desembolsoMivi', 'fechaPagoMivi',
 
   // Obra / permisos / paz y salvo / otros
-  'enConstruccion','faseConstruccion','permisoConstruccionNum','permisoOcupacion',
-  'permisoOcupacionNum','constructora','pazSalvoGesproban','pazSalvoPromotora',
-  'mLiberacion','mSegregacion','mPrestamo','solicitudAvaluo','avaluoRealizado',
-  'entregaCasa','entregaANATI','comentario',
+  'enConstruccion', 'faseConstruccion', 'permisoConstruccionNum', 'permisoOcupacion',
+  'permisoOcupacionNum', 'constructora', 'pazSalvoGesproban', 'pazSalvoPromotora',
+  'mLiberacion', 'mSegregacion', 'mPrestamo', 'solicitudAvaluo', 'avaluoRealizado',
+  'entregaCasa', 'entregaANATI', 'comentario',
 
-  // ✅ importante
+  // importante
   'checklist'
 ]);
 
-// Sanitizador simple para el checklist que llega del front
-const STEP_STATES = ['pendiente','en_proceso','completado','bloqueado'];
+const STEP_STATES = ['pendiente', 'en_proceso', 'completado', 'bloqueado'];
+
 function sanitizeChecklist(input) {
   if (!Array.isArray(input)) return [];
   return input.map(s => ({
-    code:  String(s.code || '').trim(),
+    code: String(s.code || '').trim(),
     state: STEP_STATES.includes(s.state) ? s.state : 'pendiente',
-    note:  String(s.note || ''),
+    note: String(s.note || ''),
     dueAt: s.dueAt ? new Date(s.dueAt) : undefined,
-    doneAt:s.doneAt? new Date(s.doneAt): undefined,
-  })).filter(x => x.code); // descarta vacíos
+    doneAt: s.doneAt ? new Date(s.doneAt) : undefined,
+  })).filter(x => x.code);
 }
 
 function pickAllowed(obj = {}) {
   const out = {};
-  for (const k in obj) if (ALLOWED_FIELDS.has(k)) out[k] = obj[k];
+  for (const k in obj) {
+    if (ALLOWED_FIELDS.has(k)) out[k] = obj[k];
+  }
   return out;
 }
 
@@ -82,7 +86,12 @@ async function attachProjectByProjectId(req, res, next) {
 
 async function attachProjectByVenta(req, res, next) {
   try {
-    const v = await Venta.findById(req.params.id).lean();
+    const v = await Venta.findOne({
+      _id: req.params.id,
+      tenantKey: req.tenantKey,
+      deletedAt: null
+    }).lean();
+
     if (!v) return res.status(404).json({ error: 'No existe' });
 
     const proj = await Project.findOne({ _id: v.projectId, tenantKey: req.tenantKey }).lean();
@@ -106,11 +115,24 @@ async function attachProjectByUnitIdFromVenta(req, res, next) {
     if (!proj) return res.status(404).json({ error: 'Proyecto no encontrado' });
 
     req.project = proj;
-    // venta puede no existir aún; no bloqueamos
-    req._venta = await Venta.findOne({ unitId: unit._id, projectId: proj._id }).lean();
+    req._venta = await Venta.findOne({
+      tenantKey: req.tenantKey,
+      unitId: unit._id,
+      projectId: proj._id,
+      deletedAt: null
+    }).lean();
+
     next();
   } catch (e) {
     return res.status(400).json({ error: 'ID inválido' });
+  }
+}
+
+async function syncProjectKpisSafe(req, projectId) {
+  try {
+    await recomputeCommercialKpis({ tenantKey: req.tenantKey, projectId });
+  } catch (e) {
+    console.warn('[ventas] recomputeCommercialKpis failed:', e?.message || e);
   }
 }
 
@@ -124,9 +146,17 @@ router.get(
   async (req, res) => {
     try {
       const { projectId } = req.query;
-      const list = await Venta.find({ projectId }).sort({ createdAt: -1 }).lean();
+
+      const list = await Venta.find({
+        tenantKey: req.tenantKey,
+        projectId,
+        deletedAt: null
+      }).sort({ createdAt: -1 }).lean();
+
       res.json(list);
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   }
 );
 
@@ -139,15 +169,22 @@ router.get(
   requireProjectAccess(),
   async (req, res) => {
     try {
-      const v = req._venta || await Venta.findOne({ unitId: req.params.unitId }).lean();
+      const v = req._venta || await Venta.findOne({
+        tenantKey: req.tenantKey,
+        unitId: req.params.unitId,
+        deletedAt: null
+      }).lean();
+
       if (!v) return res.status(404).json({ error: 'No existe' });
       res.json(v);
-    } catch (e) { res.status(400).json({ error: e.message }); }
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
   }
 );
 
 /* =========================================================================
-   POST /ventas (crear)
+   POST /ventas (crear o reactivar si ya existe por unitId)
    ========================================================================= */
 router.post(
   '/',
@@ -156,27 +193,48 @@ router.post(
   async (req, res) => {
     try {
       const { projectId, unitId } = req.body || {};
-      if (!projectId || !unitId) return res.status(400).json({ error: 'projectId y unitId requeridos' });
+      if (!projectId || !unitId) {
+        return res.status(400).json({ error: 'projectId y unitId requeridos' });
+      }
 
       const base = pickAllowed(req.body);
       base.projectId = projectId;
-      base.unitId    = unitId;
+      base.unitId = unitId;
       base.tenantKey = req.tenantKey;
+      base.deletedAt = null;
 
-      // ✅ saneo opcional si te llega checklist ya en el create
-      if ('checklist' in base) {
-        base.checklist = sanitizeChecklist(base.checklist);
+      if ('checklist' in req.body) {
+        base.checklist = sanitizeChecklist(req.body.checklist);
       }
 
-      // espejo manzana/lote (opcional)
       const u = await Unit.findById(unitId).select('manzana lote').lean();
-      if (u) { base.manzana = base.manzana || u.manzana; base.lote = base.lote || u.lote; }
+      if (u) {
+        base.manzana = base.manzana || u.manzana;
+        base.lote = base.lote || u.lote;
+      }
 
-      const created = await Venta.create(base);
-      // devolver siempre lean
-      const dto = await Venta.findById(created._id).lean();
+      const saved = await Venta.findOneAndUpdate(
+        {
+          tenantKey: req.tenantKey,
+          projectId,
+          unitId
+        },
+        {
+          $set: {
+            ...base,
+            deletedAt: null
+          }
+        },
+        { new: true, upsert: true, runValidators: true }
+      );
+
+      await syncProjectKpisSafe(req, projectId);
+
+      const dto = await Venta.findById(saved._id).lean();
       res.json(dto);
-    } catch (e) { res.status(400).json({ error: e.message }); }
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
   }
 );
 
@@ -190,32 +248,47 @@ router.post(
   async (req, res) => {
     try {
       const { projectId, unitId, ...data } = req.body || {};
-      if (!projectId || !unitId) return res.status(400).json({ error: 'projectId y unitId requeridos' });
+      if (!projectId || !unitId) {
+        return res.status(400).json({ error: 'projectId y unitId requeridos' });
+      }
 
       const set = pickAllowed(data);
       set.tenantKey = req.tenantKey;
 
-      // ✅ saneo del checklist si viene
       if ('checklist' in data) {
         set.checklist = sanitizeChecklist(data.checklist);
       }
 
-      // espejo manzana/lote
       if (!set.manzana || !set.lote) {
         const u = await Unit.findById(unitId).select('manzana lote').lean();
-        if (u) { if (!set.manzana) set.manzana = u.manzana; if (!set.lote) set.lote = u.lote; }
+        if (u) {
+          if (!set.manzana) set.manzana = u.manzana;
+          if (!set.lote) set.lote = u.lote;
+        }
       }
 
       const updated = await Venta.findOneAndUpdate(
-        { projectId, unitId },
-        { $set: set },
-        { new: true, upsert: true, runValidators: true } // ✅ valida enum/fechas
+        {
+          tenantKey: req.tenantKey,
+          projectId,
+          unitId
+        },
+        {
+          $set: {
+            ...set,
+            deletedAt: null
+          }
+        },
+        { new: true, upsert: true, runValidators: true }
       );
 
-      // devolver siempre lean
+      await syncProjectKpisSafe(req, projectId);
+
       const dto = await Venta.findById(updated._id).lean();
       res.json(dto);
-    } catch (e) { res.status(400).json({ error: e.message }); }
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
   }
 );
 
@@ -234,34 +307,63 @@ router.patch(
       const set = pickAllowed(update);
       set.tenantKey = req.tenantKey;
 
-      // ⚠️ No solemos permitir checklist en batch; si lo necesitas, también podrías sanear aquí.
-
-      let modified = 0, created = 0;
+      let modified = 0;
+      let created = 0;
 
       if (upsert) {
         for (const unitId of unitIds) {
+          const existed = await Venta.findOne({
+            tenantKey: req.tenantKey,
+            projectId,
+            unitId,
+            deletedAt: null
+          }).select('_id').lean();
+
           const r = await Venta.findOneAndUpdate(
-            { projectId, unitId },
-            { $set: set },
+            {
+              tenantKey: req.tenantKey,
+              projectId,
+              unitId
+            },
+            {
+              $set: {
+                ...set,
+                deletedAt: null
+              }
+            },
             { upsert: true, new: true, runValidators: true }
           );
-          if (r && r._id) modified++;
+
+          if (!existed && r?._id) created++;
+          else if (r?._id) modified++;
         }
       } else {
         const r = await Venta.updateMany(
-          { projectId, unitId: { $in: unitIds } },
-          { $set: set },
+          {
+            tenantKey: req.tenantKey,
+            projectId,
+            unitId: { $in: unitIds },
+            deletedAt: null
+          },
+          {
+            $set: set
+          },
           { runValidators: true }
         );
         modified = r.modifiedCount || 0;
       }
+
+      await syncProjectKpisSafe(req, projectId);
+
       res.json({ modified, created });
-    } catch (e) { res.status(400).json({ error: e.message }); }
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
   }
 );
 
 /* =========================================================================
-   PATCH /ventas/:id (actualizar)  ✅ ÚNICO
+   PATCH /ventas/:id
    ========================================================================= */
 router.patch(
   '/:id',
@@ -271,20 +373,24 @@ router.patch(
     try {
       const set = pickAllowed(req.body);
 
-      // ✅ Checklist (si viene) con saneo
       if ('checklist' in req.body) {
         set.checklist = sanitizeChecklist(req.body.checklist);
       }
 
-      const updated = await Venta.findByIdAndUpdate(
-        req.params.id,
+      const updated = await Venta.findOneAndUpdate(
+        {
+          _id: req.params.id,
+          tenantKey: req.tenantKey,
+          deletedAt: null
+        },
         { $set: set },
         { new: true, runValidators: true }
       );
 
       if (!updated) return res.status(404).json({ error: 'No existe' });
 
-      // devolver siempre lean
+      await syncProjectKpisSafe(req, updated.projectId);
+
       const dto = await Venta.findById(updated._id).lean();
       res.json(dto);
     } catch (e) {
