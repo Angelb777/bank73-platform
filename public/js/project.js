@@ -1529,6 +1529,49 @@ async function renderSummaryUI(payload) {
   const beforeAfter          = payload.beforeAfter          || [];
   const financePhases        = payload?.finance?.phases     || [];
 
+  // Helpers locales
+  const toNum = (v) => {
+    if (v === null || v === undefined || v === '') return 0;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+    const s = String(v).trim().replace(/\./g, '').replace(',', '.');
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const toStr = (v) => (v === null || v === undefined) ? '' : String(v).trim();
+
+  const monthKey = (m) => {
+    const s = toStr(m).replace('/', '-');
+    if (/^\d{4}-\d{2}$/.test(s)) return s;
+    const mmYYYY = s.match(/^(\d{2})-(\d{4})$/);
+    if (mmYYYY) return `${mmYYYY[2]}-${mmYYYY[1]}`;
+    return s;
+  };
+
+  const sortByMonth = (arr) =>
+    (arr || []).slice().sort((a, b) => monthKey(a.month).localeCompare(monthKey(b.month)));
+
+  const uniq = (arr) => Array.from(new Set(arr || []));
+
+  const ctx = (id) => {
+    const el = document.getElementById(id);
+    return (el && typeof Chart !== 'undefined') ? el.getContext('2d') : null;
+  };
+
+  function calcAbsorption3mFromSalesMonthly(salesMonthly) {
+    const sm = sortByMonth(salesMonthly).map(x => ({
+      month: monthKey(x.month),
+      units: toNum(x.units)
+    }));
+
+    const last3 = sm.slice(-3);
+    if (!last3.length) return 0;
+
+    const sum = last3.reduce((a, x) => a + (x.units || 0), 0);
+    const avg = sum / last3.length;
+    return Math.round(avg * 10) / 10;
+  }
+
   // 3) Cabecera fija
   const headerKpisFixed = {
     ...headerKpis,
@@ -1664,49 +1707,6 @@ async function renderSummaryUI(payload) {
   const spB = document.getElementById('summaryProgressBar');
   if (spT) spT.textContent = `${progressPct}% completado`;
   if (spB) spB.style.width = `${progressPct}%`;
-
-  // Helpers locales
-  const toNum = (v) => {
-    if (v === null || v === undefined || v === '') return 0;
-    if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
-    const s = String(v).trim().replace(/\./g, '').replace(',', '.');
-    const n = Number(s);
-    return Number.isFinite(n) ? n : 0;
-  };
-
-  const toStr = (v) => (v === null || v === undefined) ? '' : String(v).trim();
-
-  const monthKey = (m) => {
-    const s = toStr(m).replace('/', '-');
-    if (/^\d{4}-\d{2}$/.test(s)) return s;
-    const mmYYYY = s.match(/^(\d{2})-(\d{4})$/);
-    if (mmYYYY) return `${mmYYYY[2]}-${mmYYYY[1]}`;
-    return s;
-  };
-
-  const sortByMonth = (arr) =>
-    (arr || []).slice().sort((a, b) => monthKey(a.month).localeCompare(monthKey(b.month)));
-
-  const uniq = (arr) => Array.from(new Set(arr || []));
-
-  const ctx = (id) => {
-    const el = document.getElementById(id);
-    return (el && typeof Chart !== 'undefined') ? el.getContext('2d') : null;
-  };
-
-  function calcAbsorption3mFromSalesMonthly(salesMonthly) {
-    const sm = sortByMonth(salesMonthly).map(x => ({
-      month: monthKey(x.month),
-      units: toNum(x.units)
-    }));
-
-    const last3 = sm.slice(-3);
-    if (!last3.length) return 0;
-
-    const sum = last3.reduce((a, x) => a + (x.units || 0), 0);
-    const avg = sum / last3.length;
-    return Math.round(avg * 10) / 10;
-  }
 
   // ---------- Progreso por fase ----------
   sumDestroy('p1');
