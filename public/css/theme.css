@@ -1644,12 +1644,10 @@ button.small.danger{ color:#fff !important; }
   color: var(--text);
 }
 
-#tab-resumen .summary-chart-box {
-  position: relative;
-  width: 100%;
-  height: 260px;
+/* Gráfica principal de fases (más alta) */
+#tab-resumen .summary-chart-card.chart-phase-lg .summary-chart-box {
+  height: 380px;
 }
-
 #tab-resumen .summary-chart-card.chart-card-sm .summary-chart-box {
   height: 580px;
 }
