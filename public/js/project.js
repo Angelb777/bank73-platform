@@ -4118,8 +4118,8 @@ const input = (id, label, value='', type='text') =>
 const inputDate = (id, label, iso) =>
   `<div class="label">${label}</div><input id="${id}" type="date" value="${iso?String(iso).slice(0,10):''}">`;
 
-const inputNum = (id, label, value=0) =>
-  `<div class="label">${label}</div><input id="${id}" type="number" value="${Number(value)||0}">`;
+const inputNum = (id, label, value = 0, opts = {}) =>
+  `<div class="label">${label}</div><input id="${id}" type="number" value="${Number(value)||0}" ${opts.readonly ? 'readonly' : ''}>`;
 
 const inputChk = (id, label, on=false) =>
   `<div class="label">${label}</div><input id="${id}" class="chk-box" type="checkbox" ${on?'checked':''}>`;
@@ -4135,6 +4135,31 @@ function vVal(id){ const el = document.getElementById(id); return el ? el.value 
 function vNum(id){ const v = Number(vVal(id)); return Number.isFinite(v) ? v : null; }
 function vDate(id){ const s = vVal(id); return s ? new Date(s).toISOString() : null; }
 function vChk(id){ const el = document.getElementById(id); return !!(el && el.checked); }
+
+function calcDiffDays(startValue, endValue) {
+  if (!startValue || !endValue) return 0;
+
+  const start = new Date(startValue);
+  const end = new Date(endValue);
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
+
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const diff = Math.round((end.getTime() - start.getTime()) / msPerDay);
+
+  return diff >= 0 ? diff : 0;
+}
+
+function refreshTiempoAprobacionDias() {
+  const entregaEl = document.getElementById('fv-entregaExpedienteBanco');
+  const recibidoEl = document.getElementById('fv-recibidoCPP');
+  const tiempoEl = document.getElementById('fv-tiempoAprobacionDias');
+
+  if (!entregaEl || !recibidoEl || !tiempoEl) return;
+
+  const dias = calcDiffDays(entregaEl.value, recibidoEl.value);
+  tiempoEl.value = dias;
+}
 
 // ==============================
 // Status en Banco (select + OTRO)
@@ -4657,7 +4682,7 @@ const htmlBancoCPP = seccion('Banco / CPP', [
   inputChk('fv-aperturaCtaBanco','Apertura cta banco', !!v.aperturaCtaBanco),
   inputChk('fv-primeraMensual','1ra mensual', !!v.primeraMensual),
   inputChk('fv-pagoMinuta','Pago minuta', !!v.pagoMinuta),
-  inputNum('fv-tiempoAprobacionDias','Tiempo de aprobación (días)', v.tiempoAprobacionDias || 0),
+  inputNum('fv-tiempoAprobacionDias','Tiempo de aprobación (días)', v.tiempoAprobacionDias || 0, { readonly: true }),
 ].join(''));
 
 const htmlContrato = seccion('Contrato / Protocolo / Notaría / RP', [
@@ -4786,6 +4811,15 @@ cont.querySelectorAll('.modal-tab').forEach(btn => {
 // Toggle de ayudas (ℹ️)
 wireChecklistHelpToggles();
 
+const entregaEl = document.getElementById('fv-entregaExpedienteBanco');
+const recibidoEl = document.getElementById('fv-recibidoCPP');
+
+if (entregaEl) entregaEl.addEventListener('change', refreshTiempoAprobacionDias);
+if (recibidoEl) recibidoEl.addEventListener('change', refreshTiempoAprobacionDias);
+
+// calcular al abrir la ficha
+refreshTiempoAprobacionDias();
+
 modalFicha.style.display = 'flex';
 }
 
@@ -4842,7 +4876,10 @@ fechaContratoCliente: vDate('fv-fechaContratoCliente'),
     aperturaCtaBanco: vChk('fv-aperturaCtaBanco'),
     primeraMensual:   vChk('fv-primeraMensual'),
     pagoMinuta:       vChk('fv-pagoMinuta'),
-    tiempoAprobacionDias: vNum('fv-tiempoAprobacionDias'),
+    tiempoAprobacionDias: calcDiffDays(
+     vVal('fv-entregaExpedienteBanco'),
+     vVal('fv-recibidoCPP')
+    ),
 
     // Contrato / Protocolo / Notaría / RP / Desembolso
     estatusContrato:              vVal('fv-estatusContrato'),
