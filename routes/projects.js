@@ -626,6 +626,31 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
   return 0;
 };
 
+const getMortgageAmount = (venta, unit) => {
+  const bank = norm(venta?.banco);
+
+  // Si es venta al contado, el importe real es el precio de venta
+  if (bank.includes('CONTADO')) {
+    return getEffectivePrice(venta, unit);
+  }
+
+  // Si hay financiación, priorizamos el monto financiado
+  const financed = toNum(venta?.montoFinanciamientoCPP);
+  if (financed > 0) return financed;
+
+  // Fallbacks por si faltan datos
+  const salePrice = toNum(venta?.precioVenta);
+  if (salePrice > 0) return salePrice;
+
+  const legacy = toNum(venta?.valor);
+  if (legacy > 0) return legacy;
+
+  const unitPrice = toNum(unit?.precioLista);
+  if (unitPrice > 0) return unitPrice;
+
+  return 0;
+};
+
   // =========================
   // Normalizar / deduplicar snapshot actual por unidad/lote
   // =========================
@@ -834,7 +859,7 @@ for (const v of (ventas || [])) {
 
   const prev = mortMap.get(bank) || { count: 0, amount: 0 };
   prev.count += 1;
-  prev.amount += toNum(v.montoFinanciamientoCPP || v.valor || 0);
+  prev.amount += getMortgageAmount(v, v.__unit);
   mortMap.set(bank, prev);
 
   const fd =
