@@ -540,10 +540,17 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     `${clean(mz).toUpperCase()}|${clean(lt).toUpperCase()}`;
 
   const getVentaKey = (v) => {
-    const unitId = v?.unitId ? String(v.unitId) : '';
-    if (unitId) return `UNIT:${unitId}`;
-    return `LOT:${unitKey(v?.manzana, v?.lote)}`;
-  };
+  const lotKey = unitKey(v?.manzana, v?.lote);
+
+  // ✅ Prioridad real: manzana+lote
+  // porque una misma casa puede haber tenido distintos unitId históricos
+  if (lotKey !== '|') return `LOT:${lotKey}`;
+
+  const unitId = v?.unitId ? String(v.unitId) : '';
+  if (unitId) return `UNIT:${unitId}`;
+
+  return null;
+};
 
   const getVentaSortTs = (v) =>
     toTime(v?.updatedAt) ||
@@ -626,13 +633,15 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
   // Si existen varias ventas históricas para la misma unidad/lote,
   // nos quedamos con la más reciente.
   const ventasByCurrentKey = new Map();
-  for (const v of (ventasRaw || [])) {
-    const key = getVentaKey(v);
-    const prev = ventasByCurrentKey.get(key);
-    if (!prev || getVentaSortTs(v) >= getVentaSortTs(prev)) {
-      ventasByCurrentKey.set(key, v);
-    }
+for (const v of (ventasRaw || [])) {
+  const key = getVentaKey(v);
+  if (!key) continue;
+
+  const prev = ventasByCurrentKey.get(key);
+  if (!prev || getVentaSortTs(v) >= getVentaSortTs(prev)) {
+    ventasByCurrentKey.set(key, v);
   }
+}
 
   // Ligamos cada venta deduplicada a una unidad ACTUAL no borrada.
   const ventas = [];
@@ -655,6 +664,10 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       __unitStatus: getUnitStatus(u)
     });
   }
+
+  console.log('[SUMMARY] units:', units.length);
+  console.log('[SUMMARY] ventasRaw:', ventasRaw.length);
+  console.log('[SUMMARY] ventas deduplicadas:', ventas.length);
 
   // =========================
   // Progreso por fase
