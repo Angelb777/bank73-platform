@@ -598,17 +598,19 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
   };
 
   const hasMortgageSignal = (v) => {
-    const sb = norm(v?.statusBanco);
-    return (
-      !!clean(v?.banco) &&
-      (
-        /APROB|CPP|CON CPP|INC/.test(sb) ||
-        !!clean(v?.numCPP) ||
-        !!v?.recibidoCPP ||
-        !!v?.fechaValorCPP
-      )
-    );
-  };
+  const sb = norm(v?.statusBanco);
+
+  return (
+    !!clean(v?.banco) &&
+    (
+      sb.includes('DESEMBOLSO') ||
+      sb.includes('HIPOTECA') ||
+      sb.includes('FORMALIZADO') ||
+      sb.includes('ESCRITURADO') ||
+      !!v?.fechaInscripcion 
+    )
+  );
+};
 
   const getEffectivePrice = (venta, unit) => {
   const ventaPrecio = toNum(venta?.precioVenta);

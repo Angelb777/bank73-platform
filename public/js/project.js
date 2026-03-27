@@ -1185,8 +1185,6 @@ function bindSummaryOnce() {
   if (afterInp)  afterInp.addEventListener('change',  e => showPreview(e.target.files?.[0], prevA));
 }
 
-// Llama una vez (por ejemplo al terminar loadSummary)
-
 // ====== Resumen (KPIs + Charts + Antes/Después) ======
 let __sumCharts = {};
 
@@ -1444,6 +1442,15 @@ function formatMoney(v) {
   });
 }
 
+function formatMoneyCompact(v) {
+  const n = Number(v || 0);
+
+  return n.toLocaleString('es-PA', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  });
+}
+
 function calcTotal(arr, key = 'count') {
   return (arr || []).reduce((acc, x) => acc + Number(x?.[key] || 0), 0);
 }
@@ -1469,7 +1476,7 @@ function renderChartSummary(containerId, items, {
       ${(items || []).map(item => `
         <div class="summary-mini-row">
           <span class="summary-mini-label">${item[labelKey] ?? '—'}</span>
-          <span class="summary-mini-value">${formatter(item[valueKey])}</span>
+          <span class="summary-mini-value">${formatter(item[valueKey], item)}</span>
         </div>
       `).join('')}
       <div class="summary-mini-row summary-mini-total">
@@ -1928,28 +1935,56 @@ async function renderSummaryUI(payload) {
   }
 
   // ---------- Hipotecas por banco ----------
-  sumDestroy('p8');
-  if (ctx('sumMortgagesByBank')) {
-    __sumCharts.p8 = new Chart(ctx('sumMortgagesByBank'), {
-      type: 'bar',
-      data: {
-        labels: mortgagesByBank.map(x => x.bank),
-        datasets: [{
-          label: 'Hipotecas',
-          data: mortgagesByBank.map(x => toNum(x.count))
-        }]
+sumDestroy('p8');
+if (ctx('sumMortgagesByBank')) {
+  __sumCharts.p8 = new Chart(ctx('sumMortgagesByBank'), {
+    type: 'bar',
+    data: {
+      labels: mortgagesByBank.map(x => x.bank),
+      datasets: [{
+        label: 'Hipotecas',
+        data: mortgagesByBank.map(x => toNum(x.count))
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: (context) => {
+              const item = mortgagesByBank[context.dataIndex] || {};
+              const count = toNum(item.count);
+              const amount = toNum(item.amount);
+              return ` ${count} hipotecas · ${formatMoneyCompact(amount)}`;
+            }
+          }
+        }
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: { y: { beginAtZero: true } }
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { precision: 0 }
+        }
       }
-    });
+    }
+  });
+}
+renderChartSummary(
+  'sumMortgagesByBankSummary',
+  mortgagesByBank.map(x => ({
+    label: x.bank,
+    value: toNum(x.count),
+    amount: toNum(x.amount)
+  })),
+  {
+    totalLabel: 'Total hipotecas',
+    formatter: (v, item) => {
+      const amount = toNum(item?.amount);
+      return `${toNum(v)} · ${formatMoneyCompact(amount)}`;
+    }
   }
-  renderChartSummary('sumMortgagesByBankSummary',
-    mortgagesByBank.map(x => ({ label: x.bank, value: toNum(x.count) })),
-    { totalLabel: 'Total hipotecas' }
-  );
+);
 
   // ---------- Alertas por severidad ----------
   sumDestroy('p9');
