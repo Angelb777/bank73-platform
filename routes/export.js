@@ -89,9 +89,15 @@ async function loadComercialData({ projectId, tenantKey }) {
   if (tenantKey) unitFilter.tenantKey = tenantKey;
 
   const units = await Unit.find(unitFilter)
-    .populate('clienteId')
-    .sort({ manzana: 1, lote: 1 })
-    .lean();
+  .populate('clienteId')
+  .populate('folderId')
+  .sort({
+    folderId: 1,
+    folderOrder: 1,
+    manzana: 1,
+    lote: 1
+  })
+  .lean();
 
   const ventasFilter = { projectId: new mongoose.Types.ObjectId(projectId) };
   if (tenantKey) ventasFilter.tenantKey = tenantKey;
@@ -104,6 +110,7 @@ async function loadComercialData({ projectId, tenantKey }) {
     const v = ventasMap.get(String(u._id)) || {};
 
     return {
+      'SECTOR': safeStr(u.folderId?.name || 'Sin sector'),
       'LOTE': safeStr(u.lote || v.lote),
       'MANZANA': safeStr(u.manzana || v.manzana),
 

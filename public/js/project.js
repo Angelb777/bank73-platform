@@ -4719,6 +4719,7 @@ function estadoLabel(v) {
   let ventasMap = new Map(); // unitId -> venta
   let selected = new Set();
   let fichaUnitId = null;
+  let foldersCache = [];
 
   function pill(txt){ return `<span class="tag">${txt||'-'}</span>`; }
 
@@ -4732,6 +4733,9 @@ function estadoLabel(v) {
   if (!btnSelectAll) return;
   const total = (unitsCache || []).length;
   btnSelectAll.textContent = (selected.size >= total && total > 0) ? 'Deseleccionar todo' : 'Seleccionar todo';
+}
+async function loadCommercialFolders() {
+  foldersCache = await apiGet(`/api/commercial-folders?projectId=${id}`).catch(() => []);
 }
 
 function selectAllVisible() {
@@ -4787,6 +4791,7 @@ function deselectAllVisible() {
 
     // Ventas (dato único)
     try { await loadVentasMap(); } catch(e){ console.warn('ventas map err', e); }
+try { await loadCommercialFolders(); } catch(e){ console.warn('folders err', e); }
 
     // KPIs
     const resumen = {
@@ -4819,56 +4824,120 @@ kpisDiv.innerHTML = `
 
     // Grid
     // ----- Render grid mejorado -----
-grid.innerHTML = units.map(u => {
+function renderUnitCard(u) {
   const venta = ventasMap.get(String(u._id));
   const banco = venta?.banco || '';
   const cpp = venta?.numCPP || '';
   const cliente = venta?.clienteNombre || venta?.cliente?.nombre || u.clienteId?.nombre || '';
   const idu = String(u._id);
   const estadoTxt = estadoLabel(u.estado || 'disponible');
-  // “Impago” si suena a mora/rechazo/atraso:
-  const impago = /mora|impago|rechaz|atras|vencid|moros/i.test(venta?.statusBanco||'');
+  const impago = /mora|impago|rechaz|atras|vencid|moros/i.test(venta?.statusBanco || '');
 
   return `
-    <div class="unit-card estado-${normalizeUnitEstadoFrontend(u.estado)} ${selected.has(idu)?'selected':''}" data-id="${idu}">
+    <div class="unit-card estado-${normalizeUnitEstadoFrontend(u.estado)} ${selected.has(idu) ? 'selected' : ''}"
+         data-id="${idu}"
+         draggable="true">
       ${impago ? `<span class="alert-ribbon">Impago</span>` : ``}
+
       <div class="head">
         <div class="title">
-          <b>${u.manzana||'-'}-${u.lote||''}</b>
+          <b>${u.manzana || '-'}-${u.lote || ''}</b>
           <span class="status">${estadoTxt}</span>
         </div>
+
         <label class="sel-wrap" title="Seleccionar">
-          <input type="checkbox" class="sel" ${selected.has(idu)?'checked':''} />
+          <input type="checkbox" class="sel" ${selected.has(idu) ? 'checked' : ''} />
           <span class="sel-box"></span>
         </label>
       </div>
+
       <div class="meta">${u.modelo || '—'} — ${u.m2 || 0} m²</div>
-      <div class="price">$${((u.precioLista||0)).toLocaleString()}</div>
+      <div class="price">$${((u.precioLista || 0)).toLocaleString()}</div>
+
       <div class="badges">
         ${cliente ? `<span class="chip">${cliente}</span>` : `<span class="chip ghost">Sin cliente</span>`}
-        ${banco   ? `<span class="chip">Banco: ${banco}</span>` : ``}
-        ${cpp     ? `<span class="chip">CPP: ${cpp}</span>` : ``}
+        ${banco ? `<span class="chip">Banco: ${banco}</span>` : ``}
+        ${cpp ? `<span class="chip">CPP: ${cpp}</span>` : ``}
       </div>
     </div>`;
-}).join('') || `<div class="empty">No hay unidades.</div>`;
+}
+
+const byFolder = new Map();
+
+foldersCache.forEach(f => {
+  byFolder.set(String(f._id), []);
+});
+
+const unassigned = [];
+
+units.forEach(u => {
+  const fid = u.folderId ? String(u.folderId) : '';
+  if (fid && byFolder.has(fid)) byFolder.get(fid).push(u);
+  else unassigned.push(u);
+});
+
+grid.innerHTML = `
+  <div class="commercial-folders-toolbar">
+    <button type="button" class="btn primary" id="btnCrearCarpetaComercial">
+      + Crear carpeta
+    </button>
+  </div>
+
+  <div class="commercial-folder unassigned" data-folder-id="">
+    <div class="commercial-folder-head">
+      <h3>Sin carpeta</h3>
+      <span>${unassigned.length} unidades</span>
+    </div>
+
+    <div class="commercial-folder-body">
+      ${unassigned.map(renderUnitCard).join('') || `<div class="empty">Arrastra unidades aquí.</div>`}
+    </div>
+  </div>
+
+  ${foldersCache.map(folder => {
+    const folderUnits = byFolder.get(String(folder._id)) || [];
+    const color = folder.color || '#0f172a';
+
+    return `
+      <div class="commercial-folder"
+           data-folder-id="${folder._id}"
+           style="--folder-color:${color};">
+        <div class="commercial-folder-head">
+          <h3 class="folder-title">${folder.name}</h3>
+
+          <div class="folder-actions">
+            <span>${folderUnits.length} unidades</span>
+
+            <input
+              type="color"
+              class="folder-color"
+              data-id="${folder._id}"
+              value="${color}"
+              title="Color de carpeta"
+            >
+
+            <button type="button" class="btn mini folder-rename" data-id="${folder._id}">
+              Renombrar
+            </button>
+
+            <button type="button" class="btn mini danger folder-delete" data-id="${folder._id}">
+              Eliminar
+            </button>
+          </div>
+        </div>
+
+        <div class="commercial-folder-body">
+          ${folderUnits.map(renderUnitCard).join('') || `<div class="empty">Arrastra unidades aquí.</div>`}
+        </div>
+      </div>
+    `;
+  }).join('')}
+`;
+
+wireUnitCards();
+wireCommercialFolders();
 
 // ----- Eventos de tarjeta / checkbox -----
-Array.from(grid.querySelectorAll('.unit-card')).forEach(el => {
-  const id = el.dataset.id;
-
-  el.addEventListener('click', (ev) => {
-    // si hicieron click en el checkbox, no abrir ficha
-    if (ev.target && (ev.target.classList?.contains('sel') || ev.target.classList?.contains('sel-box'))) return;
-    abrirFichaUnidad(id);
-  });
-
-  const cb = el.querySelector('.sel');
-  cb.addEventListener('change', () => {
-  if (cb.checked){ selected.add(id); el.classList.add('selected'); }
-  else { selected.delete(id); el.classList.remove('selected'); }
-  updateSelectAllLabel();
-});
-});
   }
   window.loadUnits = loadUnits;
 
@@ -4888,6 +4957,202 @@ Array.from(grid.querySelectorAll('.unit-card')).forEach(el => {
       <div id="unitDocsList" class="docs-list small-gap"></div>
     </div>
   `;
+}
+
+function wireUnitCards() {
+  Array.from(grid.querySelectorAll('.unit-card')).forEach(el => {
+    const unitId = el.dataset.id;
+
+    el.addEventListener('dragstart', ev => {
+      let dragIds = [];
+
+      if (selected.has(unitId)) {
+        dragIds = Array.from(selected);
+      } else {
+        dragIds = [unitId];
+      }
+
+      ev.dataTransfer.setData('application/json', JSON.stringify(dragIds));
+      ev.dataTransfer.setData('text/plain', unitId);
+      ev.dataTransfer.effectAllowed = 'move';
+
+      grid.querySelectorAll('.unit-card').forEach(card => {
+        if (dragIds.includes(card.dataset.id)) {
+          card.classList.add('dragging');
+        }
+      });
+    });
+
+    el.addEventListener('dragend', () => {
+      grid.querySelectorAll('.unit-card.dragging').forEach(card => {
+        card.classList.remove('dragging');
+      });
+    });
+
+    el.addEventListener('click', ev => {
+      if (ev.target && (
+        ev.target.classList?.contains('sel') ||
+        ev.target.classList?.contains('sel-box') ||
+        ev.target.closest?.('.sel-wrap')
+      )) return;
+
+      abrirFichaUnidad(unitId);
+    });
+
+    const cb = el.querySelector('.sel');
+
+    if (cb) {
+      cb.addEventListener('change', () => {
+        if (cb.checked) {
+          selected.add(unitId);
+          el.classList.add('selected');
+        } else {
+          selected.delete(unitId);
+          el.classList.remove('selected');
+        }
+
+        updateSelectAllLabel();
+      });
+    }
+  });
+}
+
+function wireCommercialFolders() {
+  document.getElementById('btnCrearCarpetaComercial')?.addEventListener('click', crearCarpetaComercial);
+
+  grid.querySelectorAll('.commercial-folder').forEach(folderEl => {
+    folderEl.addEventListener('dragover', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      folderEl.classList.add('is-drag-over');
+    });
+
+    folderEl.addEventListener('dragleave', ev => {
+      if (!folderEl.contains(ev.relatedTarget)) {
+        folderEl.classList.remove('is-drag-over');
+      }
+    });
+
+    folderEl.addEventListener('drop', async ev => {
+  ev.preventDefault();
+
+  folderEl.classList.remove('is-drag-over');
+  folderEl.classList.add('is-loading-folder');
+
+  const draggedId = ev.dataTransfer.getData('text/plain');
+
+  let unitIds = [];
+
+  if (selected.has(draggedId)) {
+    unitIds = Array.from(selected);
+  } else {
+    unitIds = [draggedId];
+  }
+
+  const folderId = folderEl.dataset.folderId;
+
+  try {
+
+    if (folderId) {
+
+      await apiPatch(`/api/commercial-folders/${folderId}/units`, {
+        unitIds
+      });
+
+    } else {
+
+      await apiPatch('/api/commercial-folders/unassigned/units', {
+        unitIds,
+        projectId: id
+      });
+
+    }
+
+    await loadUnits();
+
+  } catch (e) {
+
+    console.error(e);
+    alert('Error moviendo unidades.');
+
+  } finally {
+
+    folderEl.classList.remove('is-loading-folder');
+
+  }
+});
+  });
+
+  grid.querySelectorAll('.folder-color').forEach(input => {
+    input.addEventListener('change', async ev => {
+      ev.stopPropagation();
+
+      const folderId = input.dataset.id;
+      const color = input.value || '#0f172a';
+
+      await apiPatch(`/api/commercial-folders/${folderId}`, {
+        color
+      });
+
+      await loadUnits();
+    });
+  });
+
+  grid.querySelectorAll('.folder-rename').forEach(btn => {
+    btn.addEventListener('click', async ev => {
+      ev.stopPropagation();
+
+      const folderId = btn.dataset.id;
+      const folder = foldersCache.find(f => String(f._id) === String(folderId));
+      const name = prompt('Nuevo nombre de la carpeta:', folder?.name || '');
+
+      if (!name || !name.trim()) return;
+
+      await apiPatch(`/api/commercial-folders/${folderId}`, {
+        name: name.trim()
+      });
+
+      await loadUnits();
+    });
+  });
+
+  grid.querySelectorAll('.folder-delete').forEach(btn => {
+    btn.addEventListener('click', async ev => {
+      ev.stopPropagation();
+
+      const folderId = btn.dataset.id;
+      const folder = foldersCache.find(f => String(f._id) === String(folderId));
+
+      const ok = confirm(
+        `¿Eliminar la carpeta "${folder?.name || ''}"?\n\nLas unidades NO se eliminarán, volverán a "Sin carpeta".`
+      );
+
+      if (!ok) return;
+
+      await apiDelete(`/api/commercial-folders/${folderId}`);
+
+      await loadUnits();
+    });
+  });
+}
+
+async function crearCarpetaComercial() {
+  if (myRole === 'commercial' && window.__COMMERCIAL_LOCKED) {
+    alert('Este proyecto aún no está aprobado. Creación de carpetas bloqueada.');
+    return;
+  }
+
+  const name = prompt('Nombre de la carpeta:', 'Torre 1');
+
+  if (!name || !name.trim()) return;
+
+  await apiPost('/api/commercial-folders', {
+    projectId: id,
+    name: name.trim(),
+    color: '#0f172a'
+  });
+
+  await loadUnits();
 }
 
 async function loadUnidadDocs(projectId, unitId) {

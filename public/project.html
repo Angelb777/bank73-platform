@@ -509,6 +509,124 @@
 .info-wrap:hover .info-tooltip{
   display:block;
 }
+
+.commercial-folders-toolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 14px;
+}
+
+.commercial-folder {
+  grid-column: 1 / -1;
+
+  background: var(--folder-color, #0f172a);
+
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 18px;
+
+  padding: 16px;
+  margin-bottom: 18px;
+
+  transition:
+    border-color .18s ease,
+    box-shadow .18s ease,
+    transform .18s ease;
+}
+
+.commercial-folder.unassigned {
+  background: rgba(15, 23, 42, .78);
+  border: 1px dashed rgba(255,255,255,.18);
+}
+
+.commercial-folder.is-drag-over {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, .18);
+  transform: translateY(-1px);
+}
+
+.commercial-folder-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.commercial-folder-head h3 {
+  color: white;
+  margin: 0;
+  font-size: 18px;
+}
+
+.folder-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255,255,255,.65);
+}
+
+.folder-color {
+  width: 34px;
+  height: 30px;
+
+  padding: 0;
+
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 8px;
+
+  background: transparent;
+  cursor: pointer;
+}
+
+.commercial-folder-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  min-height: 80px;
+}
+
+.unit-card[draggable="true"] {
+  cursor: grab;
+}
+
+.unit-card.dragging {
+  opacity: .45;
+  transform: scale(.98);
+}
+
+.btn.mini {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.commercial-folder.is-loading-folder {
+  position: relative;
+  pointer-events: none;
+  opacity: .75;
+}
+
+.commercial-folder.is-loading-folder::after {
+  content: 'Moviendo unidades...';
+
+  position: absolute;
+  inset: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: rgba(15, 23, 42, .72);
+  backdrop-filter: blur(2px);
+
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+
+  border-radius: 18px;
+
+  z-index: 20;
+}
   </style>
 </head>
 <body>

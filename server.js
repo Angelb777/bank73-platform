@@ -28,6 +28,7 @@ const adminRoutes = require('./routes/admin');
 const processRoutes = require('./routes/process');
 
 const unitsRoutes = require('./routes/units');
+const commercialFolderRoutes = require('./routes/commercialFolders');
 const exportRoutes = require('./routes/export');
 const ventasRoutes = require('./routes/ventas');
 const importWordRoutes = require('./routes/import-word.routes');
@@ -190,6 +191,7 @@ app.use('/api', ...guard, processRoutes);
 
 // Comercial
 app.use('/api/units', ...guard, unitsRoutes);
+app.use('/api/commercial-folders', ...guard, commercialFolderRoutes);
 app.use('/api/export', ...guard, exportRoutes);
 app.use('/api/export-pdf', ...guard, exportPdfRoutes);
 app.use('/api/ventas', ...guard, ventasRoutes);
