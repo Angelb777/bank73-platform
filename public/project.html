@@ -212,10 +212,179 @@
 /* acentos por estado (según tu convención) */
 #tab-comercial .estado-disponible{      --accent:#22c55e; }  /* verde */
 #tab-comercial .estado-reservado{       --accent:#eab308; }  /* amarillo */
-#tab-comercial .estado-en_escrituracion{--accent:#3b82f6; }  /* azul */
-#tab-comercial .estado-escriturado{     --accent:#ef4444; }  /* rojo */
-#tab-comercial .estado-entregado{       --accent:#94a3b8; }  /* gris */
+#tab-comercial .estado-con_cpp{                 --accent:#3b82f6; }
+#tab-comercial .estado-tramite_legal_activado{  --accent:#a855f7; }
+#tab-comercial .estado-escriturado_traspasado{  --accent:#ef4444; }
+#tab-comercial .estado-vivienda_entregada{      --accent:#94a3b8; }
 
+.modal .btn.is-loading{
+  opacity:.7;
+  cursor:wait;
+  pointer-events:none;
+}
+
+/* ===== Permisos modal nuevo ===== */
+#modalBackdrop .modal{
+  width:min(1180px, 95vw) !important;
+  max-height:92vh;
+  overflow:hidden;
+}
+
+#modalBody .permits-phase-card{
+  background:#0b1220;
+  border-radius:22px;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.10);
+  margin-bottom:18px;
+  box-shadow:0 18px 45px rgba(2,6,23,.22);
+}
+
+#modalBody .permits-phase-header{
+  align-items:center;
+  gap:12px;
+  background:#0b1220;
+  color:#fff;
+  padding:18px 20px;
+}
+
+#modalBody .permits-table-wrap{
+  background:#0b1220;
+  color:#e5e7eb;
+  padding:0 18px 18px;
+  border-radius:0 0 22px 22px;
+  overflow:hidden;
+}
+
+#modalBody table.dark{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0 12px;
+}
+
+#modalBody table.dark thead th{
+  color:#94a3b8;
+  border:none;
+  font-size:.86rem;
+  padding:0 12px;
+}
+
+#modalBody table.dark tbody tr{
+  background:#111827;
+  overflow:hidden;
+}
+
+#modalBody table.dark tbody tr:last-child td:first-child{
+  border-bottom-left-radius:18px;
+}
+
+#modalBody table.dark tbody tr:last-child td:last-child{
+  border-bottom-right-radius:18px;
+}
+
+#modalBody table.dark tbody td{
+  padding:16px 12px;
+  border-top:1px solid rgba(255,255,255,.06);
+  border-bottom:1px solid rgba(255,255,255,.06);
+  vertical-align:top;
+}
+
+#modalBody table.dark tbody td:first-child{
+  border-left:1px solid rgba(255,255,255,.06);
+  border-radius:16px 0 0 16px;
+}
+
+#modalBody table.dark tbody td:last-child{
+  border-right:1px solid rgba(255,255,255,.06);
+  border-radius:0 16px 16px 0;
+}
+
+#modalBody .perm-see-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:9px 14px;
+  border-radius:999px;
+  background:rgba(255,255,255,.08);
+  color:#fff;
+  border:1px solid rgba(255,255,255,.14);
+  cursor:pointer;
+  font-weight:700;
+  list-style:none;
+}
+
+#modalBody .perm-see-btn::-webkit-details-marker{
+  display:none;
+}
+
+#modalBody .perm-see-btn::before{
+  content:"▾";
+  transition:.2s ease;
+}
+
+#modalBody details[open] .perm-see-btn{
+  background:#2563eb;
+  border-color:#2563eb;
+}
+
+#modalBody details[open] .perm-see-btn::before{
+  transform:rotate(180deg);
+}
+
+#modalBody .perm-details-box{
+  width:100%;
+  min-width:0 !important;
+  max-width:100%;
+  margin-top:0;
+  background:#0f172a;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;
+  padding:18px;
+  color:#e5e7eb;
+}
+
+#modalBody .perm-details-box ul{
+  margin:8px 0 0 20px;
+  line-height:1.65;
+}
+
+#modalBody tr.perm-extra-row{
+  visibility:collapse;
+  opacity:0;
+  height:0;
+}
+
+#modalBody tr.perm-extra-row.is-open{
+  visibility:visible;
+  opacity:1;
+  height:auto;
+}
+
+#modalBody .perm-extra-row.is-open{
+  display:table-row;
+}
+
+#modalBody .perm-extra-row td{
+  padding:0 12px 18px !important;
+  border:none !important;
+  background:#111827;
+  border-radius:0 0 16px 16px !important;
+}
+
+#modalBody .perm-main-row.is-open td{
+  border-bottom:none !important;
+}
+
+#modalBody .perm-main-row.is-open td:first-child{
+  border-radius:16px 0 0 0 !important;
+}
+
+#modalBody .perm-main-row.is-open td:last-child{
+  border-radius:0 16px 0 0 !important;
+}
+
+#modalBody .perm-see-btn.open::before{
+  transform:rotate(180deg);
+}
   </style>
 </head>
 <body>
@@ -624,13 +793,14 @@
     <button id="btnExportarExcel" class="btn btn-primary">Exportar Excel</button>
 
     <select id="filtroEstado">
-      <option value="">Todos</option>
-      <option value="disponible">Disponible</option>
-      <option value="reservado">Reservado</option>
-      <option value="en_escrituracion">En escrituración</option>
-      <option value="escriturado">Escriturado</option>
-      <option value="entregado">Entregado</option>
-    </select>
+  <option value="">Todos</option>
+  <option value="disponible">Disponible</option>
+  <option value="reservado">Reservado</option>
+  <option value="con_cpp">Con CPP</option>
+  <option value="tramite_legal_activado">Trámite legal activado</option>
+  <option value="escriturado_traspasado">Escriturado / Traspasado</option>
+  <option value="vivienda_entregada">Vivienda entregada</option>
+</select>
     <input id="buscarUnidad" placeholder="Buscar (manzana/lote/modelo/cliente/banco/CPP)" />
   </div>
 
@@ -657,10 +827,13 @@
         <input id="cl-precio" type="number" min="0" value="100000" />
         <label>Estado inicial</label>
         <select id="cl-estado">
-          <option value="disponible">Disponible</option>
-          <option value="reservado">Reservado</option>
-          <option value="en_escrituracion">En escrituración</option>
-        </select>
+  <option value="disponible">Disponible</option>
+  <option value="reservado">Reservado</option>
+  <option value="con_cpp">Con CPP</option>
+  <option value="tramite_legal_activado">Trámite legal activado</option>
+  <option value="escriturado_traspasado">Escriturado / Traspasado</option>
+  <option value="vivienda_entregada">Vivienda entregada</option>
+</select>
       </div>
       <div class="row" style="justify-content:flex-end; gap:8px;">
         <button class="btn" id="cl-crear">Crear</button>
@@ -698,13 +871,14 @@
             <h4>Unit</h4>
             <label>Estado</label>
             <select id="b-estado">
-              <option value="">(no cambiar)</option>
-              <option value="disponible">Disponible</option>
-              <option value="reservado">Reservado</option>
-              <option value="en_escrituracion">En escrituración</option>
-              <option value="escriturado">Escriturado</option>
-              <option value="entregado">Entregado</option>
-            </select>
+  <option value="">(no cambiar)</option>
+  <option value="disponible">Disponible</option>
+  <option value="reservado">Reservado</option>
+  <option value="con_cpp">Con CPP</option>
+  <option value="tramite_legal_activado">Trámite legal activado</option>
+  <option value="escriturado_traspasado">Escriturado / Traspasado</option>
+  <option value="vivienda_entregada">Vivienda entregada</option>
+</select>
             <label>Modelo</label><input id="b-modelo" />
             <label>m²</label><input id="b-m2" type="number" />
             <label>Precio lista</label><input id="b-precio" type="number" />

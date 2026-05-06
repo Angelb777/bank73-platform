@@ -19,6 +19,21 @@ function rx(q) {
   return new RegExp(String(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 }
 
+const VALID_UNIT_ESTADOS = [
+  'disponible',
+  'reservado',
+  'con_cpp',
+  'tramite_legal_activado',
+  'escriturado_traspasado',
+  'vivienda_entregada',
+  'cancelado'
+];
+
+function normalizeUnitEstado(estado) {
+  const e = String(estado || '').trim();
+  return VALID_UNIT_ESTADOS.includes(e) ? e : 'disponible';
+}
+
 // ROLE-SEP: helpers para cargar proyecto en req.project
 async function attachProjectByProjectId(req, res, next) {
   try {
@@ -86,12 +101,12 @@ router.post(
         modelo: modelo || '',
         m2: m2 || 0,
         precioLista: precioLista || 0,
-        estado: estado || 'disponible',
+        estado: normalizeUnitEstado(estado),
         deletedAt: null,
 
         // legacy
         code: `${manzana}-${lote}`,
-        status: (estado || 'disponible').toUpperCase(),
+        status: normalizeUnitEstado(estado).toUpperCase(),
         price: precioLista || 0
       }));
 
@@ -151,7 +166,10 @@ router.patch(
 
       const set = { ...update };
       if (set.precioLista != null) set.price = set.precioLista;
-      if (set.estado) set.status = String(set.estado).toUpperCase();
+      if (set.estado) {
+  set.estado = normalizeUnitEstado(set.estado);
+  set.status = set.estado.toUpperCase();
+}
 
       const ops = ids.map(_id => ({
         updateOne: {
@@ -262,7 +280,10 @@ router.patch(
       const update = { ...req.body };
 
       if (update.precioLista != null) update.price = update.precioLista;
-      if (update.estado) update.status = String(update.estado).toUpperCase();
+      if (update.estado) {
+  update.estado = normalizeUnitEstado(update.estado);
+  update.status = update.estado.toUpperCase();
+}
 
       if (update.manzana || update.lote) {
         const curr = await Unit.findById(req.params.id).select('manzana lote');

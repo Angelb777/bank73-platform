@@ -129,7 +129,13 @@ router.get('/portfolio', async (req, res) => {
     const pids = projects.map(p => p._id);
 
     // 2) Define qué estados cuentan como "vendido" en la barra
-    const SOLD_ESTADOS = ['reservado','en_escrituracion','escriturado','entregado'];
+    const SOLD_ESTADOS = [
+  'reservado',
+  'con_cpp',
+  'tramite_legal_activado',
+  'escriturado_traspasado',
+  'vivienda_entregada'
+];
 
     // 3) Agrega unidades por proyecto
     const agg = await Unit.aggregate([
@@ -567,17 +573,43 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     null;
 
   const getUnitStatus = (u) => {
-    const st = norm(u?.estado || u?.status);
-    if (st.includes('CANCEL') || st.includes('ANUL')) return 'cancelado';
-    if (st.includes('ENTREG')) return 'entregado';
-    if (st.includes('ESCRITURAD')) return 'escriturado';
-    if (st.includes('EN_ESCRIT') || st.includes('EN ESCRIT') || st.includes('ESCRITURACION')) return 'en_escrituracion';
-    if (st.includes('RESERV')) return 'reservado';
-    return 'disponible';
-  };
+  const st = norm(u?.estado || u?.status);
+
+  if (st.includes('CANCEL') || st.includes('ANUL')) return 'cancelado';
+
+  if (st.includes('VIVIENDA_ENTREGADA') || st.includes('VIVIENDA ENTREGADA') || st.includes('ENTREG')) {
+    return 'vivienda_entregada';
+  }
+
+  if (st.includes('ESCRITURADO_TRASPASADO') || st.includes('ESCRITURADO TRASPASADO') || st.includes('ESCRITURAD') || st.includes('TRASPAS')) {
+    return 'escriturado_traspasado';
+  }
+
+  if (st.includes('TRAMITE_LEGAL_ACTIVADO') || st.includes('TRAMITE LEGAL ACTIVADO') || st.includes('INGRESO_RP') || st.includes('INGRESO RP')) {
+    return 'tramite_legal_activado';
+  }
+
+  if (st.includes('CON_CPP') || st.includes('CON CPP') || st === 'CPP') {
+    return 'con_cpp';
+  }
+
+  if (st.includes('EN_ESCRIT') || st.includes('EN ESCRIT') || st.includes('ESCRITURACION')) {
+    return 'tramite_legal_activado';
+  }
+
+  if (st.includes('RESERV')) return 'reservado';
+
+  return 'disponible';
+};
 
   const isSoldLikeStatus = (st) =>
-    ['reservado', 'en_escrituracion', 'escriturado', 'entregado'].includes(st);
+  [
+    'reservado',
+    'con_cpp',
+    'tramite_legal_activado',
+    'escriturado_traspasado',
+    'vivienda_entregada'
+  ].includes(st);
 
   const hasClientSignal = (v) =>
     !!clean(v?.clienteNombre) ||
@@ -743,26 +775,42 @@ for (const v of (ventasRaw || [])) {
   // =========================
   // KPIs de unidades
   // =========================
-  const U = { total: 0, available: 0, reserved: 0, sold: 0, escrituradas: 0, canceladas: 0 };
+  const U = {
+  total: 0,
+  available: 0,
+  reserved: 0,
+  conCpp: 0,
+  tramiteLegal: 0,
+  escrituradas: 0,
+  entregadas: 0,
+  sold: 0,
+  canceladas: 0
+};
 
   for (const u of (units || [])) {
     U.total++;
     const st = getUnitStatus(u);
 
     if (st === 'cancelado') U.canceladas++;
-    else if (st === 'escriturado') U.escrituradas++;
-    else if (st === 'reservado') U.reserved++;
-    else if (isSoldLikeStatus(st)) U.sold++;
-    else U.available++;
+else if (st === 'reservado') U.reserved++;
+else if (st === 'con_cpp') U.conCpp++;
+else if (st === 'tramite_legal_activado') U.tramiteLegal++;
+else if (st === 'escriturado_traspasado') U.escrituradas++;
+else if (st === 'vivienda_entregada') U.entregadas++;
+else U.available++;
+
+if (isSoldLikeStatus(st)) U.sold++;
   }
 
   const unitsByStatus = [
-    { status: 'Disponible',  count: U.available },
-    { status: 'Reservada',   count: U.reserved },
-    { status: 'Vendida',     count: U.sold },
-    { status: 'Escriturada', count: U.escrituradas },
-    { status: 'Cancelada',   count: U.canceladas }
-  ];
+  { status: 'Disponible', count: U.available },
+  { status: 'Reservado', count: U.reserved },
+  { status: 'Con CPP', count: U.conCpp },
+  { status: 'Trámite legal activado', count: U.tramiteLegal },
+  { status: 'Escriturado / Traspasado', count: U.escrituradas },
+  { status: 'Vivienda entregada', count: U.entregadas },
+  { status: 'Cancelada', count: U.canceladas }
+];
 
   // =========================
   // Ventas mensuales
@@ -1206,17 +1254,43 @@ router.post('/:id/summary/export', requireProjectAccess(), async (req, res) => {
       null;
 
     const getUnitStatus = (u) => {
-      const st = norm(u?.estado || u?.status);
-      if (st.includes('CANCEL') || st.includes('ANUL')) return 'cancelado';
-      if (st.includes('ENTREG')) return 'entregado';
-      if (st.includes('ESCRITURAD')) return 'escriturado';
-      if (st.includes('EN_ESCRIT') || st.includes('EN ESCRIT') || st.includes('ESCRITURACION')) return 'en_escrituracion';
-      if (st.includes('RESERV')) return 'reservado';
-      return 'disponible';
-    };
+  const st = norm(u?.estado || u?.status);
+
+  if (st.includes('CANCEL') || st.includes('ANUL')) return 'cancelado';
+
+  if (st.includes('VIVIENDA_ENTREGADA') || st.includes('VIVIENDA ENTREGADA') || st.includes('ENTREG')) {
+    return 'vivienda_entregada';
+  }
+
+  if (st.includes('ESCRITURADO_TRASPASADO') || st.includes('ESCRITURADO TRASPASADO') || st.includes('ESCRITURAD') || st.includes('TRASPAS')) {
+    return 'escriturado_traspasado';
+  }
+
+  if (st.includes('TRAMITE_LEGAL_ACTIVADO') || st.includes('TRAMITE LEGAL ACTIVADO') || st.includes('INGRESO_RP') || st.includes('INGRESO RP')) {
+    return 'tramite_legal_activado';
+  }
+
+  if (st.includes('CON_CPP') || st.includes('CON CPP') || st === 'CPP') {
+    return 'con_cpp';
+  }
+
+  if (st.includes('EN_ESCRIT') || st.includes('EN ESCRIT') || st.includes('ESCRITURACION')) {
+    return 'tramite_legal_activado';
+  }
+
+  if (st.includes('RESERV')) return 'reservado';
+
+  return 'disponible';
+};
 
     const isSoldLikeStatus = (st) =>
-      ['reservado', 'en_escrituracion', 'escriturado', 'entregado'].includes(st);
+  [
+    'reservado',
+    'con_cpp',
+    'tramite_legal_activado',
+    'escriturado_traspasado',
+    'vivienda_entregada'
+  ].includes(st);
 
     const hasCppSignal = (v) => {
       const sb = norm(v?.statusBanco);
@@ -1290,15 +1364,29 @@ router.post('/:id/summary/export', requireProjectAccess(), async (req, res) => {
       return { phase, pct };
     });
 
-    const U = { total: 0, available: 0, reserved: 0, sold: 0, escrituradas: 0, canceladas: 0 };
+    const U = {
+  total: 0,
+  available: 0,
+  reserved: 0,
+  conCpp: 0,
+  tramiteLegal: 0,
+  escrituradas: 0,
+  entregadas: 0,
+  sold: 0,
+  canceladas: 0
+};
     for (const u of (units || [])) {
       U.total++;
       const st = getUnitStatus(u);
       if (st === 'cancelado') U.canceladas++;
-      else if (st === 'escriturado') U.escrituradas++;
-      else if (st === 'reservado') U.reserved++;
-      else if (isSoldLikeStatus(st)) U.sold++;
-      else U.available++;
+else if (st === 'reservado') U.reserved++;
+else if (st === 'con_cpp') U.conCpp++;
+else if (st === 'tramite_legal_activado') U.tramiteLegal++;
+else if (st === 'escriturado_traspasado') U.escrituradas++;
+else if (st === 'vivienda_entregada') U.entregadas++;
+else U.available++;
+
+if (isSoldLikeStatus(st)) U.sold++;
     }
 
     const now = Date.now();
@@ -1716,9 +1804,12 @@ router.post('/:id/summary/export', requireProjectAccess(), async (req, res) => {
       ws.addRow(['Total', summary.units.total]);
       ws.addRow(['Disponibles', summary.units.available]);
       ws.addRow(['Reservadas', summary.units.reserved]);
-      ws.addRow(['Vendidas', summary.units.sold]);
-      ws.addRow(['Escrituradas', summary.units.escrituradas]);
-      ws.addRow(['Canceladas', summary.units.canceladas]);
+      ws.addRow(['Con CPP', summary.units.conCpp]);
+ws.addRow(['Trámite legal activado', summary.units.tramiteLegal]);
+ws.addRow(['Escriturado / Traspasado', summary.units.escrituradas]);
+ws.addRow(['Vivienda entregada', summary.units.entregadas]);
+ws.addRow(['Vendidas / no disponibles', summary.units.sold]);
+ws.addRow(['Canceladas', summary.units.canceladas]);
       ws.addRow([]);
       ws.addRow(['Vencimientos críticos (≤90d)']);
       ws.addRow(['Tipo', 'Nombre', 'Vence']);
@@ -2060,15 +2151,15 @@ router.post(
   if (t.includes('RESERV')) return 'reservado';
 
   // escrituración
-  if (t.includes('CPP/CLIENTE')) return 'en_escrituracion';
-  if (t.includes('CON CPP')) return 'en_escrituracion';
-  if (t === 'CPP') return 'en_escrituracion';
-  if ((t.includes('EN') && t.includes('ESCRIT')) || t.includes('ESCRITURACION')) return 'en_escrituracion';
+  if (t.includes('CPP/CLIENTE')) return 'con_cpp';
+if (t.includes('CON CPP')) return 'con_cpp';
+if (t === 'CPP') return 'con_cpp';
+if ((t.includes('EN') && t.includes('ESCRIT')) || t.includes('ESCRITURACION')) return 'tramite_legal_activado';
 
-  // cierre
-  if (t.includes('ESCRITURAD')) return 'escriturado';
-  if (t.includes('TRASPAS')) return 'escriturado';
-  if (t.includes('ENTREG')) return 'entregado';
+if (t.includes('TRAMITE LEGAL') || t.includes('TRÁMITE LEGAL')) return 'tramite_legal_activado';
+if (t.includes('ESCRITURAD')) return 'escriturado_traspasado';
+if (t.includes('TRASPAS')) return 'escriturado_traspasado';
+if (t.includes('ENTREG')) return 'vivienda_entregada';
 
   return null;
   };
@@ -2113,23 +2204,25 @@ router.post(
   // para no dejar entregadas como en_escrituracion.
   // =========================================================
   if (entregaCasa || entregaANATI) {
-    return 'entregado';
-  }
+  return 'vivienda_entregada';
+}
 
-  if (fechaInscripcion) {
-    return 'escriturado';
-  }
+if (fechaInscripcion) {
+  return 'escriturado_traspasado';
+}
 
   // Si está traspasado y no hay entrega todavía, lo dejamos como escriturado
   if (estatusLote === 'TRASPASADO') {
-    return 'escriturado';
-  }
+  return 'escriturado_traspasado';
+}
 
   // Si ya hay señales bancarias / CPP / RP, está en escrituración
   if (ingresoRP || hasBanco || hasCpp) {
     // salvo que el excel explícitamente diga reserva
     if (estatusLote === 'RESERVA') return 'reservado';
-    return 'en_escrituracion';
+    if (ingresoRP) return 'tramite_legal_activado';
+if (hasCpp) return 'con_cpp';
+if (hasBanco) return 'con_cpp';
   }
 
   // =========================================================
@@ -2146,8 +2239,8 @@ router.post(
     }
 
     if (estatusLote === 'CON CPP') {
-      return 'en_escrituracion';
-    }
+  return 'con_cpp';
+}
 
     const estadoLote = parseEstadoLibre(estatusLote);
     if (estadoLote) return estadoLote;
@@ -2394,8 +2487,8 @@ valor: valorLegacyFinal,
           projectId: id,
           deletedAt: null,
           $or: [
-            { estado: { $in: ['reservado', 'en_escrituracion', 'escriturado', 'entregado'] } },
-            { status: { $in: ['reservado', 'en_escrituracion', 'escriturado', 'entregado'] } }
+            { estado: { $in: ['reservado', 'con_cpp', 'tramite_legal_activado', 'escriturado_traspasado', 'vivienda_entregada'] } },
+{ status: { $in: ['RESERVADO', 'CON_CPP', 'TRAMITE_LEGAL_ACTIVADO', 'ESCRITURADO_TRASPASADO', 'VIVIENDA_ENTREGADA'] } }
           ]
         })
       ]);

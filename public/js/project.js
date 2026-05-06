@@ -226,14 +226,15 @@ modalBody.addEventListener('click', (ev) => {
   // --- Layout del modal para un único scroll en el body ---
 const card = document.getElementById('modalCard');      // si existe en tu HTML
 if (card) {
-  card.style.width = 'min(1100px, 94vw)';
-  card.style.maxHeight = '90vh';
+  card.style.width = 'min(1380px, 96vw)';
+  card.style.maxHeight = '94vh';
   card.style.display = 'flex';
   card.style.flexDirection = 'column';
   card.style.overflow = 'hidden';
 }
 if (modalBody) {
   modalBody.style.flex = '1 1 auto';
+  modalBody.style.padding = '18px 22px 28px';
   modalBody.style.minHeight = '0';
   modalBody.style.overflowY = 'auto';   // 👈 scroll SOLO aquí
   modalBody.style.maxHeight = 'none';
@@ -612,55 +613,300 @@ function phaseProgress(list) {
 const __permitsUnlockOverrides = new Set();
 function isUnlocked(it, idx) { return __permitsUnlockOverrides.has(it.code) || depsApproved(it, idx); }
 
-function renderPermitsModal() {
-  const pct = permitProgress(__permits);
+let __commercialUnitsForPermits = [];
+
+function __normTxt(v) {
+  return String(v || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function isConstructionPermit(it) {
+  const title = __normTxt(it?.title || '');
+  const type  = __normTxt(it?.type || '');
+  const code  = __normTxt(it?.code || '');
+
+  return (
+    title === 'permiso de construccion - municipio' ||
+    title === 'permiso de construccion' ||
+    type === 'permiso de construccion' ||
+    code === 'permiso_construccion' ||
+    code === 'permiso-de-construccion'
+  );
+}
+
+function isOccupationPermit(it) {
+  const title = __normTxt(it?.title || '');
+  const type  = __normTxt(it?.type || '');
+  const code  = __normTxt(it?.code || '');
+
+  return (
+    title === 'permiso de ocupacion - municipio' ||
+    title === 'permiso de ocupacion' ||
+    type === 'permiso de ocupacion' ||
+    code === 'permiso_ocupacion' ||
+    code === 'permiso-de-ocupacion'
+  );
+}
+
+function commercialUnitName(u) {
+  return u.nombre || u.name || u.codigo || u.code || u.numero || u.unitNumber || u.lote || u._id || 'Unidad';
+}
+
+function getCommercialPermitData(u, kind) {
+  const isCons = kind === 'construction';
+  const venta = u.__venta || {};
+
+  const number = isCons
+    ? (venta.permisoConstruccionNum || '')
+    : (venta.permisoOcupacionNum || '');
+
+  const approved = !!String(number || '').trim();
+
+  return {
+    number: number || '—',
+    status: approved ? 'approved' : 'pending',
+    label: approved ? 'Aprobado' : 'Pendiente'
+  };
+}
+
+async function apiCommercialUnitsForPermits() {
+  let units = [];
+  let ventas = [];
+
+  try {
+    units = await API.get(`/api/units?projectId=${id}`);
+  } catch (e) {
+    console.error('[Permits] units error', e);
+    units = [];
+  }
+
+  try {
+    ventas = await API.get(`/api/ventas?projectId=${id}`);
+  } catch (e) {
+    console.error('[Permits] ventas error', e);
+    ventas = [];
+  }
+
+  const ventasByUnit = new Map(
+    (ventas || []).map(v => [String(v.unitId), v])
+  );
+
+  return (units || []).map(u => ({
+    ...u,
+    __venta: ventasByUnit.get(String(u._id)) || {}
+  }));
+}
+
+function buildAggregatedPermitSummary(kind) {
+  const units = __commercialUnitsForPermits || [];
+  const rows = units.map(u => ({
+    unit: commercialUnitName(u),
+    ...getCommercialPermitData(u, kind)
+  }));
+
+  const total = rows.length;
+  const approved = rows.filter(r => r.status === 'approved').length;
+
+  return {
+    total,
+    approved,
+    status: total > 0 && approved === total ? 'approved' : 'pending',
+    label: total > 0 && approved === total ? 'Aprobado' : 'Pendiente',
+    rows
+  };
+}
+
+async function renderPermitsModal() {
+  try {
+    __commercialUnitsForPermits = await apiCommercialUnitsForPermits();
+  } catch (e) {
+    console.error('[Commercial units permits]', e);
+    __commercialUnitsForPermits = [];
+  }
+
   const idx = buildIndexByCode(__permits.items);
   const { groups, order } = groupByPhase(__permits.items);
 
-  const head = `
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
-    <div style="min-width:140px;">Progreso:</div>
-    <div class="progress" style="flex:1"><div style="width:${pct}%;"></div></div>
-    <div style="min-width:70px;text-align:right;"><b>${pct}%</b></div>
-  </div>
-  <div class="small muted">Plantilla: v${__permits?.templateVersion || 1}</div>
-  <hr style="margin:10px 0;">
-  <div class="row" style="gap:8px; align-items:center; margin:4px 0 12px 0;">
-    <button class="btn btn-ghost btn-xs" id="permAddFromTpl">+ Agregar trámites de una plantilla…</button>
-    <div id="permAddBox" class="small muted"></div>
-  </div>
-`;
+  (__permits.items || []).forEach(it => {
+    if (isConstructionPermit(it)) {
+      it.__aggregate = buildAggregatedPermitSummary('construction');
+      it.__computedStatus = it.__aggregate.status;
+    }
 
-  // ✅ versión para permisos (evita colisión con la global de checklists)
+    if (isOccupationPermit(it)) {
+      it.__aggregate = buildAggregatedPermitSummary('occupation');
+      it.__computedStatus = it.__aggregate.status;
+    }
+  });
+
+  const pct = permitProgress({
+    ...__permits,
+    items: (__permits.items || []).map(it => ({
+      ...it,
+      status: it.__computedStatus || it.status
+    }))
+  });
+
+  const head = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+      <div style="min-width:140px;">Progreso:</div>
+      <div class="progress" style="flex:1"><div style="width:${pct}%;"></div></div>
+      <div style="min-width:70px;text-align:right;"><b>${pct}%</b></div>
+    </div>
+
+    <div class="small muted">Plantilla: v${__permits?.templateVersion || 1}</div>
+
+    <div class="small muted" style="margin-top:6px;">
+      Los permisos de construcción y ocupación se calculan automáticamente desde la pestaña Comercial.
+    </div>
+
+    <hr style="margin:10px 0;">
+
+    <div class="row" style="gap:8px; align-items:center; margin:4px 0 12px 0;">
+      <button class="btn btn-ghost btn-xs" id="permAddFromTpl">+ Agregar trámites de una plantilla…</button>
+      <div id="permAddBox" class="small muted"></div>
+    </div>
+  `;
+
   const permPhaseProgress = (list) => {
     const valid = (list || []).filter(i => i.status !== 'waived');
-    const tot   = valid.length;
-    const done  = valid.filter(i => i.status === 'approved').length;
-    const pct   = tot ? Math.round((done / tot) * 100) : 0;
+    const tot = valid.length;
+    const done = valid.filter(i => (i.__computedStatus || i.status) === 'approved').length;
+    const pct = tot ? Math.round((done / tot) * 100) : 0;
     return { pct, done, tot };
   };
 
   const accordions = order.map(phase => {
     const list = groups[phase] || [];
-    const phasePctObj = permPhaseProgress(list);   // { pct, done, tot }
-    const phasePct = Number(phasePctObj.pct || 0); // ✅ usar .pct
+    const phasePctObj = permPhaseProgress(list);
+    const phasePct = Number(phasePctObj.pct || 0);
 
     const rows = list.map(it => {
+      const isAggregated = !!it.__aggregate;
+      const aggregate = it.__aggregate;
+
+      if (isAggregated) {
+        const reqs = (it.requirements || []).map(r => `<li>${r}</li>`).join('');
+        const obs = (it.observations || []).map(r => `<li>${r}</li>`).join('');
+
+        const docsViewer = `
+          <div class="small" id="permDocs-${it.code}">
+            <div class="muted">Cargando documentos…</div>
+          </div>
+        `;
+
+        const aggRows = aggregate.rows.map(r => `
+          <tr>
+            <td class="small">${r.unit}</td>
+            <td class="small">${r.number}</td>
+            <td class="small">
+              <span class="badge ${r.status === 'approved' ? 'ok' : ''}">
+                ${r.label}
+              </span>
+            </td>
+          </tr>
+        `).join('');
+
+        return `
+          <tr class="perm-main-row" data-code="${it.code}">
+            <td style="white-space:nowrap">
+              <select class="perm-state" disabled>
+                ${PERMIT_STATES.map(s => `
+                  <option value="${s}" ${aggregate.status === s ? 'selected' : ''}>
+                    ${PERMIT_LABEL[s]}
+                  </option>
+                `).join('')}
+              </select>
+            </td>
+
+            <td>
+              <b>${it.title || it.code}</b><br/>
+              <span class="small muted">${it.institution || ''}</span>
+              <div class="small muted" style="margin-top:4px;">
+                ${aggregate.approved} / ${aggregate.total} permisos aprobados
+              </div>
+            </td>
+
+            <td class="small">
+              ${it.slaDays ? (it.slaDays + ' días hábiles') : '—'}
+            </td>
+
+            <td class="small">
+              <button type="button" class="perm-see-btn js-toggle-perm-details" data-code="${it.code}">
+                Ver detalles
+              </button>
+            </td>
+
+            <td class="small">
+              <button class="btn btn-ghost btn-xs js-perm-docs" data-code="${it.code}">📎 Adjuntar</button>
+            </td>
+          </tr>
+
+          <tr class="perm-extra-row" data-extra-code="${it.code}">
+            <td colspan="5">
+              <div class="perm-details-box">
+                ${reqs ? `
+                  <div>
+                    <b>Requisitos</b>
+                    <ul>${reqs}</ul>
+                  </div>
+                ` : ''}
+
+                ${obs ? `
+                  <div style="margin-top:14px;">
+                    <b>Observaciones</b>
+                    <ul>${obs}</ul>
+                  </div>
+                ` : ''}
+
+                <div style="margin-top:14px;">
+                  <b>Resumen por unidad comercial</b>
+                  <div class="small muted" style="margin:4px 0 8px;">
+                    Información alimentada automáticamente desde Comercial.
+                  </div>
+
+                  <div class="table-wrap">
+                    <table class="table compact">
+                      <thead>
+                        <tr>
+                          <th>Unidad comercial</th>
+                          <th>Nº permiso</th>
+                          <th>Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${aggRows || `<tr><td colspan="3" class="small muted">No hay unidades comerciales registradas.</td></tr>`}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div style="margin-top:14px;"><b>Documentos adjuntos</b></div>
+                ${docsViewer}
+              </div>
+            </td>
+          </tr>
+        `;
+      }
+
       const unlocked = isUnlocked(it, idx);
       const lockedBadge = unlocked ? '' :
-        `<span class="badge" title="Debes completar: ${(it.dependencies||[]).join(', ')}">🔒 Bloqueado</span>`;
+        `<span class="badge" title="Debes completar: ${(it.dependencies || []).join(', ')}">🔒 Bloqueado</span>`;
 
       const sel = `
         <select class="perm-state" data-code="${it.code}" ${unlocked ? '' : 'disabled'}>
-          ${PERMIT_STATES.map(s => `<option value="${s}" ${it.status===s?'selected':''}>${PERMIT_LABEL[s]}</option>`).join('')}
+          ${PERMIT_STATES.map(s => `<option value="${s}" ${it.status === s ? 'selected' : ''}>${PERMIT_LABEL[s]}</option>`).join('')}
         </select>
       `;
 
-      const reqs = (it.requirements||[]).map(r=>`<li>${r}</li>`).join('');
-      const obs  = (it.observations||[]).map(r=>`<li>${r}</li>`).join('');
-      const depsHtml = (it.dependencies||[]).length ? `
-        <div class="small muted">Depende de: ${(it.dependencies||[]).map(c => {
-          const dep = idx[c]; return dep ? (dep.title || c) : c;
+      const reqs = (it.requirements || []).map(r => `<li>${r}</li>`).join('');
+      const obs = (it.observations || []).map(r => `<li>${r}</li>`).join('');
+
+      const depsHtml = (it.dependencies || []).length ? `
+        <div class="small muted">Depende de: ${(it.dependencies || []).map(c => {
+          const dep = idx[c];
+          return dep ? (dep.title || c) : c;
         }).join(', ')}</div>` : '';
 
       const unlockBtn = unlocked ? '' : `
@@ -674,52 +920,64 @@ function renderPermitsModal() {
       `;
 
       return `
-        <tr data-code="${it.code}">
+        <tr class="perm-main-row" data-code="${it.code}">
           <td style="white-space:nowrap">${sel}${lockedBadge}</td>
+
           <td>
-            <b>${it.title||it.code}</b><br/>
-            <span class="small muted">${it.institution||''}</span>
+            <b>${it.title || it.code}</b><br/>
+            <span class="small muted">${it.institution || ''}</span>
             ${depsHtml}
           </td>
+
           <td class="small">${it.slaDays ? (it.slaDays + ' días hábiles') : '—'}</td>
+
           <td class="small">
-            ${(reqs||obs) ? `
-              <details>
-                <summary>Ver</summary>
-                ${reqs?`<div style="margin-top:6px;"><b>Requisitos</b><ul class="small">${reqs}</ul></div>`:''}
-                ${obs ?`<div style="margin-top:6px;"><b>Observaciones</b><ul class="small">${obs}</ul></div>`:''}
-                <div style="margin-top:8px;"><b>Documentos adjuntos</b></div>
-                ${docsViewer}
-              </details>` : `
-              <details>
-                <summary>Ver</summary>
-                <div class="small muted">Sin requisitos / observaciones.</div>
-                <div style="margin-top:8px;"><b>Documentos adjuntos</b></div>
-                ${docsViewer}
-              </details>
-            `}
+            <button type="button" class="perm-see-btn js-toggle-perm-details" data-code="${it.code}">
+              Ver detalles
+            </button>
           </td>
+
           <td class="small">
             <button class="btn btn-ghost btn-xs js-perm-docs" data-code="${it.code}">📎 Adjuntar</button>
             ${unlockBtn}
+          </td>
+        </tr>
+
+        <tr class="perm-extra-row" data-extra-code="${it.code}">
+          <td colspan="5">
+            <div class="perm-details-box">
+              ${reqs ? `<div><b>Requisitos</b><ul>${reqs}</ul></div>` : ''}
+              ${obs ? `<div style="margin-top:14px;"><b>Observaciones</b><ul>${obs}</ul></div>` : ''}
+              ${(!reqs && !obs) ? `<div class="small muted">Sin requisitos / observaciones.</div>` : ''}
+
+              <div style="margin-top:14px;"><b>Documentos adjuntos</b></div>
+              ${docsViewer}
+            </div>
           </td>
         </tr>
       `;
     }).join('');
 
     return `
-      <section class="phase-card" data-phase="${phase}" style="border:1px solid #0f172a33;border-radius:12px;margin-bottom:14px;overflow:visible;">
-        <header class="row" style="align-items:center;gap:12px;background:#0f172a;color:#fff;padding:10px 12px;">
+      <section class="phase-card permits-phase-card" data-phase="${phase}">
+        <header class="row permits-phase-header">
           <div style="font-weight:700;">${phase}</div>
           <div class="progress small" style="flex:1;background:#ffffff22;">
-            <div style="width:${phasePct}%; background:#22c55e;"></div>   <!-- ✅ correcto -->
+            <div style="width:${phasePct}%; background:#22c55e;"></div>
           </div>
-          <div><b>${phasePct}%</b></div>                                   <!-- ✅ correcto -->
+          <div><b>${phasePct}%</b></div>
         </header>
-        <div class="table-wrap" style="background:#0b1220;color:#e5e7eb;padding:8px 10px;">
+
+        <div class="table-wrap permits-table-wrap">
           <table class="table dark">
             <thead>
-              <tr><th>Estado</th><th>Trámite</th><th>Tiempo</th><th>Detalles</th><th>Docs</th></tr>
+              <tr>
+                <th>Estado</th>
+                <th>Trámite</th>
+                <th>Tiempo</th>
+                <th>Detalles</th>
+                <th>Docs</th>
+              </tr>
             </thead>
             <tbody>${rows || `<tr><td colspan="5" class="small muted">—</td></tr>`}</tbody>
           </table>
@@ -735,25 +993,28 @@ function renderPermitsModal() {
     () => { modalBackdrop.style.display = 'none'; }
   );
 
-  // === helpers locales ===
-  const fmt = (n)=> (typeof n==='number' ? (Math.round(n/1024))+' KB' : '—');
+  const fmt = (n) => (typeof n === 'number' ? (Math.round(n / 1024)) + ' KB' : '—');
 
   async function fetchDocsFor(code) {
     const host = modalBody.querySelector(`#permDocs-${CSS.escape(code)}`);
     if (!host) return;
+
     host.innerHTML = '<div class="small muted">Cargando…</div>';
+
     try {
       let url = `/api/documents?projectId=${id}&category=permits&permitCode=${encodeURIComponent(code)}&ts=${Date.now()}`;
-      let res = await fetch(url, { headers: { ...authHeaders(), ...tenantHeaders() }});
+      let res = await fetch(url, { headers: { ...authHeaders(), ...tenantHeaders() } });
       let docs;
+
       if (res.ok) {
         docs = await res.json();
       } else {
         url = `/api/documents?projectId=${id}&category=permits&ts=${Date.now()}`;
-        res = await fetch(url, { headers: { ...authHeaders(), ...tenantHeaders() }});
+        res = await fetch(url, { headers: { ...authHeaders(), ...tenantHeaders() } });
         docs = res.ok ? await res.json() : [];
+
         const rx = new RegExp(code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-        docs = (docs||[]).filter(d => rx.test(d.title||'') || rx.test(d.originalname||''));
+        docs = (docs || []).filter(d => rx.test(d.title || '') || rx.test(d.originalname || ''));
       }
 
       if (!Array.isArray(docs) || !docs.length) {
@@ -764,7 +1025,16 @@ function renderPermitsModal() {
       host.innerHTML = `
         <div class="table-wrap">
           <table class="table compact">
-            <thead><tr><th>Nombre</th><th>Tipo</th><th>Tamaño</th><th>Subido</th><th>Caduca</th><th></th></tr></thead>
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Tipo</th>
+                <th>Tamaño</th>
+                <th>Subido</th>
+                <th>Caduca</th>
+                <th></th>
+              </tr>
+            </thead>
             <tbody>
               ${docs.map(d => `
                 <tr data-id="${d._id}">
@@ -788,14 +1058,29 @@ function renderPermitsModal() {
     }
   }
 
-  // Cargar docs para cada trámite ya renderizado
-  ( __permits.items || [] ).forEach(it => fetchDocsFor(it.code));
+  (__permits.items || []).forEach(it => fetchDocsFor(it.code));
 
-  // ===== Cambios de estado =====
-  modalBody.querySelectorAll('select.perm-state').forEach(sel => {
+  document.querySelectorAll('.js-toggle-perm-details').forEach(btn => {
+  btn.onclick = () => {
+    const code = btn.dataset.code;
+
+    const row = document.querySelector(`tr[data-code="${CSS.escape(code)}"]`);
+    const extra = document.querySelector(`tr[data-extra-code="${CSS.escape(code)}"]`);
+
+    if (!extra || !row) return;
+
+    const open = extra.classList.toggle('is-open');
+
+    row.classList.toggle('is-open', open);
+    btn.classList.toggle('open', open);
+  };
+});
+
+  modalBody.querySelectorAll('select.perm-state[data-code]').forEach(sel => {
     sel.onchange = async () => {
       const code = sel.dataset.code;
       const status = sel.value;
+
       try {
         await apiPermitsPatchItem(code, { status });
         __permits = await apiPermitsGetProject(true);
@@ -808,7 +1093,6 @@ function renderPermitsModal() {
     };
   });
 
-  // ===== Desbloqueo manual =====
   modalBody.querySelectorAll('.js-unlock').forEach(btn => {
     btn.onclick = () => {
       const code = btn.dataset.code;
@@ -818,7 +1102,6 @@ function renderPermitsModal() {
     };
   });
 
-  // ===== Adjuntar por TRÁMITE =====
   modalBody.querySelectorAll('.js-perm-docs').forEach(btn => {
     btn.onclick = () => {
       const code = btn.dataset.code;
@@ -833,6 +1116,7 @@ function renderPermitsModal() {
 
         let expiry = prompt('Fecha de caducidad (YYYY-MM-DD, opcional):', '');
         expiry = (expiry || '').trim();
+
         if (expiry && !/^\d{4}-\d{2}-\d{2}$/.test(expiry)) {
           alert('Formato inválido. Usa YYYY-MM-DD o deja vacío.');
           return;
@@ -842,18 +1126,22 @@ function renderPermitsModal() {
         files.forEach(f => fd.append('files', f));
         fd.append('projectId', id);
         fd.append('category', 'permits');
+        fd.append('permitCode', code);
+
         if (expiry) fd.append('expiryDate', expiry);
-        // fd.append('permitCode', code); // si ya lo guardas en backend
 
         try {
           const headers = { ...authHeaders(), ...tenantHeaders() };
+
           const resp = await fetch('/api/documents/upload', {
             method: 'POST',
             body: fd,
             headers,
             credentials: 'include'
           });
-          const data = await resp.json().catch(()=> ({}));
+
+          const data = await resp.json().catch(() => ({}));
+
           if (!resp.ok) {
             if (data?.error === 'Falta projectId') return alert('Falta projectId en la subida.');
             if (data?.error === 'Falta archivo(s)') return alert('No llegaron archivos al servidor.');
@@ -4375,6 +4663,31 @@ function collectChecklistPayload() {
   });
 }
 
+// Estados comerciales de unidad
+const UNIT_ESTADOS = [
+  { v: 'disponible', l: 'Disponible' },
+  { v: 'reservado', l: 'Reservado' },
+  { v: 'con_cpp', l: 'Con CPP' },
+  { v: 'tramite_legal_activado', l: 'Trámite legal activado' },
+  { v: 'escriturado_traspasado', l: 'Escriturado / Traspasado' },
+  { v: 'vivienda_entregada', l: 'Vivienda entregada' },
+];
+
+function normalizeUnitEstadoFrontend(v) {
+  const s = String(v || '').trim();
+
+  if (s === 'en_escrituracion') return 'tramite_legal_activado';
+  if (s === 'escriturado') return 'escriturado_traspasado';
+  if (s === 'entregado') return 'vivienda_entregada';
+
+  return s || 'disponible';
+}
+
+function estadoLabel(v) {
+  const estado = normalizeUnitEstadoFrontend(v);
+  return (UNIT_ESTADOS.find(e => e.v === estado)?.l) || estado.replace(/_/g, ' ');
+}
+
   // Estado
   let unitsCache = [];
   let ventasMap = new Map(); // unitId -> venta
@@ -4450,16 +4763,31 @@ function deselectAllVisible() {
     try { await loadVentasMap(); } catch(e){ console.warn('ventas map err', e); }
 
     // KPIs
-    const resumen = { disponible:0,reservado:0,en_escrituracion:0,escriturado:0,entregado:0,valor:0 };
-    units.forEach(u => { resumen[u.estado] = (resumen[u.estado]||0)+1; resumen.valor += u.precioLista||0; });
-    kpisDiv.innerHTML = `
-      <div>Disponibles: ${resumen.disponible||0}</div>
-      <div>Reservados: ${resumen.reservado||0}</div>
-      <div>En escrituración: ${resumen.en_escrituracion||0}</div>
-      <div>Escriturados: ${resumen.escriturado||0}</div>
-      <div>Entregados: ${resumen.entregado||0}</div>
-      <div>Valor total: $${(resumen.valor||0).toLocaleString()}</div>
-    `;
+    const resumen = {
+  disponible: 0,
+  reservado: 0,
+  con_cpp: 0,
+  tramite_legal_activado: 0,
+  escriturado_traspasado: 0,
+  vivienda_entregada: 0,
+  valor: 0
+};
+
+units.forEach(u => {
+  const estado = normalizeUnitEstadoFrontend(u.estado);
+resumen[estado] = (resumen[estado] || 0) + 1;
+  resumen.valor += u.precioLista || 0;
+});
+
+kpisDiv.innerHTML = `
+  <div>Disponibles: ${resumen.disponible || 0}</div>
+  <div>Reservados: ${resumen.reservado || 0}</div>
+  <div>Con CPP: ${resumen.con_cpp || 0}</div>
+  <div>Trámite legal activado: ${resumen.tramite_legal_activado || 0}</div>
+  <div>Escriturado / Traspasado: ${resumen.escriturado_traspasado || 0}</div>
+  <div>Vivienda entregada: ${resumen.vivienda_entregada || 0}</div>
+  <div>Valor total: $${(resumen.valor || 0).toLocaleString()}</div>
+`;
 
     // Grid
     // ----- Render grid mejorado -----
@@ -4469,12 +4797,12 @@ grid.innerHTML = units.map(u => {
   const cpp = venta?.numCPP || '';
   const cliente = venta?.clienteNombre || venta?.cliente?.nombre || u.clienteId?.nombre || '';
   const idu = String(u._id);
-  const estadoTxt = (u.estado||'disponible').replace(/_/g, ' ');
+  const estadoTxt = estadoLabel(u.estado || 'disponible');
   // “Impago” si suena a mora/rechazo/atraso:
   const impago = /mora|impago|rechaz|atras|vencid|moros/i.test(venta?.statusBanco||'');
 
   return `
-    <div class="unit-card estado-${u.estado||'disponible'} ${selected.has(idu)?'selected':''}" data-id="${idu}">
+    <div class="unit-card estado-${normalizeUnitEstadoFrontend(u.estado)} ${selected.has(idu)?'selected':''}" data-id="${idu}">
       ${impago ? `<span class="alert-ribbon">Impago</span>` : ``}
       <div class="head">
         <div class="title">
@@ -4646,9 +4974,10 @@ const htmlUnidad = `
       <h4>Datos de la unidad</h4>
       <label>Estado</label>
       <select id="fu-estado">
-        ${['disponible','reservado','en_escrituracion','escriturado','entregado']
-          .map(s => `<option value="${s}" ${u.estado===s?'selected':''}>${s}</option>`).join('')}
-      </select>
+  ${UNIT_ESTADOS
+    .map(s => `<option value="${s.v}" ${normalizeUnitEstadoFrontend(u.estado) === s.v ? 'selected' : ''}>${s.l}</option>`)
+    .join('')}
+</select>
       <label>Modelo</label><input id="fu-modelo" value="${u.modelo||''}">
       <label>m²</label><input id="fu-m2" type="number" value="${u.m2||0}">
       <label>Precio lista</label><input id="fu-precio" type="number" value="${u.precioLista||0}">
@@ -4832,109 +5161,136 @@ modalFicha.style.display = 'flex';
     alert('Este proyecto aún no está aprobado. Edición comercial bloqueada.');
     return;
   }
+
   if (!fichaUnitId) return;
 
-  // 1) Actualizar la unidad
-  const uBody = {
-    estado: document.getElementById('fu-estado').value,
-    modelo: document.getElementById('fu-modelo').value,
-    m2: Number(document.getElementById('fu-m2').value||0),
-    precioLista: Number(document.getElementById('fu-precio').value||0),
-  };
-  await apiPatch(`/api/units/${fichaUnitId}`, uBody);
+  fichaGuardar.disabled = true;
 
-  // 2) Upsert de la venta con TODOS los campos del expediente
-  const vBody = {
-    projectId: id,
-    unitId: fichaUnitId,
+  const oldText = fichaGuardar.textContent;
+  fichaGuardar.textContent = 'Guardando...';
+  fichaGuardar.classList.add('is-loading');
 
-    // Cliente
-    clienteNombre: vVal('fv-clienteNombre'),
-cedula:        vVal('fv-cedula'),
-empresa:       vVal('fv-empresa'),
+  try {
 
-precioVenta: vNum('fv-precioVenta'),
-montoFinanciamientoCPP: vNum('fv-montoFinanciamientoCPP'),
+    // 1) Actualizar la unidad
+    const uBody = {
+      estado: document.getElementById('fu-estado').value,
+      modelo: document.getElementById('fu-modelo').value,
+      m2: Number(document.getElementById('fu-m2').value || 0),
+      precioLista: Number(document.getElementById('fu-precio').value || 0),
+    };
 
-// legacy
-valor: vNum('fv-montoFinanciamientoCPP'),
+    await apiPatch(`/api/units/${fichaUnitId}`, uBody);
 
-fechaContratoCliente: vDate('fv-fechaContratoCliente'),
+    // 2) Upsert de la venta
+    const vBody = {
+      projectId: id,
+      unitId: fichaUnitId,
 
-    // Banco / CPP
-    banco:          vVal('fv-banco'),
-    oficialBanco:   vVal('fv-oficialBanco'),
-    statusBanco: getStatusBancoValue('fv-statusBancoSel', 'fv-statusBancoOther'),
-    numCPP:         vVal('fv-numCPP'),
-    entregaExpedienteBanco: vDate('fv-entregaExpedienteBanco'),
-    recibidoCPP:            vDate('fv-recibidoCPP'),
-    plazoAprobacionDias:    vNum('fv-plazoAprobacionDias'),
-    fechaValorCPP:          vDate('fv-fechaValorCPP'),
-    fechaVencimientoCPP:    vDate('fv-fechaVencimientoCPP'),
-    vencimientoCPPBnMivi:   vDate('fv-vencimientoCPPBnMivi'),
+      // Cliente
+      clienteNombre: vVal('fv-clienteNombre'),
+      cedula: vVal('fv-cedula'),
+      empresa: vVal('fv-empresa'),
 
-    aperturaCtaBanco: vChk('fv-aperturaCtaBanco'),
-    primeraMensual:   vChk('fv-primeraMensual'),
-    pagoMinuta:       vChk('fv-pagoMinuta'),
-    tiempoAprobacionDias: calcDiffDays(
-     vVal('fv-entregaExpedienteBanco'),
-     vVal('fv-recibidoCPP')
-    ),
+      precioVenta: vNum('fv-precioVenta'),
+      montoFinanciamientoCPP: vNum('fv-montoFinanciamientoCPP'),
 
-    // Contrato / Protocolo / Notaría / RP / Desembolso
-    estatusContrato:              vVal('fv-estatusContrato'),
-    pagare:                       vVal('fv-pagare'),
-    fechaFirma:                   vDate('fv-fechaFirma'),
-    protocoloFirmaCliente:        vChk('fv-protocoloFirmaCliente'),
-    fechaEntregaBanco:            vDate('fv-fechaEntregaBanco'),
-    protocoloFirmaRLBancoInter:   vChk('fv-protocoloFirmaRLBancoInter'),
-    fechaRegresoBanco:            vDate('fv-fechaRegresoBanco'),
-    diasTranscurridosBanco:       vNum('fv-diasTranscurridosBanco'),
-    fechaEntregaProtocoloBancoCli:vDate('fv-fechaEntregaProtocoloBancoCli'),
-    firmaProtocoloBancoCliente:   vChk('fv-firmaProtocoloBancoCliente'),
-    fechaRegresoProtocoloBancoCli:vDate('fv-fechaRegresoProtocoloBancoCli'),
-    diasTranscurridosProtocolo:   vNum('fv-diasTranscurridosProtocolo'),
-    cierreNotaria: vChk('fv-cierreNotaria'),
-    fechaPagoImpuesto:            vDate('fv-fechaPagoImpuesto'),
-    ingresoRP:     vChk('fv-ingresoRP'),
-    fechaInscripcion:             vDate('fv-fechaInscripcion'),
-    solicitudDesembolso:          vChk('fv-solicitudDesembolso'),
-    fechaRecibidoCheque:          vDate('fv-fechaRecibidoCheque'),
+      // legacy
+      valor: vNum('fv-montoFinanciamientoCPP'),
 
-    // MIVI
-    expedienteMIVI:          vVal('fv-expedienteMIVI'),
-    entregaExpMIVI:          vDate('fv-entregaExpMIVI'),
-    resolucionMIVI:          vVal('fv-resolucionMIVI'),
-    fechaResolucionMIVI:     vDate('fv-fechaResolucionMIVI'),
-    solicitudMiviDesembolso: vDate('fv-solicitudMiviDesembolso'),
-    desembolsoMivi:               vVal('fv-desembolsoMivi'),
-    fechaPagoMivi:           vDate('fv-fechaPagoMivi'),
+      fechaContratoCliente: vDate('fv-fechaContratoCliente'),
 
-    // Legal / Obra / Otros
-    enConstruccion:       vChk('fv-enConstruccion'),
-    faseConstruccion:       vVal('fv-faseConstruccion'),
-    permisoConstruccionNum: vVal('fv-permisoConstruccionNum'),
-    permisoOcupacion:       vChk('fv-permisoOcupacion'),
-    permisoOcupacionNum:    vVal('fv-permisoOcupacionNum'),
-    constructora:            vVal('fv-constructora'),
-    pazSalvoGesproban:      vChk('fv-pazSalvoGesproban'),
-    pazSalvoPromotora:      vChk('fv-pazSalvoPromotora'),
-    mLiberacion:            vVal('fv-mLiberacion'),
-    mSegregacion:           vVal('fv-mSegregacion'),
-    mPrestamo:              vVal('fv-mPrestamo'),
-    solicitudAvaluo:              vVal('fv-solicitudAvaluo'),
-avaluoRealizado:              vVal('fv-avaluoRealizado'),
-entregaCasa:                  vVal('fv-entregaCasa'),
-entregaANATI:                 vVal('fv-entregaANATI'),
-    comentario:             vVal('fv-comentario'),
-  };
+      // Banco / CPP
+      banco: vVal('fv-banco'),
+      oficialBanco: vVal('fv-oficialBanco'),
+      statusBanco: getStatusBancoValue('fv-statusBancoSel', 'fv-statusBancoOther'),
+      numCPP: vVal('fv-numCPP'),
+      entregaExpedienteBanco: vDate('fv-entregaExpedienteBanco'),
+      recibidoCPP: vDate('fv-recibidoCPP'),
+      plazoAprobacionDias: vNum('fv-plazoAprobacionDias'),
+      fechaValorCPP: vDate('fv-fechaValorCPP'),
+      fechaVencimientoCPP: vDate('fv-fechaVencimientoCPP'),
+      vencimientoCPPBnMivi: vDate('fv-vencimientoCPPBnMivi'),
 
-  vBody.checklist = collectChecklistPayload();
+      aperturaCtaBanco: vChk('fv-aperturaCtaBanco'),
+      primeraMensual: vChk('fv-primeraMensual'),
+      pagoMinuta: vChk('fv-pagoMinuta'),
 
-  await apiPost('/api/ventas/upsert-by-unit', vBody);
+      tiempoAprobacionDias: calcDiffDays(
+        vVal('fv-entregaExpedienteBanco'),
+        vVal('fv-recibidoCPP')
+      ),
 
-  modalFicha.style.display = 'none';
-  await loadUnits();
+      // Contrato / Protocolo / Notaría / RP / Desembolso
+      estatusContrato: vVal('fv-estatusContrato'),
+      pagare: vVal('fv-pagare'),
+      fechaFirma: vDate('fv-fechaFirma'),
+      protocoloFirmaCliente: vChk('fv-protocoloFirmaCliente'),
+      fechaEntregaBanco: vDate('fv-fechaEntregaBanco'),
+      protocoloFirmaRLBancoInter: vChk('fv-protocoloFirmaRLBancoInter'),
+      fechaRegresoBanco: vDate('fv-fechaRegresoBanco'),
+      diasTranscurridosBanco: vNum('fv-diasTranscurridosBanco'),
+
+      fechaEntregaProtocoloBancoCli: vDate('fv-fechaEntregaProtocoloBancoCli'),
+      firmaProtocoloBancoCliente: vChk('fv-firmaProtocoloBancoCliente'),
+      fechaRegresoProtocoloBancoCli: vDate('fv-fechaRegresoProtocoloBancoCli'),
+      diasTranscurridosProtocolo: vNum('fv-diasTranscurridosProtocolo'),
+
+      cierreNotaria: vChk('fv-cierreNotaria'),
+      fechaPagoImpuesto: vDate('fv-fechaPagoImpuesto'),
+      ingresoRP: vChk('fv-ingresoRP'),
+      fechaInscripcion: vDate('fv-fechaInscripcion'),
+      solicitudDesembolso: vChk('fv-solicitudDesembolso'),
+      fechaRecibidoCheque: vDate('fv-fechaRecibidoCheque'),
+
+      // MIVI
+      expedienteMIVI: vVal('fv-expedienteMIVI'),
+      entregaExpMIVI: vDate('fv-entregaExpMIVI'),
+      resolucionMIVI: vVal('fv-resolucionMIVI'),
+      fechaResolucionMIVI: vDate('fv-fechaResolucionMIVI'),
+      solicitudMiviDesembolso: vDate('fv-solicitudMiviDesembolso'),
+      desembolsoMivi: vVal('fv-desembolsoMivi'),
+      fechaPagoMivi: vDate('fv-fechaPagoMivi'),
+
+      // Legal / Obra / Otros
+      enConstruccion: vChk('fv-enConstruccion'),
+      faseConstruccion: vVal('fv-faseConstruccion'),
+      permisoConstruccionNum: vVal('fv-permisoConstruccionNum'),
+      permisoOcupacion: vChk('fv-permisoOcupacion'),
+      permisoOcupacionNum: vVal('fv-permisoOcupacionNum'),
+      constructora: vVal('fv-constructora'),
+
+      pazSalvoGesproban: vChk('fv-pazSalvoGesproban'),
+      pazSalvoPromotora: vChk('fv-pazSalvoPromotora'),
+
+      mLiberacion: vVal('fv-mLiberacion'),
+      mSegregacion: vVal('fv-mSegregacion'),
+      mPrestamo: vVal('fv-mPrestamo'),
+
+      solicitudAvaluo: vVal('fv-solicitudAvaluo'),
+      avaluoRealizado: vVal('fv-avaluoRealizado'),
+      entregaCasa: vVal('fv-entregaCasa'),
+      entregaANATI: vVal('fv-entregaANATI'),
+
+      comentario: vVal('fv-comentario'),
+    };
+
+    vBody.checklist = collectChecklistPayload();
+
+    await apiPost('/api/ventas/upsert-by-unit', vBody);
+
+    modalFicha.style.display = 'none';
+
+    await loadUnits();
+
+  } catch (e) {
+    console.error(e);
+    alert('Error guardando la ficha');
+  } finally {
+    fichaGuardar.disabled = false;
+    fichaGuardar.textContent = oldText;
+    fichaGuardar.classList.remove('is-loading');
+  }
 }
 
   // === Batch ===

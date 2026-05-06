@@ -13,7 +13,15 @@ const UnitSchema = new mongoose.Schema({
   precioLista: { type: Number, default: 0 },
   estado: {
     type: String,
-    enum: ['disponible','reservado','en_escrituracion','escriturado','entregado'],
+    enum: [
+  'disponible',
+  'reservado',
+  'con_cpp',
+  'tramite_legal_activado',
+  'escriturado_traspasado',
+  'vivienda_entregada',
+  'cancelado'
+],
     default: 'disponible',
     index: true
   },
