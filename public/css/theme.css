@@ -1730,3 +1730,6 @@ button.small.danger{ color:#fff !important; }
   color: var(--text-muted);
 }
 
+body {
+  zoom: 0.75;
+}
