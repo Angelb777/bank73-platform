@@ -27,10 +27,10 @@ const financeRoutes = require('./routes/finance');
 const adminRoutes = require('./routes/admin');
 const processRoutes = require('./routes/process');
 
-// Comercial
 const unitsRoutes = require('./routes/units');
 const exportRoutes = require('./routes/export');
 const ventasRoutes = require('./routes/ventas');
+const importWordRoutes = require('./routes/import-word.routes');
 
 const permitRoutes = require('./routes/permits');
 const chatRoutes = require('./routes/chat');
@@ -193,6 +193,7 @@ app.use('/api/units', ...guard, unitsRoutes);
 app.use('/api/export', ...guard, exportRoutes);
 app.use('/api/export-pdf', ...guard, exportPdfRoutes);
 app.use('/api/ventas', ...guard, ventasRoutes);
+app.use('/api/import-word', ...guard, importWordRoutes);
 
 // Chat
 app.use('/api/chat', ...guard, chatRoutes);

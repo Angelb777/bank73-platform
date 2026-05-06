@@ -1730,15 +1730,3 @@ button.small.danger{ color:#fff !important; }
   color: var(--text-muted);
 }
 
-.info-btn{
-  margin-left:6px;
-  width:18px;
-  height:18px;
-  border-radius:999px;
-  border:1px solid rgba(148,163,184,.5);
-  background:#0f172a;
-  color:#e5e7eb;
-  font-size:11px;
-  font-weight:800;
-  cursor:help;
-}

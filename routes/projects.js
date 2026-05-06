@@ -119,27 +119,74 @@ router.get('/', async (req, res) => {
 // GET /api/projects/portfolio (solo aprobados)
 router.get('/portfolio', async (req, res) => {
   try {
-    // Mantén tu lógica actual de visibilidad/tenant/estado:
     const q = buildPortfolioQuery(req);
 
-    // 1) Trae los proyectos visibles
     const projects = await Project.find(q).sort({ updatedAt: -1 }).lean();
     if (!projects.length) return res.json([]);
 
     const pids = projects.map(p => p._id);
 
-    // 2) Define qué estados cuentan como "vendido" en la barra
+    const debugEstados = await Unit.aggregate([
+  { $match: { projectId: { $in: pids } } },
+  {
+    $group: {
+      _id: {
+        estado: '$estado',
+        status: '$status',
+        tenantKey: '$tenantKey',
+        deletedAt: '$deletedAt'
+      },
+      count: { $sum: 1 }
+    }
+  }
+]);
+
+console.log('[DEBUG PORTFOLIO ESTADOS]', JSON.stringify(debugEstados, null, 2));
+
     const SOLD_ESTADOS = [
+  // nuevos
   'reservado',
   'con_cpp',
   'tramite_legal_activado',
   'escriturado_traspasado',
-  'vivienda_entregada'
+  'vivienda_entregada',
+
+  // legacy antiguos
+  'en_escrituracion',
+  'escriturado',
+  'entregado'
 ];
 
-    // 3) Agrega unidades por proyecto
     const agg = await Unit.aggregate([
-      { $match: { tenantKey: req.tenantKey, projectId: { $in: pids }, deletedAt: null } },
+      {
+        $match: {
+          projectId: { $in: pids },
+          $and: [
+            {
+              $or: [
+                { deletedAt: null },
+                { deletedAt: { $exists: false } }
+              ]
+            },
+            {
+              $or: [
+                { tenantKey: req.tenantKey },
+                { tenantKey: { $exists: false } },
+                { tenantKey: null }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        $addFields: {
+          estadoNorm: {
+            $toLower: {
+              $ifNull: ['$estado', '$status']
+            }
+          }
+        }
+      },
       {
         $group: {
           _id: '$projectId',
@@ -147,7 +194,7 @@ router.get('/portfolio', async (req, res) => {
           sold: {
             $sum: {
               $cond: [
-                { $in: [ { $toLower: { $ifNull: ['$estado', '$status'] } }, SOLD_ESTADOS ] },
+                { $in: ['$estadoNorm', SOLD_ESTADOS] },
                 1,
                 0
               ]
@@ -159,7 +206,6 @@ router.get('/portfolio', async (req, res) => {
 
     const byProject = new Map(agg.map(a => [String(a._id), a]));
 
-    // 4) Respuesta lista para el portfolio
     const out = projects.map(p => {
       const m = byProject.get(String(p._id));
       return {
@@ -167,14 +213,14 @@ router.get('/portfolio', async (req, res) => {
         name: p.name,
         description: p.description,
         status: p.status,
-        // si ya guardas unitsTotal en Project lo respetamos; si no, usamos el agregado
-        unitsTotal: p.unitsTotal ?? m?.total ?? 0,
-        unitsSold:  m?.sold ?? 0,
+        unitsTotal: m?.total ?? p.unitsTotal ?? 0,
+        unitsSold: m?.sold ?? 0,
       };
     });
 
     res.json(out);
   } catch (e) {
+    console.error('[portfolio]', e);
     res.status(500).json({ error: e.message });
   }
 });

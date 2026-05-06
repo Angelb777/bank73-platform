@@ -4690,7 +4690,7 @@ const UNIT_ESTADOS = [
   { v: 'disponible', l: 'Disponible' },
   { v: 'inventario', l: 'Inventario' },
   { v: 'reservado', l: 'Reservado' },
-  { v: 'con_cpp', l: 'Con CPP' },
+  { v: 'con_cpp', l: 'Con CPP o venta al contado' },
   { v: 'tramite_legal_activado', l: 'Trámite legal activado' },
   { v: 'escriturado_traspasado', l: 'Escriturado / Traspasado' },
   { v: 'vivienda_entregada', l: 'Vivienda entregada' },
@@ -4974,6 +4974,208 @@ function wireUnidadUpload(projectId, unitId) {
   });
 }
 
+function importLabelForField(field) {
+  const labels = {
+    clienteNombre: 'Cliente resumen',
+    primerNombre: 'Primer nombre',
+    segundoNombre: 'Segundo nombre',
+    primerApellido: 'Apellido paterno',
+    segundoApellido: 'Apellido materno',
+    apellidoCasada: 'Apellido de casada',
+    cedula: 'Cédula',
+    sexo: 'Sexo',
+    profesion: 'Profesión',
+    estadoCivil: 'Estado civil',
+    direccion: 'Dirección',
+    telefonoResidencial: 'Teléfono residencial',
+    telefonoOficina: 'Teléfono oficina',
+    celular: 'Celular',
+    correo: 'Correo',
+    empresa: 'Empresa',
+    lugarTrabajo: 'Lugar de trabajo',
+    ingresoMensual: 'Ingreso mensual',
+    cargo: 'Cargo',
+    antiguedadLaboral: 'Antigüedad laboral',
+
+    cliente2PrimerNombre: 'Cliente 2 - Primer nombre',
+    cliente2SegundoNombre: 'Cliente 2 - Segundo nombre',
+    cliente2PrimerApellido: 'Cliente 2 - Apellido paterno',
+    cliente2SegundoApellido: 'Cliente 2 - Apellido materno',
+    cliente2ApellidoCasada: 'Cliente 2 - Apellido de casada',
+    cliente2Cedula: 'Cliente 2 - Cédula',
+    cliente2Sexo: 'Cliente 2 - Sexo',
+    cliente2Profesion: 'Cliente 2 - Profesión',
+    cliente2Direccion: 'Cliente 2 - Dirección',
+    cliente2LugarTrabajo: 'Cliente 2 - Lugar trabajo',
+
+    pariente1Nombre: 'Pariente 1 - Nombre',
+    pariente1Parentesco: 'Pariente 1 - Parentesco',
+    pariente1Telefono: 'Pariente 1 - Teléfono',
+    pariente1TelefonoTrabajo: 'Pariente 1 - Tel. trabajo',
+
+    pariente2Nombre: 'Pariente 2 - Nombre',
+    pariente2Parentesco: 'Pariente 2 - Parentesco',
+    pariente2Telefono: 'Pariente 2 - Teléfono',
+    pariente2TelefonoTrabajo: 'Pariente 2 - Tel. trabajo',
+
+    referencia1Nombre: 'Referencia 1 - Nombre',
+    referencia1Relacion: 'Referencia 1 - Relación',
+    referencia1Telefono: 'Referencia 1 - Teléfono',
+    referencia1TelefonoTrabajo: 'Referencia 1 - Tel. trabajo',
+
+    referencia2Nombre: 'Referencia 2 - Nombre',
+    referencia2Relacion: 'Referencia 2 - Relación',
+    referencia2Telefono: 'Referencia 2 - Teléfono',
+    referencia2TelefonoTrabajo: 'Referencia 2 - Tel. trabajo',
+
+    lote: 'Lote',
+    numeroFinca: 'Número de finca',
+    codigoUbicacion: 'Código ubicación',
+    ubicacion: 'Ubicación',
+    calle: 'Calle',
+    modelo: 'Modelo',
+    recamaras: 'Recámaras',
+    banos: 'Baños',
+    metrajeLote: 'Metraje lote',
+    areaAbierta: 'Área abierta',
+    areaCerrada: 'Área cerrada',
+    areaTotalConstruccion: 'Área total construcción',
+    valorMejoras: 'Valor mejoras',
+    valorTerreno: 'Valor terreno',
+    fechaProbableEntrega: 'Fecha probable entrega',
+
+    banco: 'Banco',
+    oficialBanco: 'Oficial banco',
+    precioVenta: 'Precio venta',
+    montoFinanciamientoCPP: 'Monto financiamiento CPP',
+    abonoCliente: 'Abono cliente',
+    abonoInicial: 'Abono inicial',
+    porcentajeFinanciamiento: '% financiamiento',
+    cesionAFavorDe: 'Cesión a favor de',
+    polizaVida: 'Póliza vida',
+    abonoAlte: 'Abono ALTE',
+
+    proformaSolicitadaPor: 'Proforma solicitada por',
+    referidoPor: 'Referido por',
+    observacionCliente: 'Observación',
+  };
+
+  return labels[field] || field;
+}
+
+function renderImportWordPreview(unitId, detected, type) {
+  const box = document.getElementById('importWordPreview');
+  if (!box) return;
+
+  const entries = Object.entries(detected || {});
+
+  if (!entries.length) {
+    box.innerHTML = `
+      <div class="small muted" style="color:#fff;">
+        No se detectaron campos válidos en el Word.
+      </div>
+    `;
+    return;
+  }
+
+  box.innerHTML = `
+    <div style="
+      background:#0f172a;
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:16px;
+      padding:18px;
+      color:white;
+    ">
+      <h4 style="margin-top:0;">
+        Vista previa importación: ${type === 'proforma' ? 'Proforma' : 'Ficha cliente'}
+      </h4>
+
+      <div class="form-grid-4">
+        ${entries.map(([field, value]) => `
+          <div class="label">${importLabelForField(field)}</div>
+          <input data-import-field="${field}" value="${safeVal(value)}">
+        `).join('')}
+      </div>
+
+      <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;">
+        <button type="button" class="export-doc-btn primary" id="btnApplyImportWord">
+          Aplicar datos a la ficha
+        </button>
+
+        <button type="button" class="export-doc-btn" id="btnCancelImportWord">
+          Cancelar
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('btnApplyImportWord')?.addEventListener('click', async () => {
+    await aplicarImportWord(unitId);
+  });
+
+  document.getElementById('btnCancelImportWord')?.addEventListener('click', () => {
+    box.innerHTML = '';
+  });
+}
+
+async function previewImportWord(unitId) {
+  const input = document.getElementById('importWordInput');
+  const file = input?.files?.[0];
+
+  if (!file) {
+    alert('Selecciona un archivo Word.');
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  const result = await apiUpload(`/api/import-word/preview/${unitId}`, fd);
+
+  if (!result?.ok) {
+    alert(result?.error || 'No se pudo leer el Word');
+    return;
+  }
+
+  renderImportWordPreview(unitId, result.detected || {}, result.type);
+}
+
+async function aplicarImportWord(unitId) {
+  const inputs = document.querySelectorAll('[data-import-field]');
+  const data = {};
+
+  inputs.forEach(input => {
+    const key = input.dataset.importField;
+    data[key] = input.value;
+  });
+
+  console.log('[IMPORT WORD] applying unitId:', unitId);
+  console.log('[IMPORT WORD] data:', data);
+
+  let result;
+
+  try {
+    result = await apiPost(`/api/import-word/apply/${unitId}`, { data });
+  } catch (e) {
+    console.error('[IMPORT WORD] apply error:', e);
+    alert('Error aplicando importación. Mira la consola del backend.');
+    return;
+  }
+
+  if (!result?.ok) {
+    alert(result?.error || 'Error aplicando importación');
+    return;
+  }
+
+  alert('Datos importados correctamente.');
+
+  await loadVentasMap();
+
+  await abrirFichaUnidad(unitId);
+
+  await loadUnits();
+}
+
   async function abrirFichaUnidad(unitId) {
   fichaUnitId = unitId;
 
@@ -4981,8 +5183,12 @@ function wireUnidadUpload(projectId, unitId) {
   const rawV = ventasMap.get(String(unitId)) || {};
   const v = Object.assign(Object.create(null), rawV);
 
-  const info = (txt) =>
-    `<button type="button" class="info-btn" title="${safeVal(txt)}">i</button>`;
+  const info = (txt) => `
+  <span class="info-wrap">
+    <button type="button" class="info-btn" title="${safeVal(txt)}">?</button>
+    <span class="info-tooltip">${safeVal(txt)}</span>
+  </span>
+`;
 
   const selectOptions = (opts, current = '') =>
     opts.map(o => `<option value="${o.v}" ${String(current || '') === o.v ? 'selected' : ''}>${o.l}</option>`).join('');
@@ -5008,299 +5214,302 @@ function wireUnidadUpload(projectId, unitId) {
   `;
 
   const htmlUnidad = seccion('Datos de la unidad', `
-    <div class="label">Estado ${info('Estado comercial actual de la unidad.')}</div>
+    <div class="label label-with-info">
+  <span>Estado</span>
+  ${info('Estado comercial actual de la unidad.')}
+</div>
     <select id="fu-estado">
       ${UNIT_ESTADOS
         .map(s => `<option value="${s.v}" ${normalizeUnitEstadoFrontend(u.estado) === s.v ? 'selected' : ''}>${s.l}</option>`)
         .join('')}
     </select>
 
-    ${input('fu-modelo', 'Modelo', u.modelo || '')}
-    ${inputNum('fu-m2', 'm² unidad', u.m2 || 0)}
-    ${inputNum('fu-precio', 'Precio lista', u.precioLista || 0)}
+   ${input('fu-modelo', `Modelo ${info('Modelo de vivienda asignado. Según el modelo seleccionado deberían completarse automáticamente áreas, recámaras y baños definidos por administración.')}`, u.modelo || '')}
+${inputNum('fu-m2', `m² unidad ${info('Área general de la unidad. Puede servir como referencia rápida, aunque el modelo Bank73 separa metraje de lote, área abierta, área cerrada y área total de construcción.')}`, u.m2 || 0)}
+${inputNum('fu-precio', `Precio lista ${info('Precio comercial base de la unidad antes de ajustes, abonos o financiamiento.')}`, u.precioLista || 0)}
 
-    ${input('fv-numeroFinca', 'Número de finca', v.numeroFinca || '')}
-    ${input('fv-codigoUbicacion', 'Código de ubicación', v.codigoUbicacion || '')}
-    ${input('fv-ubicacion', 'Ubicación', v.ubicacion || '')}
-    ${input('fv-calle', 'Calle', v.calle || '')}
+${input('fv-numeroFinca', `Número de finca ${info('Identificador registral del inmueble. Según el modelo, este dato debería ser gestionado principalmente por administración.')}`, v.numeroFinca || '')}
+${input('fv-codigoUbicacion', `Código de ubicación ${info('Código de ubicación registral o catastral del inmueble. Dato administrativo/legal del bien.')}`, v.codigoUbicacion || '')}
+${input('fv-ubicacion', `Ubicación ${info('Ubicación física o referencia general del inmueble dentro del proyecto o residencial.')}`, v.ubicacion || '')}
+${input('fv-calle', `Calle ${info('Calle o vial interno donde se encuentra la unidad dentro del proyecto.')}`, v.calle || '')}
 
-    ${inputNum('fv-metrajeLote', 'Metraje lote (m²)', v.metrajeLote || 0)}
-    ${selectCustom('fv-loteEsquina', 'Lote esquina', [
-      { v: '', l: '—' },
-      { v: 'SI', l: 'Sí' },
-      { v: 'NO', l: 'No' }
-    ], v.loteEsquina || '')}
-    ${inputNum('fv-metrosExtra', 'M² extra', v.metrosExtra || 0)}
-    ${inputNum('fv-precioLoteEsquina', 'Precio lote esquinero', v.precioLoteEsquina || 0)}
-    ${inputNum('fv-precioM2Extra', 'Precio m² extra', v.precioM2Extra || 0)}
+${inputNum('fv-metrajeLote', `Metraje lote (m²) ${info('Superficie del lote. Según el modelo Bank73 es un dato del bien inmueble y debería ser controlado por administración.')}`, v.metrajeLote || 0)}
+${selectCustom('fv-loteEsquina', `Lote esquina ${info('Indica si el lote es esquinero. Puede afectar precio, metraje adicional o condiciones comerciales.')}`, [
+  { v: '', l: '—' },
+  { v: 'SI', l: 'Sí' },
+  { v: 'NO', l: 'No' }
+], v.loteEsquina || '')}
+${inputNum('fv-metrosExtra', `M² extra ${info('Metros adicionales asociados al lote o a condiciones especiales del inmueble.')}`, v.metrosExtra || 0)}
+${inputNum('fv-precioLoteEsquina', `Precio lote esquinero ${info('Importe adicional aplicable si la unidad corresponde a lote de esquina.')}`, v.precioLoteEsquina || 0)}
+${inputNum('fv-precioM2Extra', `Precio m² extra ${info('Precio aplicado por cada metro cuadrado adicional.')}`, v.precioM2Extra || 0)}
 
-    ${inputNum('fv-areaAbierta', 'Área abierta vivienda (m²)', v.areaAbierta || 0)}
-    ${inputNum('fv-areaCerrada', 'Área cerrada vivienda (m²)', v.areaCerrada || 0)}
-    ${inputNum('fv-areaTotalConstruccion', 'Área total construcción (m²)', v.areaTotalConstruccion || 0)}
-    ${inputNum('fv-recamaras', 'Recámaras', v.recamaras || 0)}
-    ${inputNum('fv-banos', 'Baños', v.banos || 0)}
+${inputNum('fv-areaAbierta', `Área abierta vivienda (m²) ${info('Área abierta de la vivienda. Según el modelo, debería completarse automáticamente al seleccionar el modelo definido por administración.')}`, v.areaAbierta || 0)}
+${inputNum('fv-areaCerrada', `Área cerrada vivienda (m²) ${info('Área cerrada de la vivienda. Según el modelo, debería venir asociada al modelo de vivienda seleccionado.')}`, v.areaCerrada || 0)}
+${inputNum('fv-areaTotalConstruccion', `Área total construcción (m²) ${info('Sumatoria del área abierta más el área cerrada de la vivienda.')}`, v.areaTotalConstruccion || 0)}
+${inputNum('fv-recamaras', `Recámaras ${info('Cantidad de recámaras. Según el modelo, debería completarse automáticamente según la tipología de vivienda.')}`, v.recamaras || 0)}
+${inputNum('fv-banos', `Baños ${info('Cantidad de baños. Según el modelo, debería completarse automáticamente según la tipología de vivienda.')}`, v.banos || 0)}
 
-    ${inputNum('fv-valorMejoras', 'Valor mejoras', v.valorMejoras || 0)}
-    ${inputNum('fv-valorTerreno', 'Valor terreno', v.valorTerreno || 0)}
-    ${inputDate('fv-fechaProbableEntrega', 'Fecha probable de entrega', v.fechaProbableEntrega)}
-  `);
+${inputNum('fv-valorMejoras', `Valor mejoras ${info('Valor de las mejoras/construcción. En el modelo se calcula como precio de venta menos valor del terreno.')}`, v.valorMejoras || 0)}
+${inputNum('fv-valorTerreno', `Valor terreno ${info('Valor asignado al terreno dentro del precio total de la unidad.')}`, v.valorTerreno || 0)}
+${inputDate('fv-fechaProbableEntrega', `Fecha probable de entrega ${info('Fecha estimada de entrega de la vivienda al cliente.')}`, v.fechaProbableEntrega)}
+`);
 
-  const htmlCliente1 = seccion('Cliente 1 / Solicitante principal', `
-    ${input('fv-clienteNombre', 'Cliente resumen', v.clienteNombre || '')}
-    ${input('fv-primerNombre', 'Primer nombre', v.primerNombre || '')}
-    ${input('fv-segundoNombre', 'Segundo nombre', v.segundoNombre || '')}
-    ${input('fv-primerApellido', 'Apellido paterno', v.primerApellido || '')}
-    ${input('fv-segundoApellido', 'Apellido materno', v.segundoApellido || '')}
-    ${input('fv-apellidoCasada', 'Apellido de casada', v.apellidoCasada || '')}
+const htmlCliente1 = seccion('Cliente 1 / Solicitante principal', `
+${input('fv-clienteNombre', `Cliente resumen ${info('Nombre resumen del cliente para búsquedas, tarjetas y reportes comerciales.')}`, v.clienteNombre || '')}
+${input('fv-primerNombre', `Primer nombre ${info('Primer nombre del solicitante principal.')}`, v.primerNombre || '')}
+${input('fv-segundoNombre', `Segundo nombre ${info('Segundo nombre del solicitante principal, si aplica.')}`, v.segundoNombre || '')}
+${input('fv-primerApellido', `Apellido paterno ${info('Primer apellido del solicitante principal.')}`, v.primerApellido || '')}
+${input('fv-segundoApellido', `Apellido materno ${info('Segundo apellido del solicitante principal.')}`, v.segundoApellido || '')}
+${input('fv-apellidoCasada', `Apellido de casada ${info('Apellido de casada del solicitante, si aplica.')}`, v.apellidoCasada || '')}
 
-    ${input('fv-cedula', 'Cédula', v.cedula || '')}
-    ${selectCustom('fv-sexo', 'Sexo', [
-      { v: '', l: '—' },
-      { v: 'M', l: 'Masculino' },
-      { v: 'F', l: 'Femenino' }
-    ], v.sexo || '')}
-    ${input('fv-profesion', 'Profesión', v.profesion || '')}
-    ${selectCustom('fv-estadoCivil', 'Estado civil', [
-      { v: '', l: '—' },
-      { v: 'Soltero', l: 'Soltero' },
-      { v: 'Casado', l: 'Casado' }
-    ], v.estadoCivil || '')}
+${input('fv-cedula', `Cédula ${info('Documento de identidad del cliente. Forma parte de la documentación base para aprobación bancaria.')}`, v.cedula || '')}
+${selectCustom('fv-sexo', `Sexo ${info('Dato de identificación del cliente.')}`, [
+  { v: '', l: '—' },
+  { v: 'M', l: 'Masculino' },
+  { v: 'F', l: 'Femenino' }
+], v.sexo || '')}
+${input('fv-profesion', `Profesión ${info('Profesión u ocupación del cliente. Ayuda a clasificar el perfil financiero.')}`, v.profesion || '')}
+${selectCustom('fv-estadoCivil', `Estado civil ${info('Estado civil del cliente. El modelo contempla principalmente Soltero o Casado.')}`, [
+  { v: '', l: '—' },
+  { v: 'Soltero', l: 'Soltero' },
+  { v: 'Casado', l: 'Casado' }
+], v.estadoCivil || '')}
 
-    ${input('fv-direccion', 'Dirección / domicilio', v.direccion || '')}
-    ${input('fv-telefonoResidencial', 'Teléfono residencial', v.telefonoResidencial || '')}
-    ${input('fv-telefonoOficina', 'Teléfono oficina', v.telefonoOficina || '')}
-    ${input('fv-celular', 'Celular', v.celular || '')}
-    ${input('fv-correo', 'Correo electrónico', v.correo || '')}
+${input('fv-direccion', `Dirección / domicilio ${info('Dirección actual donde reside el cliente.')}`, v.direccion || '')}
+${input('fv-telefonoResidencial', `Teléfono residencial ${info('Teléfono fijo o residencial del cliente, si aplica.')}`, v.telefonoResidencial || '')}
+${input('fv-telefonoOficina', `Teléfono oficina ${info('Teléfono laboral o de oficina del cliente, si aplica.')}`, v.telefonoOficina || '')}
+${input('fv-celular', `Celular ${info('Teléfono móvil principal del cliente.')}`, v.celular || '')}
+${input('fv-correo', `Correo electrónico ${info('Correo electrónico del cliente para contacto y seguimiento documental.')}`, v.correo || '')}
 
-    ${selectCustom('fv-perfilCliente', 'Perfil', [
-      { v: '', l: '—' },
-      { v: 'Independiente', l: 'Independiente' },
-      { v: 'Asalariado', l: 'Asalariado' }
-    ], v.perfilCliente || '')}
-    ${selectCustom('fv-tipoEmpresa', 'Tipo de empresa', [
-      { v: '', l: '—' },
-      { v: 'Privada', l: 'Privada' },
-      { v: 'Gubernamental', l: 'Gubernamental' }
-    ], v.tipoEmpresa || '')}
-    ${selectCustom('fv-sectorEmpresa', 'Sector empresarial', [
-      { v: '', l: '—' },
-      { v: 'Agrícola', l: 'Agrícola' },
-      { v: 'Profesional idóneo', l: 'Profesional idóneo' },
-      { v: 'Otros', l: 'Otros' }
-    ], v.sectorEmpresa || '')}
+${selectCustom('fv-perfilCliente', `Perfil ${info('Perfil laboral del cliente. Define qué documentación debe solicitarse para aprobación: asalariado o independiente.')}`, [
+  { v: '', l: '—' },
+  { v: 'Independiente', l: 'Independiente' },
+  { v: 'Asalariado', l: 'Asalariado' }
+], v.perfilCliente || '')}
+${selectCustom('fv-tipoEmpresa', `Tipo de empresa ${info('Tipo de empleador del cliente asalariado: empresa privada o gubernamental.')}`, [
+  { v: '', l: '—' },
+  { v: 'Privada', l: 'Privada' },
+  { v: 'Gubernamental', l: 'Gubernamental' }
+], v.tipoEmpresa || '')}
+${selectCustom('fv-sectorEmpresa', `Sector empresarial ${info('Sector o actividad del cliente. El modelo contempla agrícola, profesional idóneo u otros.')}`, [
+  { v: '', l: '—' },
+  { v: 'Agrícola', l: 'Agrícola' },
+  { v: 'Profesional idóneo', l: 'Profesional idóneo' },
+  { v: 'Otros', l: 'Otros' }
+], v.sectorEmpresa || '')}
 
-    ${input('fv-empresa', 'Empresa', v.empresa || '')}
-    ${input('fv-lugarTrabajo', 'Lugar de trabajo', v.lugarTrabajo || '')}
-    ${inputNum('fv-ingresoMensual', 'Ingreso mensual', v.ingresoMensual || 0)}
-    ${input('fv-cargo', 'Cargo que desempeña', v.cargo || '')}
-    ${input('fv-antiguedadLaboral', 'Antigüedad laboral', v.antiguedadLaboral || '')}
-  `);
+${input('fv-empresa', `Empresa ${info('Empresa donde trabaja el cliente o razón comercial si es independiente.')}`, v.empresa || '')}
+${input('fv-lugarTrabajo', `Lugar de trabajo ${info('Lugar donde desempeña su actividad laboral o profesional.')}`, v.lugarTrabajo || '')}
+${inputNum('fv-ingresoMensual', `Ingreso mensual ${info('Ingreso mensual declarado del cliente para análisis de capacidad de pago.')}`, v.ingresoMensual || 0)}
+${input('fv-cargo', `Cargo que desempeña ${info('Cargo, puesto o función del cliente dentro de la empresa.')}`, v.cargo || '')}
+${input('fv-antiguedadLaboral', `Antigüedad laboral ${info('Tiempo que lleva el cliente en su empleo o actividad actual.')}`, v.antiguedadLaboral || '')}
+`);
 
-  const htmlCliente2 = seccion('Cliente 2 / Co-solicitante', `
-    ${input('fv-cliente2PrimerNombre', 'Primer nombre', v.cliente2PrimerNombre || '')}
-    ${input('fv-cliente2SegundoNombre', 'Segundo nombre', v.cliente2SegundoNombre || '')}
-    ${input('fv-cliente2PrimerApellido', 'Apellido paterno', v.cliente2PrimerApellido || '')}
-    ${input('fv-cliente2SegundoApellido', 'Apellido materno', v.cliente2SegundoApellido || '')}
-    ${input('fv-cliente2ApellidoCasada', 'Apellido de casada', v.cliente2ApellidoCasada || '')}
-    ${input('fv-cliente2Cedula', 'Cédula', v.cliente2Cedula || '')}
+const htmlCliente2 = seccion('Cliente 2 / Co-solicitante', `
+${input('fv-cliente2PrimerNombre', `Primer nombre ${info('Primer nombre del co-solicitante, si existe.')}`, v.cliente2PrimerNombre || '')}
+${input('fv-cliente2SegundoNombre', `Segundo nombre ${info('Segundo nombre del co-solicitante, si aplica.')}`, v.cliente2SegundoNombre || '')}
+${input('fv-cliente2PrimerApellido', `Apellido paterno ${info('Primer apellido del co-solicitante.')}`, v.cliente2PrimerApellido || '')}
+${input('fv-cliente2SegundoApellido', `Apellido materno ${info('Segundo apellido del co-solicitante.')}`, v.cliente2SegundoApellido || '')}
+${input('fv-cliente2ApellidoCasada', `Apellido de casada ${info('Apellido de casada del co-solicitante, si aplica.')}`, v.cliente2ApellidoCasada || '')}
+${input('fv-cliente2Cedula', `Cédula ${info('Documento de identidad del co-solicitante.')}`, v.cliente2Cedula || '')}
 
-    ${selectCustom('fv-cliente2Sexo', 'Sexo', [
-      { v: '', l: '—' },
-      { v: 'M', l: 'Masculino' },
-      { v: 'F', l: 'Femenino' }
-    ], v.cliente2Sexo || '')}
-    ${input('fv-cliente2Profesion', 'Profesión', v.cliente2Profesion || '')}
-    ${selectCustom('fv-cliente2EstadoCivil', 'Estado civil', [
-      { v: '', l: '—' },
-      { v: 'Soltero', l: 'Soltero' },
-      { v: 'Casado', l: 'Casado' }
-    ], v.cliente2EstadoCivil || '')}
-    ${input('fv-cliente2Direccion', 'Dirección / domicilio', v.cliente2Direccion || '')}
+${selectCustom('fv-cliente2Sexo', `Sexo ${info('Dato de identificación del co-solicitante.')}`, [
+  { v: '', l: '—' },
+  { v: 'M', l: 'Masculino' },
+  { v: 'F', l: 'Femenino' }
+], v.cliente2Sexo || '')}
+${input('fv-cliente2Profesion', `Profesión ${info('Profesión u ocupación del co-solicitante.')}`, v.cliente2Profesion || '')}
+${selectCustom('fv-cliente2EstadoCivil', `Estado civil ${info('Estado civil del co-solicitante.')}`, [
+  { v: '', l: '—' },
+  { v: 'Soltero', l: 'Soltero' },
+  { v: 'Casado', l: 'Casado' }
+], v.cliente2EstadoCivil || '')}
+${input('fv-cliente2Direccion', `Dirección / domicilio ${info('Dirección actual donde reside el co-solicitante.')}`, v.cliente2Direccion || '')}
 
-    ${input('fv-cliente2TelefonoResidencial', 'Teléfono residencial', v.cliente2TelefonoResidencial || '')}
-    ${input('fv-cliente2TelefonoOficina', 'Teléfono oficina', v.cliente2TelefonoOficina || '')}
-    ${input('fv-cliente2Celular', 'Celular', v.cliente2Celular || '')}
-    ${input('fv-cliente2Correo', 'Correo', v.cliente2Correo || '')}
+${input('fv-cliente2TelefonoResidencial', `Teléfono residencial ${info('Teléfono residencial del co-solicitante, si aplica.')}`, v.cliente2TelefonoResidencial || '')}
+${input('fv-cliente2TelefonoOficina', `Teléfono oficina ${info('Teléfono laboral o de oficina del co-solicitante.')}`, v.cliente2TelefonoOficina || '')}
+${input('fv-cliente2Celular', `Celular ${info('Teléfono móvil principal del co-solicitante.')}`, v.cliente2Celular || '')}
+${input('fv-cliente2Correo', `Correo ${info('Correo electrónico del co-solicitante.')}`, v.cliente2Correo || '')}
 
-    ${input('fv-cliente2LugarTrabajo', 'Lugar de trabajo', v.cliente2LugarTrabajo || '')}
-    ${inputNum('fv-cliente2IngresoMensual', 'Ingreso mensual', v.cliente2IngresoMensual || 0)}
-    ${input('fv-cliente2Cargo', 'Cargo', v.cliente2Cargo || '')}
-    ${input('fv-cliente2AntiguedadLaboral', 'Antigüedad laboral', v.cliente2AntiguedadLaboral || '')}
-  `);
+${input('fv-cliente2LugarTrabajo', `Lugar de trabajo ${info('Lugar de trabajo o actividad actual del co-solicitante.')}`, v.cliente2LugarTrabajo || '')}
+${inputNum('fv-cliente2IngresoMensual', `Ingreso mensual ${info('Ingreso mensual declarado del co-solicitante.')}`, v.cliente2IngresoMensual || 0)}
+${input('fv-cliente2Cargo', `Cargo ${info('Cargo o función laboral del co-solicitante.')}`, v.cliente2Cargo || '')}
+${input('fv-cliente2AntiguedadLaboral', `Antigüedad laboral ${info('Tiempo que lleva el co-solicitante en su empleo o actividad actual.')}`, v.cliente2AntiguedadLaboral || '')}
+`);
 
-  const htmlReferencias = seccion('Parientes / Referencias personales', `
-    ${input('fv-pariente1Nombre', 'Pariente 1 - Nombre', v.pariente1Nombre || '')}
-    ${input('fv-pariente1Parentesco', 'Pariente 1 - Parentesco', v.pariente1Parentesco || '')}
-    ${input('fv-pariente1Telefono', 'Pariente 1 - Teléfono', v.pariente1Telefono || '')}
-    ${input('fv-pariente1TelefonoTrabajo', 'Pariente 1 - Tel. trabajo', v.pariente1TelefonoTrabajo || '')}
+const htmlReferencias = seccion('Parientes / Referencias personales', `
+${input('fv-pariente1Nombre', `Pariente 1 - Nombre ${info('Nombre del primer pariente de referencia del cliente.')}`, v.pariente1Nombre || '')}
+${input('fv-pariente1Parentesco', `Pariente 1 - Parentesco ${info('Relación familiar con el cliente.')}`, v.pariente1Parentesco || '')}
+${input('fv-pariente1Telefono', `Pariente 1 - Teléfono ${info('Teléfono de contacto del primer pariente.')}`, v.pariente1Telefono || '')}
+${input('fv-pariente1TelefonoTrabajo', `Pariente 1 - Tel. trabajo ${info('Teléfono laboral del primer pariente, si aplica.')}`, v.pariente1TelefonoTrabajo || '')}
 
-    ${input('fv-pariente2Nombre', 'Pariente 2 - Nombre', v.pariente2Nombre || '')}
-    ${input('fv-pariente2Parentesco', 'Pariente 2 - Parentesco', v.pariente2Parentesco || '')}
-    ${input('fv-pariente2Telefono', 'Pariente 2 - Teléfono', v.pariente2Telefono || '')}
-    ${input('fv-pariente2TelefonoTrabajo', 'Pariente 2 - Tel. trabajo', v.pariente2TelefonoTrabajo || '')}
+${input('fv-pariente2Nombre', `Pariente 2 - Nombre ${info('Nombre del segundo pariente de referencia del cliente.')}`, v.pariente2Nombre || '')}
+${input('fv-pariente2Parentesco', `Pariente 2 - Parentesco ${info('Relación familiar con el cliente.')}`, v.pariente2Parentesco || '')}
+${input('fv-pariente2Telefono', `Pariente 2 - Teléfono ${info('Teléfono de contacto del segundo pariente.')}`, v.pariente2Telefono || '')}
+${input('fv-pariente2TelefonoTrabajo', `Pariente 2 - Tel. trabajo ${info('Teléfono laboral del segundo pariente, si aplica.')}`, v.pariente2TelefonoTrabajo || '')}
 
-    ${input('fv-referencia1Nombre', 'Referencia 1 - Nombre', v.referencia1Nombre || '')}
-    ${input('fv-referencia1Relacion', 'Referencia 1 - Relación', v.referencia1Relacion || '')}
-    ${input('fv-referencia1Telefono', 'Referencia 1 - Teléfono', v.referencia1Telefono || '')}
-    ${input('fv-referencia1TelefonoTrabajo', 'Referencia 1 - Tel. trabajo', v.referencia1TelefonoTrabajo || '')}
+${input('fv-referencia1Nombre', `Referencia 1 - Nombre ${info('Nombre de la primera referencia personal o comercial.')}`, v.referencia1Nombre || '')}
+${input('fv-referencia1Relacion', `Referencia 1 - Relación ${info('Relación de la referencia con el cliente.')}`, v.referencia1Relacion || '')}
+${input('fv-referencia1Telefono', `Referencia 1 - Teléfono ${info('Teléfono de contacto de la primera referencia.')}`, v.referencia1Telefono || '')}
+${input('fv-referencia1TelefonoTrabajo', `Referencia 1 - Tel. trabajo ${info('Teléfono laboral de la primera referencia, si aplica.')}`, v.referencia1TelefonoTrabajo || '')}
 
-    ${input('fv-referencia2Nombre', 'Referencia 2 - Nombre', v.referencia2Nombre || '')}
-    ${input('fv-referencia2Relacion', 'Referencia 2 - Relación', v.referencia2Relacion || '')}
-    ${input('fv-referencia2Telefono', 'Referencia 2 - Teléfono', v.referencia2Telefono || '')}
-    ${input('fv-referencia2TelefonoTrabajo', 'Referencia 2 - Tel. trabajo', v.referencia2TelefonoTrabajo || '')}
-  `);
+${input('fv-referencia2Nombre', `Referencia 2 - Nombre ${info('Nombre de la segunda referencia personal o comercial.')}`, v.referencia2Nombre || '')}
+${input('fv-referencia2Relacion', `Referencia 2 - Relación ${info('Relación de la segunda referencia con el cliente.')}`, v.referencia2Relacion || '')}
+${input('fv-referencia2Telefono', `Referencia 2 - Teléfono ${info('Teléfono de contacto de la segunda referencia.')}`, v.referencia2Telefono || '')}
+${input('fv-referencia2TelefonoTrabajo', `Referencia 2 - Tel. trabajo ${info('Teléfono laboral de la segunda referencia, si aplica.')}`, v.referencia2TelefonoTrabajo || '')}
+`);
 
-  const htmlFinanciamiento = seccion('Financiamiento / Proforma', `
-    ${inputNum('fv-precioVenta', 'Precio de venta', v.precioVenta || u.precioLista || 0)}
-    ${inputNum('fv-montoFinanciamientoCPP', 'Monto financiamiento CPP / hipoteca', v.montoFinanciamientoCPP || v.valor || 0)}
-    ${inputNum('fv-abonoCliente', 'Abono del cliente', v.abonoCliente || 0)}
-    ${inputNum('fv-abonoInicial', 'Abono inicial', v.abonoInicial || 0)}
-    ${inputNum('fv-porcentajeFinanciamiento', '% financiamiento', v.porcentajeFinanciamiento || 0)}
-    ${input('fv-cesionAFavorDe', 'Cesión a favor de', v.cesionAFavorDe || '')}
+const htmlFinanciamiento = seccion('Financiamiento / Proforma', `
+${inputNum('fv-precioVenta', `Precio de venta ${info('Precio comercial de venta de la unidad. Según el modelo, es un dato principalmente administrativo.')}`, v.precioVenta || u.precioLista || 0)}
+${inputNum('fv-montoFinanciamientoCPP', `Monto financiamiento CPP / hipoteca ${info('Monto financiado mediante Carta Promesa de Pago o hipoteca aprobada.')}`, v.montoFinanciamientoCPP || v.valor || 0)}
+${inputNum('fv-abonoCliente', `Abono del cliente ${info('Monto aportado directamente por el cliente. En el modelo se calcula como precio de venta menos CPP.')}`, v.abonoCliente || 0)}
+${inputNum('fv-abonoInicial', `Abono inicial ${info('Pago inicial realizado por el cliente al separar o formalizar la unidad.')}`, v.abonoInicial || 0)}
+${inputNum('fv-porcentajeFinanciamiento', `% financiamiento ${info('Porcentaje del precio de venta cubierto por financiamiento bancario.')}`, v.porcentajeFinanciamiento || 0)}
+${input('fv-cesionAFavorDe', `Cesión a favor de ${info('Entidad o banco a favor de quien se realiza la cesión de la CPP, si aplica.')}`, v.cesionAFavorDe || '')}
 
-    ${input('fv-banco', 'Banco del cliente', v.banco || '')}
-    ${input('fv-oficialBanco', 'Oficial de trámite / crédito', v.oficialBanco || '')}
-    ${inputDate('fv-fechaEntregaProformaBanco', 'Entrega de proforma al banco', v.fechaEntregaProformaBanco)}
-    ${inputDate('fv-fechaProforma', 'Fecha proforma', v.fechaProforma)}
+${input('fv-banco', `Banco del cliente ${info('Banco que tramita o aprueba el financiamiento del cliente.')}`, v.banco || '')}
+${input('fv-oficialBanco', `Oficial de trámite / crédito ${info('Oficial bancario encargado del expediente de crédito del cliente.')}`, v.oficialBanco || '')}
+${inputDate('fv-fechaEntregaProformaBanco', `Entrega de proforma al banco ${info('Fecha en la que se entrega la proforma al banco para iniciar o respaldar la aprobación del financiamiento.')}`, v.fechaEntregaProformaBanco)}
+${inputDate('fv-fechaProforma', `Fecha proforma ${info('Fecha de emisión de la proforma comercial.')}`, v.fechaProforma)}
 
-    ${selectRow('fv-statusBancoSel', 'Status en Banco', '')}
+${selectRow('fv-statusBancoSel', `Status en Banco ${info('Estado actual del expediente en el banco: proforma, revisión, aprobado, desembolso, escriturado u otro.')}`, '')}
 <div class="label" id="fv-statusBancoOtherLbl" style="display:none;">Especificar (OTRO)</div>
 <input id="fv-statusBancoOther" style="display:none;" placeholder="Especificar (OTRO)...">
 
-    ${selectCustom('fv-estatusCPP', 'Estatus de CPP', [
-      { v: '', l: '—' },
-      { v: 'Documentación entregada', l: 'Documentación entregada' },
-      { v: 'En comité', l: 'En comité' },
-      { v: 'Aprobado', l: 'Aprobado' },
-      { v: 'CPP recibida', l: 'CPP recibida' }
-    ], v.estatusCPP || '')}
-    ${input('fv-numCPP', 'N° CPP', v.numCPP || '')}
-    ${inputDate('fv-entregaExpedienteBanco', 'Entrega expediente a banco', v.entregaExpedienteBanco)}
-    ${inputDate('fv-recibidoCPP', 'Recibido CPP', v.recibidoCPP)}
-    ${inputNum('fv-plazoAprobacionDias', 'Plazo aprobación (días)', v.plazoAprobacionDias)}
-    ${inputDate('fv-fechaValorCPP', 'Fecha valor CPP', v.fechaValorCPP)}
-    ${inputDate('fv-fechaVencimientoCPP', 'Vencimiento CPP', v.fechaVencimientoCPP)}
-    ${inputDate('fv-vencimientoCPPBnMivi', 'Vencimiento CPP BN-MIVI', v.vencimientoCPPBnMivi)}
-    ${inputNum('fv-tiempoAprobacionDias', 'Tiempo de aprobación (días)', v.tiempoAprobacionDias || 0, { readonly: true })}
+${selectCustom('fv-estatusCPP', `Estatus de CPP ${info('Estado de avance de la Carta Promesa de Pago: documentación entregada, en comité, aprobado o CPP recibida.')}`, [
+  { v: '', l: '—' },
+  { v: 'Documentación entregada', l: 'Documentación entregada' },
+  { v: 'En comité', l: 'En comité' },
+  { v: 'Aprobado', l: 'Aprobado' },
+  { v: 'CPP recibida', l: 'CPP recibida' }
+], v.estatusCPP || '')}
+${input('fv-numCPP', `N° CPP ${info('Número o referencia de la Carta Promesa de Pago emitida por el banco.')}`, v.numCPP || '')}
+${inputDate('fv-entregaExpedienteBanco', `Entrega expediente a banco ${info('Fecha de entrega del expediente completo al banco para evaluación o aprobación.')}`, v.entregaExpedienteBanco)}
+${inputDate('fv-recibidoCPP', `Recibido CPP ${info('Fecha en la que se recibió la CPP aprobada.')}`, v.recibidoCPP)}
+${inputNum('fv-plazoAprobacionDias', `Plazo aprobación (días) ${info('Plazo estimado o pactado para aprobación del financiamiento.')}`, v.plazoAprobacionDias)}
+${inputDate('fv-fechaValorCPP', `Fecha valor CPP ${info('Fecha de emisión o valor de la CPP.')}`, v.fechaValorCPP)}
+${inputDate('fv-fechaVencimientoCPP', `Vencimiento CPP ${info('Fecha de vencimiento de la CPP. El modelo sugiere generar alerta aproximadamente dos meses antes del vencimiento.')}`, v.fechaVencimientoCPP)}
+${inputDate('fv-vencimientoCPPBnMivi', `Vencimiento CPP BN-MIVI ${info('Fecha de vencimiento relacionada con CPP Banco Nacional / MIVI, si aplica.')}`, v.vencimientoCPPBnMivi)}
+${inputNum('fv-tiempoAprobacionDias', `Tiempo de aprobación (días) ${info('Cantidad de días entre la entrega de proforma/expediente al banco y la fecha de CPP recibida o aprobada.')}`, v.tiempoAprobacionDias || 0, { readonly: true })}
 
-    ${inputChk('fv-aperturaCtaBanco', 'Apertura cuenta banco', !!v.aperturaCtaBanco)}
-    ${inputChk('fv-primeraMensual', '1ra mensual', !!v.primeraMensual)}
-    ${inputChk('fv-pagoMinuta', 'Pago minuta', !!v.pagoMinuta)}
-    ${inputChk('fv-polizas', 'Pólizas', !!v.polizas)}
-    ${selectCustom('fv-tipoPoliza', 'Tipo de póliza', [
-      { v: '', l: '—' },
-      { v: 'Endosada', l: 'Endosada' },
-      { v: 'Colectiva', l: 'Colectiva' }
-    ], v.tipoPoliza || '')}
-    ${input('fv-polizaVida', 'Póliza de vida', v.polizaVida || '')}
-    ${inputNum('fv-abonoAlte', 'Abono ALTE', v.abonoAlte || 0)}
-  `);
+${inputChk('fv-aperturaCtaBanco', `Apertura cuenta banco ${info('Checklist para confirmar si el cliente abrió la cuenta bancaria requerida.')}`, !!v.aperturaCtaBanco)}
+${inputChk('fv-primeraMensual', `1ra mensual ${info('Control interno de primera mensualidad, si aplica al flujo del promotor.')}`, !!v.primeraMensual)}
+${inputChk('fv-pagoMinuta', `Pago minuta ${info('Control de pago relacionado con minuta o trámite legal, si aplica.')}`, !!v.pagoMinuta)}
+${inputChk('fv-polizas', `Pólizas ${info('Checklist para confirmar gestión de pólizas requeridas por el financiamiento.')}`, !!v.polizas)}
+${selectCustom('fv-tipoPoliza', `Tipo de póliza ${info('Tipo de póliza asociada al financiamiento: endosada o colectiva.')}`, [
+  { v: '', l: '—' },
+  { v: 'Endosada', l: 'Endosada' },
+  { v: 'Colectiva', l: 'Colectiva' }
+], v.tipoPoliza || '')}
+${input('fv-polizaVida', `Póliza de vida ${info('Referencia o detalle de la póliza de vida asociada al cliente, si aplica.')}`, v.polizaVida || '')}
+${inputNum('fv-abonoAlte', `Abono ALTE ${info('Abono adicional o concepto interno asociado al expediente comercial, si aplica.')}`, v.abonoAlte || 0)}
+`);
 
-  const htmlContrato = seccion('Contrato / Protocolo / Notaría / Registro Público', `
-    ${inputDate('fv-fechaContratoCliente', 'Fecha contrato firmado por cliente', v.fechaContratoCliente)}
-    ${input('fv-estatusContrato', 'Estatus contrato', v.estatusContrato || '')}
-    ${inputNum('fv-montoContrato', 'Monto del contrato', v.montoContrato || 0)}
-    ${input('fv-pagare', 'Pagaré', v.pagare || '')}
-    ${inputDate('fv-fechaFirma', 'Fecha firma', v.fechaFirma)}
-    ${inputChk('fv-contratoFirmado', 'Contrato firmado', !!v.contratoFirmado)}
+const htmlContrato = seccion('Contrato / Protocolo / Notaría / Registro Público', `
+${inputDate('fv-fechaContratoCliente', `Fecha contrato firmado por cliente ${info('Fecha en que el cliente firma el contrato promesa de compraventa.')}`, v.fechaContratoCliente)}
+${input('fv-estatusContrato', `Estatus contrato ${info('Estado actual del contrato promesa de compraventa.')}`, v.estatusContrato || '')}
+${inputNum('fv-montoContrato', `Monto del contrato ${info('Monto reflejado en el contrato promesa de compraventa.')}`, v.montoContrato || 0)}
+${input('fv-pagare', `Pagaré ${info('Referencia o estado del pagaré, si el flujo legal/financiero lo requiere.')}`, v.pagare || '')}
+${inputDate('fv-fechaFirma', `Fecha firma ${info('Fecha de firma del contrato o documento legal asociado.')}`, v.fechaFirma)}
+${inputChk('fv-contratoFirmado', `Contrato firmado ${info('Checklist para confirmar que el contrato promesa de compraventa fue firmado.')}`, !!v.contratoFirmado)}
 
-    ${inputDate('fv-fechaActivacionTramite', 'Fecha activación trámite legal', v.fechaActivacionTramite)}
+${inputDate('fv-fechaActivacionTramite', `Fecha activación trámite legal ${info('Fecha en la que se activa formalmente el trámite legal de la unidad.')}`, v.fechaActivacionTramite)}
 
-    ${inputChk('fv-protocoloFirmaCliente', 'Protocolo firma cliente', !!v.protocoloFirmaCliente)}
-    ${inputDate('fv-fechaEntregaBanco', 'Fecha entrega a banco', v.fechaEntregaBanco)}
-    ${inputChk('fv-protocoloFirmaRLBancoInter', 'Protocolo firma RL / Banco Inter', !!v.protocoloFirmaRLBancoInter)}
-    ${inputDate('fv-fechaRegresoBanco', 'Fecha regreso banco', v.fechaRegresoBanco)}
-    ${inputNum('fv-diasTranscurridosBanco', 'Días transcurridos banco', v.diasTranscurridosBanco)}
+${inputChk('fv-protocoloFirmaCliente', `Protocolo firma cliente ${info('Checklist para confirmar firma de protocolo por parte del cliente.')}`, !!v.protocoloFirmaCliente)}
+${inputDate('fv-fechaEntregaBanco', `Fecha entrega a banco ${info('Fecha de entrega del protocolo o documentación legal al banco correspondiente.')}`, v.fechaEntregaBanco)}
+${inputChk('fv-protocoloFirmaRLBancoInter', `Protocolo firma RL / Banco Inter ${info('Checklist para confirmar firma del representante legal o banco interino.')}`, !!v.protocoloFirmaRLBancoInter)}
+${inputDate('fv-fechaRegresoBanco', `Fecha regreso banco ${info('Fecha en que el documento/protocolo regresa desde el banco.')}`, v.fechaRegresoBanco)}
+${inputNum('fv-diasTranscurridosBanco', `Días transcurridos banco ${info('Días transcurridos entre entrega al banco y regreso del documento.')}`, v.diasTranscurridosBanco)}
 
-    ${inputDate('fv-fechaEntregaProtocoloBancoCli', 'Entrega protocolo banco cliente', v.fechaEntregaProtocoloBancoCli)}
-    ${inputChk('fv-firmaProtocoloBancoCliente', 'Firma protocolo banco cliente', !!v.firmaProtocoloBancoCliente)}
-    ${inputDate('fv-fechaRegresoProtocoloBancoCli', 'Regreso protocolo banco cliente', v.fechaRegresoProtocoloBancoCli)}
-    ${inputNum('fv-diasTranscurridosProtocolo', 'Días transcurridos protocolo', v.diasTranscurridosProtocolo)}
+${inputDate('fv-fechaEntregaProtocoloBancoCli', `Entrega protocolo banco cliente ${info('Fecha de entrega del protocolo al banco del cliente.')}`, v.fechaEntregaProtocoloBancoCli)}
+${inputChk('fv-firmaProtocoloBancoCliente', `Firma protocolo banco cliente ${info('Checklist para confirmar firma del protocolo por parte del banco del cliente.')}`, !!v.firmaProtocoloBancoCliente)}
+${inputDate('fv-fechaRegresoProtocoloBancoCli', `Regreso protocolo banco cliente ${info('Fecha en la que regresa el protocolo firmado por el banco del cliente.')}`, v.fechaRegresoProtocoloBancoCli)}
+${inputNum('fv-diasTranscurridosProtocolo', `Días transcurridos protocolo ${info('Días transcurridos en el ciclo de protocolo con el banco del cliente.')}`, v.diasTranscurridosProtocolo)}
 
-    ${inputChk('fv-pagoImpuestos', 'Pago de impuestos', !!v.pagoImpuestos)}
-    ${inputDate('fv-fechaPagoImpuesto', 'Fecha pago impuestos', v.fechaPagoImpuesto)}
-    ${inputChk('fv-cierreNotaria', 'Cierre de notaría', !!v.cierreNotaria)}
-    ${inputChk('fv-ingresoRP', 'Ingreso al RP', !!v.ingresoRP)}
-    ${inputDate('fv-fechaIngresoRP', 'Fecha ingreso RP', v.fechaIngresoRP)}
-    ${inputDate('fv-fechaInscripcion', 'Fecha inscripción', v.fechaInscripcion)}
-    ${inputChk('fv-solicitudDesembolso', 'Solicitud desembolso', !!v.solicitudDesembolso)}
-    ${inputDate('fv-fechaDesembolso', 'Fecha desembolso', v.fechaDesembolso)}
-    ${inputDate('fv-fechaRecibidoCheque', 'Fecha recibido cheque', v.fechaRecibidoCheque)}
-  `);
+${inputChk('fv-pagoImpuestos', `Pago de impuestos ${info('Checklist para confirmar pago de impuestos antes del cierre o inscripción.')}`, !!v.pagoImpuestos)}
+${inputDate('fv-fechaPagoImpuesto', `Fecha pago impuestos ${info('Fecha en la que se realizó el pago de impuestos correspondiente.')}`, v.fechaPagoImpuesto)}
+${inputChk('fv-cierreNotaria', `Cierre de notaría ${info('Checklist para confirmar que el expediente fue cerrado en notaría.')}`, !!v.cierreNotaria)}
+${inputChk('fv-ingresoRP', `Ingreso al RP ${info('Checklist para confirmar ingreso del trámite al Registro Público.')}`, !!v.ingresoRP)}
+${inputDate('fv-fechaIngresoRP', `Fecha ingreso RP ${info('Fecha de ingreso del documento al Registro Público.')}`, v.fechaIngresoRP)}
+${inputDate('fv-fechaInscripcion', `Fecha inscripción ${info('Fecha de inscripción definitiva en Registro Público.')}`, v.fechaInscripcion)}
+${inputChk('fv-solicitudDesembolso', `Solicitud desembolso ${info('Checklist para confirmar que se solicitó el desembolso correspondiente.')}`, !!v.solicitudDesembolso)}
+${inputDate('fv-fechaDesembolso', `Fecha desembolso ${info('Fecha efectiva del desembolso del financiamiento.')}`, v.fechaDesembolso)}
+${inputDate('fv-fechaRecibidoCheque', `Fecha recibido cheque ${info('Fecha en la que se recibe cheque o pago asociado al desembolso.')}`, v.fechaRecibidoCheque)}
+`);
 
-  const htmlTecnico = seccion('Técnico / Permisos / Construcción', `
-    ${inputChk('fv-enConstruccion', 'En construcción', !!v.enConstruccion)}
-    ${selectCustom('fv-estatusConstruccion', 'Estatus construcción', [
-      { v: '', l: '—' },
-      { v: 'Pendiente', l: 'Pendiente' },
-      { v: 'Obra gris', l: 'Obra gris' },
-      { v: 'Acabados', l: 'Acabados' },
-      { v: 'Culminada', l: 'Culminada' }
-    ], v.estatusConstruccion || '')}
-    ${input('fv-faseConstruccion', 'Fase construcción', v.faseConstruccion || '')}
+const htmlTecnico = seccion('Técnico / Permisos / Construcción', `
+${inputChk('fv-enConstruccion', `En construcción ${info('Indica si la unidad se encuentra actualmente en proceso constructivo.')}`, !!v.enConstruccion)}
+${selectCustom('fv-estatusConstruccion', `Estatus construcción ${info('Estado técnico de avance de la vivienda: pendiente, obra gris, acabados o culminada.')}`, [
+  { v: '', l: '—' },
+  { v: 'Pendiente', l: 'Pendiente' },
+  { v: 'Obra gris', l: 'Obra gris' },
+  { v: 'Acabados', l: 'Acabados' },
+  { v: 'Culminada', l: 'Culminada' }
+], v.estatusConstruccion || '')}
+${input('fv-faseConstruccion', `Fase construcción ${info('Detalle adicional de la fase constructiva de la unidad.')}`, v.faseConstruccion || '')}
 
-    ${inputChk('fv-permisoConstruccionMunicipal', 'Permiso construcción municipal', !!v.permisoConstruccionMunicipal)}
-    ${input('fv-permisoConstruccionNum', 'Resolución permiso construcción', v.permisoConstruccionNum || '')}
-    ${inputChk('fv-permisoOcupacion', 'Permiso ocupación municipal', !!v.permisoOcupacion)}
-    ${input('fv-permisoOcupacionNum', 'Resolución permiso ocupación', v.permisoOcupacionNum || '')}
-    ${inputDate('fv-fechaEmisionPermisoOcupacion', 'Fecha emisión permiso ocupación', v.fechaEmisionPermisoOcupacion)}
-    ${input('fv-constructora', 'Constructor / constructora', v.constructora || '')}
-  `);
+${inputChk('fv-permisoConstruccionMunicipal', `Permiso construcción municipal ${info('Checklist para confirmar existencia del permiso de construcción municipal.')}`, !!v.permisoConstruccionMunicipal)}
+${input('fv-permisoConstruccionNum', `Resolución permiso construcción ${info('Número de resolución del permiso de construcción municipal.')}`, v.permisoConstruccionNum || '')}
+${inputChk('fv-permisoOcupacion', `Permiso ocupación municipal ${info('Checklist para confirmar existencia del permiso de ocupación municipal.')}`, !!v.permisoOcupacion)}
+${input('fv-permisoOcupacionNum', `Resolución permiso ocupación ${info('Número de resolución del permiso de ocupación municipal.')}`, v.permisoOcupacionNum || '')}
+${inputDate('fv-fechaEmisionPermisoOcupacion', `Fecha emisión permiso ocupación ${info('Fecha en la que fue emitido el permiso de ocupación municipal.')}`, v.fechaEmisionPermisoOcupacion)}
+${input('fv-constructora', `Constructor / constructora ${info('Empresa o responsable de la construcción de la vivienda.')}`, v.constructora || '')}
+`);
 
-  const htmlLegal = seccion('Legal / Avalúo / Minutas / Paz y salvo', `
-    ${input('fv-solicitudAvaluo', 'Solicitud de avalúo', v.solicitudAvaluo || '')}
-    ${input('fv-avaluoRealizado', 'Avalúo realizado', v.avaluoRealizado || '')}
-    ${inputDate('fv-fechaAvaluo', 'Fecha avalúo', v.fechaAvaluo)}
-    ${input('fv-empresaAvaluadora', 'Empresa avaluadora', v.empresaAvaluadora || '')}
+const htmlLegal = seccion('Legal / Avalúo / Minutas / Paz y salvo', `
+${input('fv-solicitudAvaluo', `Solicitud de avalúo ${info('Estado o referencia de la solicitud de avalúo de la unidad.')}`, v.solicitudAvaluo || '')}
+${input('fv-avaluoRealizado', `Avalúo realizado ${info('Indica si el avalúo fue realizado o su estado actual.')}`, v.avaluoRealizado || '')}
+${inputDate('fv-fechaAvaluo', `Fecha avalúo ${info('Fecha en la que se realizó el avalúo.')}`, v.fechaAvaluo)}
+${input('fv-empresaAvaluadora', `Empresa avaluadora ${info('Empresa responsable del avalúo de la unidad.')}`, v.empresaAvaluadora || '')}
 
-    ${selectCustom('fv-mLiberacion', 'Minuta liberación / desafectación', [
-      { v: '', l: '—' },
-      { v: 'Solicitada', l: 'Solicitada' },
-      { v: 'Lista', l: 'Lista' },
-      { v: 'No aplica', l: 'No aplica' }
-    ], v.mLiberacion || '')}
-    ${selectCustom('fv-mSegregacion', 'Minuta segregación / venta', [
-      { v: '', l: '—' },
-      { v: 'Solicitada', l: 'Solicitada' },
-      { v: 'Lista', l: 'Lista' },
-      { v: 'No aplica', l: 'No aplica' }
-    ], v.mSegregacion || '')}
-    ${selectCustom('fv-mPrestamo', 'Minuta préstamo', [
-      { v: '', l: '—' },
-      { v: 'Solicitada', l: 'Solicitada' },
-      { v: 'Lista', l: 'Lista' },
-      { v: 'No aplica', l: 'No aplica' }
-    ], v.mPrestamo || '')}
+${selectCustom('fv-mLiberacion', `Minuta liberación / desafectación ${info('Estado de la minuta de liberación o desafectación: solicitada, lista o no aplica.')}`, [
+  { v: '', l: '—' },
+  { v: 'Solicitada', l: 'Solicitada' },
+  { v: 'Lista', l: 'Lista' },
+  { v: 'No aplica', l: 'No aplica' }
+], v.mLiberacion || '')}
+${selectCustom('fv-mSegregacion', `Minuta segregación / venta ${info('Estado de la minuta de segregación o venta: solicitada, lista o no aplica.')}`, [
+  { v: '', l: '—' },
+  { v: 'Solicitada', l: 'Solicitada' },
+  { v: 'Lista', l: 'Lista' },
+  { v: 'No aplica', l: 'No aplica' }
+], v.mSegregacion || '')}
+${selectCustom('fv-mPrestamo', `Minuta préstamo ${info('Estado de la minuta de préstamo del banco cliente: solicitada, lista o no aplica.')}`, [
+  { v: '', l: '—' },
+  { v: 'Solicitada', l: 'Solicitada' },
+  { v: 'Lista', l: 'Lista' },
+  { v: 'No aplica', l: 'No aplica' }
+], v.mPrestamo || '')}
 
-    ${inputChk('fv-pazSalvoGesproban', 'Paz y salvo Gesproban', !!v.pazSalvoGesproban)}
-    ${inputChk('fv-pazSalvoPromotora', 'Paz y salvo Promotora', !!v.pazSalvoPromotora)}
-  `);
+${inputChk('fv-pazSalvoGesproban', `Paz y salvo Gesproban ${info('Checklist interno para confirmar paz y salvo de Gesproban, si aplica al proceso.')}`, !!v.pazSalvoGesproban)}
+${inputChk('fv-pazSalvoPromotora', `Paz y salvo Promotora ${info('Checklist para confirmar paz y salvo de la promotora antes de cierre o entrega.')}`, !!v.pazSalvoPromotora)}
+`);
 
-  const htmlMivi = seccion('MIVI', `
-    ${input('fv-expedienteMIVI', 'Expediente MIVI', v.expedienteMIVI || '')}
-    ${inputDate('fv-entregaExpMIVI', 'Fecha entrega exp. MIVI', v.entregaExpMIVI)}
-    ${input('fv-resolucionMIVI', 'N° Resolución MIVI', v.resolucionMIVI || '')}
-    ${inputDate('fv-fechaResolucionMIVI', 'Fecha resolución', v.fechaResolucionMIVI)}
-    ${inputDate('fv-solicitudMiviDesembolso', 'Solicitud MIVI desembolso', v.solicitudMiviDesembolso)}
-    ${input('fv-desembolsoMivi', 'Desembolso MIVI', v.desembolsoMivi || '')}
-    ${inputDate('fv-fechaPagoMivi', 'Fecha pago MIVI', v.fechaPagoMivi)}
-  `);
+const htmlMivi = seccion('MIVI', `
+${input('fv-expedienteMIVI', `Expediente MIVI ${info('Número o referencia del expediente MIVI, si aplica.')}`, v.expedienteMIVI || '')}
+${inputDate('fv-entregaExpMIVI', `Fecha entrega exp. MIVI ${info('Fecha de entrega del expediente al MIVI.')}`, v.entregaExpMIVI)}
+${input('fv-resolucionMIVI', `N° Resolución MIVI ${info('Número de resolución emitida por MIVI, si aplica.')}`, v.resolucionMIVI || '')}
+${inputDate('fv-fechaResolucionMIVI', `Fecha resolución ${info('Fecha de resolución MIVI.')}`, v.fechaResolucionMIVI)}
+${inputDate('fv-solicitudMiviDesembolso', `Solicitud MIVI desembolso ${info('Fecha de solicitud de desembolso MIVI, si aplica.')}`, v.solicitudMiviDesembolso)}
+${input('fv-desembolsoMivi', `Desembolso MIVI ${info('Estado o referencia del desembolso MIVI.')}`, v.desembolsoMivi || '')}
+${inputDate('fv-fechaPagoMivi', `Fecha pago MIVI ${info('Fecha de pago o desembolso MIVI.')}`, v.fechaPagoMivi)}
+`);
 
-  const htmlEntregaOtros = seccion('Entrega / Captación / Observaciones', `
-    ${input('fv-entregaCasa', 'Entrega de casa', v.entregaCasa || '')}
-    ${input('fv-entregaANATI', 'Entrega ANATI', v.entregaANATI || '')}
-    ${inputDate('fv-fechaEntregaVivienda', 'Fecha entrega vivienda', v.fechaEntregaVivienda)}
+const htmlEntregaOtros = seccion('Entrega / Captación / Observaciones', `
+${input('fv-entregaCasa', `Entrega de casa ${info('Estado o confirmación de entrega de la vivienda al cliente.')}`, v.entregaCasa || '')}
+${input('fv-entregaANATI', `Entrega ANATI ${info('Estado o referencia de entrega ANATI, si aplica.')}`, v.entregaANATI || '')}
+${inputDate('fv-fechaEntregaVivienda', `Fecha entrega vivienda ${info('Fecha efectiva de entrega de la vivienda al cliente.')}`, v.fechaEntregaVivienda)}
 
-    ${inputChk('fv-captadoAtencionOficina', 'Captado atención oficina', !!v.captadoAtencionOficina)}
-    ${inputChk('fv-captadoMailInternet', 'Captado mail / internet', !!v.captadoMailInternet)}
-    ${inputChk('fv-captadoEnProyecto', 'Captado en proyecto', !!v.captadoEnProyecto)}
-    ${inputChk('fv-captadoMercadeoProspecto', 'Captado mercadeo / prospecteo', !!v.captadoMercadeoProspecto)}
+${inputChk('fv-captadoAtencionOficina', `Captado atención oficina ${info('Indica si el cliente fue captado mediante atención en oficina.')}`, !!v.captadoAtencionOficina)}
+${inputChk('fv-captadoMailInternet', `Captado mail / internet ${info('Indica si el cliente fue captado por correo, web o canal digital.')}`, !!v.captadoMailInternet)}
+${inputChk('fv-captadoEnProyecto', `Captado en proyecto ${info('Indica si el cliente fue captado directamente en el proyecto.')}`, !!v.captadoEnProyecto)}
+${inputChk('fv-captadoMercadeoProspecto', `Captado mercadeo / prospecteo ${info('Indica si el cliente proviene de campañas de mercadeo o prospección comercial.')}`, !!v.captadoMercadeoProspecto)}
 
-    ${input('fv-proformaSolicitadaPor', 'Proforma solicitada por', v.proformaSolicitadaPor || '')}
-    ${input('fv-referidoPor', 'Referido por', v.referidoPor || '')}
-    ${input('fv-observacionCliente', 'Observación cliente', v.observacionCliente || '')}
-    ${input('fv-comentario', 'Comentario interno', v.comentario || '')}
-  `);
+${input('fv-proformaSolicitadaPor', `Proforma solicitada por ${info('Persona o canal que solicitó la proforma.')}`, v.proformaSolicitadaPor || '')}
+${input('fv-referidoPor', `Referido por ${info('Persona, canal o entidad que refirió al cliente.')}`, v.referidoPor || '')}
+${input('fv-observacionCliente', `Observación cliente ${info('Observaciones relevantes sobre el cliente o su expediente.')}`, v.observacionCliente || '')}
+${input('fv-comentario', `Comentario interno ${info('Comentario interno para seguimiento operativo, comercial, legal o bancario.')}`, v.comentario || '')}
+`);
 
   const fichaHTML =
     htmlUnidad +
@@ -5322,30 +5531,39 @@ function wireUnidadUpload(projectId, unitId) {
 
   const exportsHTML = `
   <div class="export-docs-card">
-  <h3 style="color:white;">Exportar documentos</h3>
+    <h3 style="color:white;">Exportar documentos</h3>
 
-  <p class="muted" style="color:rgba(255,255,255,0.75);">
-    Genera automáticamente los PDFs con los datos guardados de esta unidad.
-  </p>
+    <p class="muted" style="color:rgba(255,255,255,0.75);">
+      Genera automáticamente los PDFs con los datos guardados de esta unidad.
+    </p>
+
     <div class="export-docs-actions">
+      <button type="button" class="export-doc-btn primary" id="btnPdfFichaCliente">
+        Descargar ficha de cliente
+      </button>
 
-      <button
-  type="button"
-  class="export-doc-btn primary"
-  id="btnPdfFichaCliente"
->
-  Descargar ficha de cliente
-</button>
-
-<button
-  type="button"
-  class="export-doc-btn primary"
-  id="btnPdfProforma"
->
-  Descargar proforma
-</button>
-
+      <button type="button" class="export-doc-btn primary" id="btnPdfProforma">
+        Descargar proforma
+      </button>
     </div>
+
+    <hr style="margin:22px 0;border-color:rgba(255,255,255,.15);">
+
+    <h3 style="color:white;">Importar Word</h3>
+
+    <p class="muted" style="color:rgba(255,255,255,0.75);">
+      Sube una ficha de cliente o proforma en Word. Bank73 detectará los campos y podrás revisarlos antes de aplicarlos.
+    </p>
+
+    <input id="importWordInput" type="file" accept=".docx" style="display:none;">
+
+    <div class="export-docs-actions">
+      <button type="button" class="export-doc-btn primary" id="btnImportWord">
+        Importar ficha/proforma Word
+      </button>
+    </div>
+
+    <div id="importWordPreview" style="margin-top:18px;"></div>
   </div>
 `;
   const views = document.getElementById('fichaViews');
@@ -5414,9 +5632,12 @@ const viewExports = document.createElement('div');
   if (recibidoEl) recibidoEl.addEventListener('change', refreshTiempoAprobacionDias);
 
   refreshTiempoAprobacionDias();
+  installSectionToggles();
 
   const btnPdfFichaCliente = document.getElementById('btnPdfFichaCliente');
 const btnPdfProforma = document.getElementById('btnPdfProforma');
+const btnImportWord = document.getElementById('btnImportWord');
+const importWordInput = document.getElementById('importWordInput');
 
 if (btnPdfFichaCliente) {
   btnPdfFichaCliente.addEventListener('click', async () => {
@@ -5440,6 +5661,37 @@ if (btnPdfProforma) {
     );
 
   });
+}
+if (btnImportWord && importWordInput) {
+
+  btnImportWord.addEventListener('click', () => {
+    importWordInput.value = '';
+    importWordInput.click();
+  });
+
+  importWordInput.addEventListener('change', async () => {
+
+    try {
+
+      btnImportWord.disabled = true;
+      btnImportWord.textContent = 'Leyendo Word...';
+
+      await previewImportWord(unitId);
+
+    } catch (e) {
+
+      console.error(e);
+      alert('Error importando Word: ' + (e.message || ''));
+
+    } finally {
+
+      btnImportWord.disabled = false;
+      btnImportWord.textContent = 'Importar ficha/proforma Word';
+
+    }
+
+  });
+
 }
 
   modalFicha.style.display = 'flex';
