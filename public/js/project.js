@@ -2348,7 +2348,9 @@ renderChartSummary(
   }
 
   // Antes / Después
+  if (typeof wireBADeleteDelegation === 'function') {
   wireBADeleteDelegation();
+}
   await loadBeforeAfterGallery();
   addInfoBadges();
   wireInfoTooltips();
@@ -4289,6 +4291,26 @@ function openPhaseEditor(ph = null, focus = 'plan') {
     setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
   }
 
+  async function downloadFileWithLoading(btn, url, filename) {
+  if (!btn) return;
+
+  const oldText = btn.textContent;
+  btn.disabled = true;
+  btn.classList.add('is-loading');
+  btn.textContent = 'Generando PDF...';
+
+  try {
+    await downloadFile(url, filename);
+  } catch (e) {
+    console.error(e);
+    alert(e.message || 'Error generando PDF');
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('is-loading');
+    btn.textContent = oldText;
+  }
+}
+
   const tab = document.getElementById('tab-comercial');
   if (!tab) return;
 
@@ -4666,6 +4688,7 @@ function collectChecklistPayload() {
 // Estados comerciales de unidad
 const UNIT_ESTADOS = [
   { v: 'disponible', l: 'Disponible' },
+  { v: 'inventario', l: 'Inventario' },
   { v: 'reservado', l: 'Reservado' },
   { v: 'con_cpp', l: 'Con CPP' },
   { v: 'tramite_legal_activado', l: 'Trámite legal activado' },
@@ -4674,7 +4697,10 @@ const UNIT_ESTADOS = [
 ];
 
 function normalizeUnitEstadoFrontend(v) {
-  const s = String(v || '').trim();
+  const s = String(v || '').trim().toLowerCase();
+
+  if (s === 'inventory') return 'inventario';
+  if (s === 'inventario') return 'inventario';
 
   if (s === 'en_escrituracion') return 'tramite_legal_activado';
   if (s === 'escriturado') return 'escriturado_traspasado';
@@ -4765,6 +4791,7 @@ function deselectAllVisible() {
     // KPIs
     const resumen = {
   disponible: 0,
+  inventario: 0,
   reservado: 0,
   con_cpp: 0,
   tramite_legal_activado: 0,
@@ -4781,7 +4808,8 @@ resumen[estado] = (resumen[estado] || 0) + 1;
 
 kpisDiv.innerHTML = `
   <div>Disponibles: ${resumen.disponible || 0}</div>
-  <div>Reservados: ${resumen.reservado || 0}</div>
+<div>Inventario: ${resumen.inventario || 0}</div>
+<div>Reservados: ${resumen.reservado || 0}</div>
   <div>Con CPP: ${resumen.con_cpp || 0}</div>
   <div>Trámite legal activado: ${resumen.tramite_legal_activado || 0}</div>
   <div>Escriturado / Traspasado: ${resumen.escriturado_traspasado || 0}</div>
@@ -4948,208 +4976,473 @@ function wireUnidadUpload(projectId, unitId) {
 
   async function abrirFichaUnidad(unitId) {
   fichaUnitId = unitId;
+
   const u = unitsCache.find(x => String(x._id) === String(unitId)) || await apiGet(`/api/units/${unitId}`);
   const rawV = ventasMap.get(String(unitId)) || {};
-  // 👇 v sin prototipo (no tiene .constructor heredado)
   const v = Object.assign(Object.create(null), rawV);
 
+  const info = (txt) =>
+    `<button type="button" class="info-btn" title="${safeVal(txt)}">i</button>`;
 
-  document.getElementById('fichaTitulo').textContent = `Unidad ${(u.manzana||'')}-${(u.lote||'')}`;
+  const selectOptions = (opts, current = '') =>
+    opts.map(o => `<option value="${o.v}" ${String(current || '') === o.v ? 'selected' : ''}>${o.l}</option>`).join('');
 
-  // ---------- Tabs ----------
-const cont = document.getElementById('fichaContenido');
-cont.innerHTML = `
-  <div class="modal-tabs" id="fichaTabs">
-    <button class="modal-tab active" data-tab="ficha">Ficha</button>
-    <button class="modal-tab" data-tab="checklist">Checklist</button>
-    <button class="modal-tab" data-tab="docs">Documentos</button>
-  </div>
-  <div id="fichaViews"></div>
-`;
+  const selectCustom = (id, label, opts, current = '') => `
+    <div class="label">${label}</div>
+    <select id="${id}">
+      ${selectOptions(opts, current)}
+    </select>
+  `;
 
-// ---------- FICHA (tu código) ----------
-const htmlUnidad = `
-  <div class="grid-2">
-    <div>
-      <h4>Datos de la unidad</h4>
-      <label>Estado</label>
-      <select id="fu-estado">
-  ${UNIT_ESTADOS
-    .map(s => `<option value="${s.v}" ${normalizeUnitEstadoFrontend(u.estado) === s.v ? 'selected' : ''}>${s.l}</option>`)
-    .join('')}
-</select>
-      <label>Modelo</label><input id="fu-modelo" value="${u.modelo||''}">
-      <label>m²</label><input id="fu-m2" type="number" value="${u.m2||0}">
-      <label>Precio lista</label><input id="fu-precio" type="number" value="${u.precioLista||0}">
-    </div>
-    <div>
-  <h4>Cliente (resumen)</h4>
-  ${input('fv-clienteNombre','Cliente', v.clienteNombre||'')}
-  ${input('fv-cedula','Cédula', v.cedula||'')}
-  ${input('fv-empresa','Empresa', v.empresa||'')}
-  ${inputNum('fv-precioVenta','Precio de venta', v.precioVenta || u.precioLista || 0)}
-  ${inputNum('fv-montoFinanciamientoCPP','Monto financiamiento CPP', v.montoFinanciamientoCPP || v.valor || 0)}
-  ${inputDate('fv-fechaContratoCliente','Fecha contrato firmado por cliente', v.fechaContratoCliente)}
+  document.getElementById('fichaTitulo').textContent = `Unidad ${(u.manzana || '')}-${(u.lote || '')}`;
+
+  const cont = document.getElementById('fichaContenido');
+  cont.innerHTML = `
+    <div class="modal-tabs" id="fichaTabs">
+  <button class="modal-tab active" data-tab="ficha">Ficha</button>
+  <button class="modal-tab" data-tab="checklist">Checklist</button>
+  <button class="modal-tab" data-tab="docs">Documentos</button>
+  <button class="modal-tab" data-tab="exports">Exportar PDF</button>
 </div>
+    <div id="fichaViews"></div>
+  `;
+
+  const htmlUnidad = seccion('Datos de la unidad', `
+    <div class="label">Estado ${info('Estado comercial actual de la unidad.')}</div>
+    <select id="fu-estado">
+      ${UNIT_ESTADOS
+        .map(s => `<option value="${s.v}" ${normalizeUnitEstadoFrontend(u.estado) === s.v ? 'selected' : ''}>${s.l}</option>`)
+        .join('')}
+    </select>
+
+    ${input('fu-modelo', 'Modelo', u.modelo || '')}
+    ${inputNum('fu-m2', 'm² unidad', u.m2 || 0)}
+    ${inputNum('fu-precio', 'Precio lista', u.precioLista || 0)}
+
+    ${input('fv-numeroFinca', 'Número de finca', v.numeroFinca || '')}
+    ${input('fv-codigoUbicacion', 'Código de ubicación', v.codigoUbicacion || '')}
+    ${input('fv-ubicacion', 'Ubicación', v.ubicacion || '')}
+    ${input('fv-calle', 'Calle', v.calle || '')}
+
+    ${inputNum('fv-metrajeLote', 'Metraje lote (m²)', v.metrajeLote || 0)}
+    ${selectCustom('fv-loteEsquina', 'Lote esquina', [
+      { v: '', l: '—' },
+      { v: 'SI', l: 'Sí' },
+      { v: 'NO', l: 'No' }
+    ], v.loteEsquina || '')}
+    ${inputNum('fv-metrosExtra', 'M² extra', v.metrosExtra || 0)}
+    ${inputNum('fv-precioLoteEsquina', 'Precio lote esquinero', v.precioLoteEsquina || 0)}
+    ${inputNum('fv-precioM2Extra', 'Precio m² extra', v.precioM2Extra || 0)}
+
+    ${inputNum('fv-areaAbierta', 'Área abierta vivienda (m²)', v.areaAbierta || 0)}
+    ${inputNum('fv-areaCerrada', 'Área cerrada vivienda (m²)', v.areaCerrada || 0)}
+    ${inputNum('fv-areaTotalConstruccion', 'Área total construcción (m²)', v.areaTotalConstruccion || 0)}
+    ${inputNum('fv-recamaras', 'Recámaras', v.recamaras || 0)}
+    ${inputNum('fv-banos', 'Baños', v.banos || 0)}
+
+    ${inputNum('fv-valorMejoras', 'Valor mejoras', v.valorMejoras || 0)}
+    ${inputNum('fv-valorTerreno', 'Valor terreno', v.valorTerreno || 0)}
+    ${inputDate('fv-fechaProbableEntrega', 'Fecha probable de entrega', v.fechaProbableEntrega)}
+  `);
+
+  const htmlCliente1 = seccion('Cliente 1 / Solicitante principal', `
+    ${input('fv-clienteNombre', 'Cliente resumen', v.clienteNombre || '')}
+    ${input('fv-primerNombre', 'Primer nombre', v.primerNombre || '')}
+    ${input('fv-segundoNombre', 'Segundo nombre', v.segundoNombre || '')}
+    ${input('fv-primerApellido', 'Apellido paterno', v.primerApellido || '')}
+    ${input('fv-segundoApellido', 'Apellido materno', v.segundoApellido || '')}
+    ${input('fv-apellidoCasada', 'Apellido de casada', v.apellidoCasada || '')}
+
+    ${input('fv-cedula', 'Cédula', v.cedula || '')}
+    ${selectCustom('fv-sexo', 'Sexo', [
+      { v: '', l: '—' },
+      { v: 'M', l: 'Masculino' },
+      { v: 'F', l: 'Femenino' }
+    ], v.sexo || '')}
+    ${input('fv-profesion', 'Profesión', v.profesion || '')}
+    ${selectCustom('fv-estadoCivil', 'Estado civil', [
+      { v: '', l: '—' },
+      { v: 'Soltero', l: 'Soltero' },
+      { v: 'Casado', l: 'Casado' }
+    ], v.estadoCivil || '')}
+
+    ${input('fv-direccion', 'Dirección / domicilio', v.direccion || '')}
+    ${input('fv-telefonoResidencial', 'Teléfono residencial', v.telefonoResidencial || '')}
+    ${input('fv-telefonoOficina', 'Teléfono oficina', v.telefonoOficina || '')}
+    ${input('fv-celular', 'Celular', v.celular || '')}
+    ${input('fv-correo', 'Correo electrónico', v.correo || '')}
+
+    ${selectCustom('fv-perfilCliente', 'Perfil', [
+      { v: '', l: '—' },
+      { v: 'Independiente', l: 'Independiente' },
+      { v: 'Asalariado', l: 'Asalariado' }
+    ], v.perfilCliente || '')}
+    ${selectCustom('fv-tipoEmpresa', 'Tipo de empresa', [
+      { v: '', l: '—' },
+      { v: 'Privada', l: 'Privada' },
+      { v: 'Gubernamental', l: 'Gubernamental' }
+    ], v.tipoEmpresa || '')}
+    ${selectCustom('fv-sectorEmpresa', 'Sector empresarial', [
+      { v: '', l: '—' },
+      { v: 'Agrícola', l: 'Agrícola' },
+      { v: 'Profesional idóneo', l: 'Profesional idóneo' },
+      { v: 'Otros', l: 'Otros' }
+    ], v.sectorEmpresa || '')}
+
+    ${input('fv-empresa', 'Empresa', v.empresa || '')}
+    ${input('fv-lugarTrabajo', 'Lugar de trabajo', v.lugarTrabajo || '')}
+    ${inputNum('fv-ingresoMensual', 'Ingreso mensual', v.ingresoMensual || 0)}
+    ${input('fv-cargo', 'Cargo que desempeña', v.cargo || '')}
+    ${input('fv-antiguedadLaboral', 'Antigüedad laboral', v.antiguedadLaboral || '')}
+  `);
+
+  const htmlCliente2 = seccion('Cliente 2 / Co-solicitante', `
+    ${input('fv-cliente2PrimerNombre', 'Primer nombre', v.cliente2PrimerNombre || '')}
+    ${input('fv-cliente2SegundoNombre', 'Segundo nombre', v.cliente2SegundoNombre || '')}
+    ${input('fv-cliente2PrimerApellido', 'Apellido paterno', v.cliente2PrimerApellido || '')}
+    ${input('fv-cliente2SegundoApellido', 'Apellido materno', v.cliente2SegundoApellido || '')}
+    ${input('fv-cliente2ApellidoCasada', 'Apellido de casada', v.cliente2ApellidoCasada || '')}
+    ${input('fv-cliente2Cedula', 'Cédula', v.cliente2Cedula || '')}
+
+    ${selectCustom('fv-cliente2Sexo', 'Sexo', [
+      { v: '', l: '—' },
+      { v: 'M', l: 'Masculino' },
+      { v: 'F', l: 'Femenino' }
+    ], v.cliente2Sexo || '')}
+    ${input('fv-cliente2Profesion', 'Profesión', v.cliente2Profesion || '')}
+    ${selectCustom('fv-cliente2EstadoCivil', 'Estado civil', [
+      { v: '', l: '—' },
+      { v: 'Soltero', l: 'Soltero' },
+      { v: 'Casado', l: 'Casado' }
+    ], v.cliente2EstadoCivil || '')}
+    ${input('fv-cliente2Direccion', 'Dirección / domicilio', v.cliente2Direccion || '')}
+
+    ${input('fv-cliente2TelefonoResidencial', 'Teléfono residencial', v.cliente2TelefonoResidencial || '')}
+    ${input('fv-cliente2TelefonoOficina', 'Teléfono oficina', v.cliente2TelefonoOficina || '')}
+    ${input('fv-cliente2Celular', 'Celular', v.cliente2Celular || '')}
+    ${input('fv-cliente2Correo', 'Correo', v.cliente2Correo || '')}
+
+    ${input('fv-cliente2LugarTrabajo', 'Lugar de trabajo', v.cliente2LugarTrabajo || '')}
+    ${inputNum('fv-cliente2IngresoMensual', 'Ingreso mensual', v.cliente2IngresoMensual || 0)}
+    ${input('fv-cliente2Cargo', 'Cargo', v.cliente2Cargo || '')}
+    ${input('fv-cliente2AntiguedadLaboral', 'Antigüedad laboral', v.cliente2AntiguedadLaboral || '')}
+  `);
+
+  const htmlReferencias = seccion('Parientes / Referencias personales', `
+    ${input('fv-pariente1Nombre', 'Pariente 1 - Nombre', v.pariente1Nombre || '')}
+    ${input('fv-pariente1Parentesco', 'Pariente 1 - Parentesco', v.pariente1Parentesco || '')}
+    ${input('fv-pariente1Telefono', 'Pariente 1 - Teléfono', v.pariente1Telefono || '')}
+    ${input('fv-pariente1TelefonoTrabajo', 'Pariente 1 - Tel. trabajo', v.pariente1TelefonoTrabajo || '')}
+
+    ${input('fv-pariente2Nombre', 'Pariente 2 - Nombre', v.pariente2Nombre || '')}
+    ${input('fv-pariente2Parentesco', 'Pariente 2 - Parentesco', v.pariente2Parentesco || '')}
+    ${input('fv-pariente2Telefono', 'Pariente 2 - Teléfono', v.pariente2Telefono || '')}
+    ${input('fv-pariente2TelefonoTrabajo', 'Pariente 2 - Tel. trabajo', v.pariente2TelefonoTrabajo || '')}
+
+    ${input('fv-referencia1Nombre', 'Referencia 1 - Nombre', v.referencia1Nombre || '')}
+    ${input('fv-referencia1Relacion', 'Referencia 1 - Relación', v.referencia1Relacion || '')}
+    ${input('fv-referencia1Telefono', 'Referencia 1 - Teléfono', v.referencia1Telefono || '')}
+    ${input('fv-referencia1TelefonoTrabajo', 'Referencia 1 - Tel. trabajo', v.referencia1TelefonoTrabajo || '')}
+
+    ${input('fv-referencia2Nombre', 'Referencia 2 - Nombre', v.referencia2Nombre || '')}
+    ${input('fv-referencia2Relacion', 'Referencia 2 - Relación', v.referencia2Relacion || '')}
+    ${input('fv-referencia2Telefono', 'Referencia 2 - Teléfono', v.referencia2Telefono || '')}
+    ${input('fv-referencia2TelefonoTrabajo', 'Referencia 2 - Tel. trabajo', v.referencia2TelefonoTrabajo || '')}
+  `);
+
+  const htmlFinanciamiento = seccion('Financiamiento / Proforma', `
+    ${inputNum('fv-precioVenta', 'Precio de venta', v.precioVenta || u.precioLista || 0)}
+    ${inputNum('fv-montoFinanciamientoCPP', 'Monto financiamiento CPP / hipoteca', v.montoFinanciamientoCPP || v.valor || 0)}
+    ${inputNum('fv-abonoCliente', 'Abono del cliente', v.abonoCliente || 0)}
+    ${inputNum('fv-abonoInicial', 'Abono inicial', v.abonoInicial || 0)}
+    ${inputNum('fv-porcentajeFinanciamiento', '% financiamiento', v.porcentajeFinanciamiento || 0)}
+    ${input('fv-cesionAFavorDe', 'Cesión a favor de', v.cesionAFavorDe || '')}
+
+    ${input('fv-banco', 'Banco del cliente', v.banco || '')}
+    ${input('fv-oficialBanco', 'Oficial de trámite / crédito', v.oficialBanco || '')}
+    ${inputDate('fv-fechaEntregaProformaBanco', 'Entrega de proforma al banco', v.fechaEntregaProformaBanco)}
+    ${inputDate('fv-fechaProforma', 'Fecha proforma', v.fechaProforma)}
+
+    ${selectRow('fv-statusBancoSel', 'Status en Banco', '')}
+<div class="label" id="fv-statusBancoOtherLbl" style="display:none;">Especificar (OTRO)</div>
+<input id="fv-statusBancoOther" style="display:none;" placeholder="Especificar (OTRO)...">
+
+    ${selectCustom('fv-estatusCPP', 'Estatus de CPP', [
+      { v: '', l: '—' },
+      { v: 'Documentación entregada', l: 'Documentación entregada' },
+      { v: 'En comité', l: 'En comité' },
+      { v: 'Aprobado', l: 'Aprobado' },
+      { v: 'CPP recibida', l: 'CPP recibida' }
+    ], v.estatusCPP || '')}
+    ${input('fv-numCPP', 'N° CPP', v.numCPP || '')}
+    ${inputDate('fv-entregaExpedienteBanco', 'Entrega expediente a banco', v.entregaExpedienteBanco)}
+    ${inputDate('fv-recibidoCPP', 'Recibido CPP', v.recibidoCPP)}
+    ${inputNum('fv-plazoAprobacionDias', 'Plazo aprobación (días)', v.plazoAprobacionDias)}
+    ${inputDate('fv-fechaValorCPP', 'Fecha valor CPP', v.fechaValorCPP)}
+    ${inputDate('fv-fechaVencimientoCPP', 'Vencimiento CPP', v.fechaVencimientoCPP)}
+    ${inputDate('fv-vencimientoCPPBnMivi', 'Vencimiento CPP BN-MIVI', v.vencimientoCPPBnMivi)}
+    ${inputNum('fv-tiempoAprobacionDias', 'Tiempo de aprobación (días)', v.tiempoAprobacionDias || 0, { readonly: true })}
+
+    ${inputChk('fv-aperturaCtaBanco', 'Apertura cuenta banco', !!v.aperturaCtaBanco)}
+    ${inputChk('fv-primeraMensual', '1ra mensual', !!v.primeraMensual)}
+    ${inputChk('fv-pagoMinuta', 'Pago minuta', !!v.pagoMinuta)}
+    ${inputChk('fv-polizas', 'Pólizas', !!v.polizas)}
+    ${selectCustom('fv-tipoPoliza', 'Tipo de póliza', [
+      { v: '', l: '—' },
+      { v: 'Endosada', l: 'Endosada' },
+      { v: 'Colectiva', l: 'Colectiva' }
+    ], v.tipoPoliza || '')}
+    ${input('fv-polizaVida', 'Póliza de vida', v.polizaVida || '')}
+    ${inputNum('fv-abonoAlte', 'Abono ALTE', v.abonoAlte || 0)}
+  `);
+
+  const htmlContrato = seccion('Contrato / Protocolo / Notaría / Registro Público', `
+    ${inputDate('fv-fechaContratoCliente', 'Fecha contrato firmado por cliente', v.fechaContratoCliente)}
+    ${input('fv-estatusContrato', 'Estatus contrato', v.estatusContrato || '')}
+    ${inputNum('fv-montoContrato', 'Monto del contrato', v.montoContrato || 0)}
+    ${input('fv-pagare', 'Pagaré', v.pagare || '')}
+    ${inputDate('fv-fechaFirma', 'Fecha firma', v.fechaFirma)}
+    ${inputChk('fv-contratoFirmado', 'Contrato firmado', !!v.contratoFirmado)}
+
+    ${inputDate('fv-fechaActivacionTramite', 'Fecha activación trámite legal', v.fechaActivacionTramite)}
+
+    ${inputChk('fv-protocoloFirmaCliente', 'Protocolo firma cliente', !!v.protocoloFirmaCliente)}
+    ${inputDate('fv-fechaEntregaBanco', 'Fecha entrega a banco', v.fechaEntregaBanco)}
+    ${inputChk('fv-protocoloFirmaRLBancoInter', 'Protocolo firma RL / Banco Inter', !!v.protocoloFirmaRLBancoInter)}
+    ${inputDate('fv-fechaRegresoBanco', 'Fecha regreso banco', v.fechaRegresoBanco)}
+    ${inputNum('fv-diasTranscurridosBanco', 'Días transcurridos banco', v.diasTranscurridosBanco)}
+
+    ${inputDate('fv-fechaEntregaProtocoloBancoCli', 'Entrega protocolo banco cliente', v.fechaEntregaProtocoloBancoCli)}
+    ${inputChk('fv-firmaProtocoloBancoCliente', 'Firma protocolo banco cliente', !!v.firmaProtocoloBancoCliente)}
+    ${inputDate('fv-fechaRegresoProtocoloBancoCli', 'Regreso protocolo banco cliente', v.fechaRegresoProtocoloBancoCli)}
+    ${inputNum('fv-diasTranscurridosProtocolo', 'Días transcurridos protocolo', v.diasTranscurridosProtocolo)}
+
+    ${inputChk('fv-pagoImpuestos', 'Pago de impuestos', !!v.pagoImpuestos)}
+    ${inputDate('fv-fechaPagoImpuesto', 'Fecha pago impuestos', v.fechaPagoImpuesto)}
+    ${inputChk('fv-cierreNotaria', 'Cierre de notaría', !!v.cierreNotaria)}
+    ${inputChk('fv-ingresoRP', 'Ingreso al RP', !!v.ingresoRP)}
+    ${inputDate('fv-fechaIngresoRP', 'Fecha ingreso RP', v.fechaIngresoRP)}
+    ${inputDate('fv-fechaInscripcion', 'Fecha inscripción', v.fechaInscripcion)}
+    ${inputChk('fv-solicitudDesembolso', 'Solicitud desembolso', !!v.solicitudDesembolso)}
+    ${inputDate('fv-fechaDesembolso', 'Fecha desembolso', v.fechaDesembolso)}
+    ${inputDate('fv-fechaRecibidoCheque', 'Fecha recibido cheque', v.fechaRecibidoCheque)}
+  `);
+
+  const htmlTecnico = seccion('Técnico / Permisos / Construcción', `
+    ${inputChk('fv-enConstruccion', 'En construcción', !!v.enConstruccion)}
+    ${selectCustom('fv-estatusConstruccion', 'Estatus construcción', [
+      { v: '', l: '—' },
+      { v: 'Pendiente', l: 'Pendiente' },
+      { v: 'Obra gris', l: 'Obra gris' },
+      { v: 'Acabados', l: 'Acabados' },
+      { v: 'Culminada', l: 'Culminada' }
+    ], v.estatusConstruccion || '')}
+    ${input('fv-faseConstruccion', 'Fase construcción', v.faseConstruccion || '')}
+
+    ${inputChk('fv-permisoConstruccionMunicipal', 'Permiso construcción municipal', !!v.permisoConstruccionMunicipal)}
+    ${input('fv-permisoConstruccionNum', 'Resolución permiso construcción', v.permisoConstruccionNum || '')}
+    ${inputChk('fv-permisoOcupacion', 'Permiso ocupación municipal', !!v.permisoOcupacion)}
+    ${input('fv-permisoOcupacionNum', 'Resolución permiso ocupación', v.permisoOcupacionNum || '')}
+    ${inputDate('fv-fechaEmisionPermisoOcupacion', 'Fecha emisión permiso ocupación', v.fechaEmisionPermisoOcupacion)}
+    ${input('fv-constructora', 'Constructor / constructora', v.constructora || '')}
+  `);
+
+  const htmlLegal = seccion('Legal / Avalúo / Minutas / Paz y salvo', `
+    ${input('fv-solicitudAvaluo', 'Solicitud de avalúo', v.solicitudAvaluo || '')}
+    ${input('fv-avaluoRealizado', 'Avalúo realizado', v.avaluoRealizado || '')}
+    ${inputDate('fv-fechaAvaluo', 'Fecha avalúo', v.fechaAvaluo)}
+    ${input('fv-empresaAvaluadora', 'Empresa avaluadora', v.empresaAvaluadora || '')}
+
+    ${selectCustom('fv-mLiberacion', 'Minuta liberación / desafectación', [
+      { v: '', l: '—' },
+      { v: 'Solicitada', l: 'Solicitada' },
+      { v: 'Lista', l: 'Lista' },
+      { v: 'No aplica', l: 'No aplica' }
+    ], v.mLiberacion || '')}
+    ${selectCustom('fv-mSegregacion', 'Minuta segregación / venta', [
+      { v: '', l: '—' },
+      { v: 'Solicitada', l: 'Solicitada' },
+      { v: 'Lista', l: 'Lista' },
+      { v: 'No aplica', l: 'No aplica' }
+    ], v.mSegregacion || '')}
+    ${selectCustom('fv-mPrestamo', 'Minuta préstamo', [
+      { v: '', l: '—' },
+      { v: 'Solicitada', l: 'Solicitada' },
+      { v: 'Lista', l: 'Lista' },
+      { v: 'No aplica', l: 'No aplica' }
+    ], v.mPrestamo || '')}
+
+    ${inputChk('fv-pazSalvoGesproban', 'Paz y salvo Gesproban', !!v.pazSalvoGesproban)}
+    ${inputChk('fv-pazSalvoPromotora', 'Paz y salvo Promotora', !!v.pazSalvoPromotora)}
+  `);
+
+  const htmlMivi = seccion('MIVI', `
+    ${input('fv-expedienteMIVI', 'Expediente MIVI', v.expedienteMIVI || '')}
+    ${inputDate('fv-entregaExpMIVI', 'Fecha entrega exp. MIVI', v.entregaExpMIVI)}
+    ${input('fv-resolucionMIVI', 'N° Resolución MIVI', v.resolucionMIVI || '')}
+    ${inputDate('fv-fechaResolucionMIVI', 'Fecha resolución', v.fechaResolucionMIVI)}
+    ${inputDate('fv-solicitudMiviDesembolso', 'Solicitud MIVI desembolso', v.solicitudMiviDesembolso)}
+    ${input('fv-desembolsoMivi', 'Desembolso MIVI', v.desembolsoMivi || '')}
+    ${inputDate('fv-fechaPagoMivi', 'Fecha pago MIVI', v.fechaPagoMivi)}
+  `);
+
+  const htmlEntregaOtros = seccion('Entrega / Captación / Observaciones', `
+    ${input('fv-entregaCasa', 'Entrega de casa', v.entregaCasa || '')}
+    ${input('fv-entregaANATI', 'Entrega ANATI', v.entregaANATI || '')}
+    ${inputDate('fv-fechaEntregaVivienda', 'Fecha entrega vivienda', v.fechaEntregaVivienda)}
+
+    ${inputChk('fv-captadoAtencionOficina', 'Captado atención oficina', !!v.captadoAtencionOficina)}
+    ${inputChk('fv-captadoMailInternet', 'Captado mail / internet', !!v.captadoMailInternet)}
+    ${inputChk('fv-captadoEnProyecto', 'Captado en proyecto', !!v.captadoEnProyecto)}
+    ${inputChk('fv-captadoMercadeoProspecto', 'Captado mercadeo / prospecteo', !!v.captadoMercadeoProspecto)}
+
+    ${input('fv-proformaSolicitadaPor', 'Proforma solicitada por', v.proformaSolicitadaPor || '')}
+    ${input('fv-referidoPor', 'Referido por', v.referidoPor || '')}
+    ${input('fv-observacionCliente', 'Observación cliente', v.observacionCliente || '')}
+    ${input('fv-comentario', 'Comentario interno', v.comentario || '')}
+  `);
+
+  const fichaHTML =
+    htmlUnidad +
+    htmlCliente1 +
+    htmlCliente2 +
+    htmlReferencias +
+    htmlFinanciamiento +
+    htmlContrato +
+    htmlTecnico +
+    htmlLegal +
+    htmlMivi +
+    htmlEntregaOtros;
+
+  const checklistHTML = renderChecklistView(v);
+
+  const docsHTML = (typeof renderUnidadDocsSkeleton === 'function')
+    ? renderUnidadDocsSkeleton(u)
+    : `<div class="small muted">Subida de documentos por unidad aún no disponible.</div>`;
+
+  const exportsHTML = `
+  <div class="export-docs-card">
+  <h3 style="color:white;">Exportar documentos</h3>
+
+  <p class="muted" style="color:rgba(255,255,255,0.75);">
+    Genera automáticamente los PDFs con los datos guardados de esta unidad.
+  </p>
+    <div class="export-docs-actions">
+
+      <button
+  type="button"
+  class="export-doc-btn primary"
+  id="btnPdfFichaCliente"
+>
+  Descargar ficha de cliente
+</button>
+
+<button
+  type="button"
+  class="export-doc-btn primary"
+  id="btnPdfProforma"
+>
+  Descargar proforma
+</button>
+
+    </div>
   </div>
 `;
+  const views = document.getElementById('fichaViews');
+  const viewFicha = document.createElement('div');
+const viewChk = document.createElement('div');
+const viewDocs = document.createElement('div');
+const viewExports = document.createElement('div');
 
-const htmlBancoCPP = seccion('Banco / CPP', [
-  input('fv-banco','Banco', v.banco||''),
-  input('fv-oficialBanco','Oficial de Banco', v.oficialBanco||''),
-  selectRow('fv-statusBancoSel', 'Status en Banco', ''),
-  `<div class="label" id="fv-statusBancoOtherLbl" style="display:none;">Especificar (OTRO)</div>
-   <input id="fv-statusBancoOther" style="display:none;" placeholder="Especificar (OTRO)...">`,
+  viewFicha.id = 'view-ficha';
+  viewChk.id = 'view-checklist';
+  viewDocs.id = 'view-docs';
+  viewExports.id = 'view-exports';
 
-  input('fv-numCPP','N° CPP', v.numCPP||''),
-  inputDate('fv-entregaExpedienteBanco','Entrega expediente a banco', v.entregaExpedienteBanco),
-  inputDate('fv-recibidoCPP','Recibido CPP', v.recibidoCPP),
-  inputNum('fv-plazoAprobacionDias','Plazo aprobación (días)', v.plazoAprobacionDias),
-  inputDate('fv-fechaValorCPP','Fecha valor CPP', v.fechaValorCPP),
-  inputDate('fv-fechaVencimientoCPP','Vencimiento CPP', v.fechaVencimientoCPP),
-  inputDate('fv-vencimientoCPPBnMivi','Vencimiento CPP BN-MIVI', v.vencimientoCPPBnMivi),
-  inputChk('fv-aperturaCtaBanco','Apertura cta banco', !!v.aperturaCtaBanco),
-  inputChk('fv-primeraMensual','1ra mensual', !!v.primeraMensual),
-  inputChk('fv-pagoMinuta','Pago minuta', !!v.pagoMinuta),
-  inputNum('fv-tiempoAprobacionDias','Tiempo de aprobación (días)', v.tiempoAprobacionDias || 0, { readonly: true }),
-].join(''));
+  viewFicha.innerHTML = fichaHTML;
+  viewChk.innerHTML = checklistHTML;
+  viewDocs.innerHTML = docsHTML;
+  viewExports.innerHTML = exportsHTML;
 
-const htmlContrato = seccion('Contrato / Protocolo / Notaría / RP', [
-  input('fv-estatusContrato','Estatus contrato', v.estatusContrato||''),
-  input('fv-pagare','Pagaré', v.pagare||''),
-  inputDate('fv-fechaFirma','Fecha firma', v.fechaFirma),
-  inputChk('fv-protocoloFirmaCliente','Protocolo firma de cliente', !!v.protocoloFirmaCliente),
-  inputDate('fv-fechaEntregaBanco','Fecha entrega a banco', v.fechaEntregaBanco),
-  inputChk('fv-protocoloFirmaRLBancoInter','Protocolo firma RL / Banco Inter', !!v.protocoloFirmaRLBancoInter),
-  inputDate('fv-fechaRegresoBanco','Fecha regreso banco', v.fechaRegresoBanco),
-  inputNum('fv-diasTranscurridosBanco','Días transcurridos banco', v.diasTranscurridosBanco),
-  inputDate('fv-fechaEntregaProtocoloBancoCli','Entrega protocolo banco cliente', v.fechaEntregaProtocoloBancoCli),
-  inputChk('fv-firmaProtocoloBancoCliente','Firma protocolo banco cliente', !!v.firmaProtocoloBancoCliente),
-  inputDate('fv-fechaRegresoProtocoloBancoCli','Regreso protocolo banco cliente', v.fechaRegresoProtocoloBancoCli),
-  inputNum('fv-diasTranscurridosProtocolo','Días transcurridos protocolo', v.diasTranscurridosProtocolo),
-  inputChk('fv-cierreNotaria','Cierre de notaría', !!v.cierreNotaria),
-  inputDate('fv-fechaPagoImpuesto','Fecha pago impuestos', v.fechaPagoImpuesto),
-  inputChk('fv-ingresoRP','Ingreso al RP', !!v.ingresoRP),
-  inputDate('fv-fechaInscripcion','Fecha inscripción', v.fechaInscripcion),
-  inputChk('fv-solicitudDesembolso','Solicitud desembolso (banco)', !!v.solicitudDesembolso),
-  inputDate('fv-fechaRecibidoCheque','Fecha recibido cheque', v.fechaRecibidoCheque),
-].join(''));
+  views.innerHTML = '';
+  views.appendChild(viewFicha);
+  views.appendChild(viewChk);
+  views.appendChild(viewDocs);
+  views.appendChild(viewExports);
 
-const htmlMivi = seccion('MIVI', [
-  input('fv-expedienteMIVI','Expediente MIVI', v.expedienteMIVI||''),
-  inputDate('fv-entregaExpMIVI','Fecha entrega exp. MIVI', v.entregaExpMIVI),
-  input('fv-resolucionMIVI','N° Resolución MIVI', v.resolucionMIVI||''),
-  inputDate('fv-fechaResolucionMIVI','Fecha resolución', v.fechaResolucionMIVI),
-  inputDate('fv-solicitudMiviDesembolso','Solicitud MIVI desembolso', v.solicitudMiviDesembolso),
-  input('fv-desembolsoMivi','Desembolso MIVI', v.desembolsoMivi||''),
-  inputDate('fv-fechaPagoMivi','Fecha pago MIVI', v.fechaPagoMivi),
-].join(''));
+  initStatusBancoUI(
+    'fv-statusBancoSel',
+    'fv-statusBancoOtherLbl',
+    'fv-statusBancoOther',
+    v.statusBanco || '',
+    { includeEmpty: false }
+  );
 
-const htmlLegal = seccion('Legal / Permisos / Obra / Otros', [
-  inputChk('fv-enConstruccion','En construcción', !!v.enConstruccion),
-  input('fv-faseConstruccion','Fase construcción', v.faseConstruccion||''),
-  input('fv-permisoConstruccionNum','Permiso construcción N° resolución', v.permisoConstruccionNum||''),
-  inputChk('fv-permisoOcupacion','Permiso de ocupación', !!v.permisoOcupacion),
-  input('fv-permisoOcupacionNum','N° permiso de ocupación', v.permisoOcupacionNum||''),
-  input('fv-constructora','Constructor', v.constructora||''),
-  inputChk('fv-pazSalvoGesproban','Paz y salvo Gesproban', !!v.pazSalvoGesproban),
-  inputChk('fv-pazSalvoPromotora','Paz y salvo Promotora', !!v.pazSalvoPromotora),
-  input('fv-mLiberacion','M. Liberación', v.mLiberacion||''),
-  input('fv-mSegregacion','M. Segregación', v.mSegregacion||''),
-  input('fv-mPrestamo','M. Préstamo', v.mPrestamo||''),
-  input('fv-solicitudAvaluo','Solicitud de avalúo', v.solicitudAvaluo||''),
-  input('fv-avaluoRealizado','Avalúo realizado', v.avaluoRealizado||''),
-  input('fv-entregaCasa','Entrega de casa', v.entregaCasa||''),
-  input('fv-entregaANATI','Entrega ANATI', v.entregaANATI||''),
-  input('fv-comentario','Comentario', v.comentario||''),
-].join(''));
+  const elCons = document.getElementById('fv-constructora');
+  if (elCons) elCons.value = safeVal(v.constructora);
 
-const fichaHTML = htmlUnidad + htmlBancoCPP + htmlContrato + htmlMivi + htmlLegal;
+  viewFicha.style.display = '';
+  viewChk.style.display = 'none';
+  viewDocs.style.display = 'none';
+  viewExports.style.display = 'none';
 
-// ---------- CHECKLIST ----------
-const checklistHTML = renderChecklistView(v);
+  cont.querySelectorAll('.modal-tab').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      cont.querySelectorAll('.modal-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
 
-// ---------- DOCUMENTOS (vista) ----------
-const docsHTML = (typeof renderUnidadDocsSkeleton === 'function')
-  ? renderUnidadDocsSkeleton(u)
-  : `<div class="small muted">Subida de documentos por unidad aún no disponible.</div>`;
+      const tab = btn.dataset.tab;
 
-// Montar vistas
-const views    = document.getElementById('fichaViews');
-const viewFicha = document.createElement('div');
-const viewChk   = document.createElement('div');
-const viewDocs  = document.createElement('div');
+      viewFicha.style.display = (tab === 'ficha') ? '' : 'none';
+      viewChk.style.display = (tab === 'checklist') ? '' : 'none';
+      viewDocs.style.display = (tab === 'docs') ? '' : 'none';
+      viewExports.style.display = (tab === 'exports') ? '' : 'none';
 
-viewFicha.id = 'view-ficha';
-viewChk.id   = 'view-checklist';
-viewDocs.id  = 'view-docs';
-
-viewFicha.innerHTML = fichaHTML;
-viewChk.innerHTML   = checklistHTML;
-viewDocs.innerHTML  = docsHTML;
-
-views.innerHTML = '';
-views.appendChild(viewFicha);
-views.appendChild(viewChk);
-views.appendChild(viewDocs);
-
-initStatusBancoUI(
-  'fv-statusBancoSel',
-  'fv-statusBancoOtherLbl',
-  'fv-statusBancoOther',
-  v.statusBanco || '',
-  { includeEmpty: false }
-);
-
-// Asegura que el input de constructora quede correcto pase lo que pase
-const elCons = document.getElementById('fv-constructora');
-if (elCons) elCons.value = safeVal(v.constructora);
-
-// ✅ Status Banco (select + OTRO) — inicializar con lo que ya tiene guardado
-initStatusBancoUI(
-  'fv-statusBancoSel',
-  'fv-statusBancoOtherWrap',
-  'fv-statusBancoOther',
-  v.statusBanco || '',
-  { includeEmpty: false }
-);
-
-// Visibilidad inicial
-viewFicha.style.display = '';
-viewChk.style.display   = 'none';
-viewDocs.style.display  = 'none';
-
-// Tabs
-cont.querySelectorAll('.modal-tab').forEach(btn => {
-  btn.addEventListener('click', async () => {
-    cont.querySelectorAll('.modal-tab').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    const tab = btn.dataset.tab;
-
-    viewFicha.style.display = (tab === 'ficha') ? '' : 'none';
-    viewChk.style.display   = (tab === 'checklist') ? '' : 'none';
-    viewDocs.style.display  = (tab === 'docs') ? '' : 'none';
-
-    if (tab === 'docs') {
-      if (typeof loadUnidadDocs === 'function') await loadUnidadDocs(id, unitId);
-      if (typeof wireUnidadUpload === 'function') wireUnidadUpload(id, unitId);
-    }
+      if (tab === 'docs') {
+        if (typeof loadUnidadDocs === 'function') await loadUnidadDocs(id, unitId);
+        if (typeof wireUnidadUpload === 'function') wireUnidadUpload(id, unitId);
+      }
+    });
   });
-});
 
-// Toggle de ayudas (ℹ️)
-wireChecklistHelpToggles();
+  wireChecklistHelpToggles();
 
-const entregaEl = document.getElementById('fv-entregaExpedienteBanco');
-const recibidoEl = document.getElementById('fv-recibidoCPP');
+  const entregaEl = document.getElementById('fv-entregaExpedienteBanco');
+  const recibidoEl = document.getElementById('fv-recibidoCPP');
 
-if (entregaEl) entregaEl.addEventListener('change', refreshTiempoAprobacionDias);
-if (recibidoEl) recibidoEl.addEventListener('change', refreshTiempoAprobacionDias);
+  if (entregaEl) entregaEl.addEventListener('change', refreshTiempoAprobacionDias);
+  if (recibidoEl) recibidoEl.addEventListener('change', refreshTiempoAprobacionDias);
 
-// calcular al abrir la ficha
-refreshTiempoAprobacionDias();
+  refreshTiempoAprobacionDias();
 
-modalFicha.style.display = 'flex';
+  const btnPdfFichaCliente = document.getElementById('btnPdfFichaCliente');
+const btnPdfProforma = document.getElementById('btnPdfProforma');
+
+if (btnPdfFichaCliente) {
+  btnPdfFichaCliente.addEventListener('click', async () => {
+
+    await downloadFileWithLoading(
+      btnPdfFichaCliente,
+      `/api/export-pdf/ficha-cliente/${unitId}`,
+      `ficha_cliente_${u.manzana || ''}_${u.lote || ''}.pdf`
+    );
+
+  });
+}
+
+if (btnPdfProforma) {
+  btnPdfProforma.addEventListener('click', async () => {
+
+    await downloadFileWithLoading(
+      btnPdfProforma,
+      `/api/export-pdf/proforma/${unitId}`,
+      `proforma_${u.manzana || ''}_${u.lote || ''}.pdf`
+    );
+
+  });
+}
+
+  modalFicha.style.display = 'flex';
 }
 
 
@@ -5171,7 +5464,6 @@ modalFicha.style.display = 'flex';
   fichaGuardar.classList.add('is-loading');
 
   try {
-
     // 1) Actualizar la unidad
     const uBody = {
       estado: document.getElementById('fu-estado').value,
@@ -5187,10 +5479,118 @@ modalFicha.style.display = 'flex';
       projectId: id,
       unitId: fichaUnitId,
 
-      // Cliente
+      // =====================================================
+      // Cliente 1 / solicitante principal
+      // =====================================================
       clienteNombre: vVal('fv-clienteNombre'),
       cedula: vVal('fv-cedula'),
       empresa: vVal('fv-empresa'),
+
+      primerNombre: vVal('fv-primerNombre'),
+      segundoNombre: vVal('fv-segundoNombre'),
+      primerApellido: vVal('fv-primerApellido'),
+      segundoApellido: vVal('fv-segundoApellido'),
+      apellidoCasada: vVal('fv-apellidoCasada'),
+
+      sexo: vVal('fv-sexo'),
+      profesion: vVal('fv-profesion'),
+      estadoCivil: vVal('fv-estadoCivil'),
+      direccion: vVal('fv-direccion'),
+
+      telefonoResidencial: vVal('fv-telefonoResidencial'),
+      telefonoOficina: vVal('fv-telefonoOficina'),
+      celular: vVal('fv-celular'),
+      correo: vVal('fv-correo'),
+
+      perfilCliente: vVal('fv-perfilCliente'),
+      tipoEmpresa: vVal('fv-tipoEmpresa'),
+      sectorEmpresa: vVal('fv-sectorEmpresa'),
+
+      lugarTrabajo: vVal('fv-lugarTrabajo'),
+      ingresoMensual: vNum('fv-ingresoMensual'),
+      cargo: vVal('fv-cargo'),
+      antiguedadLaboral: vVal('fv-antiguedadLaboral'),
+
+      // =====================================================
+      // Cliente 2 / co-solicitante
+      // =====================================================
+      cliente2PrimerNombre: vVal('fv-cliente2PrimerNombre'),
+      cliente2SegundoNombre: vVal('fv-cliente2SegundoNombre'),
+      cliente2PrimerApellido: vVal('fv-cliente2PrimerApellido'),
+      cliente2SegundoApellido: vVal('fv-cliente2SegundoApellido'),
+      cliente2ApellidoCasada: vVal('fv-cliente2ApellidoCasada'),
+      cliente2Cedula: vVal('fv-cliente2Cedula'),
+
+      cliente2Sexo: vVal('fv-cliente2Sexo'),
+      cliente2Profesion: vVal('fv-cliente2Profesion'),
+      cliente2EstadoCivil: vVal('fv-cliente2EstadoCivil'),
+      cliente2Direccion: vVal('fv-cliente2Direccion'),
+
+      cliente2TelefonoResidencial: vVal('fv-cliente2TelefonoResidencial'),
+      cliente2TelefonoOficina: vVal('fv-cliente2TelefonoOficina'),
+      cliente2Celular: vVal('fv-cliente2Celular'),
+      cliente2Correo: vVal('fv-cliente2Correo'),
+
+      cliente2LugarTrabajo: vVal('fv-cliente2LugarTrabajo'),
+      cliente2IngresoMensual: vNum('fv-cliente2IngresoMensual'),
+      cliente2Cargo: vVal('fv-cliente2Cargo'),
+      cliente2AntiguedadLaboral: vVal('fv-cliente2AntiguedadLaboral'),
+
+      // =====================================================
+      // Parientes / referencias
+      // =====================================================
+      pariente1Nombre: vVal('fv-pariente1Nombre'),
+      pariente1Parentesco: vVal('fv-pariente1Parentesco'),
+      pariente1Telefono: vVal('fv-pariente1Telefono'),
+      pariente1TelefonoTrabajo: vVal('fv-pariente1TelefonoTrabajo'),
+
+      pariente2Nombre: vVal('fv-pariente2Nombre'),
+      pariente2Parentesco: vVal('fv-pariente2Parentesco'),
+      pariente2Telefono: vVal('fv-pariente2Telefono'),
+      pariente2TelefonoTrabajo: vVal('fv-pariente2TelefonoTrabajo'),
+
+      referencia1Nombre: vVal('fv-referencia1Nombre'),
+      referencia1Relacion: vVal('fv-referencia1Relacion'),
+      referencia1Telefono: vVal('fv-referencia1Telefono'),
+      referencia1TelefonoTrabajo: vVal('fv-referencia1TelefonoTrabajo'),
+
+      referencia2Nombre: vVal('fv-referencia2Nombre'),
+      referencia2Relacion: vVal('fv-referencia2Relacion'),
+      referencia2Telefono: vVal('fv-referencia2Telefono'),
+      referencia2TelefonoTrabajo: vVal('fv-referencia2TelefonoTrabajo'),
+
+      // =====================================================
+      // Datos del inmueble / lote / vivienda
+      // =====================================================
+      numeroFinca: vVal('fv-numeroFinca'),
+      codigoUbicacion: vVal('fv-codigoUbicacion'),
+      ubicacion: vVal('fv-ubicacion'),
+      calle: vVal('fv-calle'),
+
+      metrajeLote: vNum('fv-metrajeLote'),
+      loteEsquina: vVal('fv-loteEsquina'),
+      metrosExtra: vNum('fv-metrosExtra'),
+      precioLoteEsquina: vNum('fv-precioLoteEsquina'),
+      precioM2Extra: vNum('fv-precioM2Extra'),
+
+      areaAbierta: vNum('fv-areaAbierta'),
+      areaCerrada: vNum('fv-areaCerrada'),
+      areaTotalConstruccion: vNum('fv-areaTotalConstruccion'),
+      recamaras: vNum('fv-recamaras'),
+      banos: vNum('fv-banos'),
+
+      valorMejoras: vNum('fv-valorMejoras'),
+      valorTerreno: vNum('fv-valorTerreno'),
+      fechaProbableEntrega: vDate('fv-fechaProbableEntrega'),
+
+      // =====================================================
+      // Banco / CPP / financiamiento
+      // =====================================================
+      banco: vVal('fv-banco'),
+      oficialBanco: vVal('fv-oficialBanco'),
+      statusBanco: getStatusBancoValue('fv-statusBancoSel', 'fv-statusBancoOther'),
+      estatusCPP: vVal('fv-estatusCPP'),
+      numCPP: vVal('fv-numCPP'),
 
       precioVenta: vNum('fv-precioVenta'),
       montoFinanciamientoCPP: vNum('fv-montoFinanciamientoCPP'),
@@ -5198,19 +5598,20 @@ modalFicha.style.display = 'flex';
       // legacy
       valor: vNum('fv-montoFinanciamientoCPP'),
 
-      fechaContratoCliente: vDate('fv-fechaContratoCliente'),
+      abonoCliente: vNum('fv-abonoCliente'),
+      abonoInicial: vNum('fv-abonoInicial'),
+      porcentajeFinanciamiento: vNum('fv-porcentajeFinanciamiento'),
+      cesionAFavorDe: vVal('fv-cesionAFavorDe'),
 
-      // Banco / CPP
-      banco: vVal('fv-banco'),
-      oficialBanco: vVal('fv-oficialBanco'),
-      statusBanco: getStatusBancoValue('fv-statusBancoSel', 'fv-statusBancoOther'),
-      numCPP: vVal('fv-numCPP'),
       entregaExpedienteBanco: vDate('fv-entregaExpedienteBanco'),
       recibidoCPP: vDate('fv-recibidoCPP'),
       plazoAprobacionDias: vNum('fv-plazoAprobacionDias'),
       fechaValorCPP: vDate('fv-fechaValorCPP'),
       fechaVencimientoCPP: vDate('fv-fechaVencimientoCPP'),
       vencimientoCPPBnMivi: vDate('fv-vencimientoCPPBnMivi'),
+
+      fechaEntregaProformaBanco: vDate('fv-fechaEntregaProformaBanco'),
+      fechaProforma: vDate('fv-fechaProforma'),
 
       aperturaCtaBanco: vChk('fv-aperturaCtaBanco'),
       primeraMensual: vChk('fv-primeraMensual'),
@@ -5221,10 +5622,23 @@ modalFicha.style.display = 'flex';
         vVal('fv-recibidoCPP')
       ),
 
-      // Contrato / Protocolo / Notaría / RP / Desembolso
+      polizas: vChk('fv-polizas'),
+      tipoPoliza: vVal('fv-tipoPoliza'),
+      polizaVida: vVal('fv-polizaVida'),
+      abonoAlte: vNum('fv-abonoAlte'),
+
+      // =====================================================
+      // Contrato / protocolo / notaría / RP
+      // =====================================================
+      fechaContratoCliente: vDate('fv-fechaContratoCliente'),
       estatusContrato: vVal('fv-estatusContrato'),
+      montoContrato: vNum('fv-montoContrato'),
       pagare: vVal('fv-pagare'),
       fechaFirma: vDate('fv-fechaFirma'),
+      contratoFirmado: vChk('fv-contratoFirmado'),
+
+      fechaActivacionTramite: vDate('fv-fechaActivacionTramite'),
+
       protocoloFirmaCliente: vChk('fv-protocoloFirmaCliente'),
       fechaEntregaBanco: vDate('fv-fechaEntregaBanco'),
       protocoloFirmaRLBancoInter: vChk('fv-protocoloFirmaRLBancoInter'),
@@ -5237,13 +5651,19 @@ modalFicha.style.display = 'flex';
       diasTranscurridosProtocolo: vNum('fv-diasTranscurridosProtocolo'),
 
       cierreNotaria: vChk('fv-cierreNotaria'),
+      pagoImpuestos: vChk('fv-pagoImpuestos'),
       fechaPagoImpuesto: vDate('fv-fechaPagoImpuesto'),
       ingresoRP: vChk('fv-ingresoRP'),
+      fechaIngresoRP: vDate('fv-fechaIngresoRP'),
       fechaInscripcion: vDate('fv-fechaInscripcion'),
+
       solicitudDesembolso: vChk('fv-solicitudDesembolso'),
+      fechaDesembolso: vDate('fv-fechaDesembolso'),
       fechaRecibidoCheque: vDate('fv-fechaRecibidoCheque'),
 
+      // =====================================================
       // MIVI
+      // =====================================================
       expedienteMIVI: vVal('fv-expedienteMIVI'),
       entregaExpMIVI: vDate('fv-entregaExpMIVI'),
       resolucionMIVI: vVal('fv-resolucionMIVI'),
@@ -5252,27 +5672,57 @@ modalFicha.style.display = 'flex';
       desembolsoMivi: vVal('fv-desembolsoMivi'),
       fechaPagoMivi: vDate('fv-fechaPagoMivi'),
 
-      // Legal / Obra / Otros
+      // =====================================================
+      // Técnico / obra / permisos
+      // =====================================================
       enConstruccion: vChk('fv-enConstruccion'),
+      estatusConstruccion: vVal('fv-estatusConstruccion'),
       faseConstruccion: vVal('fv-faseConstruccion'),
+
+      permisoConstruccionMunicipal: vChk('fv-permisoConstruccionMunicipal'),
       permisoConstruccionNum: vVal('fv-permisoConstruccionNum'),
+
       permisoOcupacion: vChk('fv-permisoOcupacion'),
       permisoOcupacionNum: vVal('fv-permisoOcupacionNum'),
+      fechaEmisionPermisoOcupacion: vDate('fv-fechaEmisionPermisoOcupacion'),
+
       constructora: vVal('fv-constructora'),
 
-      pazSalvoGesproban: vChk('fv-pazSalvoGesproban'),
-      pazSalvoPromotora: vChk('fv-pazSalvoPromotora'),
+      // =====================================================
+      // Legal / minutas / avalúo / paz y salvo
+      // =====================================================
+      solicitudAvaluo: vVal('fv-solicitudAvaluo'),
+      avaluoRealizado: vVal('fv-avaluoRealizado'),
+      fechaAvaluo: vDate('fv-fechaAvaluo'),
+      empresaAvaluadora: vVal('fv-empresaAvaluadora'),
 
       mLiberacion: vVal('fv-mLiberacion'),
       mSegregacion: vVal('fv-mSegregacion'),
       mPrestamo: vVal('fv-mPrestamo'),
 
-      solicitudAvaluo: vVal('fv-solicitudAvaluo'),
-      avaluoRealizado: vVal('fv-avaluoRealizado'),
+      pazSalvoGesproban: vChk('fv-pazSalvoGesproban'),
+      pazSalvoPromotora: vChk('fv-pazSalvoPromotora'),
+
+      // =====================================================
+      // Entrega / otros
+      // =====================================================
       entregaCasa: vVal('fv-entregaCasa'),
       entregaANATI: vVal('fv-entregaANATI'),
+      fechaEntregaVivienda: vDate('fv-fechaEntregaVivienda'),
 
       comentario: vVal('fv-comentario'),
+
+      // =====================================================
+      // Captación / proforma comercial
+      // =====================================================
+      captadoAtencionOficina: vChk('fv-captadoAtencionOficina'),
+      captadoMailInternet: vChk('fv-captadoMailInternet'),
+      captadoEnProyecto: vChk('fv-captadoEnProyecto'),
+      captadoMercadeoProspecto: vChk('fv-captadoMercadeoProspecto'),
+
+      proformaSolicitadaPor: vVal('fv-proformaSolicitadaPor'),
+      referidoPor: vVal('fv-referidoPor'),
+      observacionCliente: vVal('fv-observacionCliente'),
     };
 
     vBody.checklist = collectChecklistPayload();

@@ -21,6 +21,7 @@ function rx(q) {
 
 const VALID_UNIT_ESTADOS = [
   'disponible',
+  'inventario',
   'reservado',
   'con_cpp',
   'tramite_legal_activado',

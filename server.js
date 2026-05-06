@@ -37,6 +37,8 @@ const chatRoutes = require('./routes/chat');
 
 const app = express();
 
+const exportPdfRoutes = require('./routes/export.routes');
+
 // ------- Safety nets de proceso -------
 process.on('unhandledRejection', (reason) => {
   console.error('[UNHANDLED REJECTION]', reason);
@@ -189,6 +191,7 @@ app.use('/api', ...guard, processRoutes);
 // Comercial
 app.use('/api/units', ...guard, unitsRoutes);
 app.use('/api/export', ...guard, exportRoutes);
+app.use('/api/export-pdf', ...guard, exportPdfRoutes);
 app.use('/api/ventas', ...guard, ventasRoutes);
 
 // Chat

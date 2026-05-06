@@ -15,6 +15,7 @@ const UnitSchema = new mongoose.Schema({
     type: String,
     enum: [
   'disponible',
+  'inventario',
   'reservado',
   'con_cpp',
   'tramite_legal_activado',

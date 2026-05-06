@@ -10,38 +10,83 @@ const { recomputeCommercialKpis } = require('../services/comercial_kpis');
 
 // --- Whitelist de campos permitidos (coincide con tu schema Venta) ---
 const ALLOWED_FIELDS = new Set([
-  // básicos
-  'clienteNombre', 'cedula', 'empresa', 'banco', 'oficialBanco', 'statusBanco', 'numCPP',
-  'montoFinanciamientoCPP', 'precioVenta', 'valor',
-  'fechaContratoCliente',
-
-  // espejo unidad (opcional para reportes)
+  // básicos / legacy
+  'clienteNombre', 'cedula', 'empresa',
   'manzana', 'lote',
+  'valor',
+  'checklist',
 
-  // banco / cpp
-  'entregaExpedienteBanco', 'recibidoCPP', 'plazoAprobacionDias', 'fechaValorCPP',
-  'fechaVencimientoCPP', 'vencimientoCPPBnMivi',
+  // cliente 1
+  'primerNombre', 'segundoNombre', 'primerApellido', 'segundoApellido', 'apellidoCasada',
+  'sexo', 'profesion', 'estadoCivil', 'direccion',
+  'telefonoResidencial', 'telefonoOficina', 'celular', 'correo',
+  'perfilCliente', 'tipoEmpresa', 'sectorEmpresa',
+  'lugarTrabajo', 'ingresoMensual', 'cargo', 'antiguedadLaboral',
 
-  // contrato / protocolo / notaría / RP / desembolso
-  'estatusContrato', 'pagare', 'fechaFirma', 'protocoloFirmaCliente', 'fechaEntregaBanco',
+  // cliente 2
+  'cliente2PrimerNombre', 'cliente2SegundoNombre', 'cliente2PrimerApellido',
+  'cliente2SegundoApellido', 'cliente2ApellidoCasada', 'cliente2Cedula',
+  'cliente2Sexo', 'cliente2Profesion', 'cliente2EstadoCivil', 'cliente2Direccion',
+  'cliente2TelefonoResidencial', 'cliente2TelefonoOficina', 'cliente2Celular', 'cliente2Correo',
+  'cliente2LugarTrabajo', 'cliente2IngresoMensual', 'cliente2Cargo', 'cliente2AntiguedadLaboral',
+
+  // parientes / referencias
+  'pariente1Nombre', 'pariente1Parentesco', 'pariente1Telefono', 'pariente1TelefonoTrabajo',
+  'pariente2Nombre', 'pariente2Parentesco', 'pariente2Telefono', 'pariente2TelefonoTrabajo',
+  'referencia1Nombre', 'referencia1Relacion', 'referencia1Telefono', 'referencia1TelefonoTrabajo',
+  'referencia2Nombre', 'referencia2Relacion', 'referencia2Telefono', 'referencia2TelefonoTrabajo',
+
+  // inmueble
+  'numeroFinca', 'codigoUbicacion', 'ubicacion', 'calle',
+  'metrajeLote', 'loteEsquina', 'metrosExtra', 'precioLoteEsquina', 'precioM2Extra',
+  'areaAbierta', 'areaCerrada', 'areaTotalConstruccion', 'recamaras', 'banos',
+  'valorMejoras', 'valorTerreno', 'fechaProbableEntrega',
+
+  // banco / cpp / financiación
+  'banco', 'oficialBanco', 'statusBanco', 'estatusCPP', 'numCPP',
+  'montoFinanciamientoCPP', 'precioVenta',
+  'abonoCliente', 'abonoInicial', 'porcentajeFinanciamiento', 'cesionAFavorDe',
+  'entregaExpedienteBanco', 'recibidoCPP', 'plazoAprobacionDias',
+  'fechaValorCPP', 'fechaVencimientoCPP', 'vencimientoCPPBnMivi',
+  'fechaEntregaProformaBanco', 'fechaProforma',
+  'aperturaCtaBanco', 'primeraMensual', 'pagoMinuta', 'tiempoAprobacionDias',
+  'polizas', 'tipoPoliza', 'polizaVida', 'abonoAlte',
+
+  // contrato / protocolo / notaría / RP
+  'fechaContratoCliente', 'estatusContrato', 'montoContrato', 'pagare',
+  'fechaFirma', 'contratoFirmado', 'fechaActivacionTramite',
+  'protocoloFirmaCliente', 'fechaEntregaBanco',
   'protocoloFirmaRLBancoInter', 'fechaRegresoBanco', 'diasTranscurridosBanco',
   'fechaEntregaProtocoloBancoCli', 'firmaProtocoloBancoCliente',
   'fechaRegresoProtocoloBancoCli', 'diasTranscurridosProtocolo',
-  'cierreNotaria', 'fechaPagoImpuesto', 'ingresoRP', 'fechaInscripcion',
-  'solicitudDesembolso', 'fechaRecibidoCheque',
+  'cierreNotaria', 'pagoImpuestos', 'fechaPagoImpuesto',
+  'ingresoRP', 'fechaIngresoRP', 'fechaInscripcion',
+  'solicitudDesembolso', 'fechaDesembolso', 'fechaRecibidoCheque',
 
   // MIVI
-  'expedienteMIVI', 'entregaExpMIVI', 'resolucionMIVI', 'fechaResolucionMIVI',
-  'solicitudMiviDesembolso', 'desembolsoMivi', 'fechaPagoMivi',
+  'expedienteMIVI', 'entregaExpMIVI', 'resolucionMIVI',
+  'fechaResolucionMIVI', 'solicitudMiviDesembolso',
+  'desembolsoMivi', 'fechaPagoMivi',
 
-  // Obra / permisos / paz y salvo / otros
-  'enConstruccion', 'faseConstruccion', 'permisoConstruccionNum', 'permisoOcupacion',
-  'permisoOcupacionNum', 'constructora', 'pazSalvoGesproban', 'pazSalvoPromotora',
-  'mLiberacion', 'mSegregacion', 'mPrestamo', 'solicitudAvaluo', 'avaluoRealizado',
-  'entregaCasa', 'entregaANATI', 'comentario',
+  // técnico / obra / permisos
+  'enConstruccion', 'estatusConstruccion', 'faseConstruccion',
+  'permisoConstruccionMunicipal', 'permisoConstruccionNum',
+  'permisoOcupacion', 'permisoOcupacionNum', 'fechaEmisionPermisoOcupacion',
+  'constructora',
 
-  // importante
-  'checklist'
+  // legal / avalúo / minutas / paz y salvo
+  'solicitudAvaluo', 'avaluoRealizado', 'fechaAvaluo', 'empresaAvaluadora',
+  'mLiberacion', 'mSegregacion', 'mPrestamo',
+  'pazSalvoGesproban', 'pazSalvoPromotora',
+
+  // entrega / otros
+  'entregaCasa', 'entregaANATI', 'fechaEntregaVivienda',
+  'comentario',
+
+  // captación / proforma
+  'captadoAtencionOficina', 'captadoMailInternet',
+  'captadoEnProyecto', 'captadoMercadeoProspecto',
+  'proformaSolicitadaPor', 'referidoPor', 'observacionCliente'
 ]);
 
 const STEP_STATES = ['pendiente', 'en_proceso', 'completado', 'bloqueado'];

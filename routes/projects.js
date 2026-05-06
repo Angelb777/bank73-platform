@@ -597,9 +597,11 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     return 'tramite_legal_activado';
   }
 
-  if (st.includes('RESERV')) return 'reservado';
+ if (st.includes('RESERV')) return 'reservado';
 
-  return 'disponible';
+if (st.includes('INVENTARIO')) return 'inventario';
+
+return 'disponible';
 };
 
   const isSoldLikeStatus = (st) =>
@@ -778,7 +780,8 @@ for (const v of (ventasRaw || [])) {
   const U = {
   total: 0,
   available: 0,
-  reserved: 0,
+inventory: 0,
+reserved: 0,
   conCpp: 0,
   tramiteLegal: 0,
   escrituradas: 0,
@@ -797,6 +800,7 @@ else if (st === 'con_cpp') U.conCpp++;
 else if (st === 'tramite_legal_activado') U.tramiteLegal++;
 else if (st === 'escriturado_traspasado') U.escrituradas++;
 else if (st === 'vivienda_entregada') U.entregadas++;
+else if (st === 'inventario') U.inventory++;
 else U.available++;
 
 if (isSoldLikeStatus(st)) U.sold++;
@@ -804,6 +808,7 @@ if (isSoldLikeStatus(st)) U.sold++;
 
   const unitsByStatus = [
   { status: 'Disponible', count: U.available },
+  { status: 'Inventario', count: U.inventory },
   { status: 'Reservado', count: U.reserved },
   { status: 'Con CPP', count: U.conCpp },
   { status: 'Trámite legal activado', count: U.tramiteLegal },
@@ -1280,7 +1285,9 @@ router.post('/:id/summary/export', requireProjectAccess(), async (req, res) => {
 
   if (st.includes('RESERV')) return 'reservado';
 
-  return 'disponible';
+if (st.includes('INVENTARIO')) return 'inventario';
+
+return 'disponible';
 };
 
     const isSoldLikeStatus = (st) =>
@@ -1367,7 +1374,8 @@ router.post('/:id/summary/export', requireProjectAccess(), async (req, res) => {
     const U = {
   total: 0,
   available: 0,
-  reserved: 0,
+inventory: 0,
+reserved: 0,
   conCpp: 0,
   tramiteLegal: 0,
   escrituradas: 0,
@@ -1384,6 +1392,7 @@ else if (st === 'con_cpp') U.conCpp++;
 else if (st === 'tramite_legal_activado') U.tramiteLegal++;
 else if (st === 'escriturado_traspasado') U.escrituradas++;
 else if (st === 'vivienda_entregada') U.entregadas++;
+else if (st === 'inventario') U.inventory++;
 else U.available++;
 
 if (isSoldLikeStatus(st)) U.sold++;
@@ -2143,7 +2152,7 @@ router.post(
   if (t.includes('NOCPP/NOCLIENTE')) return 'disponible';
   if (t.includes('NO CLIENTE')) return 'disponible';
   if (t.includes('SIN CLIENTE')) return 'disponible';
-  if (t.includes('INVENTARIO')) return 'disponible';
+  if (t.includes('INVENTARIO')) return 'inventario';
   if (t.includes('LIBRE')) return 'disponible';
   if (t.includes('DISPON')) return 'disponible';
 
@@ -2194,7 +2203,8 @@ if (t.includes('ENTREG')) return 'vivienda_entregada';
       estatusLote.includes('INVENTARIO') ||
       estatusLote.includes('LIBRE')
     ) {
-      return 'disponible';
+      if (estatusLote.includes('INVENTARIO')) return 'inventario';
+return 'disponible';
     }
   }
 
@@ -2230,9 +2240,13 @@ if (hasBanco) return 'con_cpp';
   // Solo para casos que no estén ya resueltos arriba
   // =========================================================
   if (estatusLote) {
-    if (estatusLote === 'INVENTARIO' || estatusLote === 'LIBRE') {
-      return 'disponible';
-    }
+    if (estatusLote === 'INVENTARIO') {
+  return 'inventario';
+}
+
+if (estatusLote === 'LIBRE') {
+  return 'disponible';
+}
 
     if (estatusLote === 'RESERVA') {
       return 'reservado';

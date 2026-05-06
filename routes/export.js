@@ -124,8 +124,6 @@ async function loadComercialData({ projectId, tenantKey }) {
 
       // ✅ nuevas (SI/NO) + tiempo
       'APERTURA CTA BANCO': yesNo(!!v.aperturaCtaBanco),
-      '1RA MENSUAL': yesNo(!!v.primeraMensual),
-      'PAGO MINUTA': yesNo(!!v.pagoMinuta),
 
       'FECHA CONTRATO FIRMADO POR CLIENTE': toDateOrNull(v.fechaContratoCliente),
       'ESTATUS CTTO': safeStr(v.estatusContrato),
@@ -150,13 +148,8 @@ async function loadComercialData({ projectId, tenantKey }) {
       'PERMISOS DE CONSTRUCCION N° RESOLUCION': safeStr(v.permisoConstruccionNum),
       'PERMISO DE OCUPACIÓN': yesNo(!!v.permisoOcupacion),
       'N° PERMISO DE OCUPACION': safeStr(v.permisoOcupacionNum),
-      'CONSTUCTOR': safeStr(v.constructora), // en Excel está mal escrito así
 
-      'PAZ Y SALVO GESPROBAN': yesNo(!!v.pazSalvoGesproban),
       'PAZ Y SALVO PROMOTORA': yesNo(!!v.pazSalvoPromotora),
-
-      'PAGARE': safeStr(v.pagare),
-      'FECHA FIRMA': toDateOrNull(v.fechaFirma),
 
       'PROTOCOLO FIRMA DE CLIENTE': yesNo(!!v.protocoloFirmaCliente),
       'FECHA DE ENTREGA A BANCO': toDateOrNull(v.fechaEntregaBanco),
@@ -190,7 +183,6 @@ async function loadComercialData({ projectId, tenantKey }) {
       'DIAS TRANSCURRIDOS  ': null,
 
       'ENTREGA DE CASA': safeStr(v.entregaCasa),
-      'ENTREGA ANATI': safeStr(v.entregaANATI),
       'COMENTARIO': safeStr(v.comentario),
     };
   });
@@ -219,7 +211,6 @@ router.get('/comercial.csv', async (req, res) => {
       'FECHA DE ENTREGA DE EXPEDIENTE MIVI',
       'FECHA RESOLUCION',
       'VENCIMIENTO CPP BN-MIVI',
-      'FECHA FIRMA',
       'FECHA DE ENTREGA A BANCO',
       'FECHA REGRESO BANCO',
       'FECHA ENTREGA PROTOCOLO BANCO CLIENTE',
@@ -322,7 +313,6 @@ router.get('/comercial.xlsx', async (req, res) => {
       'FECHA DE ENTREGA DE EXPEDIENTE MIVI',
       'FECHA RESOLUCION',
       'VENCIMIENTO CPP BN-MIVI',
-      'FECHA FIRMA',
       'FECHA DE ENTREGA A BANCO',
       'FECHA REGRESO BANCO',
       'FECHA ENTREGA PROTOCOLO BANCO CLIENTE',
