@@ -1733,3 +1733,175 @@ button.small.danger{ color:#fff !important; }
 body {
   zoom: 0.75;
 }
+
+/* =========================================
+   MOBILE FIXES BANK73
+   ========================================= */
+
+@media (max-width: 768px){
+
+  html{
+    font-size:14px;
+  }
+
+  body{
+    overflow-x:hidden;
+  }
+
+  .container{
+    padding:0 10px;
+  }
+
+  /* ===== TOP ===== */
+
+  .proyecto-topbar{
+    flex-direction:column;
+    align-items:flex-start;
+    gap:14px;
+  }
+
+  .status-controls{
+    width:100%;
+    justify-content:space-between;
+  }
+
+  .select-clean{
+    min-width:140px;
+  }
+
+  /* ===== KPIS ===== */
+
+  .kpi-row{
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+  }
+
+  .kpi{
+    padding:10px;
+  }
+
+  .kpi .value{
+    font-size:1.4rem;
+  }
+
+  /* ===== TABS ===== */
+
+  .tabs{
+    overflow-x:auto;
+    flex-wrap:nowrap;
+    padding-bottom:4px;
+  }
+
+  .tabs::-webkit-scrollbar{
+    display:none;
+  }
+
+  .tab{
+    white-space:nowrap;
+    flex:0 0 auto;
+  }
+
+  /* ===== BOTONES ===== */
+
+  .btn,
+  .btn-primary{
+    padding:10px 12px;
+    font-size:.92rem;
+  }
+
+  /* ===== MODALES ===== */
+
+  .modal{
+    width:100vw !important;
+    height:100vh !important;
+    max-width:none !important;
+    max-height:none !important;
+
+    border-radius:0 !important;
+
+    padding:12px !important;
+
+    display:flex;
+    flex-direction:column;
+  }
+
+  .modal-body{
+    flex:1;
+    overflow:auto;
+    padding-bottom:120px;
+  }
+
+  .modal-footer{
+    position:sticky;
+    bottom:0;
+    background:#fff;
+    padding-top:12px;
+  }
+
+  /* ===== FICHA UNIDAD ===== */
+
+  .form-grid-4{
+    grid-template-columns:1fr !important;
+    gap:10px;
+  }
+
+  .label{
+    margin-bottom:-4px;
+    font-size:.9rem;
+  }
+
+  #fichaUnidadModal input,
+  #fichaUnidadModal select{
+    min-height:44px;
+    font-size:16px;
+  }
+
+  /* ===== COMERCIAL ===== */
+
+  .commercial-folder-body{
+    grid-template-columns:1fr !important;
+  }
+
+  .unit-card{
+    padding:12px !important;
+  }
+
+  .unit-card .price{
+    font-size:1.2rem !important;
+  }
+
+  /* ===== RESUMEN ===== */
+
+  .grid-2{
+    grid-template-columns:1fr !important;
+  }
+
+  /* ===== FINANZAS ===== */
+
+  .fin-phases-grid{
+    grid-template-columns:1fr !important;
+  }
+
+  .fin-cols{
+    grid-template-columns:1fr !important;
+  }
+
+  /* ===== PERMISOS ===== */
+
+  #modalBody table.dark{
+    display:block;
+    overflow-x:auto;
+  }
+
+  #modalBody table.dark tbody tr{
+    min-width:700px;
+  }
+
+  /* ===== CHARTS ===== */
+
+  canvas{
+    max-width:100% !important;
+    height:auto !important;
+  }
+
+}
