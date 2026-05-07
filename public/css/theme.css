@@ -1905,3 +1905,134 @@ body {
   }
 
 }
+
+/* =========================================
+   MOBILE FIX COMERCIAL
+   ========================================= */
+
+@media (max-width: 768px){
+
+  /* Evita que Comercial ensanche toda la pantalla */
+  #tab-comercial{
+    overflow-x:hidden;
+  }
+
+  /* Botonera comercial */
+  #tab-comercial .row,
+  #tab-comercial .commercial-actions,
+  #tab-comercial .export-docs-actions{
+    flex-wrap:wrap;
+  }
+
+  #tab-comercial .btn,
+  #tab-comercial .btn-primary{
+    flex:1 1 auto;
+    min-width:140px;
+  }
+
+  /* Select y buscador */
+  #tab-comercial select,
+  #tab-comercial input{
+    width:100%;
+    max-width:100%;
+  }
+
+  /* KPIs comerciales: que no deformen la pantalla */
+  #tab-comercial .commercial-stats,
+  #tab-comercial .sales-stats,
+  #tab-comercial .units-summary,
+  #tab-comercial .commercial-summary{
+    display:flex !important;
+    overflow-x:auto;
+    gap:14px;
+    padding-bottom:8px;
+    white-space:nowrap;
+  }
+
+  #tab-comercial .commercial-stats > *,
+  #tab-comercial .sales-stats > *,
+  #tab-comercial .units-summary > *,
+  #tab-comercial .commercial-summary > *{
+    flex:0 0 auto;
+  }
+
+  /* Carpetas y unidades */
+  .commercial-folder{
+    width:100%;
+    max-width:100%;
+    padding:14px 10px;
+  }
+
+  .commercial-folder-body{
+    grid-template-columns:1fr !important;
+  }
+
+  #tab-comercial .unit-card{
+    width:100%;
+    max-width:100%;
+  }
+
+  /* Modal ficha unidad: centrado y usable */
+  #fichaUnidadModal{
+    align-items:center !important;
+    justify-content:center !important;
+  }
+
+  #fichaUnidadModal .modal{
+    position:fixed !important;
+    inset:0 !important;
+
+    width:100vw !important;
+    max-width:100vw !important;
+
+    height:100dvh !important;
+    max-height:100dvh !important;
+
+    margin:0 !important;
+    border-radius:0 !important;
+
+    overflow:hidden !important;
+  }
+
+  #fichaUnidadModal .modal-tabs{
+    overflow-x:auto;
+    flex-wrap:nowrap;
+    white-space:nowrap;
+  }
+
+  #fichaUnidadModal .modal-tab{
+    flex:0 0 auto;
+  }
+
+  #fichaUnidadModal .section{
+    width:100%;
+    max-width:100%;
+  }
+
+  #fichaUnidadModal .modal-body{
+    overflow-y:auto !important;
+    overflow-x:hidden !important;
+    max-height:none !important;
+  }
+
+  #fichaUnidadModal .modal-footer{
+    position:sticky !important;
+    bottom:0;
+    width:100%;
+    background:#fff !important;
+    z-index:20;
+  }
+
+  #fichaUnidadModal .modal-footer .btn,
+  #fichaUnidadModal .modal-footer button{
+    width:100%;
+  }
+}
+
+@media (max-width: 768px){
+  .modal-backdrop{
+    align-items:stretch !important;
+    justify-content:stretch !important;
+    padding:0 !important;
+  }
+}
