@@ -45,8 +45,12 @@ router.get('/ficha-cliente/:unitId', async (req, res) => {
     return res.download(pdfPath);
 
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error generando PDF' });
+    console.error('[EXPORT PDF ERROR ficha-cliente]', e);
+
+    return res.status(500).json({
+      error: 'Error generando PDF',
+      detail: e.message,
+    });
   }
 });
 
