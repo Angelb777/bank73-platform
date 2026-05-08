@@ -1,66 +1,95 @@
 // models/Document.js
 const mongoose = require('mongoose');
 
+const DOCUMENT_DEPARTMENTS = ['commercial', 'tecnico', 'legal'];
+
 const documentSchema = new mongoose.Schema({
-  tenantKey:  { type: String, index: true },
+  tenantKey: { type: String, index: true },
 
-  projectId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Project', index: true },
+  projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', index: true },
 
-  // ❖ Comercial
-  unitId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Unit', index: true },
-  unitTag:    { type: String }, // ej. "A-1"
+  // ❖ Comercial / Unidad
+  unitId: { type: mongoose.Schema.Types.ObjectId, ref: 'Unit', index: true },
+  unitTag: { type: String }, // ej. "A-1"
+
+  // ✅ NUEVO: carpeta principal documental
+  department: {
+    type: String,
+    enum: DOCUMENT_DEPARTMENTS,
+    default: 'commercial',
+    index: true
+  },
+
+  // ✅ NUEVO: subcarpeta dentro de Comercial / Técnico / Legal
+  folderId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'UnitDocFolder',
+    default: null,
+    index: true
+  },
 
   // ❖ Proyecto
   checklistId: { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectChecklist', index: true },
 
-  // ✅ Permisos / Trámites (si lo usas)
-  permitCode:  { type: String, index: true },
+  // ✅ Permisos / Trámites
+  permitCode: { type: String, index: true },
   permitTitle: { type: String },
 
   // ❖ Archivo
   originalname: String,
-  filename:     String,
-  path:         String,   // p.ej. "uploads/xxxx.jpg"
-  mimetype:     String,
-  size:         Number,
+  filename: String,
+  path: String,
+  mimetype: String,
+  size: Number,
 
   // ❖ Metadatos
-  title:       { type: String },
-  expiryDate:  { type: Date },
+  title: { type: String },
+  expiryDate: { type: Date },
 
   // ❖ Quién sube
-  uploadedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  uploaderRole: { type: String }, // minúsculas
+  uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  uploaderRole: { type: String },
 
   // ❖ ACL por roles
   visibleToRoles: [{ type: String }],
 
   // ❖ Antes / Después
-  category:  { type: String, index: true },                 // ej. 'beforeAfter'
-  baTag:     { type: String, enum: ['BEFORE','AFTER'], index: true },
-  tag:       { type: String },                              // compat front (BEFORE/AFTER)
+  category: { type: String, index: true },
+  baTag: { type: String, enum: ['BEFORE', 'AFTER'], index: true },
+  tag: { type: String },
 
   // ✅ Ciclo de vida del vencimiento
-  status: { type: String, enum: ['ACTIVE','COMPLETED','REPLACED'], default: 'ACTIVE', index: true },
+  status: {
+    type: String,
+    enum: ['ACTIVE', 'COMPLETED', 'REPLACED'],
+    default: 'ACTIVE',
+    index: true
+  },
 
   // ✅ Auditoría de cumplimiento
   completedAt: { type: Date },
-  completedBy: { type: mongoose.Schema.Types.ObjectId }, // si no tienes modelo User formal, así vale
+  completedBy: { type: mongoose.Schema.Types.ObjectId },
   completionNote: { type: String },
 
-  // ✅ Reemplazos (historial)
-  replaces:   { type: mongoose.Schema.Types.ObjectId, ref: 'Document' },
-  replacedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Document' },
+  // ✅ Reemplazos
+  replaces: { type: mongoose.Schema.Types.ObjectId, ref: 'Document' },
+  replacedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Document' }
 
 }, { timestamps: true });
 
 documentSchema.pre('validate', function (next) {
   if (typeof this.uploaderRole === 'string') {
-    this.uploaderRole = this.uploaderRole.toLowerCase();
+    this.uploaderRole = this.uploaderRole.toLowerCase().trim();
   }
+
+  if (typeof this.department === 'string') {
+    this.department = this.department.toLowerCase().trim();
+  }
+
   if (Array.isArray(this.visibleToRoles)) {
-    this.visibleToRoles = this.visibleToRoles.map(r => String(r).toLowerCase());
+    this.visibleToRoles = this.visibleToRoles.map(r => String(r).toLowerCase().trim());
   }
+
   next();
 });
 
@@ -71,7 +100,18 @@ documentSchema.index({ tenantKey: 1, unitId: 1, createdAt: -1 });
 documentSchema.index({ tenantKey: 1, visibleToRoles: 1 });
 documentSchema.index({ tenantKey: 1, category: 1, baTag: 1, createdAt: -1 });
 
+// ✅ Documentos por unidad + departamento + subcarpeta
+documentSchema.index({
+  tenantKey: 1,
+  projectId: 1,
+  unitId: 1,
+  department: 1,
+  folderId: 1,
+  createdAt: -1
+});
+
 // ✅ Para Resumen “Vencimientos críticos”
 documentSchema.index({ tenantKey: 1, projectId: 1, status: 1, expiryDate: 1 });
 
 module.exports = mongoose.model('Document', documentSchema);
+module.exports.DOCUMENT_DEPARTMENTS = DOCUMENT_DEPARTMENTS;

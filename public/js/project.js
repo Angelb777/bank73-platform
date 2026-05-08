@@ -4720,6 +4720,10 @@ function estadoLabel(v) {
   let selected = new Set();
   let fichaUnitId = null;
   let foldersCache = [];
+  let unitDocDepartment = 'commercial';
+  let unitDocFolderId = '';
+  let unitDocFoldersCache = [];
+  let unitDocInsideDepartment = false;
 
   function pill(txt){ return `<span class="tag">${txt||'-'}</span>`; }
 
@@ -4943,9 +4947,14 @@ wireCommercialFolders();
 
   function renderUnidadDocsSkeleton(unit) {
   const tag = `${unit?.manzana || '-'}-${unit?.lote || ''}`;
+
   return `
     <div id="unitDocs" class="unit-docs-wrap">
       <div class="subtle">Documentos de la unidad <b>${tag}</b></div>
+
+      <div id="unitDocDepartments" class="unit-doc-departments"></div>
+
+      <div id="unitDocFolderBar" class="unit-doc-folder-bar"></div>
 
       <form id="unitUploadForm" class="upload-box">
         <input id="unitFiles" type="file" multiple />
@@ -4957,6 +4966,289 @@ wireCommercialFolders();
       <div id="unitDocsList" class="docs-list small-gap"></div>
     </div>
   `;
+}
+
+function getVisibleDocDepartmentsFrontend() {
+  const role = String(myRole || '').toLowerCase().trim();
+
+  if ([
+    'admin',
+    'bank',
+    'promoter',
+    'gerencia',
+    'socios',
+    'financiero',
+    'contable',
+    'legal'
+  ].includes(role)) {
+    return [
+      { id: 'commercial', label: 'Comercial' },
+      { id: 'tecnico', label: 'Técnico' },
+      { id: 'legal', label: 'Legal' }
+    ];
+  }
+
+  if (role === 'commercial') {
+    return [{ id: 'commercial', label: 'Comercial' }];
+  }
+
+  if (role === 'tecnico') {
+    return [{ id: 'tecnico', label: 'Técnico' }];
+  }
+
+  return [];
+}
+
+async function loadUnitDocFolders(projectId, unitId) {
+  const qs = new URLSearchParams({
+    projectId,
+    unitId
+  });
+
+  unitDocFoldersCache = await apiGet(`/api/unit-doc-folders?${qs.toString()}`).catch(() => []);
+}
+
+async function refreshUnitDocsUI(projectId, unitId) {
+  await loadUnitDocFolders(projectId, unitId);
+
+  if (!unitDocInsideDepartment) {
+    renderUnitDocDepartmentCards(projectId, unitId);
+    return;
+  }
+
+  renderUnitDocInsideDepartment(projectId, unitId);
+  renderUnitDocFolderBar(projectId, unitId);
+
+  await loadUnidadDocs(projectId, unitId);
+}
+
+function renderUnitDocDepartments(projectId, unitId) {
+  const box = document.getElementById('unitDocDepartments');
+  if (!box) return;
+
+  const deps = getVisibleDocDepartmentsFrontend();
+
+  if (!deps.length) {
+    box.innerHTML = `<div class="small muted">No tienes acceso a carpetas documentales.</div>`;
+    return;
+  }
+
+  if (!deps.some(d => d.id === unitDocDepartment)) {
+    unitDocDepartment = deps[0].id;
+  }
+
+  box.innerHTML = deps.map(d => `
+    <button
+      type="button"
+      class="modal-tab ${unitDocDepartment === d.id ? 'active' : ''}"
+      data-doc-department="${d.id}">
+      ${d.label}
+    </button>
+  `).join('');
+
+  box.querySelectorAll('[data-doc-department]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      unitDocDepartment = btn.dataset.docDepartment;
+      unitDocFolderId = '';
+      await refreshUnitDocsUI(projectId, unitId);
+    });
+  });
+}
+
+function renderUnitDocDepartmentCards(projectId, unitId) {
+  const deps = getVisibleDocDepartmentsFrontend();
+  const box = document.getElementById('unitDocs');
+
+  if (!box) return;
+
+  if (!deps.length) {
+    box.innerHTML = `<div class="small muted">No tienes acceso a documentos.</div>`;
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="unit-docs-home">
+      <div class="unit-docs-home-title">
+        Selecciona una carpeta documental
+      </div>
+
+      <div class="unit-doc-main-folders">
+        ${deps.map(d => `
+          <button type="button" class="unit-doc-main-folder" data-doc-department="${d.id}">
+            <div class="unit-doc-main-folder-icon">📁</div>
+            <div>
+              <strong>${d.label}</strong>
+              <span>Ver documentos y subcarpetas</span>
+            </div>
+          </button>
+        `).join('')}
+      </div>
+    </div>
+  `;
+
+  box.querySelectorAll('[data-doc-department]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      unitDocDepartment = btn.dataset.docDepartment;
+      unitDocFolderId = '';
+      unitDocInsideDepartment = true;
+      await refreshUnitDocsUI(projectId, unitId);
+    });
+  });
+}
+
+function renderUnitDocInsideDepartment(projectId, unitId) {
+  const departmentLabel = {
+    commercial: 'Comercial',
+    tecnico: 'Técnico',
+    legal: 'Legal'
+  };
+
+  const box = document.getElementById('unitDocs');
+  if (!box) return;
+
+  box.innerHTML = `
+    <div class="unit-docs-header-clean">
+      <button type="button" class="btn mini" id="btnBackUnitDocDepartments">
+        ← Carpetas
+      </button>
+
+      <div>
+        <h3>📁 ${departmentLabel[unitDocDepartment] || 'Documentos'}</h3>
+        <p>Sube y organiza documentos de esta área.</p>
+      </div>
+    </div>
+
+    <div id="unitDocFolderBar" class="unit-doc-folder-bar"></div>
+
+    <form id="unitUploadForm" class="upload-box">
+      <input id="unitFiles" type="file" multiple />
+      <input id="unitDocName" type="text" placeholder="Nombre (opcional)" />
+      <input id="unitDocExpiry" type="date" placeholder="Fecha de expiración (opcional)" />
+      <button type="submit" class="btn">Subir</button>
+    </form>
+
+    <div id="unitDocsList" class="docs-list small-gap"></div>
+  `;
+
+  document.getElementById('btnBackUnitDocDepartments')?.addEventListener('click', async () => {
+    unitDocInsideDepartment = false;
+    unitDocFolderId = '';
+    await refreshUnitDocsUI(projectId, unitId);
+  });
+
+  wireUnidadUpload(projectId, unitId);
+}
+
+function renderUnitDocFolderBar(projectId, unitId) {
+  const bar = document.getElementById('unitDocFolderBar');
+  if (!bar) return;
+
+  const folders = (unitDocFoldersCache || [])
+    .filter(f => String(f.department) === String(unitDocDepartment));
+
+  bar.innerHTML = `
+    <div class="unit-doc-folder-actions">
+      <button
+        type="button"
+        class="btn mini ${!unitDocFolderId ? 'primary' : ''}"
+        id="btnUnitDocsRoot">
+        📂 Principal
+      </button>
+
+      ${folders.map(f => `
+        <button
+          type="button"
+          class="btn mini ${String(unitDocFolderId) === String(f._id) ? 'primary' : ''}"
+          data-unit-doc-folder="${f._id}">
+          📁 ${f.name}
+        </button>
+      `).join('')}
+
+      <button type="button" class="btn mini" id="btnCreateUnitDocFolder">
+        + Crear subcarpeta
+      </button>
+
+      ${unitDocFolderId ? `
+        <button type="button" class="btn mini" id="btnRenameUnitDocFolder">
+          Renombrar
+        </button>
+
+        <button type="button" class="btn mini danger" id="btnDeleteUnitDocFolder">
+          Eliminar carpeta
+        </button>
+      ` : ''}
+    </div>
+  `;
+
+  document.getElementById('btnUnitDocsRoot')?.addEventListener('click', async () => {
+    unitDocFolderId = '';
+    await refreshUnitDocsUI(projectId, unitId);
+  });
+
+  bar.querySelectorAll('[data-unit-doc-folder]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      unitDocFolderId = btn.dataset.unitDocFolder;
+      await refreshUnitDocsUI(projectId, unitId);
+    });
+  });
+
+  document.getElementById('btnCreateUnitDocFolder')?.addEventListener('click', async () => {
+    const name = prompt('Nombre de la subcarpeta:');
+    if (!name || !name.trim()) return;
+
+    try {
+      await apiPost('/api/unit-doc-folders', {
+        projectId,
+        unitId,
+        department: unitDocDepartment,
+        name: name.trim()
+      });
+
+      await refreshUnitDocsUI(projectId, unitId);
+    } catch (e) {
+      console.error(e);
+      alert('Error creando subcarpeta.');
+    }
+  });
+
+  document.getElementById('btnRenameUnitDocFolder')?.addEventListener('click', async () => {
+    const folder = unitDocFoldersCache.find(f => String(f._id) === String(unitDocFolderId));
+    const name = prompt('Nuevo nombre:', folder?.name || '');
+
+    if (!name || !name.trim()) return;
+
+    try {
+      await apiPatch(`/api/unit-doc-folders/${unitDocFolderId}`, {
+        projectId,
+        unitId,
+        name: name.trim()
+      });
+
+      await refreshUnitDocsUI(projectId, unitId);
+    } catch (e) {
+      console.error(e);
+      alert('Error renombrando subcarpeta.');
+    }
+  });
+
+  document.getElementById('btnDeleteUnitDocFolder')?.addEventListener('click', async () => {
+    const pin = prompt('Introduce el PIN para eliminar esta carpeta:');
+    if (!pin) return;
+
+    try {
+      await apiDelete(`/api/unit-doc-folders/${unitDocFolderId}`, {
+        projectId,
+        unitId,
+        pin
+      });
+
+      unitDocFolderId = '';
+      await refreshUnitDocsUI(projectId, unitId);
+    } catch (e) {
+      console.error(e);
+      alert('Error eliminando subcarpeta.');
+    }
+  });
 }
 
 function wireUnitCards() {
@@ -5156,28 +5448,51 @@ async function crearCarpetaComercial() {
 }
 
 async function loadUnidadDocs(projectId, unitId) {
-  const list = await apiGet(`/api/documents?projectId=${projectId}&unitId=${unitId}`).catch(() => []);
+  const qs = new URLSearchParams({
+    projectId,
+    unitId,
+    department: unitDocDepartment,
+    folderId: unitDocFolderId || ''
+  });
+
+  const list = await apiGet(`/api/documents?${qs.toString()}`).catch(() => []);
+
   const listDiv = document.getElementById('unitDocsList');
   if (!listDiv) return;
+
+  const departmentLabel = {
+    commercial: 'Comercial',
+    tecnico: 'Técnico',
+    legal: 'Legal'
+  };
 
   listDiv.innerHTML = (list || []).map(d => `
     <div class="doc">
       <div>
-        <span class="doc-item-title">${d.originalname || d.name}</span>
-        <div class="doc-meta">${d.mimetype || ''} — ${(d.size || 0).toLocaleString()} bytes</div>
+        <span class="doc-item-title">${d.originalname || d.name || d.title || 'Documento'}</span>
+
+        <div class="doc-meta">
+          ${d.mimetype || ''} — ${(d.size || 0).toLocaleString()} bytes
+        </div>
+
+        <div class="doc-meta">
+          Carpeta: ${departmentLabel[d.department || 'commercial'] || d.department || 'Comercial'}
+        </div>
+
         <div class="doc-expiry ${d.expiryDate && new Date(d.expiryDate) < new Date(Date.now()+30*24*60*60*1000) ? 'warn' : ''}">
           Expira: ${d.expiryDate ? String(d.expiryDate).slice(0,10) : '—'}
         </div>
+
         ${d.checklistId ? `<div class="doc-meta">Checklist: ${d.checklistTitle || ''}</div>` : ''}
       </div>
+
       <div class="doc-actions">
         <a class="btn" href="/${d.path}" target="_blank" rel="noopener">Ver</a>
         <button class="btn danger doc-del" data-id="${d._id}">Eliminar</button>
       </div>
     </div>
-  `).join('') || '<div class="small muted">No hay documentos para esta unidad.</div>';
+  `).join('') || '<div class="small muted">No hay documentos en esta carpeta.</div>';
 
-  // asegurar que el delegado de click está instalado
   wireUnidadDocDelete(projectId, unitId);
 }
 
@@ -5206,35 +5521,48 @@ function wireUnidadDocDelete(projectId, unitId) {
 
 function wireUnidadUpload(projectId, unitId) {
   const form = document.getElementById('unitUploadForm');
-  if (!form) return;
+  if (!form || form.__wiredUpload) return;
+
+  form.__wiredUpload = true;
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+
     const files = document.getElementById('unitFiles')?.files;
-    if (!files || !files.length) { alert('Selecciona al menos un archivo.'); return; }
+
+    if (!files || !files.length) {
+      alert('Selecciona al menos un archivo.');
+      return;
+    }
 
     const fd = new FormData();
-    // Campos obligatorios para backend
+
     fd.append('projectId', projectId);
     fd.append('unitId', unitId);
 
-    // Opcionales
-    const name  = document.getElementById('unitDocName')?.value?.trim();
-    const exp   = document.getElementById('unitDocExpiry')?.value?.trim();
-    if (name) fd.append('name', name);
-    if (exp)  fd.append('expiryDate', exp);
+    // ✅ NUEVO: área documental y subcarpeta
+    fd.append('department', unitDocDepartment);
+    fd.append('folderId', unitDocFolderId || '');
 
-    // Archivos
+    const name = document.getElementById('unitDocName')?.value?.trim();
+    const exp = document.getElementById('unitDocExpiry')?.value?.trim();
+
+    if (name) fd.append('name', name);
+    if (exp) fd.append('expiryDate', exp);
+
     Array.from(files).forEach(f => fd.append('files', f));
 
     try {
       await apiUpload('/api/documents/upload', fd);
-      // Limpieza rápida
+
       form.reset();
-      await loadUnidadDocs(projectId, unitId);
-      // Opcional: refresca también la pestaña Docs general para que aparezcan unificados
+
+      await refreshUnitDocsUI(projectId, unitId);
+
       if (typeof loadDocs === 'function') loadDocs();
     } catch (err) {
-      alert('Error subiendo archivos: ' + err.message);
+      console.error(err);
+      alert('Error subiendo archivos: ' + (err.message || ''));
     }
   });
 }
@@ -5882,9 +6210,10 @@ const viewExports = document.createElement('div');
       viewExports.style.display = (tab === 'exports') ? '' : 'none';
 
       if (tab === 'docs') {
-        if (typeof loadUnidadDocs === 'function') await loadUnidadDocs(id, unitId);
-        if (typeof wireUnidadUpload === 'function') wireUnidadUpload(id, unitId);
-      }
+  unitDocInsideDepartment = false;
+  unitDocFolderId = '';
+  await refreshUnitDocsUI(id, unitId);
+}
     });
   });
 
@@ -6412,6 +6741,18 @@ let _allDocs = []; // cache
 function normStatus(s){ return String(s||'ACTIVE').toUpperCase(); }
 function isActiveDoc(d){ return normStatus(d.status) === 'ACTIVE'; }
 
+function canViewGeneralDocs() {
+  return [
+    'admin',
+    'bank',
+    'promoter',
+    'gerencia',
+    'socios',
+    'financiero',
+    'contable'
+  ].includes(myRole);
+}
+
 function docExpiryMeta(d){
   const expTs = d.expiryDate ? new Date(d.expiryDate).getTime() : null;
   const now   = Date.now();
@@ -6432,46 +6773,67 @@ function findChecklistTitle(idCL) {
   return hit?.title || '—';
 }
 
+function docDepartmentLabel(d) {
+  const dep = String(d.department || '').toLowerCase();
+  if (dep === 'commercial') return 'Comercial';
+  if (dep === 'tecnico') return 'Técnico';
+  if (dep === 'legal') return 'Legal';
+  return '';
+}
+
 function docChips(d){
   const chips = [];
+
+  const dep = docDepartmentLabel(d);
+  if (dep) chips.push(`<span class="chip">Área: ${escapeHtml(dep)}</span>`);
+
   if (d.checklistId) chips.push(`<span class="chip">Checklist: ${escapeHtml(findChecklistTitle(d.checklistId))}</span>`);
   if (d.unitTag)     chips.push(`<span class="chip">Unidad: ${escapeHtml(d.unitTag)}</span>`);
   if (d.baTag)       chips.push(`<span class="chip ${d.baTag === 'BEFORE' ? 'chip-gray' : 'chip-green'}">${escapeHtml(d.baTag)}</span>`);
   if (d.permitCode)  chips.push(`<span class="chip">Permiso: ${escapeHtml(d.permitCode)}</span>`);
+
   return chips.join(' ');
 }
 
 function canDeleteDoc() {
-  return ['admin','bank','promoter','gerencia','socios','financiero','contable','legal','tecnico','commercial'].includes(myRole);
+  return canViewGeneralDocs();
 }
+
 function renderDeleteBtn(d){
   if (!canDeleteDoc()) return '';
   return `<button class="btn btn-danger" data-del="${d._id}">Eliminar</button>`;
 }
 
-// ✅ NUEVO: botón Cumplir
 function canCompleteDoc(){
-  // Ajusta si quieres: por ejemplo solo bank/promoter/admin/gerencia…
-  return ['admin','bank','promoter','gerencia','socios','financiero','contable','legal','tecnico','commercial'].includes(myRole);
+  return canViewGeneralDocs();
 }
+
 function renderCompleteBtn(d){
   const st = normStatus(d.status);
   if (!canCompleteDoc()) return '';
   if (st !== 'ACTIVE') return '';
-if (!d.expiryDate) return ''; // ✅ si no hay vencimiento, no tiene sentido “cumplir”
-return `<button class="btn" data-complete="${d._id}">Cumplir</button>`;
+  if (!d.expiryDate) return '';
+  return `<button class="btn" data-complete="${d._id}">Cumplir</button>`;
 }
 
-// ✅ NUEVO: botón Reemplazar (sube nuevo y archiva el viejo)
 function canReplaceDoc(){
-  return ['admin','bank','promoter','gerencia','socios','financiero','contable'].includes(myRole);
+  return [
+    'admin',
+    'bank',
+    'promoter',
+    'gerencia',
+    'socios',
+    'financiero',
+    'contable'
+  ].includes(myRole);
 }
+
 function renderReplaceBtn(d){
   const st = normStatus(d.status);
   if (!canReplaceDoc()) return '';
   if (st !== 'ACTIVE') return '';
-if (!d.expiryDate) return ''; // ✅ solo si tiene vencimiento
-return `<button class="btn" data-replace="${d._id}">Reemplazar</button>`;
+  if (!d.expiryDate) return '';
+  return `<button class="btn" data-replace="${d._id}">Reemplazar</button>`;
 }
 
 function renderStatusPill(d){
@@ -6483,12 +6845,21 @@ function renderStatusPill(d){
 
 function matchesDocQuery(d, q){
   if (!q) return true;
+
   q = q.toLowerCase();
+
   const fields = [
-    d.originalname, d.title, d.filename, d.mimetype, d.unitTag,
-    d.permitCode, d.permitTitle,
+    d.originalname,
+    d.title,
+    d.filename,
+    d.mimetype,
+    d.unitTag,
+    d.permitCode,
+    d.permitTitle,
+    docDepartmentLabel(d),
     findChecklistTitle(d.checklistId)
   ];
+
   return fields.some(v => String(v || '').toLowerCase().includes(q));
 }
 
@@ -6496,31 +6867,29 @@ async function loadDocs({ q } = {}) {
   const docsDiv    = document.getElementById('docs');
   const uploadForm = document.getElementById('uploadForm');
   const countEl    = document.getElementById('docsCount');
+
   if (!docsDiv) return;
 
-  const partial = ['tecnico','legal','commercial'].includes(myRole);
-  if (uploadForm) uploadForm.style.display = partial ? 'none' : '';
+  if (!canViewGeneralDocs()) {
+    docsDiv.innerHTML = '<div class="small muted">No tienes acceso a la vista general de documentos.</div>';
+    if (uploadForm) uploadForm.style.display = 'none';
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+
+  if (uploadForm) uploadForm.style.display = '';
 
   // Carga una sola vez y cachea
   if (!_allDocs.length) {
     _allDocs = await API.get('/api/documents?projectId=' + id).catch(()=>[]);
   }
 
-  // Filtro por roles (tu lógica)
-  const allowed = (state.allowedChecklistRoles || []);
-  const clMap = new Map((state.checklists || []).map(c => [String(c._id), (c.role || c.roleOwner || '').toLowerCase()]));
-  let filtered = _allDocs.filter(d => {
-    if (!allowed.length) return true;
-    if (d.unitId) return true;
-    if (d.checklistId) {
-      const r = (clMap.get(String(d.checklistId)) || '').toLowerCase();
-      return r && allowed.includes(r);
-    }
-    return !partial;
-  });
+  let filtered = _allDocs.slice();
 
   // Filtro por query
-  if (q && q.trim()) filtered = filtered.filter(d => matchesDocQuery(d, q));
+  if (q && q.trim()) {
+    filtered = filtered.filter(d => matchesDocQuery(d, q));
+  }
 
   if (!filtered.length) {
     docsDiv.innerHTML = '<div class="small muted">No hay documentos</div>';
@@ -6531,16 +6900,18 @@ async function loadDocs({ q } = {}) {
   const MB = 1024*1024;
 
   docsDiv.innerHTML = filtered.map(d => {
-    const sizeStr = (d.size >= MB) ? (d.size/MB).toFixed(2)+' MB' : Math.round((d.size||0)/1024)+' KB';
+    const sizeStr = (d.size >= MB)
+      ? (d.size/MB).toFixed(2)+' MB'
+      : Math.round((d.size||0)/1024)+' KB';
+
     const exp = docExpiryMeta(d);
 
-    // Texto “Expira” + clases según estado
     const expLine = d.expiryDate
       ? `<div class="small ${exp.cls}">Expira: ${exp.label}</div>`
       : `<div class="small muted">Expira: —</div>`;
 
-    // Si está completado, mostrar info auditoría
     const st = normStatus(d.status);
+
     const extra = (st === 'COMPLETED' && d.completedAt)
       ? `<div class="small muted">Cumplido: ${new Date(d.completedAt).toISOString().slice(0,10)} ${d.completionNote ? '— ' + escapeHtml(d.completionNote) : ''}</div>`
       : '';
@@ -6552,11 +6923,14 @@ async function loadDocs({ q } = {}) {
             <b>${escapeHtml(d.originalname || d.title || d.name || 'Documento')}</b>
             ${renderStatusPill(d)}
           </div>
+
           <div class="small muted">${escapeHtml(d.mimetype || '')} — ${sizeStr}</div>
           ${expLine}
           ${extra}
+
           <div class="chips">${docChips(d)}</div>
         </div>
+
         <div class="doc-actions">
           <a class="btn" href="/${d.path}" target="_blank">Ver</a>
           <a class="btn" href="/api/documents/${d._id}/download">Descargar</a>
@@ -6575,14 +6949,16 @@ async function loadDocs({ q } = {}) {
 (function(){
   const inp = document.getElementById('docsSearch');
   if (!inp) return;
+
   let t;
+
   inp.addEventListener('input', () => {
     clearTimeout(t);
     t = setTimeout(() => loadDocs({ q: inp.value }), 150);
   });
 })();
 
-// ===== Upload normal (tu lógica, con pequeño extra para "replaces") =====
+// ===== Upload normal general =====
 function wireDocsUpload() {
   const form = document.getElementById('uploadForm');
   const btn  = document.getElementById('docsUploadBtn');
@@ -6600,12 +6976,18 @@ function wireDocsUpload() {
     e.preventDefault();
     e.stopPropagation();
 
+    if (!canViewGeneralDocs()) {
+      alert('No tienes permisos para subir documentos generales.');
+      return;
+    }
+
     const f = fileEl.files && fileEl.files[0];
     if (!f) return alert('Selecciona un archivo primero');
 
     const fd = new FormData();
     fd.append('projectId', id);
     fd.append('file', f);
+
     if (expEl && expEl.value) fd.append('expiryDate', expEl.value);
 
     btn.disabled = true;
@@ -6628,6 +7010,7 @@ function wireDocsUpload() {
 
       _allDocs = [];
       await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+
       alert('Documento subido');
     } catch (err) {
       console.error('[Docs Upload] error', err);
@@ -6641,9 +7024,11 @@ function wireDocsUpload() {
 
 // ===== Delegación: Eliminar / Cumplir / Reemplazar =====
 document.addEventListener('click', async (ev) => {
+  if (!canViewGeneralDocs()) return;
 
   // ---- eliminar ----
   const delBtn = ev.target.closest('button[data-del]');
+
   if (delBtn) {
     const docId = delBtn.getAttribute('data-del');
     if (!docId) return;
@@ -6656,30 +7041,32 @@ document.addEventListener('click', async (ev) => {
         method: 'DELETE',
         headers: { ...tenantHeaders(), ...authHeaders() }
       });
+
       if (!res.ok) {
         const j = await res.json().catch(()=> ({}));
         if (j?.error === 'pin_invalid') throw new Error('PIN inválido');
         throw new Error(j?.error || `HTTP ${res.status}`);
       }
 
-      // refrescar cache + UI
       _allDocs = [];
       await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
 
     } catch (e) {
       alert('No se pudo eliminar: ' + (e.message || ''));
     }
+
     return;
   }
 
   // ---- cumplir ----
   const compBtn = ev.target.closest('button[data-complete]');
+
   if (compBtn) {
     const docId = compBtn.getAttribute('data-complete');
     if (!docId) return;
 
     const note = prompt('Nota (opcional): ¿qué se cumplió / cómo se resolvió?', '');
-    if (note === null) return; // ✅ si cancelas, NO se cumple
+    if (note === null) return;
 
     try {
       const res = await fetch(`/api/documents/${encodeURIComponent(docId)}/complete`, {
@@ -6687,6 +7074,7 @@ document.addEventListener('click', async (ev) => {
         headers: { 'Content-Type':'application/json', ...tenantHeaders(), ...authHeaders() },
         body: JSON.stringify({ note })
       });
+
       if (!res.ok) {
         const j = await res.json().catch(()=> ({}));
         throw new Error(j?.error || j?.message || `HTTP ${res.status}`);
@@ -6698,32 +7086,33 @@ document.addEventListener('click', async (ev) => {
     } catch (e) {
       alert('No se pudo marcar como cumplido: ' + (e.message || ''));
     }
+
     return;
   }
 
   // ---- reemplazar ----
   const repBtn = ev.target.closest('button[data-replace]');
+
   if (repBtn) {
     const docId = repBtn.getAttribute('data-replace');
     if (!docId) return;
 
-    // Abrimos un input file “al vuelo”
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '*/*';
+
     input.onchange = async () => {
       const f = input.files && input.files[0];
       if (!f) return;
 
-      // fecha opcional
       const expiry = prompt('Fecha de vencimiento del NUEVO documento (YYYY-MM-DD) o vacío:', '') || '';
 
       const fd = new FormData();
       fd.append('projectId', id);
       fd.append('file', f);
+
       if (expiry.trim()) fd.append('expiryDate', expiry.trim());
 
-      // 👇 clave: este upload reemplaza a docId
       fd.append('replaces', docId);
 
       try {
@@ -6732,6 +7121,7 @@ document.addEventListener('click', async (ev) => {
           headers: { ...tenantHeaders(), ...authHeaders() },
           body: fd
         });
+
         if (!res.ok) {
           const j = await res.json().catch(()=> ({}));
           throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
@@ -6739,12 +7129,14 @@ document.addEventListener('click', async (ev) => {
 
         _allDocs = [];
         await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+
         alert('Reemplazo subido. El documento anterior queda archivado.');
 
       } catch (e) {
         alert('No se pudo reemplazar: ' + (e.message || ''));
       }
     };
+
     input.click();
     return;
   }
@@ -6752,7 +7144,7 @@ document.addEventListener('click', async (ev) => {
 
 // Llamadas iniciales
 wireDocsUpload();
-// (tu loadProject o init debe llamar a loadDocs)
+// tu loadProject o init debe llamar a loadDocs
 
 // ====== Chat (pestaña Chat) ======
 let chatBeforeCursor = null; // para paginación "cargar más"
