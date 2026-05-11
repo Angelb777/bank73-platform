@@ -2041,12 +2041,11 @@ body {
 }
 
 /* =========================================
-   MOBILE POPUPS — SOLUCIÓN DEFINITIVA
+   MOBILE — FINAL FIX DEFINITIVO
+   Topbar + portfolio + popups + comercial
    ========================================= */
 
 @media (max-width: 768px){
-
-  /* ===== Base móvil ===== */
 
   html,
   body{
@@ -2060,60 +2059,77 @@ body {
     position:relative;
   }
 
-  /* ===== Topbar visible también en Portfolio ===== */
+  /* ===== TOPBAR GENERAL ===== */
 
   .topbar{
     position:sticky !important;
-    top:0;
-    z-index:9999;
-
-    padding:12px 14px !important;
+    top:0 !important;
+    z-index:9999 !important;
 
     display:flex !important;
     align-items:center !important;
     justify-content:space-between !important;
 
-    gap:12px;
+    gap:12px !important;
+
+    padding:12px 14px !important;
 
     background:rgba(15,20,34,.96) !important;
     backdrop-filter:blur(10px);
   }
 
   .topbar .brand{
-    flex:1 1 auto;
-    min-width:0;
-
+    min-width:0 !important;
     font-size:16px !important;
-    font-weight:700;
-
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-  }
-
-  .topbar > div:last-child,
-  .topbar #logoutBtn,
-  .topbar button,
-  .topbar .btn{
-    flex:0 0 auto !important;
+    font-weight:800 !important;
+    overflow:hidden !important;
+    text-overflow:ellipsis !important;
+    white-space:nowrap !important;
   }
 
   .topbar #logoutBtn,
   .topbar .btn{
     display:inline-flex !important;
-    align-items:center;
-    justify-content:center;
+    align-items:center !important;
+    justify-content:center !important;
 
+    width:auto !important;
     min-width:88px !important;
 
-    padding:10px 14px !important;
-    border-radius:16px !important;
+    padding:10px 16px !important;
+    border-radius:18px !important;
 
     position:relative !important;
     z-index:10000 !important;
   }
 
-  /* ===== Containers que se cortaban ===== */
+  /* ===== PORTFOLIO TOPBAR ===== */
+
+  .topbar-left{
+    flex:1 1 auto !important;
+    min-width:0 !important;
+  }
+
+  .topbar-right{
+    flex:0 0 auto !important;
+    min-width:auto !important;
+    display:flex !important;
+    justify-content:flex-end !important;
+  }
+
+  .topbar-center{
+    order:3 !important;
+    flex:0 0 100% !important;
+    width:100% !important;
+    min-width:0 !important;
+  }
+
+  .topbar-search{
+    width:100% !important;
+    max-width:100% !important;
+  }
+
+  /* ===== CONTENEDORES ===== */
 
   .container,
   .unit-card,
@@ -2126,62 +2142,82 @@ body {
     box-sizing:border-box !important;
   }
 
-  /* Importante: NO tocar el layout interno del header de carpeta */
+  /* ===== COMERCIAL / CARPETAS ===== */
+
   .commercial-folder{
     width:100% !important;
     max-width:100% !important;
     min-width:0 !important;
+
     box-sizing:border-box !important;
 
+    padding:16px !important;
     overflow:hidden !important;
-    padding:14px !important;
-  }
-
-  .commercial-folder-body{
-    grid-template-columns:1fr !important;
-    width:100%;
-    max-width:100%;
-    min-width:0;
   }
 
   .commercial-folder-head{
-    display:grid !important;
-    grid-template-columns:1fr auto !important;
-    align-items:start !important;
+    display:flex !important;
+    flex-direction:column !important;
+    align-items:stretch !important;
+    justify-content:flex-start !important;
+
     gap:12px !important;
+
+    width:100% !important;
+    max-width:100% !important;
   }
 
   .commercial-folder-head h3{
-    min-width:0 !important;
+    width:100% !important;
     max-width:100% !important;
-    word-break:break-word !important;
-    line-height:1.05 !important;
+
+    margin:0 !important;
+
+    font-size:26px !important;
+    line-height:1.15 !important;
+
+    white-space:normal !important;
+    word-break:normal !important;
+    overflow-wrap:break-word !important;
   }
 
   .folder-actions{
+    width:100% !important;
     max-width:100% !important;
-    min-width:0 !important;
 
-    display:flex !important;
-    justify-content:flex-end !important;
+    display:grid !important;
+    grid-template-columns:34px 1fr 1fr !important;
     align-items:center !important;
-    gap:8px !important;
-    flex-wrap:wrap !important;
+
+    gap:10px !important;
+  }
+
+  .folder-actions .folder-color{
+    width:34px !important;
+    height:34px !important;
+    min-width:34px !important;
+    padding:0 !important;
   }
 
   .folder-actions .btn,
   .folder-actions button{
-    width:auto !important;
-    min-width:110px !important;
+    width:100% !important;
+    min-width:0 !important;
+    max-width:none !important;
+
+    padding:10px 12px !important;
+    border-radius:999px !important;
+
+    white-space:nowrap !important;
+  }
+
+  .commercial-folder-body{
+    grid-template-columns:1fr !important;
+
+    width:100% !important;
     max-width:100% !important;
-    flex:0 1 auto !important;
+    min-width:0 !important;
   }
-
-  .folder-actions .folder-color{
-    flex:0 0 34px !important;
-  }
-
-  /* ===== Unit cards ===== */
 
   #tab-comercial .unit-card{
     width:100% !important;
@@ -2196,15 +2232,6 @@ body {
     gap:10px !important;
   }
 
-  #tab-comercial .unit-card .title,
-  #tab-comercial .unit-card .meta,
-  #tab-comercial .unit-card .price{
-    min-width:0 !important;
-    max-width:100% !important;
-  }
-
-  /* ===== Chips / badges sin cortar tarjeta ===== */
-
   .badges,
   .unit-card .badges{
     display:flex !important;
@@ -2213,22 +2240,22 @@ body {
     overflow-x:auto !important;
     overflow-y:hidden !important;
 
-    gap:6px;
+    gap:6px !important;
     max-width:100% !important;
 
-    scrollbar-width:none;
+    scrollbar-width:none !important;
   }
 
   .badges::-webkit-scrollbar,
   .unit-card .badges::-webkit-scrollbar{
-    display:none;
+    display:none !important;
   }
 
   .chip{
     flex:0 0 auto !important;
   }
 
-  /* ===== Popup backdrop ===== */
+  /* ===== POPUPS FULLSCREEN ===== */
 
   .modal-backdrop,
   #fichaUnidadModal,
@@ -2247,7 +2274,6 @@ body {
     overflow:hidden !important;
 
     background:rgba(0,0,0,.55) !important;
-
     zoom:1 !important;
   }
 
@@ -2256,11 +2282,10 @@ body {
   #fichaUnidadModal[style*="display: flex"],
   #fichaUnidadModal[style*="display:flex"],
   #modalBackdrop[style*="display: flex"],
-  #modalBackdrop[style*="display:flex"]{
+  #modalBackdrop[style*="display:flex"],
+  .modal-backdrop.show{
     display:block !important;
   }
-
-  /* ===== Modal fullscreen ===== */
 
   .modal-backdrop .modal,
   #fichaUnidadModal .modal,
@@ -2295,8 +2320,6 @@ body {
     box-shadow:none !important;
     transform:none !important;
   }
-
-  /* ===== Header popup ===== */
 
   .modal-head{
     flex:0 0 auto !important;
@@ -2335,8 +2358,6 @@ body {
     box-shadow:0 8px 22px rgba(15,23,42,.15) !important;
   }
 
-  /* ===== Tabs popup ===== */
-
   #fichaUnidadModal .modal-tabs{
     flex:0 0 auto !important;
 
@@ -2355,6 +2376,7 @@ body {
     margin:0 !important;
 
     background:#fff !important;
+
     border-bottom:1px solid #e5e7eb !important;
 
     scrollbar-width:none !important;
@@ -2374,8 +2396,6 @@ body {
     border-radius:12px 12px 0 0 !important;
   }
 
-  /* ===== Body popup ===== */
-
   .modal-body,
   #modalBody,
   #fichaUnidadModal .modal-body{
@@ -2391,8 +2411,6 @@ body {
 
     margin:0 !important;
   }
-
-  /* ===== Footer popup ===== */
 
   .modal-footer{
     flex:0 0 auto !important;
@@ -2414,8 +2432,6 @@ body {
     border-radius:16px !important;
   }
 
-  /* ===== Cards internas ===== */
-
   #fichaUnidadModal .section,
   #modalBody .permits-phase-card{
     width:100% !important;
@@ -2425,8 +2441,6 @@ body {
 
     overflow:hidden !important;
   }
-
-  /* ===== Permisos ===== */
 
   #modalBody .permits-table-wrap{
     overflow-x:auto !important;
