@@ -2052,9 +2052,7 @@ body {
   body{
     width:100% !important;
     max-width:100% !important;
-
     overflow-x:hidden !important;
-
     zoom:1 !important;
   }
 
@@ -2062,7 +2060,7 @@ body {
     position:relative;
   }
 
-  /* ===== Topbar ===== */
+  /* ===== Topbar visible también en Portfolio ===== */
 
   .topbar{
     position:sticky !important;
@@ -2082,7 +2080,7 @@ body {
   }
 
   .topbar .brand{
-    flex:1;
+    flex:1 1 auto;
     min-width:0;
 
     font-size:16px !important;
@@ -2093,9 +2091,20 @@ body {
     white-space:nowrap;
   }
 
+  .topbar > div:last-child,
+  .topbar #logoutBtn,
+  .topbar button,
   .topbar .btn{
+    flex:0 0 auto !important;
+  }
+
+  .topbar #logoutBtn,
+  .topbar .btn{
+    display:inline-flex !important;
+    align-items:center;
+    justify-content:center;
+
     min-width:88px !important;
-    flex:0 0 auto;
 
     padding:10px 14px !important;
     border-radius:16px !important;
@@ -2107,39 +2116,105 @@ body {
   /* ===== Containers que se cortaban ===== */
 
   .container,
-  .commercial-folder,
   .unit-card,
   .phase,
   .card,
   .section{
     width:100% !important;
     max-width:100% !important;
-
     min-width:0 !important;
     box-sizing:border-box !important;
   }
 
-  /* evita cortes laterales */
+  /* Importante: NO tocar el layout interno del header de carpeta */
   .commercial-folder{
+    width:100% !important;
+    max-width:100% !important;
+    min-width:0 !important;
+    box-sizing:border-box !important;
+
     overflow:hidden !important;
+    padding:14px !important;
   }
 
   .commercial-folder-body{
     grid-template-columns:1fr !important;
+    width:100%;
+    max-width:100%;
+    min-width:0;
   }
 
-  /* ===== Chips / badges ===== */
+  .commercial-folder-head{
+    display:grid !important;
+    grid-template-columns:1fr auto !important;
+    align-items:start !important;
+    gap:12px !important;
+  }
+
+  .commercial-folder-head h3{
+    min-width:0 !important;
+    max-width:100% !important;
+    word-break:break-word !important;
+    line-height:1.05 !important;
+  }
+
+  .folder-actions{
+    max-width:100% !important;
+    min-width:0 !important;
+
+    display:flex !important;
+    justify-content:flex-end !important;
+    align-items:center !important;
+    gap:8px !important;
+    flex-wrap:wrap !important;
+  }
+
+  .folder-actions .btn,
+  .folder-actions button{
+    width:auto !important;
+    min-width:110px !important;
+    max-width:100% !important;
+    flex:0 1 auto !important;
+  }
+
+  .folder-actions .folder-color{
+    flex:0 0 34px !important;
+  }
+
+  /* ===== Unit cards ===== */
+
+  #tab-comercial .unit-card{
+    width:100% !important;
+    max-width:100% !important;
+    overflow:hidden !important;
+  }
+
+  #tab-comercial .unit-card .head{
+    display:flex !important;
+    align-items:flex-start !important;
+    justify-content:space-between !important;
+    gap:10px !important;
+  }
+
+  #tab-comercial .unit-card .title,
+  #tab-comercial .unit-card .meta,
+  #tab-comercial .unit-card .price{
+    min-width:0 !important;
+    max-width:100% !important;
+  }
+
+  /* ===== Chips / badges sin cortar tarjeta ===== */
 
   .badges,
   .unit-card .badges{
     display:flex !important;
-
     flex-wrap:nowrap !important;
 
     overflow-x:auto !important;
     overflow-y:hidden !important;
 
     gap:6px;
+    max-width:100% !important;
 
     scrollbar-width:none;
   }
@@ -2158,7 +2233,6 @@ body {
   .modal-backdrop,
   #fichaUnidadModal,
   #modalBackdrop{
-
     position:fixed !important;
     inset:0 !important;
 
@@ -2191,7 +2265,6 @@ body {
   .modal-backdrop .modal,
   #fichaUnidadModal .modal,
   #modalBackdrop .modal{
-
     position:fixed !important;
 
     top:0 !important;
@@ -2206,7 +2279,6 @@ body {
     max-height:100dvh !important;
 
     margin:0 !important;
-
     padding:14px !important;
 
     border-radius:0 !important;
@@ -2221,7 +2293,6 @@ body {
     overflow:hidden !important;
 
     box-shadow:none !important;
-
     transform:none !important;
   }
 
@@ -2248,11 +2319,8 @@ body {
     color:#0f172a !important;
   }
 
-  /* ===== Botón cerrar ===== */
-
   .modal-head button,
   .modal-head .btn{
-
     width:auto !important;
     min-width:110px !important;
 
@@ -2260,7 +2328,6 @@ body {
     color:#111827 !important;
 
     border:1px solid #cbd5e1 !important;
-
     border-radius:14px !important;
 
     padding:10px 14px !important;
@@ -2271,11 +2338,9 @@ body {
   /* ===== Tabs popup ===== */
 
   #fichaUnidadModal .modal-tabs{
-
     flex:0 0 auto !important;
 
     display:flex !important;
-
     gap:8px !important;
 
     width:100% !important;
@@ -2290,7 +2355,6 @@ body {
     margin:0 !important;
 
     background:#fff !important;
-
     border-bottom:1px solid #e5e7eb !important;
 
     scrollbar-width:none !important;
@@ -2315,7 +2379,6 @@ body {
   .modal-body,
   #modalBody,
   #fichaUnidadModal .modal-body{
-
     flex:1 1 auto !important;
 
     height:auto !important;
@@ -2332,11 +2395,9 @@ body {
   /* ===== Footer popup ===== */
 
   .modal-footer{
-
     flex:0 0 auto !important;
 
     background:#fff !important;
-
     border-top:1px solid #e5e7eb !important;
 
     padding:12px 0 calc(12px + env(safe-area-inset-bottom)) !important;
@@ -2346,7 +2407,6 @@ body {
 
   .modal-footer button,
   .modal-footer .btn{
-
     width:100% !important;
 
     min-height:50px !important;
@@ -2358,7 +2418,6 @@ body {
 
   #fichaUnidadModal .section,
   #modalBody .permits-phase-card{
-
     width:100% !important;
     max-width:100% !important;
 
