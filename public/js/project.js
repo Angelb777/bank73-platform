@@ -2714,6 +2714,22 @@ async function loadSummary() {
     };
 
     const exportSummary = async (format) => {
+  const btn = format === 'pdf' ? pdf : exl;
+  const originalText = btn?.textContent || '';
+
+  if (btn?.dataset.loading === '1') return;
+
+  try {
+    [pdf, exl].forEach(b => {
+  if (!b) return;
+  b.dataset.loading = '1';
+  b.style.pointerEvents = 'none';
+  b.style.opacity = '0.6';
+});
+
+if (btn) {
+  btn.textContent = format === 'pdf' ? 'Generando PDF...' : 'Generando Excel...';
+}
       // Capturamos charts (los que existan)
             const charts = {
         'Estatus lotes / unidades': captureCanvas('sumUnitsDonut'),
@@ -2792,6 +2808,18 @@ const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
 
       const ext = (format === 'pdf') ? 'pdf' : 'xlsx';
       await downloadBlob(resp2, `resumen_${id}.${ext}`);
+      } finally {
+  [pdf, exl].forEach(b => {
+    if (!b) return;
+    b.dataset.loading = '0';
+    b.style.pointerEvents = '';
+    b.style.opacity = '';
+  });
+
+  if (btn) {
+    btn.textContent = originalText;
+  }
+}
     };
 
     // Bind una sola vez (Excel)
@@ -2878,12 +2906,9 @@ const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
     alert(err.message || 'Error importando Dato Único');
 
   } finally {
-
-    // 🔓 desbloquear botón
-    importBtn.disabled = false;
-    importBtn.innerText = 'Importar Dato Único';
-
-  }
+  importBtn.disabled = false;
+  importBtn.innerText = 'Importar Dato Único';
+}
 });
     }
 
