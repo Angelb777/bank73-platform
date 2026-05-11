@@ -539,689 +539,925 @@ router.put('/:id/assign', requireRole('admin','bank'), async (req, res) => {
 
 
 router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
-  const { id } = req.params;
-  const tenantKey = req.tenantKey;
+  try {
+    const { id } = req.params;
+    const tenantKey = req.tenantKey;
 
-  const project = await Project.findOne({ _id: id, tenantKey }).lean();
-  const financePhases = Array.isArray(project?.finance?.phases) ? project.finance.phases : [];
+    const project = await Project.findOne({ _id: id, tenantKey }).lean();
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
 
-  if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    const financePhases = Array.isArray(project?.finance?.phases) ? project.finance.phases : [];
 
-  const [checklists, documents, ventasRaw, units, permits] = await Promise.all([
-    ProjectChecklist.find({
-      projectId: new mongoose.Types.ObjectId(id),
-      $or: [{ tenantKey }, { tenantKey: { $exists: false } }]
-    }).lean(),
-    Document.find({ tenantKey, projectId: id }).sort({ createdAt: -1 }).lean(),
-    Venta.find({ tenantKey, projectId: id, deletedAt: null }).lean(),
-    Unit.find({ tenantKey, projectId: id, deletedAt: null }).lean(),
-    (async () => {
-      try {
-        return await ProjectPermit.findOne({ tenantKey, projectId: id }).lean();
-      } catch {
-        return null;
+    const [checklists, documents, ventasRaw, units, permits] = await Promise.all([
+      ProjectChecklist.find({
+        projectId: new mongoose.Types.ObjectId(id),
+        $or: [{ tenantKey }, { tenantKey: { $exists: false } }]
+      }).lean(),
+      Document.find({ tenantKey, projectId: id }).sort({ createdAt: -1 }).lean(),
+      Venta.find({ tenantKey, projectId: id, deletedAt: null }).lean(),
+      Unit.find({ tenantKey, projectId: id, deletedAt: null }).lean(),
+      (async () => {
+        try {
+          return await ProjectPermit.findOne({ tenantKey, projectId: id }).lean();
+        } catch {
+          return null;
+        }
+      })()
+    ]);
+
+    // =========================
+    // Helpers
+    // =========================
+    const norm = s => String(s || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toUpperCase();
+
+    const clean = s => String(s || '').trim();
+
+    const toNum = (v) => {
+      if (v === '' || v === null || v === undefined) return 0;
+      if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+      const n = Number(String(v).replace(/\./g, '').replace(',', '.'));
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const toTime = (v) => {
+      if (!v) return null;
+      const t = new Date(v).getTime();
+      return Number.isFinite(t) ? t : null;
+    };
+
+    const unitKey = (mz, lt) =>
+      `${clean(mz).toUpperCase()}|${clean(lt).toUpperCase()}`;
+
+    const countBy = (arr, labelFn, valueFn = () => 1) => {
+      const map = new Map();
+      for (const item of arr || []) {
+        const label = clean(labelFn(item)) || 'N/D';
+        const val = valueFn(item);
+        const prev = map.get(label) || { label, count: 0, amount: 0 };
+        prev.count += 1;
+        prev.amount += toNum(val);
+        map.set(label, prev);
       }
-    })()
-  ]);
+      return Array.from(map.values()).sort((a, b) => b.count - a.count);
+    };
 
-  // =========================
-  // Helpers
-  // =========================
-  const norm = s => String(s || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-    .toUpperCase();
+    const isYes = (v) => {
+      const t = norm(v);
+      return ['SI', 'S', 'YES', 'Y', 'TRUE', '1', 'OK', 'X'].includes(t);
+    };
 
-  const clean = s => String(s || '').trim();
+    const hasText = (v) => !!clean(v);
 
-  const toNum = (v) => {
-    if (v === '' || v === null || v === undefined) return 0;
-    if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
-    const n = Number(String(v).replace(/\./g, '').replace(',', '.'));
-    return Number.isFinite(n) ? n : 0;
-  };
+    const getVentaKey = (v) => {
+      const lotKey = unitKey(v?.manzana, v?.lote);
+      if (lotKey !== '|') return `LOT:${lotKey}`;
 
-  const toTime = (v) => {
-    if (!v) return null;
-    const t = new Date(v).getTime();
-    return Number.isFinite(t) ? t : null;
-  };
+      const unitId = v?.unitId ? String(v.unitId) : '';
+      if (unitId) return `UNIT:${unitId}`;
 
-  const unitKey = (mz, lt) =>
-    `${clean(mz).toUpperCase()}|${clean(lt).toUpperCase()}`;
+      return null;
+    };
 
-  const getVentaKey = (v) => {
-  const lotKey = unitKey(v?.manzana, v?.lote);
+    const getVentaSortTs = (v) =>
+      toTime(v?.updatedAt) ||
+      toTime(v?.createdAt) ||
+      toTime(v?.fechaContratoCliente) ||
+      0;
 
-  // ✅ Prioridad real: manzana+lote
-  // porque una misma casa puede haber tenido distintos unitId históricos
-  if (lotKey !== '|') return `LOT:${lotKey}`;
+    const getCppDueDate = (v) =>
+      v?.fechaVencimientoCPP ||
+      v?.vencimientoCPP ||
+      v?.vencimientoCPPBnMivi ||
+      v?.vencimientoCPP_BNMIVI ||
+      v?.vencimientoCPPBNMIVI ||
+      null;
 
-  const unitId = v?.unitId ? String(v.unitId) : '';
-  if (unitId) return `UNIT:${unitId}`;
+    const getUnitStatus = (u) => {
+      const st = norm(u?.estado || u?.status);
 
-  return null;
-};
+      if (st.includes('CANCEL') || st.includes('ANUL')) return 'cancelado';
+      if (st.includes('VIVIENDA_ENTREGADA') || st.includes('VIVIENDA ENTREGADA') || st.includes('ENTREG')) return 'vivienda_entregada';
+      if (st.includes('ESCRITURADO_TRASPASADO') || st.includes('ESCRITURADO TRASPASADO') || st.includes('ESCRITURAD') || st.includes('TRASPAS')) return 'escriturado_traspasado';
+      if (st.includes('TRAMITE_LEGAL_ACTIVADO') || st.includes('TRAMITE LEGAL ACTIVADO') || st.includes('INGRESO_RP') || st.includes('INGRESO RP')) return 'tramite_legal_activado';
+      if (st.includes('CON_CPP') || st.includes('CON CPP') || st === 'CPP') return 'con_cpp';
+      if (st.includes('EN_ESCRIT') || st.includes('EN ESCRIT') || st.includes('ESCRITURACION')) return 'tramite_legal_activado';
+      if (st.includes('RESERV')) return 'reservado';
+      if (st.includes('INVENTARIO')) return 'inventario';
 
-  const getVentaSortTs = (v) =>
-    toTime(v?.updatedAt) ||
-    toTime(v?.createdAt) ||
-    toTime(v?.fechaContratoCliente) ||
-    0;
+      return 'disponible';
+    };
 
-  const getCppDueDate = (v) =>
-    v?.fechaVencimientoCPP ||
-    v?.vencimientoCPP ||
-    v?.vencimientoCPPBnMivi ||
-    v?.vencimientoCPP_BNMIVI ||
-    v?.vencimientoCPPBNMIVI ||
-    null;
+    const isSoldLikeStatus = (st) =>
+      ['reservado', 'con_cpp', 'tramite_legal_activado', 'escriturado_traspasado', 'vivienda_entregada'].includes(st);
 
-  const getUnitStatus = (u) => {
-  const st = norm(u?.estado || u?.status);
+    const hasClientSignal = (v) =>
+      !!clean(v?.clienteNombre) ||
+      !!clean(v?.cedula) ||
+      !!clean(v?.empresa) ||
+      !!clean(v?.primerNombre) ||
+      !!clean(v?.primerApellido);
 
-  if (st.includes('CANCEL') || st.includes('ANUL')) return 'cancelado';
+    const hasBankSignal = (v) => !!clean(v?.banco);
 
-  if (st.includes('VIVIENDA_ENTREGADA') || st.includes('VIVIENDA ENTREGADA') || st.includes('ENTREG')) {
-    return 'vivienda_entregada';
-  }
+    const hasCppSignal = (v) => {
+      const sb = norm(v?.statusBanco);
+      return (
+        /CPP|APROB|CON CPP|INC|DESEMBOLS/.test(sb) ||
+        !!clean(v?.numCPP) ||
+        !!v?.recibidoCPP ||
+        !!v?.fechaValorCPP
+      );
+    };
 
-  if (st.includes('ESCRITURADO_TRASPASADO') || st.includes('ESCRITURADO TRASPASADO') || st.includes('ESCRITURAD') || st.includes('TRASPAS')) {
-    return 'escriturado_traspasado';
-  }
+    const isCommitteeSignal = (v) => {
+      const sb = norm(v?.statusBanco);
+      return sb.includes('COMITE') || sb.includes('COMITÉ');
+    };
 
-  if (st.includes('TRAMITE_LEGAL_ACTIVADO') || st.includes('TRAMITE LEGAL ACTIVADO') || st.includes('INGRESO_RP') || st.includes('INGRESO RP')) {
-    return 'tramite_legal_activado';
-  }
+    const hasMortgageSignal = (v) => {
+      const sb = norm(v?.statusBanco);
+      return (
+        !!clean(v?.banco) &&
+        (
+          sb.includes('DESEMBOLSO') ||
+          sb.includes('HIPOTECA') ||
+          sb.includes('FORMALIZADO') ||
+          sb.includes('ESCRITURADO') ||
+          !!v?.fechaInscripcion
+        )
+      );
+    };
 
-  if (st.includes('CON_CPP') || st.includes('CON CPP') || st === 'CPP') {
-    return 'con_cpp';
-  }
+    const getEffectivePrice = (venta, unit) => {
+      const ventaPrecio = toNum(venta?.precioVenta);
+      if (ventaPrecio > 0) return ventaPrecio;
 
-  if (st.includes('EN_ESCRIT') || st.includes('EN ESCRIT') || st.includes('ESCRITURACION')) {
-    return 'tramite_legal_activado';
-  }
+      const unitValor = toNum(unit?.precioLista);
+      if (unitValor > 0) return unitValor;
 
- if (st.includes('RESERV')) return 'reservado';
+      const ventaValorLegacy = toNum(venta?.valor);
+      if (ventaValorLegacy > 0) return ventaValorLegacy;
 
-if (st.includes('INVENTARIO')) return 'inventario';
-
-return 'disponible';
-};
-
-  const isSoldLikeStatus = (st) =>
-  [
-    'reservado',
-    'con_cpp',
-    'tramite_legal_activado',
-    'escriturado_traspasado',
-    'vivienda_entregada'
-  ].includes(st);
-
-  const hasClientSignal = (v) =>
-    !!clean(v?.clienteNombre) ||
-    !!clean(v?.cedula) ||
-    !!clean(v?.empresa);
-
-  const hasBankSignal = (v) =>
-    !!clean(v?.banco);
-
-  const hasCppSignal = (v) => {
-    const sb = norm(v?.statusBanco);
-    return (
-      /CPP|APROB|CON CPP|INC/.test(sb) ||
-      !!clean(v?.numCPP) ||
-      !!v?.recibidoCPP ||
-      !!v?.fechaValorCPP
-    );
-  };
-
-  const hasMortgageSignal = (v) => {
-  const sb = norm(v?.statusBanco);
-
-  return (
-    !!clean(v?.banco) &&
-    (
-      sb.includes('DESEMBOLSO') ||
-      sb.includes('HIPOTECA') ||
-      sb.includes('FORMALIZADO') ||
-      sb.includes('ESCRITURADO') ||
-      !!v?.fechaInscripcion 
-    )
-  );
-};
-
-  const getEffectivePrice = (venta, unit) => {
-  const ventaPrecio = toNum(venta?.precioVenta);
-  if (ventaPrecio > 0) return ventaPrecio;
-
-  const unitValor = toNum(unit?.precioLista);
-  if (unitValor > 0) return unitValor;
-
-  // fallback legacy por si hay ventas antiguas
-  const ventaValorLegacy = toNum(venta?.valor);
-  if (ventaValorLegacy > 0) return ventaValorLegacy;
-
-  return 0;
-};
-
-const getMortgageAmount = (venta, unit) => {
-  const bank = norm(venta?.banco);
-
-  // Si es venta al contado, el importe real es el precio de venta
-  if (bank.includes('CONTADO')) {
-    return getEffectivePrice(venta, unit);
-  }
-
-  // Si hay financiación, priorizamos el monto financiado
-  const financed = toNum(venta?.montoFinanciamientoCPP);
-  if (financed > 0) return financed;
-
-  // Fallbacks por si faltan datos
-  const salePrice = toNum(venta?.precioVenta);
-  if (salePrice > 0) return salePrice;
-
-  const legacy = toNum(venta?.valor);
-  if (legacy > 0) return legacy;
-
-  const unitPrice = toNum(unit?.precioLista);
-  if (unitPrice > 0) return unitPrice;
-
-  return 0;
-};
-
-  // =========================
-  // Normalizar / deduplicar snapshot actual por unidad/lote
-  // =========================
-  const unitById = new Map((units || []).map(u => [String(u._id), u]));
-  const unitByLot = new Map((units || []).map(u => [unitKey(u.manzana, u.lote), u]));
-
-  // Si existen varias ventas históricas para la misma unidad/lote,
-  // nos quedamos con la más reciente.
-  const ventasByCurrentKey = new Map();
-for (const v of (ventasRaw || [])) {
-  const key = getVentaKey(v);
-  if (!key) continue;
-
-  const prev = ventasByCurrentKey.get(key);
-  if (!prev || getVentaSortTs(v) >= getVentaSortTs(prev)) {
-    ventasByCurrentKey.set(key, v);
-  }
-}
-
-  // Ligamos cada venta deduplicada a una unidad ACTUAL no borrada.
-  const ventas = [];
-  for (const v of ventasByCurrentKey.values()) {
-    let u = null;
-
-    if (v?.unitId) {
-      u = unitById.get(String(v.unitId)) || null;
-    }
-    if (!u) {
-      u = unitByLot.get(unitKey(v?.manzana, v?.lote)) || null;
-    }
-
-    // Si la unidad ya no existe o fue borrada, no entra al resumen actual
-    if (!u) continue;
-
-    ventas.push({
-      ...v,
-      __unit: u,
-      __unitStatus: getUnitStatus(u)
-    });
-  }
-
-  console.log('[SUMMARY] units:', units.length);
-  console.log('[SUMMARY] ventasRaw:', ventasRaw.length);
-  console.log('[SUMMARY] ventas deduplicadas:', ventas.length);
-
-  // =========================
-  // Progreso por fase
-  // =========================
-  function checklistProgress(cl) {
-    const subs = Array.isArray(cl?.subtasks) ? cl.subtasks
-      : (Array.isArray(cl?.children) ? cl.children : []);
-
-    if (!subs.length) {
-      const st = norm(cl?.status);
-      if (cl?.validated || /COMPLETADO|DONE/.test(st)) return 100;
-      if (/EN_PROCESO|IN_PROGRESS/.test(st)) return 50;
       return 0;
+    };
+
+    const getMortgageAmount = (venta, unit) => {
+      const bank = norm(venta?.banco);
+
+      if (bank.includes('CONTADO')) return getEffectivePrice(venta, unit);
+
+      const financed = toNum(venta?.montoFinanciamientoCPP);
+      if (financed > 0) return financed;
+
+      return getEffectivePrice(venta, unit);
+    };
+
+    const getModel = (v) =>
+      clean(v?.__unit?.modelo || v?.modelo || 'Sin modelo');
+
+    // =========================
+    // Normalizar / deduplicar ventas
+    // =========================
+    const unitById = new Map((units || []).map(u => [String(u._id), u]));
+    const unitByLot = new Map((units || []).map(u => [unitKey(u.manzana, u.lote), u]));
+
+    const ventasByCurrentKey = new Map();
+    for (const v of (ventasRaw || [])) {
+      const key = getVentaKey(v);
+      if (!key) continue;
+
+      const prev = ventasByCurrentKey.get(key);
+      if (!prev || getVentaSortTs(v) >= getVentaSortTs(prev)) {
+        ventasByCurrentKey.set(key, v);
+      }
     }
 
-    const done = subs.filter(s => !!s.completed).length;
-    return Math.round((done / subs.length) * 100);
-  }
+    const ventas = [];
+    for (const v of ventasByCurrentKey.values()) {
+      let u = null;
 
-  const LEVEL2PHASE = {
-    1: 'PREESTUDIOS',
-    2: 'PERMISOS',
-    3: 'FINANCIACION',
-    4: 'CONTRATISTAS',
-    5: 'OBRA',
-    6: 'ESCRITURACION'
-  };
+      if (v?.unitId) u = unitById.get(String(v.unitId)) || null;
+      if (!u) u = unitByLot.get(unitKey(v?.manzana, v?.lote)) || null;
+      if (!u) continue;
 
-  const byLevel = new Map();
-  for (const cl of (checklists || [])) {
-    const lvl = Number(cl.level || 0) || 0;
-    if (!LEVEL2PHASE[lvl]) continue;
-    const arr = byLevel.get(lvl) || [];
-    arr.push(checklistProgress(cl));
-    byLevel.set(lvl, arr);
-  }
+      ventas.push({
+        ...v,
+        __unit: u,
+        __unitStatus: getUnitStatus(u)
+      });
+    }
 
-  const progressByPhase = Object.entries(LEVEL2PHASE).map(([lvl, phase]) => {
-    const arr = byLevel.get(Number(lvl)) || [];
-    const pct = arr.length
-      ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length)
+    // =========================
+    // Progreso por fase
+    // =========================
+    function checklistProgress(cl) {
+      const subs = Array.isArray(cl?.subtasks) ? cl.subtasks
+        : (Array.isArray(cl?.children) ? cl.children : []);
+
+      if (!subs.length) {
+        const st = norm(cl?.status);
+        if (cl?.validated || /COMPLETADO|DONE/.test(st)) return 100;
+        if (/EN_PROCESO|IN_PROGRESS/.test(st)) return 50;
+        return 0;
+      }
+
+      const done = subs.filter(s => !!s.completed).length;
+      return Math.round((done / subs.length) * 100);
+    }
+
+    const LEVEL2PHASE = {
+      1: 'PREESTUDIOS',
+      2: 'PERMISOS',
+      3: 'FINANCIACION',
+      4: 'CONTRATISTAS',
+      5: 'OBRA',
+      6: 'ESCRITURACION'
+    };
+
+    const byLevel = new Map();
+    for (const cl of (checklists || [])) {
+      const lvl = Number(cl.level || 0) || 0;
+      if (!LEVEL2PHASE[lvl]) continue;
+      const arr = byLevel.get(lvl) || [];
+      arr.push(checklistProgress(cl));
+      byLevel.set(lvl, arr);
+    }
+
+    const progressByPhase = Object.entries(LEVEL2PHASE).map(([lvl, phase]) => {
+      const arr = byLevel.get(Number(lvl)) || [];
+      const pct = arr.length
+        ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length)
+        : 0;
+      return { phase, pct };
+    });
+
+    // =========================
+    // Unidades / inventario
+    // =========================
+    const U = {
+      total: 0,
+      available: 0,
+      inventory: 0,
+      reserved: 0,
+      conCpp: 0,
+      tramiteLegal: 0,
+      escrituradas: 0,
+      entregadas: 0,
+      sold: 0,
+      canceladas: 0
+    };
+
+    for (const u of (units || [])) {
+      U.total++;
+      const st = getUnitStatus(u);
+
+      if (st === 'cancelado') U.canceladas++;
+      else if (st === 'reservado') U.reserved++;
+      else if (st === 'con_cpp') U.conCpp++;
+      else if (st === 'tramite_legal_activado') U.tramiteLegal++;
+      else if (st === 'escriturado_traspasado') U.escrituradas++;
+      else if (st === 'vivienda_entregada') U.entregadas++;
+      else if (st === 'inventario') U.inventory++;
+      else U.available++;
+
+      if (isSoldLikeStatus(st)) U.sold++;
+    }
+
+    const unitsByStatus = [
+      { status: 'Libre', count: U.available },
+      { status: 'Inventario', count: U.inventory },
+      { status: 'Reserva', count: U.reserved },
+      { status: 'Con CPP', count: U.conCpp },
+      { status: 'Trámite legal', count: U.tramiteLegal },
+      { status: 'Escriturado / Traspasado', count: U.escrituradas },
+      { status: 'Vivienda entregada', count: U.entregadas },
+      { status: 'Cancelada', count: U.canceladas }
+    ];
+
+    const soldVentas = (ventas || []).filter(v => isSoldLikeStatus(v.__unitStatus));
+
+    // =========================
+    // Comercial
+    // =========================
+    const now = Date.now();
+    const d30 = 30 * 24 * 3600 * 1000;
+    const d60 = 60 * 24 * 3600 * 1000;
+    const d90 = 90 * 24 * 3600 * 1000;
+
+    const salesMap = new Map();
+    const salesYearMap = new Map();
+    const fallenSalesYearMap = new Map();
+
+    for (const v of (ventas || [])) {
+      const d = v?.fechaContratoCliente ? new Date(v.fechaContratoCliente) : null;
+      const year = d && !isNaN(d.getTime()) ? String(d.getFullYear()) : null;
+
+      if (isSoldLikeStatus(v.__unitStatus) && year) {
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        salesMap.set(monthKey, (salesMap.get(monthKey) || 0) + 1);
+        salesYearMap.set(year, (salesYearMap.get(year) || 0) + 1);
+      }
+
+      const st = norm(v?.estatusContrato || v?.statusBanco || v?.comentario);
+      const unitSt = v.__unitStatus;
+      const isFallen = unitSt === 'cancelado' || st.includes('CAIDA') || st.includes('CAÍDA') || st.includes('CANCEL') || st.includes('ANUL');
+
+      if (isFallen) {
+        const y = year || String(new Date(v?.updatedAt || v?.createdAt || Date.now()).getFullYear());
+        fallenSalesYearMap.set(y, (fallenSalesYearMap.get(y) || 0) + 1);
+      }
+    }
+
+    const salesMonthly = Array.from(salesMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([month, units]) => ({ month, units }));
+
+    const years = Array.from(new Set([
+      ...salesYearMap.keys(),
+      ...fallenSalesYearMap.keys()
+    ])).sort();
+
+    const salesVsFallenByYear = years.map(year => {
+      const sales = salesYearMap.get(year) || 0;
+      const fallen = fallenSalesYearMap.get(year) || 0;
+      return {
+        year,
+        sales,
+        fallen,
+        total: sales + fallen
+      };
+    });
+
+    const modelMap = new Map();
+    for (const v of soldVentas) {
+      const model = getModel(v);
+      modelMap.set(model, (modelMap.get(model) || 0) + 1);
+    }
+
+    const salesByModel = Array.from(modelMap.entries())
+      .map(([model, count]) => ({ model, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const clientProfile = countBy(
+      soldVentas.filter(v => clean(v.perfilCliente)),
+      v => v.perfilCliente
+    ).map(x => ({ profile: x.label, count: x.count }));
+
+    const companyType = countBy(
+      soldVentas.filter(v => clean(v.tipoEmpresa)),
+      v => v.tipoEmpresa
+    ).map(x => ({ type: x.label, count: x.count }));
+
+    const bankStatusMap = new Map();
+    const bankStatusLabel = (v) => {
+      const sb = norm(v.statusBanco);
+
+      if (hasCppSignal(v)) return 'Con CPP';
+      if (sb.includes('APROB')) return 'Aprobado';
+      if (sb.includes('COMITE') || sb.includes('COMITÉ')) return 'Comité';
+      if (sb.includes('EVALU')) return 'Evaluación';
+      if (sb.includes('PEND')) return 'Pendiente doc';
+      if (!clean(v.banco)) return 'Sin banco';
+
+      return clean(v.statusBanco) || 'Otros';
+    };
+
+    for (const v of soldVentas) {
+      const label = bankStatusLabel(v);
+      bankStatusMap.set(label, (bankStatusMap.get(label) || 0) + 1);
+    }
+
+    const bankStatus = Array.from(bankStatusMap.entries())
+      .map(([status, count]) => ({ status, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const cppByBankMap = new Map();
+    const cppAmountByBankMap = new Map();
+    const cppCommitteeByBankMap = new Map();
+
+    let cppDue30 = 0;
+    let cppDue60 = 0;
+    let cppDue90 = 0;
+    let cppActive = 0;
+
+    for (const v of soldVentas) {
+      if (!hasClientSignal(v) && !hasBankSignal(v) && !hasCppSignal(v)) continue;
+
+      const bank = clean(v.banco) || 'Sin banco';
+
+      if (hasCppSignal(v)) {
+        cppActive++;
+        cppByBankMap.set(bank, (cppByBankMap.get(bank) || 0) + 1);
+
+        const prev = cppAmountByBankMap.get(bank) || { bank, count: 0, amount: 0 };
+        prev.count += 1;
+        prev.amount += getMortgageAmount(v, v.__unit);
+        cppAmountByBankMap.set(bank, prev);
+
+        const venc = getCppDueDate(v);
+        const vt = toTime(venc);
+
+        if (vt) {
+          const diff = vt - now;
+          if (diff <= d30) cppDue30++;
+          else if (diff <= d60) cppDue60++;
+          else if (diff <= d90) cppDue90++;
+        }
+      }
+
+      if (isCommitteeSignal(v)) {
+        cppCommitteeByBankMap.set(bank, (cppCommitteeByBankMap.get(bank) || 0) + 1);
+      }
+    }
+
+    const cppByBank = Array.from(cppByBankMap.entries())
+      .map(([bank, count]) => ({ bank, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const cppAmountByBank = Array.from(cppAmountByBankMap.values())
+      .sort((a, b) => b.amount - a.amount);
+
+    const cppCommitteeByBank = Array.from(cppCommitteeByBankMap.entries())
+      .map(([bank, count]) => ({ bank, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const profMap = new Map();
+    for (const v of soldVentas) {
+      if (!/PROFORMA/.test(norm(v.statusBanco)) && !v.fechaEntregaProformaBanco && !v.fechaProforma) continue;
+      const bank = clean(v.banco) || 'Sin banco';
+      profMap.set(bank, (profMap.get(bank) || 0) + 1);
+    }
+
+    const proformasByBank = Array.from(profMap.entries())
+      .map(([bank, count]) => ({ bank, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const mortMap = new Map();
+    let clientMortgages30d = 0;
+
+    for (const v of soldVentas) {
+      if (!hasClientSignal(v)) continue;
+      if (!hasMortgageSignal(v)) continue;
+
+      const bank = clean(v.banco) || 'Sin banco';
+      const prev = mortMap.get(bank) || { count: 0, amount: 0 };
+
+      prev.count += 1;
+      prev.amount += getMortgageAmount(v, v.__unit);
+      mortMap.set(bank, prev);
+
+      const fd = v.updatedAt || v.fechaValorCPP || v.recibidoCPP || v.fechaContratoCliente;
+      const ft = toTime(fd);
+      if (ft && (now - ft) <= d30) clientMortgages30d++;
+    }
+
+    const mortgagesByBank = Array.from(mortMap.entries())
+      .map(([bank, data]) => ({ bank, count: data.count, amount: data.amount }))
+      .sort((a, b) => b.amount - a.amount);
+
+    const commercial = {
+      inventoryByStatus: unitsByStatus,
+      salesVsFallenByYear,
+      salesByModel,
+      clientProfile,
+      companyType,
+      bankStatus,
+      cppAmountByBank,
+      cppCommitteeByBank
+    };
+
+    // =========================
+    // Legal / Jurídico
+    // =========================
+    const legalSold = soldVentas;
+
+    const legalTotals = {
+      contratosFirmados: legalSold.filter(v => !!v.contratoFirmado || !!v.fechaContratoCliente || !!v.fechaFirma).length,
+      minutasLiberacion: legalSold.filter(v => hasText(v.mLiberacion) || isYes(v.mLiberacion)).length,
+      minutasSegregacion: legalSold.filter(v => hasText(v.mSegregacion) || isYes(v.mSegregacion)).length,
+      minutasPrestamo: legalSold.filter(v => hasText(v.mPrestamo) || isYes(v.mPrestamo)).length,
+      protocolosCliente: legalSold.filter(v => !!v.protocoloFirmaCliente).length,
+      protocolosBancoCliente: legalSold.filter(v => !!v.firmaProtocoloBancoCliente).length,
+      protocolosBanco: legalSold.filter(v => !!v.protocoloFirmaRLBancoInter).length,
+      escriturasInscritas: legalSold.filter(v => !!v.fechaInscripcion).length,
+      fincasSegregadas: legalSold.filter(v => hasText(v.numeroFinca)).length
+    };
+
+    const legalYesNo = (field) => {
+      const yes = legalSold.filter(v => hasText(v[field]) || v[field] === true).length;
+      const no = Math.max(legalSold.length - yes, 0);
+      return [
+        { status: 'Sí', count: yes },
+        { status: 'No', count: no }
+      ];
+    };
+
+    const protocolByBankMap = new Map();
+    for (const v of legalSold) {
+      const bank = clean(v.banco) || 'Sin banco';
+      const prev = protocolByBankMap.get(bank) || {
+        bank,
+        cliente: 0,
+        bancoCliente: 0,
+        bancoInterino: 0
+      };
+
+      if (v.protocoloFirmaCliente) prev.cliente++;
+      if (v.firmaProtocoloBancoCliente) prev.bancoCliente++;
+      if (v.protocoloFirmaRLBancoInter) prev.bancoInterino++;
+
+      protocolByBankMap.set(bank, prev);
+    }
+
+    const legal = {
+      totals: legalTotals,
+      minutasLiberacion: legalYesNo('mLiberacion'),
+      minutasSegregacion: legalYesNo('mSegregacion'),
+      minutasPrestamo: legalYesNo('mPrestamo'),
+      protocolByBank: Array.from(protocolByBankMap.values())
+    };
+
+    // =========================
+    // Técnico
+    // =========================
+    const constructionStatusMap = new Map();
+    const constructionPhaseMap = new Map();
+    const constructionModelMap = new Map();
+    const constructionRangeMap = new Map([
+      ['0%', 0],
+      ['1%-33%', 0],
+      ['34%-66%', 0],
+      ['67%-99%', 0],
+      ['100%', 0]
+    ]);
+
+    const technicalUnits = units || [];
+
+    for (const u of technicalUnits) {
+      const venta = ventas.find(v => String(v.unitId) === String(u._id)) || null;
+
+      const estatusConstruccion =
+        clean(venta?.estatusConstruccion) ||
+        clean(u?.estatusConstruccion) ||
+        (venta?.enConstruccion ? 'En construcción' : '');
+
+      const faseConstruccion =
+        clean(venta?.faseConstruccion) ||
+        clean(u?.faseConstruccion) ||
+        'Sin fase';
+
+      const model = clean(u?.modelo) || 'Sin modelo';
+
+      if (estatusConstruccion) {
+        constructionStatusMap.set(estatusConstruccion, (constructionStatusMap.get(estatusConstruccion) || 0) + 1);
+      }
+
+      constructionPhaseMap.set(faseConstruccion, (constructionPhaseMap.get(faseConstruccion) || 0) + 1);
+
+      if (venta?.enConstruccion || estatusConstruccion || faseConstruccion !== 'Sin fase') {
+        constructionModelMap.set(model, (constructionModelMap.get(model) || 0) + 1);
+      }
+
+      const pct = toNum(u?.avanceConstruccionPct ?? venta?.avanceConstruccionPct ?? 0);
+      let range = '0%';
+      if (pct >= 100) range = '100%';
+      else if (pct >= 67) range = '67%-99%';
+      else if (pct >= 34) range = '34%-66%';
+      else if (pct >= 1) range = '1%-33%';
+
+      constructionRangeMap.set(range, (constructionRangeMap.get(range) || 0) + 1);
+    }
+
+    const technical = {
+      constructionStatus: Array.from(constructionStatusMap.entries()).map(([status, count]) => ({ status, count })),
+      constructionPhase: Array.from(constructionPhaseMap.entries()).map(([phase, count]) => ({ phase, count })),
+      modelsInConstruction: Array.from(constructionModelMap.entries()).map(([model, count]) => ({ model, count })),
+      constructionProgressRanges: Array.from(constructionRangeMap.entries()).map(([range, count]) => ({ range, count })),
+      permitsTotals: {
+        construction: ventas.filter(v => !!v.permisoConstruccionMunicipal || hasText(v.permisoConstruccionNum)).length,
+        occupation: ventas.filter(v => !!v.permisoOcupacion || hasText(v.permisoOcupacionNum)).length
+      }
+    };
+
+    // =========================
+    // Permisos por institución
+    // =========================
+    const byInst = {};
+    const permitItems = Array.isArray(permits?.items) ? permits.items : [];
+
+    for (const it of permitItems) {
+      const inst = clean(it.institution) || 'N/D';
+      const st = norm(it.status);
+
+      byInst[inst] ||= { institution: inst, approved: 0, inProcess: 0, pending: 0, rejected: 0 };
+
+      if (st === 'APPROVED' || st === 'APROBADO' || /APROB/.test(st)) {
+        byInst[inst].approved++;
+      } else if (st.includes('RECHAZ')) {
+        byInst[inst].rejected++;
+      } else if (
+        st === 'IN_PROCESS' ||
+        st === 'EN_TRAMITE' ||
+        st === 'EN TRAMITE' ||
+        st === 'TRAMITE' ||
+        /TRAM|PROC|EN PROCESO/.test(st)
+      ) {
+        byInst[inst].inProcess++;
+      } else {
+        byInst[inst].pending++;
+      }
+    }
+
+    const permitsByInstitution = Object.values(byInst)
+      .sort((a, b) =>
+        (b.approved + b.inProcess + b.pending + b.rejected) -
+        (a.approved + a.inProcess + a.pending + a.rejected)
+      );
+
+    // =========================
+    // Financiero
+    // =========================
+    const creditLines = Array.isArray(project?.creditLines)
+      ? project.creditLines
+      : [];
+
+    const normalizedCreditLines = creditLines.map(line => {
+      const approvedAmount = toNum(line.approvedAmount);
+      const disbursedAmount = toNum(line.disbursedAmount);
+      const amortizedAmount = toNum(line.amortizedAmount);
+      const debt = Math.max(disbursedAmount - amortizedAmount, 0);
+
+      return {
+        name: clean(line.name) || 'Línea financiera',
+        approvedAmount,
+        disbursedAmount,
+        amortizedAmount,
+        debt
+      };
+    });
+
+    const totalDebt = normalizedCreditLines.reduce((a, x) => a + toNum(x.debt), 0);
+
+    const cppVigenteAmount = soldVentas
+      .filter(v => hasCppSignal(v))
+      .reduce((a, v) => a + getMortgageAmount(v, v.__unit), 0);
+
+    const cppTramiteAmount = soldVentas
+      .filter(v => {
+        const sb = norm(v.statusBanco);
+        return !hasCppSignal(v) && (
+          sb.includes('COMITE') ||
+          sb.includes('COMITÉ') ||
+          sb.includes('EVALU') ||
+          sb.includes('TRAM') ||
+          sb.includes('PEND') ||
+          sb.includes('APROB')
+        );
+      })
+      .reduce((a, v) => a + getMortgageAmount(v, v.__unit), 0);
+
+    const financial = {
+      creditLines: normalizedCreditLines,
+      totals: {
+        disbursed: normalizedCreditLines.reduce((a, x) => a + toNum(x.disbursedAmount), 0),
+        amortized: normalizedCreditLines.reduce((a, x) => a + toNum(x.amortizedAmount), 0),
+        debt: totalDebt
+      },
+      cppCoverage: {
+        cppVigenteAmount,
+        cppTramiteAmount,
+        totalDebt,
+        coverageCppVigentePct: totalDebt ? Math.round((cppVigenteAmount / totalDebt) * 10000) / 100 : 0,
+        coverageCppTramitePct: totalDebt ? Math.round((cppTramiteAmount / totalDebt) * 10000) / 100 : 0
+      }
+    };
+
+    // =========================
+    // KPIs resumen
+    // =========================
+    const vals = soldVentas
+      .map(v => getEffectivePrice(v, v.__unit))
+      .filter(n => n > 0);
+
+    const avgTicket = vals.length
+      ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
       : 0;
-    return { phase, pct };
-  });
 
-  // =========================
-  // KPIs de unidades
-  // =========================
-  const U = {
-  total: 0,
-  available: 0,
-inventory: 0,
-reserved: 0,
-  conCpp: 0,
-  tramiteLegal: 0,
-  escrituradas: 0,
-  entregadas: 0,
-  sold: 0,
-  canceladas: 0
-};
+    const inventoryValue = (units || [])
+      .filter(u => ['disponible', 'inventario'].includes(getUnitStatus(u)))
+      .reduce((acc, u) => acc + toNum(u.precioLista), 0);
 
-  for (const u of (units || [])) {
-    U.total++;
-    const st = getUnitStatus(u);
+    const absorption3m = (() => {
+      const cutoff = now - 90 * 24 * 3600 * 1000;
+      const n = soldVentas.filter(v => {
+        const t = toTime(v.fechaContratoCliente);
+        return t && t >= cutoff;
+      }).length;
+      return +(n / 3).toFixed(1);
+    })();
 
-    if (st === 'cancelado') U.canceladas++;
-else if (st === 'reservado') U.reserved++;
-else if (st === 'con_cpp') U.conCpp++;
-else if (st === 'tramite_legal_activado') U.tramiteLegal++;
-else if (st === 'escriturado_traspasado') U.escrituradas++;
-else if (st === 'vivienda_entregada') U.entregadas++;
-else if (st === 'inventario') U.inventory++;
-else U.available++;
+    const permitsTotal = permitsByInstitution.reduce((a, b) =>
+      a + toNum(b.approved) + toNum(b.inProcess) + toNum(b.pending) + toNum(b.rejected), 0);
 
-if (isSoldLikeStatus(st)) U.sold++;
-  }
+    const permitsApproved = permitsByInstitution.reduce((a, b) => a + toNum(b.approved), 0);
 
-  const unitsByStatus = [
-  { status: 'Disponible', count: U.available },
-  { status: 'Inventario', count: U.inventory },
-  { status: 'Reservado', count: U.reserved },
-  { status: 'Con CPP', count: U.conCpp },
-  { status: 'Trámite legal activado', count: U.tramiteLegal },
-  { status: 'Escriturado / Traspasado', count: U.escrituradas },
-  { status: 'Vivienda entregada', count: U.entregadas },
-  { status: 'Cancelada', count: U.canceladas }
-];
+    const kpis = {
+      progressPct: progressByPhase.length
+        ? Math.round(progressByPhase.reduce((a, b) => a + b.pct, 0) / progressByPhase.length)
+        : 0,
+      units: U,
+      absorption3m,
+      avgTicket,
+      inventoryValue,
+      loan: {
+        approved: project.loanApproved || 0,
+        disbursed: project.loanDisbursed || 0,
+        pct: project.loanApproved
+          ? Math.round(100 * (project.loanDisbursed || 0) / project.loanApproved)
+          : 0
+      },
+      cpp: { active: cppActive, due30: cppDue30, due60: cppDue60, due90: cppDue90 },
+      permits: {
+        approved: permitsApproved,
+        inProcess: permitsByInstitution.reduce((a, b) => a + toNum(b.inProcess), 0),
+        pending: permitsByInstitution.reduce((a, b) => a + toNum(b.pending), 0),
+        rejected: permitsByInstitution.reduce((a, b) => a + toNum(b.rejected), 0),
+        pct: permitsTotal ? Math.round((permitsApproved / permitsTotal) * 100) : 0
+      },
+      appraisal: { avg: 0, min: 0, max: 0 },
+      clientMortgages30d
+    };
 
-  // =========================
-  // Ventas mensuales
-  // =========================
-  const salesMap = new Map();
-  for (const v of (ventas || [])) {
-    const d = v?.fechaContratoCliente ? new Date(v.fechaContratoCliente) : null;
-    if (!d || isNaN(d.getTime())) continue;
+    // =========================
+    // Desembolsos plan vs real
+    // =========================
+    const disbursements = { planCum: [], realCum: [] };
 
-    // Solo cuenta ventas de unidades actualmente “vendibles/vendidas”
-    if (!isSoldLikeStatus(v.__unitStatus)) continue;
+    // =========================
+    // Alertas
+    // =========================
+    const expiries = [];
 
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    salesMap.set(key, (salesMap.get(key) || 0) + 1);
-  }
+    for (const v of soldVentas) {
+      if (!hasCppSignal(v)) continue;
 
-  const salesMonthly = Array.from(salesMap.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([month, units]) => ({ month, units }));
+      const d = getCppDueDate(v);
+      const dt = toTime(d);
+      if (!dt) continue;
 
-  // =========================
-  // CPP por banco
-  // - no cuenta residuos de unidades disponibles/canceladas
-  // - usa snapshot actual
-  // =========================
-  const now = Date.now();
-  const d30 = 30 * 24 * 3600 * 1000;
-  const d60 = 60 * 24 * 3600 * 1000;
-  const d90 = 90 * 24 * 3600 * 1000;
-
-  const cppByBankMap = new Map();
-  let cppDue30 = 0;
-  let cppDue60 = 0;
-  let cppDue90 = 0;
-  let cppActive = 0;
-
-  for (const v of (ventas || [])) {
-    if (!isSoldLikeStatus(v.__unitStatus)) continue;
-    if (!hasClientSignal(v) && !hasBankSignal(v) && !hasCppSignal(v)) continue;
-
-    const bank = clean(v.banco) || 'Sin banco';
-    const hasCPPFlag = hasCppSignal(v);
-    if (!hasCPPFlag) continue;
-
-    cppActive++;
-    cppByBankMap.set(bank, (cppByBankMap.get(bank) || 0) + 1);
-
-    const venc = getCppDueDate(v);
-    const vt = toTime(venc);
-
-    if (vt) {
-      const diff = vt - now;
-      if (diff <= d30) cppDue30++;
-      else if (diff <= d60) cppDue60++;
-      else if (diff <= d90) cppDue90++;
+      const diff = dt - now;
+      if (diff <= d90) {
+        expiries.push({
+          type: 'CPP',
+          name: `${clean(v.numCPP) || 'CPP'} — ${clean(v.banco) || ''}`,
+          bank: clean(v.banco) || '',
+          due: d
+        });
+      }
     }
-  }
 
-  const cppByBank = Array.from(cppByBankMap.entries())
-    .map(([bank, count]) => ({ bank, count }))
-    .sort((a, b) => b.count - a.count);
+    for (const d of (documents || [])) {
+      if (!d.expiryDate) continue;
 
-  // =========================
-  // Proformas por banco
-  // =========================
-  const profMap = new Map();
-  for (const v of (ventas || [])) {
-    if (!isSoldLikeStatus(v.__unitStatus)) continue;
-    if (!/PROFORMA/.test(norm(v.statusBanco))) continue;
+      const st = String(d.status || 'ACTIVE').toUpperCase();
+      if (st !== 'ACTIVE') continue;
 
-    const bank = clean(v.banco) || 'Sin banco';
-    profMap.set(bank, (profMap.get(bank) || 0) + 1);
-  }
-
-  const proformasByBank = Array.from(profMap.entries())
-    .map(([bank, count]) => ({ bank, count }))
-    .sort((a, b) => b.count - a.count);
-
-  // =========================
-  // Hipotecas por banco
-  // - más robusto que solo /APROB/
-  // =========================
-  const mortMap = new Map();
-let clientMortgages30d = 0;
-
-for (const v of (ventas || [])) {
-  if (!isSoldLikeStatus(v.__unitStatus)) continue;
-  if (!hasClientSignal(v)) continue;
-
-  const hasMortgage = hasMortgageSignal(v);
-  if (!hasMortgage) continue;
-
-  const bank = clean(v.banco) || 'Sin banco';
-
-  const prev = mortMap.get(bank) || { count: 0, amount: 0 };
-  prev.count += 1;
-  prev.amount += getMortgageAmount(v, v.__unit);
-  mortMap.set(bank, prev);
-
-  const fd =
-    v.updatedAt ||
-    v.fechaValorCPP ||
-    v.recibidoCPP ||
-    v.fechaContratoCliente;
-
-  const ft = toTime(fd);
-  if (ft && (now - ft) <= d30) clientMortgages30d++;
-}
-
-const mortgagesByBank = Array.from(mortMap.entries())
-  .map(([bank, data]) => ({
-    bank,
-    count: data.count,
-    amount: data.amount
-  }))
-  .sort((a, b) => b.amount - a.amount);
-
-  // =========================
-  // Permisos por institución/estado
-  // =========================
-  const byInst = {};
-  const permitItems = Array.isArray(permits?.items) ? permits.items : [];
-
-  const normSt = (s) => String(s || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-    .toUpperCase();
-
-  for (const it of permitItems) {
-    const inst = clean(it.institution) || 'N/D';
-    const st = normSt(it.status);
-
-    byInst[inst] ||= { institution: inst, approved: 0, inProcess: 0, pending: 0 };
-
-    if (st === 'APPROVED' || st === 'APROBADO' || /APROB/.test(st)) {
-      byInst[inst].approved++;
-    } else if (
-      st === 'IN_PROCESS' ||
-      st === 'EN_TRAMITE' ||
-      st === 'EN TRAMITE' ||
-      st === 'TRAMITE' ||
-      /TRAM|PROC|EN PROCESO/.test(st)
-    ) {
-      byInst[inst].inProcess++;
-    } else {
-      byInst[inst].pending++;
+      const t = new Date(d.expiryDate).getTime() - now;
+      if (t <= d90) {
+        expiries.push({
+          type: 'Documento',
+          name: d.originalname || d.name || 'Documento',
+          due: d.expiryDate,
+          status: st,
+          docId: d._id
+        });
+      }
     }
-  }
 
-  const permitsByInstitution = Object.values(byInst)
-    .sort((a, b) => (b.approved + b.inProcess + b.pending) - (a.approved + a.inProcess + a.pending));
+    expiries.sort((a, b) => new Date(a.due) - new Date(b.due));
 
-  // =========================
-  // KPIs resumen
-  // =========================
-  const soldVentas = (ventas || []).filter(v => isSoldLikeStatus(v.__unitStatus));
+    const notes = [];
 
-  const vals = soldVentas
-    .map(v => getEffectivePrice(v, v.__unit))
-    .filter(n => n > 0);
-
-  const avgTicket = vals.length
-    ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
-    : 0;
-
-  const inventoryValue = (units || [])
-    .filter(u => getUnitStatus(u) === 'disponible')
-    .reduce((acc, u) => acc + toNum(u.precioLista), 0);
-
-  const absorption3m = (() => {
-    const cutoff = now - 90 * 24 * 3600 * 1000;
-    const n = soldVentas.filter(v => {
-      const t = toTime(v.fechaContratoCliente);
-      return t && t >= cutoff;
-    }).length;
-    return +(n / 3).toFixed(1);
-  })();
-
-  const kpis = {
-    progressPct: progressByPhase.length
-      ? Math.round(progressByPhase.reduce((a, b) => a + b.pct, 0) / progressByPhase.length)
-      : 0,
-    units: U,
-    absorption3m,
-    avgTicket,
-    inventoryValue,
-    loan: {
-      approved: project.loanApproved || 0,
-      disbursed: project.loanDisbursed || 0,
-      pct: project.loanApproved
-        ? Math.round(100 * (project.loanDisbursed || 0) / project.loanApproved)
-        : 0
-    },
-    cpp: { active: cppActive, due30: cppDue30, due60: cppDue60, due90: cppDue90 },
-    permits: {
-      approved: permitsByInstitution.reduce((a, b) => a + (b.approved || 0), 0),
-      inProcess: permitsByInstitution.reduce((a, b) => a + (b.inProcess || 0), 0),
-      pending: permitsByInstitution.reduce((a, b) => a + (b.pending || 0), 0),
-      pct: permitsByInstitution.length
-        ? Math.round(
-            100 *
-            permitsByInstitution.reduce((a, b) => a + (b.approved || 0), 0) /
-            permitsByInstitution.reduce((a, b) => a + ((b.approved || 0) + (b.inProcess || 0) + (b.pending || 0)), 0)
-          )
-        : 0
-    },
-    appraisal: { avg: 0, min: 0, max: 0 },
-    clientMortgages30d
-  };
-
-  // =========================
-  // Desembolsos plan vs real
-  // =========================
-  const disbursements = { planCum: [], realCum: [] };
-
-  // =========================
-  // Alertas (CPP por vencer + documentos por vencer)
-  // =========================
-  const expiries = [];
-
-  for (const v of (ventas || [])) {
-    if (!isSoldLikeStatus(v.__unitStatus)) continue;
-    if (!hasCppSignal(v)) continue;
-
-    const d = getCppDueDate(v);
-    const dt = toTime(d);
-    if (!dt) continue;
-
-    const diff = dt - now;
-    if (diff <= d90) {
-      expiries.push({
-        type: 'CPP',
-        name: `${clean(v.numCPP) || 'CPP'} — ${clean(v.banco) || ''}`,
-        bank: clean(v.banco) || '',
-        due: d
-      });
+    if (kpis.loan.approved && kpis.loan.disbursed < kpis.loan.approved) {
+      notes.push(`Desembolsos al ${kpis.loan.pct}% del plan.`);
     }
-  }
 
-  for (const d of (documents || [])) {
-    if (!d.expiryDate) continue;
-
-    const st = String(d.status || 'ACTIVE').toUpperCase();
-    if (st !== 'ACTIVE') continue;
-
-    const t = new Date(d.expiryDate).getTime() - now;
-    if (t <= d90) {
-      expiries.push({
-        type: 'Documento',
-        name: d.originalname || d.name || 'Documento',
-        due: d.expiryDate,
-        status: st,
-        docId: d._id
-      });
+    if (kpis.cpp.due30) {
+      notes.push(`${kpis.cpp.due30} CPP vencen ≤30 días.`);
     }
-  }
 
-  expiries.sort((a, b) => new Date(a.due) - new Date(b.due));
-
-  const notes = [];
-  if (kpis.loan.approved && kpis.loan.disbursed < kpis.loan.approved) {
-    notes.push(`Desembolsos al ${kpis.loan.pct}% del plan.`);
-  }
-  if (kpis.cpp.due30) {
-    notes.push(`${kpis.cpp.due30} CPP vencen ≤30 días.`);
-  }
-  if (!notes.length) {
-    notes.push('Sin riesgos destacados.');
-  }
-
-  // =========================
-  // Header KPIs
-  // =========================
-  const projectUnitsTotal = Number(project.unitsTotal || 0);
-  const projectUnitsSold = Number(project.unitsSold || 0);
-
-  const soldLikePortfolio = (units || []).reduce((n, u) => {
-    return n + (isSoldLikeStatus(getUnitStatus(u)) ? 1 : 0);
-  }, 0);
-
-  const headerKpis = {
-    unitsTotal: projectUnitsTotal > 0 ? projectUnitsTotal : U.total,
-    unitsSold: projectUnitsSold > 0 ? projectUnitsSold : soldLikePortfolio
-  };
-
-  const projectHeader = {
-    name: project.name,
-    updatedAt: project.updatedAt,
-    loanApproved: project.loanApproved || 0,
-    loanDisbursed: project.loanDisbursed || 0,
-    budgetApproved: project.budgetApproved || 0,
-    budgetSpent: project.budgetSpent || 0,
-    unitsTotal: headerKpis.unitsTotal,
-    unitsSold: headerKpis.unitsSold
-  };
-
-  // =========================
-  // KPIs extra para alertas
-  // =========================
-  const today = new Date();
-
-  const daysTo = (d) => {
-    if (!d) return null;
-    const dt = new Date(d);
-    if (isNaN(dt.getTime())) return null;
-    return Math.ceil((dt.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  };
-
-  const sevBucket = (diffDays) => {
-    if (diffDays === null) return 'Baja';
-    if (diffDays <= 7) return 'Alta';
-    if (diffDays <= 30) return 'Media';
-    return 'Baja';
-  };
-
-  const bySeverityCount = { Alta: 0, Media: 0, Baja: 0 };
-  for (const e of (expiries || [])) {
-    const diff = daysTo(e.due);
-    const sev = sevBucket(diff);
-    bySeverityCount[sev] = (bySeverityCount[sev] || 0) + 1;
-  }
-
-  const alertsBySeverity = [
-    { severity: 'Alta',  count: bySeverityCount.Alta || 0 },
-    { severity: 'Media', count: bySeverityCount.Media || 0 },
-    { severity: 'Baja',  count: bySeverityCount.Baja || 0 }
-  ];
-
-  const delaysMap = new Map();
-  for (const e of (expiries || [])) {
-    const diff = daysTo(e.due);
-    if (diff !== null && diff <= 0) {
-      const stage = e.type || 'Otros';
-      delaysMap.set(stage, (delaysMap.get(stage) || 0) + 1);
+    if (financial.cppCoverage.totalDebt && financial.cppCoverage.coverageCppVigentePct < 100) {
+      notes.push(`Cobertura CPP vigente sobre deuda actual: ${financial.cppCoverage.coverageCppVigentePct}%.`);
     }
+
+    if (!notes.length) notes.push('Sin riesgos destacados.');
+
+    const today = new Date();
+
+    const daysTo = (d) => {
+      if (!d) return null;
+      const dt = new Date(d);
+      if (isNaN(dt.getTime())) return null;
+      return Math.ceil((dt.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    };
+
+    const sevBucket = (diffDays) => {
+      if (diffDays === null) return 'Baja';
+      if (diffDays <= 7) return 'Alta';
+      if (diffDays <= 30) return 'Media';
+      return 'Baja';
+    };
+
+    const bySeverityCount = { Alta: 0, Media: 0, Baja: 0 };
+
+    for (const e of expiries) {
+      const diff = daysTo(e.due);
+      const sev = sevBucket(diff);
+      bySeverityCount[sev] = (bySeverityCount[sev] || 0) + 1;
+    }
+
+    const alertsBySeverity = [
+      { severity: 'Alta', count: bySeverityCount.Alta || 0 },
+      { severity: 'Media', count: bySeverityCount.Media || 0 },
+      { severity: 'Baja', count: bySeverityCount.Baja || 0 }
+    ];
+
+    const delaysMap = new Map();
+
+    for (const e of expiries) {
+      const diff = daysTo(e.due);
+      if (diff !== null && diff <= 0) {
+        const stage = e.type || 'Otros';
+        delaysMap.set(stage, (delaysMap.get(stage) || 0) + 1);
+      }
+    }
+
+    const delaysByStage = Array.from(delaysMap.entries())
+      .map(([stage, count]) => ({ stage, count }))
+      .sort((a, b) => b.count - a.count);
+
+    kpis.delaysByStage = delaysByStage;
+
+    // =========================
+    // Header KPIs
+    // =========================
+    const projectUnitsTotal = Number(project.unitsTotal || 0);
+    const projectUnitsSold = Number(project.unitsSold || 0);
+
+    const soldLikePortfolio = (units || []).reduce((n, u) => {
+      return n + (isSoldLikeStatus(getUnitStatus(u)) ? 1 : 0);
+    }, 0);
+
+    const headerKpis = {
+      unitsTotal: projectUnitsTotal > 0 ? projectUnitsTotal : U.total,
+      unitsSold: projectUnitsSold > 0 ? projectUnitsSold : soldLikePortfolio
+    };
+
+    const projectHeader = {
+      name: project.name,
+      description: project.description,
+      updatedAt: project.updatedAt,
+      loanApproved: project.loanApproved || 0,
+      loanDisbursed: project.loanDisbursed || 0,
+      budgetApproved: project.budgetApproved || 0,
+      budgetSpent: project.budgetSpent || 0,
+      unitsTotal: headerKpis.unitsTotal,
+      unitsSold: headerKpis.unitsSold
+    };
+
+    res.json({
+      project: projectHeader,
+      headerKpis,
+      kpis,
+
+      // Orden Bank73 / Gesproban
+      commercial,
+      legal,
+      technical,
+      financial,
+
+      // Datasets existentes que ya usa el front
+      progressByPhase,
+      finance: { phases: financePhases },
+      permitsByInstitution,
+      cppByBank,
+      proformasByBank,
+      unitsByStatus,
+      salesMonthly,
+      disbursements,
+      mortgagesByBank,
+      alerts: { expiries, notes, bySeverity: alertsBySeverity },
+      beforeAfter: []
+    });
+
+  } catch (e) {
+    console.error('[GET /projects/:id/summary]', e);
+    res.status(500).json({ error: e.message });
   }
-
-  const delaysByStage = Array.from(delaysMap.entries())
-    .map(([stage, count]) => ({ stage, count }))
-    .sort((a, b) => b.count - a.count);
-
-  kpis.delaysByStage = delaysByStage;
-
-  res.json({
-    project: projectHeader,
-    headerKpis,
-    kpis,
-    progressByPhase,
-    finance: { phases: financePhases },
-    permitsByInstitution,
-    cppByBank,
-    proformasByBank,
-    unitsByStatus,
-    salesMonthly,
-    disbursements,
-    mortgagesByBank,
-    alerts: { expiries, notes, bySeverity: alertsBySeverity },
-    beforeAfter: []
-  });
 });
 
 // ==============================
@@ -1835,12 +2071,57 @@ if (isSoldLikeStatus(st)) U.sold++;
       }
     }
 
-    const CHART_ORDER = [
-      { section: 'Operación', items: ['Progreso por fase'] },
-      { section: 'Legal', items: ['Permisos por institución', 'CPP por banco'] },
-      { section: 'Comercial', items: ['Proformas por banco', 'Estado de unidades', 'Ventas mensuales', 'Hipotecas por banco'] },
-      { section: 'Riesgos', items: ['Alertas por severidad', 'Expedientes atrasados por etapa'] },
-      { section: 'Finanzas', items: ['Desembolsos plan vs real'] },
+        const CHART_ORDER = [
+      {
+        section: 'Resumen Comercial',
+        items: [
+          'Estatus lotes / unidades',
+          'Ventas mensuales',
+          'Ventas vs ventas caídas',
+          'Ventas por modelo de vivienda',
+          'Perfil cliente',
+          'Tipo de empresa',
+          'Estatus en banco',
+          'CPP por banco',
+          'Montos CPP por banco',
+          'Proformas por banco',
+          'Hipotecas por banco'
+        ]
+      },
+      {
+        section: 'Resumen Legal',
+        items: [
+          'Minutas de liberación',
+          'Minutas de segregación',
+          'Minutas de préstamo',
+          'Firma de protocolo por banco'
+        ]
+      },
+      {
+        section: 'Resumen Técnico',
+        items: [
+          'Estatus construcción',
+          'Fase de construcción',
+          'Modelos en construcción',
+          'Avance de construcción',
+          'Permisos por institución'
+        ]
+      },
+      {
+        section: 'Resumen Financiero',
+        items: [
+          'Comparación por fase',
+          'Líneas de crédito',
+          'Cobertura CPP vs préstamo'
+        ]
+      },
+      {
+        section: 'Riesgos y alertas',
+        items: [
+          'Alertas por severidad',
+          'Expedientes atrasados por etapa'
+        ]
+      }
     ];
 
     if (format === 'xlsx') {

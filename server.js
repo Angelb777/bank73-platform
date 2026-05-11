@@ -62,8 +62,8 @@ if (isLanDev) {
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(morgan('dev'));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 // DEV: no cachear HTML/CSS/JS
 app.use((req, res, next) => {

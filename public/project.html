@@ -714,6 +714,26 @@
   gap:8px;
   align-items:center;
 }
+
+/* ===== Resumen Bank73 / Gesproban ===== */
+#tab-resumen .summary-block{
+  border:1px solid rgba(148,163,184,.22);
+  border-radius:18px;
+  padding:16px;
+  background:rgba(255,255,255,.03);
+}
+
+#tab-resumen .summary-block-title{
+  background:#064e3b;
+  color:#fff;
+  font-weight:900;
+  letter-spacing:.03em;
+  text-transform:uppercase;
+  padding:10px 14px;
+  border-radius:12px;
+  font-size:15px;
+}
+
   </style>
 </head>
 <body>
@@ -800,68 +820,233 @@
     </div>
   </div>
 
-      <!-- Gráficas principales -->
-  <section class="grid-2" style="margin-top:16px;">
+        <!-- =========================
+       RESUMEN COMERCIAL
+       ========================= -->
+  <section class="summary-block" style="margin-top:18px;">
+    <div class="summary-block-title">Resumen Comercial</div>
 
-  <div class="card summary-chart-card">
-    <h3>Comparación por fase (Finanzas)</h3>
-    <div class="summary-chart-box">
-      <canvas id="sumPhaseChart"></canvas>
-    </div>
-  </div>
+    <section class="grid-2" style="margin-top:12px;">
+      <div class="card summary-chart-card chart-card-sm">
+        <h3>Estatus lotes / unidades</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumUnitsDonut"></canvas>
+        </div>
+        <div id="sumUnitsDonutSummary" class="summary-chart-summary"></div>
+      </div>
 
-  <div class="card summary-chart-card">
-    <h3>Permisos por institución</h3>
-    <div class="summary-chart-box">
-      <canvas id="sumPermitsByInstitution"></canvas>
-    </div>
-    <div id="sumPermitsByInstitutionSummary" class="summary-chart-summary"></div>
-  </div>
+      <div class="card summary-chart-card">
+        <h3>Ventas mensuales</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumSalesMonthly"></canvas>
+        </div>
+        <div id="sumSalesMonthlySummary" class="summary-chart-summary"></div>
+      </div>
 
-  <div class="card summary-chart-card chart-card-sm">
-    <h3>CPP por banco</h3>
-    <div class="summary-chart-box">
-      <canvas id="sumCppPie"></canvas>
-    </div>
-    <div id="sumCppPieSummary" class="summary-chart-summary"></div>
-  </div>
+      <div class="card summary-chart-card">
+        <h3>Ventas vs ventas caídas</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumSalesVsFallen"></canvas>
+        </div>
+        <div id="sumSalesVsFallenSummary" class="summary-chart-summary"></div>
+      </div>
 
-  <div class="card summary-chart-card">
-    <div class="row" style="justify-content:space-between;align-items:center;">
-      <h3 style="margin:0;">Proformas por banco</h3>
-      <div class="small muted">Total: <b id="sumProformasTotal">0</b></div>
-    </div>
-    <div class="summary-chart-box">
-      <canvas id="sumProformasBar"></canvas>
-    </div>
-    <div id="sumProformasBarSummary" class="summary-chart-summary"></div>
-  </div>
+      <div class="card summary-chart-card chart-card-sm">
+        <h3>Ventas por modelo de vivienda</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumSalesByModel"></canvas>
+        </div>
+        <div id="sumSalesByModelSummary" class="summary-chart-summary"></div>
+      </div>
 
-  <div class="card summary-chart-card chart-card-sm">
-    <h3>Estado de unidades</h3>
-    <div class="summary-chart-box">
-      <canvas id="sumUnitsDonut"></canvas>
-    </div>
-    <div id="sumUnitsDonutSummary" class="summary-chart-summary"></div>
-  </div>
+      <div class="card summary-chart-card chart-card-sm">
+        <h3>Perfil cliente</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumClientProfile"></canvas>
+        </div>
+        <div id="sumClientProfileSummary" class="summary-chart-summary"></div>
+      </div>
 
-  <div class="card summary-chart-card">
-    <h3>Ventas mensuales</h3>
-    <div class="summary-chart-box">
-      <canvas id="sumSalesMonthly"></canvas>
-    </div>
-    <div id="sumSalesMonthlySummary" class="summary-chart-summary"></div>
-  </div>
+      <div class="card summary-chart-card chart-card-sm">
+        <h3>Tipo de empresa</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumCompanyType"></canvas>
+        </div>
+        <div id="sumCompanyTypeSummary" class="summary-chart-summary"></div>
+      </div>
 
-  <div class="card summary-chart-card">
-    <h3>Hipotecas por banco</h3>
-    <div class="summary-chart-box">
-      <canvas id="sumMortgagesByBank"></canvas>
-    </div>
-    <div id="sumMortgagesByBankSummary" class="summary-chart-summary"></div>
-  </div>
+      <div class="card summary-chart-card chart-card-sm">
+        <h3>Estatus en banco</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumBankStatus"></canvas>
+        </div>
+        <div id="sumBankStatusSummary" class="summary-chart-summary"></div>
+      </div>
 
-</section>
+      <div class="card summary-chart-card chart-card-sm">
+        <h3>CPP por banco</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumCppPie"></canvas>
+        </div>
+        <div id="sumCppPieSummary" class="summary-chart-summary"></div>
+      </div>
+
+      <div class="card summary-chart-card">
+        <h3>Montos CPP por banco</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumCppAmountByBank"></canvas>
+        </div>
+        <div id="sumCppAmountByBankSummary" class="summary-chart-summary"></div>
+      </div>
+
+      <div class="card summary-chart-card">
+        <div class="row" style="justify-content:space-between;align-items:center;">
+          <h3 style="margin:0;">Proformas por banco</h3>
+          <div class="small muted">Total: <b id="sumProformasTotal">0</b></div>
+        </div>
+        <div class="summary-chart-box">
+          <canvas id="sumProformasBar"></canvas>
+        </div>
+        <div id="sumProformasBarSummary" class="summary-chart-summary"></div>
+      </div>
+
+      <div class="card summary-chart-card">
+        <h3>Hipotecas por banco</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumMortgagesByBank"></canvas>
+        </div>
+        <div id="sumMortgagesByBankSummary" class="summary-chart-summary"></div>
+      </div>
+    </section>
+  </section>
+
+  <!-- =========================
+       RESUMEN LEGAL
+       ========================= -->
+  <section class="summary-block" style="margin-top:18px;">
+    <div class="summary-block-title">Resumen Legal</div>
+
+    <section id="summaryLegalKpis" class="kpis-grid" style="margin-top:12px;"></section>
+
+    <section class="grid-2" style="margin-top:12px;">
+      <div class="card summary-chart-card chart-card-sm">
+        <h3>Minutas de liberación</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumLegalLiberacion"></canvas>
+        </div>
+        <div id="sumLegalLiberacionSummary" class="summary-chart-summary"></div>
+      </div>
+
+      <div class="card summary-chart-card chart-card-sm">
+        <h3>Minutas de segregación</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumLegalSegregacion"></canvas>
+        </div>
+        <div id="sumLegalSegregacionSummary" class="summary-chart-summary"></div>
+      </div>
+
+      <div class="card summary-chart-card chart-card-sm">
+        <h3>Minutas de préstamo</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumLegalPrestamo"></canvas>
+        </div>
+        <div id="sumLegalPrestamoSummary" class="summary-chart-summary"></div>
+      </div>
+
+      <div class="card summary-chart-card">
+        <h3>Firma de protocolo por banco</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumProtocolByBank"></canvas>
+        </div>
+        <div id="sumProtocolByBankSummary" class="summary-chart-summary"></div>
+      </div>
+    </section>
+  </section>
+
+  <!-- =========================
+       RESUMEN TÉCNICO
+       ========================= -->
+  <section class="summary-block" style="margin-top:18px;">
+    <div class="summary-block-title">Resumen Técnico</div>
+
+    <section id="summaryTechnicalKpis" class="kpis-grid" style="margin-top:12px;"></section>
+
+    <section class="grid-2" style="margin-top:12px;">
+      <div class="card summary-chart-card chart-card-sm">
+        <h3>Estatus construcción</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumConstructionStatus"></canvas>
+        </div>
+        <div id="sumConstructionStatusSummary" class="summary-chart-summary"></div>
+      </div>
+
+      <div class="card summary-chart-card">
+        <h3>Fase de construcción</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumConstructionPhase"></canvas>
+        </div>
+        <div id="sumConstructionPhaseSummary" class="summary-chart-summary"></div>
+      </div>
+
+      <div class="card summary-chart-card chart-card-sm">
+        <h3>Modelos en construcción</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumModelsInConstruction"></canvas>
+        </div>
+        <div id="sumModelsInConstructionSummary" class="summary-chart-summary"></div>
+      </div>
+
+      <div class="card summary-chart-card">
+        <h3>Avance de construcción</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumConstructionProgressRanges"></canvas>
+        </div>
+        <div id="sumConstructionProgressRangesSummary" class="summary-chart-summary"></div>
+      </div>
+
+      <div class="card summary-chart-card">
+        <h3>Permisos por institución</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumPermitsByInstitution"></canvas>
+        </div>
+        <div id="sumPermitsByInstitutionSummary" class="summary-chart-summary"></div>
+      </div>
+    </section>
+  </section>
+
+  <!-- =========================
+       RESUMEN FINANCIERO
+       ========================= -->
+  <section class="summary-block" style="margin-top:18px;">
+    <div class="summary-block-title">Resumen Financiero</div>
+
+    <section id="summaryFinancialKpis" class="kpis-grid" style="margin-top:12px;"></section>
+
+    <section class="grid-2" style="margin-top:12px;">
+      <div class="card summary-chart-card">
+        <h3>Comparación por fase (Finanzas)</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumPhaseChart"></canvas>
+        </div>
+      </div>
+
+      <div class="card summary-chart-card">
+        <h3>Líneas de crédito: amortizado vs deuda</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumCreditLines"></canvas>
+        </div>
+        <div id="sumCreditLinesSummary" class="summary-chart-summary"></div>
+      </div>
+
+      <div class="card summary-chart-card">
+        <h3>Cobertura CPP vs préstamo</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumCppCoverage"></canvas>
+        </div>
+        <div id="sumCppCoverageSummary" class="summary-chart-summary"></div>
+      </div>
+    </section>
+  </section>
 
   <!-- Alertas + Conclusiones -->
   <section class="grid-2" style="margin-top:16px;">

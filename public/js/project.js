@@ -1823,6 +1823,10 @@ async function renderSummaryUI(payload) {
   const alerts               = payload.alerts               || { expiries: [], notes: [], bySeverity: [] };
   const beforeAfter          = payload.beforeAfter          || [];
   const financePhases        = payload?.finance?.phases     || [];
+  const commercial = payload.commercial || {};
+  const legal      = payload.legal      || {};
+  const technical  = payload.technical  || {};
+  const financial  = payload.financial  || {};
 
   // Helpers locales
   const toNum = (v) => {
@@ -1867,6 +1871,76 @@ async function renderSummaryUI(payload) {
     return Math.round(avg * 10) / 10;
   }
 
+        const summaryChartOpts = (extra = {}) => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    ...extra
+  });
+
+  const renderTargetKpis = (targetId, items) => {
+    const el = document.getElementById(targetId);
+    if (!el) return;
+    el.innerHTML = (items || []).filter(Boolean).map(x =>
+      kpiCard(x.title, x.value, x.sub || '')
+    ).join('');
+  };
+
+  const renderPieLike = (chartKey, canvasId, data, labelKey, valueKey, summaryId, totalLabel, type = 'doughnut') => {
+    sumDestroy(chartKey);
+
+    const list = data || [];
+    if (ctx(canvasId)) {
+      __sumCharts[chartKey] = new Chart(ctx(canvasId), {
+        type,
+        data: {
+          labels: list.map(x => x[labelKey]),
+          datasets: [{ data: list.map(x => toNum(x[valueKey])) }]
+        },
+        options: summaryChartOpts({
+          plugins: { legend: { position: 'bottom' } }
+        })
+      });
+    }
+
+    renderChartSummary(
+      summaryId,
+      list.map(x => ({ label: x[labelKey], value: toNum(x[valueKey]) })),
+      { totalLabel }
+    );
+  };
+
+  const renderBarSimple = (chartKey, canvasId, data, labelKey, valueKey, summaryId, totalLabel, formatter) => {
+    sumDestroy(chartKey);
+
+    const list = data || [];
+    if (ctx(canvasId)) {
+      __sumCharts[chartKey] = new Chart(ctx(canvasId), {
+        type: 'bar',
+        data: {
+          labels: list.map(x => x[labelKey]),
+          datasets: [{
+            label: totalLabel || 'Total',
+            data: list.map(x => toNum(x[valueKey]))
+          }]
+        },
+        options: summaryChartOpts({
+          plugins: { legend: { display: false } },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { precision: 0 }
+            }
+          }
+        })
+      });
+    }
+
+    renderChartSummary(
+      summaryId,
+      list.map(x => ({ label: x[labelKey], value: toNum(x[valueKey]), ...x })),
+      { totalLabel, formatter }
+    );
+  };
   // 3) Cabecera fija
   const headerKpisFixed = {
     ...headerKpis,
@@ -2274,6 +2348,194 @@ renderChartSummary(
   }
 );
 
+  // =========================================================
+  // NUEVO RESUMEN COMERCIAL / LEGAL / TÉCNICO / FINANCIERO
+  // =========================================================
+
+  // ---------- Comercial: ventas vs caídas ----------
+  sumDestroy('p11');
+  const salesVsFallen = commercial.salesVsFallenByYear || [];
+  if (ctx('sumSalesVsFallen')) {
+    __sumCharts.p11 = new Chart(ctx('sumSalesVsFallen'), {
+      type: 'bar',
+      data: {
+        labels: salesVsFallen.map(x => x.year),
+        datasets: [
+          { label: 'Ventas', data: salesVsFallen.map(x => toNum(x.sales)), stack: 's' },
+          { label: 'Ventas caídas', data: salesVsFallen.map(x => toNum(x.fallen)), stack: 's' }
+        ]
+      },
+      options: summaryChartOpts({
+        scales: {
+          x: { stacked: true },
+          y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
+        }
+      })
+    });
+  }
+  renderChartSummary(
+    'sumSalesVsFallenSummary',
+    salesVsFallen.map(x => ({ label: x.year, value: toNum(x.sales), fallen: toNum(x.fallen) })),
+    {
+      totalLabel: 'Ventas reales',
+      formatter: (v, item) => `${toNum(v)} ventas · ${toNum(item?.fallen)} caídas`
+    }
+  );
+
+  // ---------- Comercial: modelos / perfiles ----------
+  renderPieLike('p12', 'sumSalesByModel', commercial.salesByModel || [], 'model', 'count', 'sumSalesByModelSummary', 'Total ventas por modelo', 'pie');
+  renderPieLike('p13', 'sumClientProfile', commercial.clientProfile || [], 'profile', 'count', 'sumClientProfileSummary', 'Total perfiles', 'doughnut');
+  renderPieLike('p14', 'sumCompanyType', commercial.companyType || [], 'type', 'count', 'sumCompanyTypeSummary', 'Total empresas', 'doughnut');
+  renderPieLike('p15', 'sumBankStatus', commercial.bankStatus || [], 'status', 'count', 'sumBankStatusSummary', 'Total estados banco', 'doughnut');
+
+  // ---------- Comercial: montos CPP por banco ----------
+  renderBarSimple(
+    'p16',
+    'sumCppAmountByBank',
+    commercial.cppAmountByBank || [],
+    'bank',
+    'amount',
+    'sumCppAmountByBankSummary',
+    'Total monto CPP',
+    (v, item) => `${formatMoneyCompact(toNum(item?.amount || v))}`
+  );
+
+  // ---------- Legal: KPIs ----------
+  const lt = legal.totals || {};
+  renderTargetKpis('summaryLegalKpis', [
+    { title: 'Contratos firmados', value: lt.contratosFirmados || 0 },
+    { title: 'Minutas liberación', value: lt.minutasLiberacion || 0 },
+    { title: 'Minutas segregación', value: lt.minutasSegregacion || 0 },
+    { title: 'Minutas préstamo', value: lt.minutasPrestamo || 0 },
+    { title: 'Protocolos cliente', value: lt.protocolosCliente || 0 },
+    { title: 'Protocolos banco cliente', value: lt.protocolosBancoCliente || 0 },
+    { title: 'Protocolos banco', value: lt.protocolosBanco || 0 },
+    { title: 'Escrituras inscritas', value: lt.escriturasInscritas || 0 },
+    { title: 'Fincas segregadas', value: lt.fincasSegregadas || 0 }
+  ]);
+
+  renderPieLike('p17', 'sumLegalLiberacion', legal.minutasLiberacion || [], 'status', 'count', 'sumLegalLiberacionSummary', 'Total minutas', 'pie');
+  renderPieLike('p18', 'sumLegalSegregacion', legal.minutasSegregacion || [], 'status', 'count', 'sumLegalSegregacionSummary', 'Total minutas', 'pie');
+  renderPieLike('p19', 'sumLegalPrestamo', legal.minutasPrestamo || [], 'status', 'count', 'sumLegalPrestamoSummary', 'Total minutas', 'pie');
+
+  // ---------- Legal: firma protocolo por banco ----------
+  sumDestroy('p20');
+  const protocolByBank = legal.protocolByBank || [];
+  if (ctx('sumProtocolByBank')) {
+    __sumCharts.p20 = new Chart(ctx('sumProtocolByBank'), {
+      type: 'bar',
+      data: {
+        labels: protocolByBank.map(x => x.bank),
+        datasets: [
+          { label: 'Cliente', data: protocolByBank.map(x => toNum(x.cliente)) },
+          { label: 'Banco cliente', data: protocolByBank.map(x => toNum(x.bancoCliente)) },
+          { label: 'Banco interino', data: protocolByBank.map(x => toNum(x.bancoInterino)) }
+        ]
+      },
+      options: summaryChartOpts({
+        scales: {
+          y: { beginAtZero: true, ticks: { precision: 0 } }
+        }
+      })
+    });
+  }
+  renderChartSummary(
+    'sumProtocolByBankSummary',
+    protocolByBank.map(x => ({
+      label: x.bank,
+      value: toNum(x.cliente) + toNum(x.bancoCliente) + toNum(x.bancoInterino)
+    })),
+    { totalLabel: 'Total firmas protocolo' }
+  );
+
+  // ---------- Técnico: KPIs ----------
+  const tt = technical.permitsTotals || {};
+  renderTargetKpis('summaryTechnicalKpis', [
+    { title: 'Permisos construcción', value: tt.construction || 0 },
+    { title: 'Permisos ocupación', value: tt.occupation || 0 },
+    { title: 'Fases construcción', value: (technical.constructionPhase || []).length },
+    { title: 'Modelos en construcción', value: (technical.modelsInConstruction || []).length }
+  ]);
+
+  renderPieLike('p21', 'sumConstructionStatus', technical.constructionStatus || [], 'status', 'count', 'sumConstructionStatusSummary', 'Total estatus', 'doughnut');
+  renderBarSimple('p22', 'sumConstructionPhase', technical.constructionPhase || [], 'phase', 'count', 'sumConstructionPhaseSummary', 'Total fases');
+  renderPieLike('p23', 'sumModelsInConstruction', technical.modelsInConstruction || [], 'model', 'count', 'sumModelsInConstructionSummary', 'Total modelos', 'pie');
+  renderBarSimple('p24', 'sumConstructionProgressRanges', technical.constructionProgressRanges || [], 'range', 'count', 'sumConstructionProgressRangesSummary', 'Total unidades');
+
+  // ---------- Financiero: KPIs ----------
+  const ft = financial.totals || {};
+  const fc = financial.cppCoverage || {};
+  renderTargetKpis('summaryFinancialKpis', [
+    { title: 'Desembolsado', value: formatMoney(ft.disbursed || 0) },
+    { title: 'Amortizado', value: formatMoney(ft.amortized || 0) },
+    { title: 'Deuda actual', value: formatMoney(ft.debt || 0) },
+    { title: 'CPP vigente', value: formatMoney(fc.cppVigenteAmount || 0), sub: `${fc.coverageCppVigentePct || 0}% cobertura` },
+    { title: 'CPP en trámite', value: formatMoney(fc.cppTramiteAmount || 0), sub: `${fc.coverageCppTramitePct || 0}% cobertura` }
+  ]);
+
+  // ---------- Financiero: líneas crédito ----------
+  sumDestroy('p25');
+  const creditLines = financial.creditLines || [];
+  if (ctx('sumCreditLines')) {
+    __sumCharts.p25 = new Chart(ctx('sumCreditLines'), {
+      type: 'bar',
+      data: {
+        labels: creditLines.map(x => x.name),
+        datasets: [
+          { label: 'Amortizado', data: creditLines.map(x => toNum(x.amortizedAmount)), stack: 's' },
+          { label: 'Deuda actual', data: creditLines.map(x => toNum(x.debt)), stack: 's' }
+        ]
+      },
+      options: summaryChartOpts({
+        scales: {
+          x: { stacked: true },
+          y: { stacked: true, beginAtZero: true }
+        }
+      })
+    });
+  }
+  renderChartSummary(
+    'sumCreditLinesSummary',
+    creditLines.map(x => ({ label: x.name, value: toNum(x.debt), amortized: toNum(x.amortizedAmount) })),
+    {
+      totalLabel: 'Total deuda',
+      formatter: (v, item) => `${formatMoneyCompact(toNum(v))} deuda · ${formatMoneyCompact(toNum(item?.amortized))} amort.`
+    }
+  );
+
+  // ---------- Financiero: cobertura CPP ----------
+  sumDestroy('p26');
+  const coverageRows = [
+    { label: 'Deuda actual', amount: toNum(fc.totalDebt) },
+    { label: 'CPP vigentes', amount: toNum(fc.cppVigenteAmount) },
+    { label: 'CPP en trámite', amount: toNum(fc.cppTramiteAmount) }
+  ];
+
+  if (ctx('sumCppCoverage')) {
+    __sumCharts.p26 = new Chart(ctx('sumCppCoverage'), {
+      type: 'bar',
+      data: {
+        labels: coverageRows.map(x => x.label),
+        datasets: [{
+          label: 'Monto',
+          data: coverageRows.map(x => x.amount)
+        }]
+      },
+      options: summaryChartOpts({
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true } }
+      })
+    });
+  }
+  renderChartSummary(
+    'sumCppCoverageSummary',
+    coverageRows.map(x => ({ label: x.label, value: x.amount })),
+    {
+      totalLabel: 'Referencia',
+      formatter: (v) => formatMoneyCompact(toNum(v))
+    }
+  );
+
   // ---------- Alertas por severidad ----------
   sumDestroy('p9');
   if (ctx('sumAlertsSeverity')) {
@@ -2453,15 +2715,34 @@ async function loadSummary() {
 
     const exportSummary = async (format) => {
       // Capturamos charts (los que existan)
-      const charts = {
-        'Progreso por fase': captureCanvas('sumProgressByPhase'),
-        'Permisos por institución': captureCanvas('sumPermitsByInstitution'),
-        'CPP por banco': captureCanvas('sumCppPie'),
-        'Proformas por banco': captureCanvas('sumProformasBar'),
-        'Estado de unidades': captureCanvas('sumUnitsDonut'),
+            const charts = {
+        'Estatus lotes / unidades': captureCanvas('sumUnitsDonut'),
         'Ventas mensuales': captureCanvas('sumSalesMonthly'),
+        'Ventas vs ventas caídas': captureCanvas('sumSalesVsFallen'),
+        'Ventas por modelo de vivienda': captureCanvas('sumSalesByModel'),
+        'Perfil cliente': captureCanvas('sumClientProfile'),
+        'Tipo de empresa': captureCanvas('sumCompanyType'),
+        'Estatus en banco': captureCanvas('sumBankStatus'),
+        'CPP por banco': captureCanvas('sumCppPie'),
+        'Montos CPP por banco': captureCanvas('sumCppAmountByBank'),
+        'Proformas por banco': captureCanvas('sumProformasBar'),
         'Hipotecas por banco': captureCanvas('sumMortgagesByBank'),
-        // NUEVAS (si las añadiste al HTML)
+
+        'Minutas de liberación': captureCanvas('sumLegalLiberacion'),
+        'Minutas de segregación': captureCanvas('sumLegalSegregacion'),
+        'Minutas de préstamo': captureCanvas('sumLegalPrestamo'),
+        'Firma de protocolo por banco': captureCanvas('sumProtocolByBank'),
+
+        'Estatus construcción': captureCanvas('sumConstructionStatus'),
+        'Fase de construcción': captureCanvas('sumConstructionPhase'),
+        'Modelos en construcción': captureCanvas('sumModelsInConstruction'),
+        'Avance de construcción': captureCanvas('sumConstructionProgressRanges'),
+        'Permisos por institución': captureCanvas('sumPermitsByInstitution'),
+
+        'Comparación por fase': captureCanvas('sumPhaseChart'),
+        'Líneas de crédito': captureCanvas('sumCreditLines'),
+        'Cobertura CPP vs préstamo': captureCanvas('sumCppCoverage'),
+
         'Alertas por severidad': captureCanvas('sumAlertsSeverity'),
         'Expedientes atrasados por etapa': captureCanvas('sumDelaysByStage'),
       };
@@ -2483,7 +2764,12 @@ const datasets = {
   progressByPhase: payload.progressByPhase || [],
   alerts: payload.alerts || {},
   kpis: payload.kpis || {},
-  project: payload.project || {}
+  project: payload.project || {},
+
+  commercial: payload.commercial || {},
+  legal: payload.legal || {},
+  technical: payload.technical || {},
+  financial: payload.financial || {},
 };
 
 // 3) ✅ antes/después desde la UI (si no existe, manda [])
@@ -2640,7 +2926,23 @@ function addInfoBadges(){
     sumUnitsDonut: 'Unidades: disponibles, reservadas, vendidas, escrituradas, canceladas.',
     sumSalesMonthly: 'Contratos firmados por mes (fechaContratoCliente).',
     sumDisbPlanReal: 'Desembolsos plan vs. real (acumulado).',
-    sumMortgagesByBank: 'Hipotecas aprobadas por banco (statusBanco contiene APROB).'
+    sumMortgagesByBank: 'Hipotecas aprobadas por banco (statusBanco contiene APROB).',
+    sumSalesVsFallen: 'Compara ventas reales contra ventas caídas/canceladas por año.',
+    sumSalesByModel: 'Distribución de ventas por modelo de vivienda.',
+    sumClientProfile: 'Perfil del cliente comprador: independiente, asalariado o mixto.',
+    sumCompanyType: 'Tipo de empresa del cliente: pública, privada o mixta.',
+    sumBankStatus: 'Estado del expediente dentro del banco.',
+    sumCppAmountByBank: 'Monto financiado o CPP acumulado por banco.',
+    sumLegalLiberacion: 'Minutas de liberación completadas frente a pendientes.',
+    sumLegalSegregacion: 'Minutas de segregación completadas frente a pendientes.',
+    sumLegalPrestamo: 'Minutas de préstamo completadas frente a pendientes.',
+    sumProtocolByBank: 'Firmas de protocolo agrupadas por banco.',
+    sumConstructionStatus: 'Estado general de construcción de las unidades.',
+    sumConstructionPhase: 'Fase constructiva actual de las unidades.',
+    sumModelsInConstruction: 'Modelos de vivienda actualmente en construcción.',
+    sumConstructionProgressRanges: 'Avance de construcción agrupado por rangos porcentuales.',
+    sumCreditLines: 'Líneas de crédito: amortizado frente a deuda actual.',
+    sumCppCoverage: 'Cobertura de CPP vigente y en trámite frente a deuda actual.',
   };
   for (const [id, tip] of Object.entries(tips)) {
     const canvas = document.getElementById(id);
