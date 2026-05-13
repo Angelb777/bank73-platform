@@ -1739,6 +1739,35 @@ function formatMoneyCompact(v) {
   });
 }
 
+function isSummarySoldUnit(u) {
+  const estado = normalizeUnitEstadoFrontend(u?.estado || u?.status || '');
+
+  return [
+    'con_cpp',
+    'tramite_legal_activado',
+    'escriturado_traspasado',
+    'vivienda_entregada'
+  ].includes(estado);
+}
+
+function isSummaryActiveCpp(v) {
+  const hasCpp =
+    String(v?.estatusCPP || '').toLowerCase().includes('cpp') ||
+    String(v?.statusBanco || '').toLowerCase().includes('cpp') ||
+    String(v?.numCPP || '').trim();
+
+  if (!hasCpp) return false;
+
+  const exp = v?.fechaVencimientoCPP || v?.vencimientoCPPBnMivi;
+  if (!exp) return true;
+
+  const d = new Date(exp);
+  if (isNaN(d.getTime())) return false;
+
+  d.setHours(23, 59, 59, 999);
+  return d.getTime() >= Date.now();
+}
+
 function calcTotal(arr, key = 'count') {
   return (arr || []).reduce((acc, x) => acc + Number(x?.[key] || 0), 0);
 }
@@ -1950,10 +1979,10 @@ async function renderSummaryUI(payload) {
 
   renderHeaderKpis(project, headerKpisFixed);
 
-  // 4) Texto unidades vendidas
-  const sold = headerKpisFixed.unitsSold ?? 0;
-  const total = headerKpisFixed.unitsTotal ?? 0;
-  const pct = total ? Math.round(100 * sold / total) : 0;
+    // 4) Texto unidades vendidas
+  let sold = headerKpisFixed.unitsSold ?? 0;
+  let total = headerKpisFixed.unitsTotal ?? 0;
+  let pct = total ? Math.round(100 * sold / total) : 0;
   const unitsTxt = document.getElementById('summaryUnits');
   if (unitsTxt) unitsTxt.textContent = `${sold}/${total} unidades vendidas (${pct}%)`;
 
@@ -1997,6 +2026,29 @@ async function renderSummaryUI(payload) {
     delaysByStage: []
   };
 
+    // ✅ FIX SUMMARY: recalcula ventas y CPP activos desde datos reales
+  try {
+    const unitsFix = await API.get(`/api/units?projectId=${id}&ts=${Date.now()}`);
+    const ventasFix = await API.get(`/api/ventas?projectId=${id}&ts=${Date.now()}`);
+
+    total = Array.isArray(unitsFix) ? unitsFix.length : total;
+    sold = (unitsFix || []).filter(isSummarySoldUnit).length;
+    pct = total ? Math.round(100 * sold / total) : 0;
+
+    kpis.units = kpis.units || {};
+    kpis.units.total = total;
+    kpis.units.sold = sold;
+    kpis.units.available = Math.max(0, total - sold);
+
+    const cppActive = (ventasFix || []).filter(isSummaryActiveCpp).length;
+
+    kpis.cpp = kpis.cpp || {};
+    kpis.cpp.active = cppActive;
+
+  } catch (e) {
+    console.warn('[Summary FIX] No se pudo recalcular ventas/CPP', e);
+  }
+
   // ✅ Si no viene absorción, la calculamos desde ventas mensuales
   if (!kpis.absorption3m || Number(kpis.absorption3m) === 0) {
     kpis.absorption3m = calcAbsorption3mFromSalesMonthly(salesMonthly);
@@ -2014,9 +2066,71 @@ async function renderSummaryUI(payload) {
 
   // Tarjetas KPI
   const u = kpis.units || {};
-  const loan = kpis.loan || {};
-  const cpp = kpis.cpp || {};
-  const app = kpis.appraisal || {};
+const loan = kpis.loan || {};
+let cpp = kpis.cpp || {};
+const app = kpis.appraisal || {};
+
+// ✅ FIX: usar la misma fuente que los KPIs globales del proyecto
+try {
+  const portfolio = await API.get(`/api/projects/portfolio?ts=${Date.now()}`);
+  const me = (portfolio || []).find(p => String(p._id) === String(id));
+
+  if (me) {
+    total = Number(me.unitsTotal || 0);
+    sold = Number(me.unitsSold || 0);
+    pct = total ? Math.round(100 * sold / total) : 0;
+
+    kpis.units = kpis.units || {};
+    kpis.units.total = total;
+    kpis.units.sold = sold;
+    kpis.units.available = Math.max(0, total - sold);
+  }
+} catch (e) {
+  console.warn('[Summary] No se pudo sincronizar ventas con portfolio', e);
+}
+
+// ✅ FIX: CPP activos = tienen numCPP y NO están vencidos
+try {
+  const ventas = await API.get(`/api/ventas?projectId=${id}&ts=${Date.now()}`);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const diffDays = (dateValue) => {
+    if (!dateValue) return null;
+    const d = new Date(dateValue);
+    if (isNaN(d.getTime())) return null;
+    d.setHours(0, 0, 0, 0);
+    return Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
+  const cppVigentes = (ventas || []).filter(v => {
+    const hasCpp = String(v?.numCPP || '').trim();
+    const days = diffDays(v?.fechaVencimientoCPP);
+    return hasCpp && days !== null && days >= 0;
+  });
+
+  cpp = {
+    ...cpp,
+    active: cppVigentes.length,
+    due30: cppVigentes.filter(v => {
+      const d = diffDays(v.fechaVencimientoCPP);
+      return d >= 0 && d <= 30;
+    }).length,
+    due60: cppVigentes.filter(v => {
+      const d = diffDays(v.fechaVencimientoCPP);
+      return d > 30 && d <= 60;
+    }).length,
+    due90: cppVigentes.filter(v => {
+      const d = diffDays(v.fechaVencimientoCPP);
+      return d > 60 && d <= 90;
+    }).length,
+  };
+
+  kpis.cpp = cpp;
+} catch (e) {
+  console.warn('[Summary] No se pudo recalcular CPP activos', e);
+}
 
   const cards = [
     kpiCard('Progreso global', (kpis.progressPct || 0) + '%'),
@@ -2462,15 +2576,49 @@ renderChartSummary(
   renderPieLike('p23', 'sumModelsInConstruction', technical.modelsInConstruction || [], 'model', 'count', 'sumModelsInConstructionSummary', 'Total modelos', 'pie');
   renderBarSimple('p24', 'sumConstructionProgressRanges', technical.constructionProgressRanges || [], 'range', 'count', 'sumConstructionProgressRangesSummary', 'Total unidades');
 
-  // ---------- Financiero: KPIs ----------
-  const ft = financial.totals || {};
+    // ---------- Financiero: KPIs ----------
   const fc = financial.cppCoverage || {};
+
+  const loanApprovedSummary =
+    project.loanApproved ??
+    headerKpis.loanApproved ??
+    kpis.loan?.approved ??
+    0;
+
+  const loanDisbursedSummary =
+    project.loanDisbursed ??
+    headerKpis.loanDisbursed ??
+    kpis.loan?.disbursed ??
+    0;
+
+  const budgetApprovedSummary =
+    project.budgetApproved ??
+    headerKpis.budgetApproved ??
+    0;
+
   renderTargetKpis('summaryFinancialKpis', [
-    { title: 'Desembolsado', value: formatMoney(ft.disbursed || 0) },
-    { title: 'Amortizado', value: formatMoney(ft.amortized || 0) },
-    { title: 'Deuda actual', value: formatMoney(ft.debt || 0) },
-    { title: 'CPP vigente', value: formatMoney(fc.cppVigenteAmount || 0), sub: `${fc.coverageCppVigentePct || 0}% cobertura` },
-    { title: 'CPP en trámite', value: formatMoney(fc.cppTramiteAmount || 0), sub: `${fc.coverageCppTramitePct || 0}% cobertura` }
+    {
+      title: 'Loan aprobado',
+      value: formatMoney(loanApprovedSummary)
+    },
+    {
+      title: 'Desembolsado',
+      value: formatMoney(loanDisbursedSummary)
+    },
+    {
+      title: 'Budget aprobado',
+      value: formatMoney(budgetApprovedSummary)
+    },
+    {
+      title: 'CPP vigente',
+      value: formatMoney(fc.cppVigenteAmount || 0),
+      sub: `${fc.coverageCppVigentePct || 0}% cobertura`
+    },
+    {
+      title: 'CPP en trámite',
+      value: `${cpp.active || 0} activos`,
+      sub: `30d:${cpp.due30 || 0} · 60d:${cpp.due60 || 0} · 90d:${cpp.due90 || 0}`
+    }
   ]);
 
   // ---------- Financiero: líneas crédito ----------
@@ -2643,9 +2791,9 @@ async function syncUnitsSoldFromPortfolio() {
     // 3) (opcional) Línea pequeña “x/y unidades vendidas (%)” si la tienes
     const unitsTxt = document.getElementById('summaryUnits');
     if (unitsTxt) {
-      const sold  = me.unitsSold  || 0;
-      const total = me.unitsTotal || 0;
-      const pct   = total ? Math.round(100 * sold / total) : 0;
+      let sold = headerKpisFixed.unitsSold ?? 0;
+      let total = headerKpisFixed.unitsTotal ?? 0;
+      let pct = total ? Math.round(100 * sold / total) : 0;
       unitsTxt.textContent = `${sold}/${total} unidades vendidas (${pct}%)`;
     }
   } catch (e) {
@@ -5152,7 +5300,187 @@ kpisDiv.innerHTML = `
   <div>Vivienda entregada: ${resumen.vivienda_entregada || 0}</div>
   <div>Valor total: $${(resumen.valor || 0).toLocaleString()}</div>
 `;
+// ===== ALERTA CPP: 60 días antes de vencimiento =====
+function daysUntil(dateValue) {
+  if (!dateValue) return null;
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const target = new Date(dateValue);
+  if (isNaN(target.getTime())) return null;
+  target.setHours(0, 0, 0, 0);
+
+  return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function unitLabel(u) {
+  const manzanaLote = `${u?.manzana || '-'}-${u?.lote || ''}`.trim();
+  return manzanaLote !== '-' ? manzanaLote : (u?.nombre || u?.codigo || u?._id || 'Unidad');
+}
+
+function getCppExpiryAlert(u, venta) {
+  const days = daysUntil(venta?.fechaVencimientoCPP);
+
+  // Alerta desde 60 días antes hasta el día de vencimiento
+  if (days === null || days < 0 || days > 60) return null;
+
+  return {
+    unit: unitLabel(u),
+    days,
+    due: String(venta.fechaVencimientoCPP).slice(0, 10),
+    banco: venta?.banco || '',
+    cpp: venta?.numCPP || ''
+  };
+}
+
+function showCppExpiryPopup(alerts = []) {
+  if (!alerts.length) return;
+
+  const storageKey = `cpp-expiry-alerts-shown-${id}-${new Date().toISOString().slice(0,10)}`;
+  if (sessionStorage.getItem(storageKey) === '1') return;
+  sessionStorage.setItem(storageKey, '1');
+
+  const rows = alerts.map(a => `
+    <div style="
+      border:1px solid #fecaca;
+      background:#fff1f2;
+      border-radius:14px;
+      padding:12px 14px;
+      margin-bottom:10px;
+    ">
+      <div style="font-weight:800;color:#991b1b;">
+        Faltan ${a.days} días para que venza la CPP de la unidad ${a.unit}
+      </div>
+      <div class="small" style="margin-top:4px;color:#7f1d1d;">
+        Vencimiento: <b>${a.due}</b>
+        ${a.banco ? ` · Banco: <b>${a.banco}</b>` : ''}
+        ${a.cpp ? ` · CPP: <b>${a.cpp}</b>` : ''}
+      </div>
+    </div>
+  `).join('');
+
+  openModal(
+  '⚠️ Vencimiento de CPP próximo',
+  `
+    <div style="
+      border:1px solid rgba(220,38,38,.28);
+      border-left:7px solid #dc2626;
+      border-radius:22px;
+      padding:22px;
+      background:
+        linear-gradient(135deg, #fff7f7 0%, #ffffff 55%, #f8fafc 100%);
+      box-shadow:0 18px 45px rgba(15,23,42,.12);
+    ">
+      <div style="
+        display:flex;
+        align-items:flex-start;
+        justify-content:space-between;
+        gap:18px;
+        margin-bottom:18px;
+      ">
+        <div>
+          <div style="
+            font-size:13px;
+            font-weight:800;
+            letter-spacing:.08em;
+            text-transform:uppercase;
+            color:#991b1b;
+            margin-bottom:6px;
+          ">
+            Control de riesgo · CPP
+          </div>
+
+          <div style="
+            font-size:24px;
+            line-height:1.15;
+            font-weight:900;
+            color:#0f172a;
+          ">
+            Cartas próximas a vencer
+          </div>
+
+          <div style="
+            margin-top:7px;
+            color:#64748b;
+            font-size:14px;
+          ">
+            Revisa estas unidades antes de que expire la vigencia de la CPP.
+          </div>
+        </div>
+
+        <div style="
+          min-width:58px;
+          height:58px;
+          border-radius:18px;
+          background:#fee2e2;
+          border:1px solid #fecaca;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          font-size:28px;
+        ">
+          ⚠️
+        </div>
+      </div>
+
+      <div style="display:grid;gap:12px;">
+        ${alerts.map(a => `
+          <div style="
+            border:1px solid #fecaca;
+            background:rgba(255,241,242,.82);
+            border-radius:18px;
+            padding:16px 18px;
+            display:flex;
+            justify-content:space-between;
+            gap:16px;
+            align-items:center;
+          ">
+            <div>
+              <div style="
+                font-size:17px;
+                font-weight:900;
+                color:#991b1b;
+              ">
+                Unidad ${a.unit}
+              </div>
+
+              <div style="
+                margin-top:6px;
+                color:#7f1d1d;
+                font-size:14px;
+              ">
+                Vencimiento: <b>${a.due}</b>
+                ${a.banco ? ` · Banco: <b>${a.banco}</b>` : ''}
+                ${a.cpp ? ` · CPP: <b>${a.cpp}</b>` : ''}
+              </div>
+            </div>
+
+            <div style="
+              min-width:112px;
+              text-align:center;
+              background:#111827;
+              color:#fff;
+              border-radius:16px;
+              padding:10px 12px;
+              box-shadow:0 10px 25px rgba(15,23,42,.18);
+            ">
+              <div style="font-size:25px;font-weight:950;line-height:1;">
+                ${a.days}
+              </div>
+              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-top:4px;">
+                días restantes
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `,
+  'Entendido',
+  () => { modalBackdrop.style.display = 'none'; }
+);
+}
     // Grid
     // ----- Render grid mejorado -----
 function renderUnitCard(u) {
@@ -5163,12 +5491,23 @@ function renderUnitCard(u) {
   const idu = String(u._id);
   const estadoTxt = estadoLabel(u.estado || 'disponible');
   const impago = /mora|impago|rechaz|atras|vencid|moros/i.test(venta?.statusBanco || '');
+  const cppAlert = getCppExpiryAlert(u, venta);
 
   return `
     <div class="unit-card estado-${normalizeUnitEstadoFrontend(u.estado)} ${selected.has(idu) ? 'selected' : ''}"
          data-id="${idu}"
          draggable="true">
       ${impago ? `<span class="alert-ribbon">Impago</span>` : ``}
+${cppAlert ? `
+  <span class="alert-ribbon" style="
+    background:#dc2626;
+    top:auto;
+    bottom:12px;
+    right:12px;
+  ">
+    CPP vence en ${cppAlert.days} días
+  </span>
+` : ``}
 
       <div class="head">
         <div class="title">
@@ -5264,6 +5603,12 @@ grid.innerHTML = `
     `;
   }).join('')}
 `;
+
+const cppAlerts = units
+  .map(u => getCppExpiryAlert(u, ventasMap.get(String(u._id))))
+  .filter(Boolean);
+
+showCppExpiryPopup(cppAlerts);
 
 wireUnitCards();
 wireCommercialFolders();
