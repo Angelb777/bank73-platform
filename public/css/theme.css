@@ -2468,3 +2468,23 @@ body {
     min-width:560px !important;
   }
 }
+
+.unit-title-input {
+  border: 0;
+  background: transparent;
+  color: #0f172a;
+  font-size: 22px;
+  font-weight: 900;
+  max-width: 180px;
+  padding: 4px 8px;
+  border-radius: 10px;
+}
+
+.unit-title-input:hover {
+  background: #eef2ff;
+}
+
+.unit-title-input:focus {
+  outline: 2px solid #3b82f6;
+  background: #fff;
+}

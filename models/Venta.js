@@ -264,6 +264,29 @@ const VentaSchema = new mongoose.Schema({
   referidoPor:           { type: String, default: '' },
   observacionCliente:    { type: String, default: '' },
 
+    // =========================================================
+  // CONTROL DE VENTA CAÍDA
+  // =========================================================
+  estadoVenta: {
+    type: String,
+    enum: ['activa', 'caida'],
+    default: 'activa',
+    index: true
+  },
+
+  fechaCaida: {
+    type: Date,
+    default: null
+  },
+
+  motivoCaida: {
+    type: String,
+    default: ''
+  },
+
+  // ====== Soft delete ======
+  deletedAt: { type: Date, default: null },
+
   // ====== Soft delete ======
   deletedAt: { type: Date, default: null },
 

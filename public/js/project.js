@@ -5217,6 +5217,22 @@ async function loadCommercialFolders() {
   foldersCache = await apiGet(`/api/commercial-folders?projectId=${id}`).catch(() => []);
 }
 
+function getUnassignedFolderName() {
+  return localStorage.getItem(`bank73_unassigned_name_${id}`) || 'Sin carpeta';
+}
+
+function setUnassignedFolderName(name) {
+  localStorage.setItem(`bank73_unassigned_name_${id}`, name || 'Sin carpeta');
+}
+
+function getUnassignedFolderColor() {
+  return localStorage.getItem(`bank73_unassigned_color_${id}`) || '#0f172a';
+}
+
+function setUnassignedFolderColor(color) {
+  localStorage.setItem(`bank73_unassigned_color_${id}`, color || '#0f172a');
+}
+
 function selectAllVisible() {
   // Selecciona todas las unidades visibles en el grid (unitsCache ya está filtrado por estado/búsqueda)
   unitsCache.forEach(u => selected.add(String(u._id)));
@@ -5553,10 +5569,28 @@ grid.innerHTML = `
     </button>
   </div>
 
-  <div class="commercial-folder unassigned" data-folder-id="">
+  <div
+  class="commercial-folder unassigned"
+  data-folder-id=""
+  style="--folder-color:${getUnassignedFolderColor()};"
+  >
     <div class="commercial-folder-head">
-      <h3>Sin carpeta</h3>
-      <span>${unassigned.length} unidades</span>
+      <h3>${getUnassignedFolderName()}</h3>
+
+<div class="folder-actions">
+  <span>${unassigned.length} unidades</span>
+
+  <input
+    type="color"
+    class="folder-color-unassigned"
+    value="${getUnassignedFolderColor()}"
+    title="Color del sector"
+  >
+
+  <button type="button" class="btn mini folder-rename-unassigned">
+    Renombrar
+  </button>
+</div>
     </div>
 
     <div class="commercial-folder-body">
@@ -5999,6 +6033,7 @@ function wireCommercialFolders() {
 
     folderEl.addEventListener('drop', async ev => {
   ev.preventDefault();
+  ev.stopPropagation();
 
   folderEl.classList.remove('is-drag-over');
   folderEl.classList.add('is-loading-folder');
@@ -6098,6 +6133,27 @@ function wireCommercialFolders() {
       await loadUnits();
     });
   });
+
+  grid.querySelector('.folder-rename-unassigned')?.addEventListener('click', async ev => {
+  ev.stopPropagation();
+
+  const current = getUnassignedFolderName();
+  const name = prompt('Nuevo nombre:', current);
+
+  if (!name || !name.trim()) return;
+
+  setUnassignedFolderName(name.trim());
+
+  await loadUnits();
+});
+
+grid.querySelector('.folder-color-unassigned')?.addEventListener('change', async ev => {
+  ev.stopPropagation();
+
+  setUnassignedFolderColor(ev.target.value);
+
+  await loadUnits();
+});
 }
 
 async function crearCarpetaComercial() {
@@ -6465,7 +6521,17 @@ async function aplicarImportWord(unitId) {
     </select>
   `;
 
-  document.getElementById('fichaTitulo').textContent = `Unidad ${(u.manzana || '')}-${(u.lote || '')}`;
+  const tituloUnidad = document.getElementById('fichaTitulo');
+
+tituloUnidad.innerHTML = `
+  <span>Unidad</span>
+  <input
+    id="fu-nombreUnidad"
+    class="unit-title-input"
+    value="${safeVal(`${u.manzana || ''}-${u.lote || ''}`)}"
+    title="Haz click para editar el nombre de la unidad"
+  >
+`;
 
   const cont = document.getElementById('fichaContenido');
   cont.innerHTML = `
@@ -6983,12 +7049,28 @@ if (btnImportWord && importWordInput) {
 
   try {
     // 1) Actualizar la unidad
-    const uBody = {
-      estado: document.getElementById('fu-estado').value,
-      modelo: document.getElementById('fu-modelo').value,
-      m2: Number(document.getElementById('fu-m2').value || 0),
-      precioLista: Number(document.getElementById('fu-precio').value || 0),
-    };
+    const nombreUnidad = (document.getElementById('fu-nombreUnidad')?.value || '').trim();
+
+let manzana = '';
+let lote = '';
+
+if (nombreUnidad.includes('-')) {
+  const parts = nombreUnidad.split('-');
+  manzana = parts[0].trim();
+  lote = parts.slice(1).join('-').trim();
+} else {
+  manzana = nombreUnidad.trim();
+  lote = '';
+}
+
+const uBody = {
+  manzana,
+  lote,
+  estado: document.getElementById('fu-estado').value,
+  modelo: document.getElementById('fu-modelo').value,
+  m2: Number(document.getElementById('fu-m2').value || 0),
+  precioLista: Number(document.getElementById('fu-precio').value || 0),
+};
 
     await apiPatch(`/api/units/${fichaUnitId}`, uBody);
 

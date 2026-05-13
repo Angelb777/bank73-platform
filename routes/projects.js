@@ -862,12 +862,22 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
         salesYearMap.set(year, (salesYearMap.get(year) || 0) + 1);
       }
 
-      const st = norm(v?.estatusContrato || v?.statusBanco || v?.comentario);
+            const st = norm(v?.estatusContrato || v?.statusBanco || v?.comentario);
       const unitSt = v.__unitStatus;
-      const isFallen = unitSt === 'cancelado' || st.includes('CAIDA') || st.includes('CAÍDA') || st.includes('CANCEL') || st.includes('ANUL');
+
+      // ✅ Venta caída REAL:
+      // marcada desde routes/units.js cuando pasa de vendido/reservado a disponible
+      const isFallen =
+        String(v?.estadoVenta || '').toLowerCase() === 'caida' ||
+        unitSt === 'cancelado' ||
+        st.includes('CAIDA') ||
+        st.includes('CAÍDA') ||
+        st.includes('CANCEL') ||
+        st.includes('ANUL');
 
       if (isFallen) {
-        const y = year || String(new Date(v?.updatedAt || v?.createdAt || Date.now()).getFullYear());
+        const fechaCaida = v?.fechaCaida || v?.updatedAt || v?.createdAt || Date.now();
+        const y = String(new Date(fechaCaida).getFullYear());
         fallenSalesYearMap.set(y, (fallenSalesYearMap.get(y) || 0) + 1);
       }
     }

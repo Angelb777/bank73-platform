@@ -35,6 +35,44 @@ function normalizeUnitEstado(estado) {
   return VALID_UNIT_ESTADOS.includes(e) ? e : 'disponible';
 }
 
+const ESTADOS_VENTA_CAIBLE = [
+  'reservado',
+  'con_cpp',
+  'tramite_legal_activado',
+  'escriturado_traspasado',
+  'vivienda_entregada'
+];
+
+function esCambioAVentaCaida(estadoAnterior, estadoNuevo) {
+  return (
+    ESTADOS_VENTA_CAIBLE.includes(normalizeUnitEstado(estadoAnterior)) &&
+    normalizeUnitEstado(estadoNuevo) === 'disponible'
+  );
+}
+
+async function marcarVentaCaida({ tenantKey, projectId, unitId, motivo }) {
+  await Venta.findOneAndUpdate(
+    {
+      tenantKey,
+      projectId,
+      unitId,
+      deletedAt: null,
+      estadoVenta: { $ne: 'caida' }
+    },
+    {
+      $set: {
+        estadoVenta: 'caida',
+        fechaCaida: new Date(),
+        motivoCaida: motivo || 'Unidad volvió a disponible'
+      }
+    },
+    {
+      sort: { updatedAt: -1 },
+      new: true
+    }
+  );
+}
+
 // ROLE-SEP: helpers para cargar proyecto en req.project
 async function attachProjectByProjectId(req, res, next) {
   try {
@@ -165,12 +203,21 @@ router.patch(
       const { ids = [], update = {} } = req.body || {};
       if (!ids.length) return res.status(400).json({ error: 'ids requerido' });
 
-      const set = { ...update };
+            const set = { ...update };
       if (set.precioLista != null) set.price = set.precioLista;
+
+      let unitsAntes = [];
+
       if (set.estado) {
-  set.estado = normalizeUnitEstado(set.estado);
-  set.status = set.estado.toUpperCase();
-}
+        set.estado = normalizeUnitEstado(set.estado);
+        set.status = set.estado.toUpperCase();
+
+        unitsAntes = await Unit.find({
+          tenantKey: req.tenantKey,
+          projectId: req.project._id,
+          _id: { $in: ids }
+        }).select('_id estado projectId');
+      }
 
       const ops = ids.map(_id => ({
         updateOne: {
@@ -180,6 +227,21 @@ router.patch(
       }));
 
       const r = await Unit.bulkWrite(ops, { ordered: false });
+
+            // ✅ Detectar ventas caídas en batch:
+      // si una unidad estaba vendida/reservada y vuelve a disponible
+      if (set.estado === 'disponible' && unitsAntes.length) {
+        for (const oldUnit of unitsAntes) {
+          if (esCambioAVentaCaida(oldUnit.estado, set.estado)) {
+            await marcarVentaCaida({
+              tenantKey: req.tenantKey,
+              projectId: req.project._id,
+              unitId: oldUnit._id,
+              motivo: 'Cambio batch a disponible'
+            });
+          }
+        }
+      }
 
       // ✅ si cambia el precio de la unidad, sincronizamos también Venta.valor
       if (set.precioLista != null) {
@@ -278,13 +340,15 @@ router.patch(
   requireProjectAccess({ promoterCanEditAssigned: true }),
   async (req, res) => {
     try {
-      const update = { ...req.body };
+            const update = { ...req.body };
+      const estadoAnterior = req._unit?.estado;
 
       if (update.precioLista != null) update.price = update.precioLista;
+
       if (update.estado) {
-  update.estado = normalizeUnitEstado(update.estado);
-  update.status = update.estado.toUpperCase();
-}
+        update.estado = normalizeUnitEstado(update.estado);
+        update.status = update.estado.toUpperCase();
+      }
 
       if (update.manzana || update.lote) {
         const curr = await Unit.findById(req.params.id).select('manzana lote');
@@ -300,6 +364,18 @@ router.patch(
       );
 
       if (!u) return res.status(404).json({ error: 'No encontrada' });
+
+            // ✅ Detectar venta caída individual:
+      // si una unidad estaba vendida/reservada y vuelve a disponible
+      if (update.estado && esCambioAVentaCaida(estadoAnterior, update.estado)) {
+        await marcarVentaCaida({
+          tenantKey: req.tenantKey,
+          projectId: u.projectId,
+          unitId: u._id,
+          motivo: update.motivoCaida || 'Unidad volvió a disponible'
+        });
+      }
+      
 
       // ✅ si cambia el precio de la unidad, sincronizamos también Venta.valor
       if (update.precioLista != null) {
