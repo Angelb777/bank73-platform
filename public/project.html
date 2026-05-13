@@ -535,8 +535,13 @@
 }
 
 .commercial-folder.unassigned {
-  background: rgba(15, 23, 42, .78);
-  border: 1px dashed rgba(255,255,255,.18);
+  background:
+    linear-gradient(
+      135deg,
+      var(--folder-color, #0f172a),
+      rgba(15, 23, 42, .88)
+    );
+  border: 1px dashed rgba(255,255,255,.22);
 }
 
 .commercial-folder.is-drag-over {
