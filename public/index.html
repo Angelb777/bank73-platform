@@ -1,82 +1,773 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" dir="ltr">
 <head>
-  <meta charset="UTF-8" />
-  <title>Bank73 — Login</title>
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- ✅ CSS con cache-busting (cambia v cuando quieras) -->
-  <link href="/css/base.css?v=20260211" rel="stylesheet" />
-  <link href="/css/theme.css?v=20260211" rel="stylesheet" />
+  <title>Bank73 — Control real de proyectos financiados</title>
+  <meta name="description" content="Bank73 digitaliza y estandariza la supervisión bancaria de préstamos concedidos a proyectos inmobiliarios. Dato único, menos riesgo y mayor control." />
 
-  <!-- Logo principal precargado -->
-  <link rel="preload" as="image" href="/assets/TrustForBanksLogo.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/TrustForBanksSimbol.png" />
+  <link rel="apple-touch-icon" href="assets/TrustForBanksSimbol.png" />
 
-  <!-- ✅ Favicon -->
-  <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
+  <meta name="theme-color" content="#0f1422" />
+  <meta name="color-scheme" content="dark light" />
+
+  <meta property="og:title" content="Bank73 — Control real de proyectos financiados" />
+  <meta property="og:description" content="Supervisión bancaria de proyectos inmobiliarios: documentación, hitos, costes, ventas y evolución financiera." />
+  <meta property="og:image" content="assets/TrustForBanksSimbol.png" />
+  <meta property="og:type" content="website" />
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/landing.css?v=1004" />
 </head>
 
-<body class="bg-gradient">
+<body>
+  <header class="site-header" role="banner">
+    <div class="container header-inner">
+      <a href="#top" class="brand" aria-label="Inicio Bank73">
+        <img src="assets/Bank73logoblanco.png" alt="Bank73" class="brand-logo" />
+      </a>
 
-  <div class="login-wrap">
-    <div class="brand-panel">
-      <div class="brand-content">
-        <img class="brand-logo" src="/assets/TrustForBanksLogo.png" alt="Bank73 logo" />
-        <p class="brand-subtitle">Gestión de proyectos, documentación y KPIs para banca.</p>
+      <nav class="nav" aria-label="Principal">
+        <a href="#solucion" class="nav-link">Bank73</a>
+        <a href="#modulos" class="nav-link">Control</a>
+        <a href="#beneficios" class="nav-link">Beneficios</a>
+        <a href="#metodologia" class="nav-link">Metodología</a>
+        <a href="/login" class="btn btn-primary">Acceder</a>
+      </nav>
 
-        <div class="brand-kpis">
-          <div class="kpi-pill">Multi-tenant</div>
-          <div class="kpi-pill">RBAC</div>
-          <div class="kpi-pill">KPIs en tiempo real</div>
-          <div class="kpi-pill">Documentos seguros</div>
+      <button class="nav-toggle" aria-label="Abrir menú" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <main id="top">
+
+    <!-- Hero -->
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <p class="kicker">Bank73 · Dato único para banca inmobiliaria</p>
+
+          <h1 id="hero-title">
+            Control real de<br />
+            <span>proyectos financiados</span>
+          </h1>
+
+          <p class="lead">
+            Bank73 digitaliza la supervisión de préstamos concedidos a proyectos inmobiliarios,
+            ordenando documentación, hitos, costes, ventas y evolución financiera en un único entorno.
+          </p>
+
+          <div class="hero-cta">
+            <a href="#solucion" class="btn btn-primary btn-lg">Comenzar presentación</a>
+            <a href="/login" class="btn btn-ghost btn-lg">Acceder a la plataforma</a>
+          </div>
+
+          <ul class="hero-bullets" role="list">
+            <li>Dato único para banco, promotor y equipos responsables</li>
+            <li>Supervisión temprana de riesgos técnicos, legales, comerciales y financieros</li>
+            <li>Información clara y exportable para evaluación y liberación de fondos</li>
+          </ul>
         </div>
 
-        <footer class="brand-footer">
-          <small>© <span id="y"></span> Bank73</small>
-        </footer>
+        <div class="hero-visual">
+          <div class="glass mockup-card" aria-hidden="true">
+            <img
+              src="assets/preview-dashboard.png"
+              alt="Vista previa del panel principal de Bank73"
+              loading="lazy"
+              decoding="async"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-shape" aria-hidden="true"></div>
+    </section>
+
+    <!-- Pitch comercial -->
+    <section id="solucion" class="section">
+      <div class="container">
+        <div style="
+  position:relative;
+  display:flex;
+  justify-content:center;
+  margin-bottom:40px;
+">
+  <div style="
+    position:absolute;
+    left:50%;
+    top:50%;
+    transform:translate(-50%, -50%);
+    width:420px;
+    height:40px;
+    border-radius:999px;
+    background:linear-gradient(
+      90deg,
+      rgba(90,162,255,0) 0%,
+      rgba(90,162,255,0.18) 20%,
+      rgba(90,162,255,0.35) 50%,
+      rgba(90,162,255,0.18) 80%,
+      rgba(90,162,255,0) 100%
+    );
+    filter:blur(10px);
+  "></div>
+
+  <h2 class="section-title center" style="
+    position:relative;
+    z-index:2;
+    margin:0;
+  ">
+    Bank73
+  </h2>
+</div>
+
+        <div class="compare">
+          <article class="card problem">
+            <div class="pill">Riesgo inicial</div>
+            <p class="big">
+              Cuando un banco concede un préstamo a un proyecto inmobiliario,
+              el proyecto puede no culminar con éxito.
+            </p>
+            <ul class="list icon-bullets">
+              <li>Mala gestión del promotor o del proyecto.</li>
+              <li>Retrasos en permisos, obra o entregas.</li>
+              <li>Cambios en el mercado que afectan la viabilidad.</li>
+              <li>Problemas en la ejecución técnica, legal, comercial o financiera.</li>
+            </ul>
+          </article>
+
+          <article class="card solution">
+            <div class="pill pill-ok">Origen de la solución</div>
+            <p class="big">
+              Desde Gesproban, tras años gestionando y reconduciendo proyectos inmobiliarios complejos,
+              se desarrolló un método de control que los propios bancos pidieron convertir en plataforma.
+            </p>
+            <ul class="list icon-bullets ok">
+              <li>Experiencia real en promoción y gestión inmobiliaria.</li>
+              <li>Conocimiento de cómo los bancos necesitan recibir la información.</li>
+              <li>Metodología trasladada a una herramienta digital: Bank73.</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="pitch-flow">
+          <article class="card pitch-card">
+            <span>01</span>
+            <h3>El patrón repetido</h3>
+            <p>
+              Cada promotor entrega la información en formatos distintos. Los datos quedan dispersos
+              entre correos, PDFs, Excels y carpetas, lo que provoca pérdida de tiempo operativo
+              y deterioro de la garantía.
+            </p>
+          </article>
+
+          <article class="card pitch-card pitch-alert">
+            <span>02</span>
+            <h3>El punto crítico</h3>
+            <p>
+              Cuando el problema se detecta, normalmente ya es demasiado tarde.
+              Por eso Bank73 se centra en ordenar, supervisar y detectar desviaciones antes.
+            </p>
+          </article>
+
+          <article class="card pitch-card">
+            <span>03</span>
+            <h3>La respuesta</h3>
+            <p>
+              Bank73 digitaliza y estandariza la supervisión de préstamos concedidos a proyectos
+              inmobiliarios generando un dato único, ahorrando tiempo operativo, reduciendo riesgos
+              y protegiendo el valor de la garantía.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Control -->
+    <section id="modulos" class="section">
+      <div class="container">
+        <div class="title-glow-wrap">
+  <div style="
+  position:relative;
+  display:inline-block;
+  margin-bottom:34px;
+">
+  <div style="
+    position:absolute;
+    left:-20px;
+    right:-20px;
+    top:50%;
+    height:46px;
+    transform:translateY(-50%);
+    border-radius:999px;
+    background:linear-gradient(
+      90deg,
+      rgba(90,162,255,0) 0%,
+      rgba(90,162,255,0.18) 18%,
+      rgba(90,162,255,0.34) 50%,
+      rgba(90,162,255,0.18) 82%,
+      rgba(90,162,255,0) 100%
+    );
+    filter:blur(10px);
+    z-index:0;
+  "></div>
+
+  <h2 class="section-title" style="
+    position:relative;
+    z-index:2;
+    margin:0;
+  ">
+    Control de riesgos Bank73
+  </h2>
+</div>
+</div>
+        <div class="grid cards-3">
+          <article class="card feature">
+            <h3>Permisos</h3>
+            <p>Seguimiento de permisos, documentación pendiente, entidades involucradas, plazos y bloqueos.</p>
+          </article>
+
+          <article class="card feature">
+            <h3>Ejecución de obra</h3>
+            <p>Control de avances, hitos, retrasos, incidencias y cumplimiento técnico del proyecto.</p>
+          </article>
+
+          <article class="card feature">
+            <h3>Calidad de la preventa</h3>
+            <p>Visibilidad sobre reservas, proformas, CPP, contratos, escrituración, traspaso y entrega.</p>
+          </article>
+
+          <article class="card feature">
+            <h3>Desviaciones financieras</h3>
+            <p>Supervisión de costes, presupuesto, fuentes, usos, desembolsos y evolución financiera.</p>
+          </article>
+
+          <article class="card feature">
+            <h3>Documentación</h3>
+            <p>Expedientes centralizados, documentos trazables y acceso ordenado por proyecto, unidad o proceso.</p>
+          </article>
+
+          <article class="card feature">
+            <h3>Información exportable</h3>
+            <p>Datos claros para que el banco pueda evaluar el proyecto o liberar fondos con mayor seguridad.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Beneficios -->
+    <section id="beneficios" class="section alt">
+      <div class="container">
+        <div style="
+  position:relative;
+  display:inline-block;
+  margin-bottom:34px;
+">
+  <div style="
+    position:absolute;
+    left:0;
+    top:50%;
+    transform:translateY(-50%);
+    width:320px;
+    height:40px;
+    border-radius:999px;
+    background:linear-gradient(
+      90deg,
+      rgba(90,162,255,0.35) 0%,
+      rgba(90,162,255,0.20) 40%,
+      rgba(90,162,255,0.08) 70%,
+      rgba(90,162,255,0) 100%
+    );
+    filter:blur(10px);
+  "></div>
+
+  <h2 class="section-title" style="
+    position:relative;
+    z-index:2;
+    margin:0;
+  ">
+    Beneficios
+  </h2>
+</div>
+
+        <div class="grid benefits">
+          <div class="card benefit">
+            <h3>Para el banco</h3>
+            <ul class="list">
+              <li>Reduce riesgos al detectar desviaciones antes.</li>
+              <li>Ahorra tiempo operativo al trabajar con información estandarizada.</li>
+              <li>Protege el valor de la garantía financiada.</li>
+              <li>Facilita la toma de decisiones y la liberación de fondos.</li>
+            </ul>
+          </div>
+
+          <div class="card benefit">
+            <h3>Para el promotor</h3>
+            <ul class="list">
+              <li>Ordena la información del proyecto.</li>
+              <li>Facilita la comunicación con la entidad financiera.</li>
+              <li>Reduce errores, duplicidades y pérdida documental.</li>
+              <li>Permite avanzar con mayor claridad y control.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- About / Mockup -->
+    <section id="about" class="section">
+      <div class="container">
+        <div class="about">
+          <div class="about-copy">
+            <h2 class="section-title">Una plataforma para evaluar, decidir y actuar antes</h2>
+            <p class="big">
+              Bank73 supervisa documentación, hitos, costes, ventas y evolución financiera.
+              Así, cuando el banco necesita evaluar un proyecto o liberar fondos, toda la información
+              está clara y exportable con un solo clic. Ayudando a:
+              <p>- La toma de decisiones.</p>
+              <p>- Cumplir con éxito las metas y los objetivos.</p>
+            </p>
+            <p>
+              El objetivo es simple: reducir riesgos, acelerar la ejecución y proteger el valor del activo financiado.
+            </p>
+          </div>
+
+          <div class="about-visual">
+            <div class="glass mockup-tall" aria-hidden="true">
+              <img
+                src="assets/Grafic.png"
+                alt="Vista previa de proyectos Bank73"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Metodología -->
+    <section id="metodologia" class="section alt">
+      <div class="container">
+        <div style="
+  position:relative;
+  display:flex;
+  justify-content:center;
+  margin-bottom:34px;
+">
+
+  <div style="
+    position:absolute;
+    top:50%;
+    transform:translateY(-50%);
+    width:520px;
+    height:46px;
+    border-radius:999px;
+    background:linear-gradient(
+      90deg,
+      rgba(90,162,255,0) 0%,
+      rgba(90,162,255,0.18) 18%,
+      rgba(90,162,255,0.34) 50%,
+      rgba(90,162,255,0.18) 82%,
+      rgba(90,162,255,0) 100%
+    );
+    filter:blur(10px);
+    z-index:0;
+  "></div>
+
+  <h2 class="section-title center" style="
+    position:relative;
+    z-index:2;
+    margin:0;
+  ">
+    Metodología y contenido Bank73
+  </h2>
+
+</div>
+</div>
+        <p class="lead metodologia-lead">
+  Bank73 incorpora procesos para planificar, gestionar y analizar el estado de un desarrollo inmobiliario,
+  generando información útil para la gestión diaria y la toma de decisiones.
+</p>
+
+<div class="methodology-list">
+
+  <details class="card method-card" open>
+    <summary>
+      Activos y tipos de proyectos
+    </summary>
+
+    <div class="method-content">
+      <p>La plataforma contempla cuatro grandes productos inmobiliarios:</p>
+
+      <div class="method-grid">
+        <button class="method-chip" data-info="Edificios verticales bajo régimen PH, orientados a uso residencial, comercial u oficinas. Permiten controlar unidades, documentación, ventas, permisos y avance por activo.">
+          Edificios verticales PH
+        </button>
+
+        <button class="method-chip" data-info="Proyectos formados por plazas, locales comerciales o unidades destinadas a explotación comercial, con seguimiento documental, comercial y financiero.">
+          Plazas y locales comerciales
+        </button>
+
+        <button class="method-chip" data-info="Residenciales formados por lotes individuales con casas unifamiliares e infraestructuras públicas, donde es clave controlar permisos, avance y entrega por unidad.">
+          Lotes con casas unifamiliares
+        </button>
+
+        <button class="method-chip" data-info="Residenciales bajo régimen PH con infraestructuras privadas, incluyendo lotes, adosados o dúplex, con mayor necesidad de control legal, técnico y administrativo.">
+          Lotes, adosados y dúplex PH
+        </button>
+      </div>
+
+      <div class="method-info-box">
+        Info.
       </div>
     </div>
+  </details>
 
-    <main class="login-card glass">
-      <header class="login-header">
-        <h2>Bienvenido</h2>
-        <p class="muted">Inicia sesión para continuar</p>
-      </header>
+  <details class="card method-card">
+    <summary>
+      Contenido general de la plataforma
+    </summary>
 
-      <form id="loginForm" class="login-form">
-        <label>Email</label>
-        <input type="email" id="email" placeholder="exec@banco.com" required />
+    <div class="method-content">
+      <p>Bank73 organiza el dato único del proyecto en áreas conectadas:</p>
 
-        <label>Contraseña</label>
-        <div class="input-with-action">
-          <input type="password" id="password" placeholder="secret" required />
-          <button
-            type="button"
-            class="ghost small"
-            id="togglePwd"
-            aria-label="Mostrar contraseña"
-          >👁️</button>
-        </div>
-
-        <button type="submit" class="btn primary stretch" id="submitBtn">
-          Entrar
-          <span class="spinner" aria-hidden="true"></span>
+      <div class="method-grid">
+        <button class="method-chip" data-info="Información base de la empresa promotora, estructura, responsables y capacidad de gestión.">
+          Promotora
         </button>
-      </form>
 
-      <div class="login-meta">
-        <div id="msg" class="msg"></div>
-        <p class="small">
-          ¿No tienes cuenta?
-          <a class="link" href="/register">Crear una cuenta</a>
-        </p>
+        <button class="method-chip" data-info="Datos generales del activo, estado, tipología, planificación, unidades, hitos y evolución del desarrollo.">
+          Proyecto
+        </button>
+
+        <button class="method-chip" data-info="Seguimiento de reservas, clientes, proformas, hipotecas, CPP, contratos y entregas.">
+          Comercial
+        </button>
+
+        <button class="method-chip" data-info="Control de procesos legales, minutas, escrituras, paz y salvos, firmas, inscripciones y traspasos.">
+          Legal
+        </button>
+
+        <button class="method-chip" data-info="Seguimiento de permisos, entidades, plazos, requisitos, documentación y bloqueos administrativos.">
+          Técnico / Permisología
+        </button>
+
+        <button class="method-chip" data-info="Control de avance de obra, costes, plazo, calidad, seguridad, salud, medioambiente e informes de ejecución.">
+          Técnico / Ejecución
+        </button>
+
+        <button class="method-chip" data-info="Control económico-financiero del proyecto: costes, usos, fuentes, desembolsos, presupuesto y evolución.">
+          Financiero
+        </button>
       </div>
-    </main>
-  </div>
 
-  <!-- ✅ Scripts con cache-busting -->
-  <script src="/js/api.js?v=20260211"></script>
-  <script src="/js/login-ui.js?v=20260211"></script>
-  <script src="/js/auth.js?v=20260211"></script>
+      <div class="method-info-box">
+        Toca cualquier bloque para ampliar la información.
+      </div>
+    </div>
+  </details>
+
+  <details class="card method-card">
+    <summary>
+      Clasificación del promotor constructor
+    </summary>
+
+    <div class="method-content">
+      <p>La metodología diferencia perfiles de promotor según cómo gestionan el desarrollo.</p>
+
+      <div class="method-grid">
+        <button class="method-chip" data-info="Empresa que adquiere terrenos, lotes o edificios para construirlos o rehabilitarlos con el objetivo de vender o arrendar directamente al comprador final.">
+          Promotor constructor
+        </button>
+
+        <button class="method-chip" data-info="Promotor que adquiere el terreno o edificio, se asocia con propietarios, aporta recursos propios o financiación y encarga la construcción bajo un modelo llave en mano.">
+          Llave en mano
+        </button>
+
+        <button class="method-chip" data-info="Promotor que financia la operación con recursos propios, socios o crédito interino, gestiona directamente la construcción y subcontrata partidas específicas.">
+          Subcontratación
+        </button>
+
+        <button class="method-chip" data-info="Promotor o manager que realiza la gestión integral del proyecto por cuenta de inversores o fondos, coordinando viabilidad, permisos, técnicos, constructores y comercialización.">
+          Gestión fragmentada
+        </button>
+      </div>
+
+      <div class="method-info-box">
+        Toca cualquier bloque para ampliar la información.
+      </div>
+    </div>
+  </details>
+
+  <details class="card method-card">
+    <summary>
+      Análisis previo y dictámenes del proyecto
+    </summary>
+
+    <div class="method-content">
+      <p>Proceso previo para validar o analizar la situación real del proyecto.</p>
+
+      <div class="method-grid">
+        <button class="method-chip" data-info="Revisión inicial de la propiedad, situación real del activo, características, ubicación y condiciones generales.">
+          Conocimiento de la propiedad
+        </button>
+
+        <button class="method-chip" data-info="Análisis jurídico para identificar riesgos legales, titularidad, cargas, documentación y viabilidad legal.">
+          Dictamen jurídico
+        </button>
+
+        <button class="method-chip" data-info="Revisión urbanística para comprobar normativa, clasificación del suelo, certificados y condicionantes técnicos.">
+          Dictamen urbanístico
+        </button>
+
+        <button class="method-chip" data-info="Análisis de oferta, demanda, competencia y target group para definir correctamente el producto inmobiliario.">
+          Estudio de mercado
+        </button>
+
+        <button class="method-chip" data-info="Definición del producto final en función del mercado, normativa urbanística, demanda y viabilidad del desarrollo.">
+          Producto inmobiliario
+        </button>
+
+        <button class="method-chip" data-info="Análisis económico-financiero para estimar costes, ingresos, rentabilidad, plazos y capacidad de cumplimiento.">
+          Viabilidad económico-financiera
+        </button>
+      </div>
+
+      <div class="method-info-box">
+        Toca cualquier bloque para ampliar la información.
+      </div>
+    </div>
+  </details>
+
+  <details class="card method-card">
+    <summary>
+      Departamento Comercial
+    </summary>
+
+    <div class="method-content">
+      <p>Seguimiento de la venta desde la reserva hasta la formalización.</p>
+
+      <div class="method-grid">
+        <button class="method-chip" data-info="Inicio del proceso comercial: separación de la unidad, reserva y control del estado comercial del activo.">Reserva de unidad</button>
+        <button class="method-chip" data-info="Recopilación de documentos del cliente para preparar expediente, validación bancaria y proceso contractual.">Documentación cliente</button>
+        <button class="method-chip" data-info="Organización del expediente del comprador con información comercial, legal y bancaria asociada.">Expediente cliente</button>
+        <button class="method-chip" data-info="Generación de la proforma para entregar al banco y facilitar la evaluación de la operación.">Proforma al banco</button>
+        <button class="method-chip" data-info="Seguimiento del proceso hipotecario del cliente hasta aprobación o rechazo por su entidad bancaria.">Aprobación hipotecaria</button>
+        <button class="method-chip" data-info="Formalización de condiciones mediante carta de términos, carta promesa y contrato promesa de compraventa.">Formalización</button>
+      </div>
+
+      <div class="method-info-box">
+        Toca cualquier bloque para ampliar la información.
+      </div>
+    </div>
+  </details>
+
+  <details class="card method-card">
+    <summary>
+      Departamento Legal
+    </summary>
+
+    <div class="method-content">
+      <p>Control documental y legal hasta inscripción, desembolso y entrega.</p>
+
+      <div class="method-grid">
+        <button class="method-chip" data-info="Gestión de CPP, cesiones, minutas, protocolos, firmas y coordinación entre bancos, cliente y promotor.">CPP y minutas</button>
+        <button class="method-chip" data-info="Control de paz y salvos, impuestos, cierre de escritura en notaría e inscripción en Registro Público.">Cierre e inscripción</button>
+        <button class="method-chip" data-info="Seguimiento de firmas del cliente, promotor, banco interino y banco del cliente.">Firmas</button>
+        <button class="method-chip" data-info="Control de desembolsos asociados a la CPP y entrega final de la unidad inmobiliaria.">Desembolso y entrega</button>
+      </div>
+
+      <div class="method-info-box">
+        Toca cualquier bloque para ampliar la información.
+      </div>
+    </div>
+  </details>
+
+  <details class="card method-card">
+    <summary>
+      Técnico / Permisología
+    </summary>
+
+    <div class="method-content">
+      <p>Control de permisos, entidades, plazos y documentación administrativa.</p>
+
+      <div class="method-grid">
+        <button class="method-chip" data-info="Informe requerido para validar aspectos de protección civil, riesgos y condiciones técnicas del desarrollo.">SINAPROC</button>
+        <button class="method-chip" data-info="Gestión ambiental con MiAmbiente, incluyendo estudios, requisitos y aprobaciones necesarias.">MiAmbiente</button>
+        <button class="method-chip" data-info="Gestiones urbanísticas, vivienda, obras públicas, salud, agua, municipio y entidades relacionadas.">MIVIOT / MOP / MINSA / IDAAN</button>
+        <button class="method-chip" data-info="Control de procesos con bomberos, registro, ANATI, MEF, ATT y empresas de distribución eléctrica.">Otras entidades</button>
+        <button class="method-chip" data-info="Seguimiento de permisos de ocupación y plazos establecidos por cada administración.">Permisos de ocupación</button>
+      </div>
+
+      <div class="method-info-box">
+        Toca cualquier bloque para ampliar la información.
+      </div>
+    </div>
+  </details>
+
+  <details class="card method-card">
+    <summary>
+      Técnico / Ejecución
+    </summary>
+
+    <div class="method-content">
+      <p>Seguimiento de obra conectado con coste, plazo, calidad y ejecución real.</p>
+
+      <div class="method-grid">
+        <button class="method-chip" data-info="Control del coste máximo de construcción para proteger la rentabilidad prevista en el estudio de viabilidad.">Coste</button>
+        <button class="method-chip" data-info="Seguimiento del plazo de ejecución y comparación con la planificación prevista.">Plazo</button>
+        <button class="method-chip" data-info="Control de calidades, marcas, referencias, acabados y cumplimiento técnico.">Calidad</button>
+        <button class="method-chip" data-info="Evaluación de condiciones de seguridad, salud, medioambiente y compromiso de empresas contratadas.">Seguridad y medioambiente</button>
+        <button class="method-chip" data-info="Informes de ejecución que permiten detectar desviaciones y actuar antes.">Informes de ejecución</button>
+      </div>
+
+      <div class="method-info-box">
+        Toca cualquier bloque para ampliar la información.
+      </div>
+    </div>
+  </details>
+
+  <details class="card method-card">
+  <summary>
+    Administrativo - Financiero
+  </summary>
+
+  <div class="method-content">
+    <p>
+      Área orientada al control económico, la trazabilidad financiera y la gestión de procesos
+      administrativos vinculados a desembolsos y amortizaciones del proyecto.
+    </p>
+
+    <div class="method-grid">
+      <button class="method-chip" data-info="Define actividades, responsables, materiales necesarios y recorrido operativo de cada proceso financiero.">
+        Actividades y recorrido
+      </button>
+
+      <button class="method-chip" data-info="Control de presupuesto, costes, fuentes, usos, desembolsos y evolución económica del desarrollo.">
+        Control financiero
+      </button>
+
+      <button class="method-chip" data-info="Permite conectar la información financiera con el avance real del proyecto y la toma de decisiones.">
+        Dato único financiero
+      </button>
+
+      <button class="method-chip" data-info="Seguimiento y control de las líneas de desembolso aprobadas, importes disponibles, importes utilizados, condiciones y estado de cada línea.">
+        Control de líneas de desembolso
+      </button>
+
+      <button class="method-chip" data-info="Gestión de solicitudes de líneas de desembolso, documentación requerida, validaciones internas, aprobaciones y trazabilidad del proceso.">
+        Solicitud de líneas de desembolso
+      </button>
+
+      <button class="method-chip" data-info="Control de amortizaciones del proyecto, calendario de pagos, importes amortizados, saldos pendientes y cumplimiento de condiciones financieras.">
+        Control de amortizaciones
+      </button>
+
+      <button class="method-chip" data-info="Gestión de solicitudes de amortización, revisión de documentación, validación de importes, aprobaciones y seguimiento hasta su ejecución.">
+        Solicitud de amortizaciones
+      </button>
+    </div>
+
+    <div class="method-info-box">
+      Toca cualquier bloque para ampliar la información.
+    </div>
+  </div>
+</details>
+
+</div>
+</section>
+
+    <!-- CTA Final -->
+    <section class="section cta-final">
+      <div class="container">
+        <div class="cta-card glass">
+          <h2>¿Listo para ver Bank73 en acción?</h2>
+          <p class="lead">
+            Una plataforma para supervisar mejor, decidir antes y proteger más.
+          </p>
+          <a href="/login" class="btn btn-primary btn-lg">Entrar a la plataforma</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer" id="contact" role="contentinfo">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <img src="assets/Bank73logoblanco.png" alt="Bank73" />
+        <p>Gestión de proyectos, documentación y KPIs para banca.</p>
+      </div>
+
+      <div class="footer-meta">
+        <a class="footer-link" href="mailto:info@bank73.com">info@bank73.com</a>
+        <span>© 2026 Bank73</span>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+  const toggle = document.querySelector('.nav-toggle');
+  const nav = document.querySelector('.nav');
+
+  toggle.addEventListener('click', () => {
+    const open = toggle.getAttribute('aria-expanded') === 'true';
+    toggle.setAttribute('aria-expanded', String(!open));
+    nav.classList.toggle('open');
+  });
+
+  const revealItems = document.querySelectorAll(
+    '.card, .section-title, .lead, .about-copy, .about-visual, .hero-copy, .hero-visual'
+  );
+
+  revealItems.forEach((el, index) => {
+    el.classList.add('reveal-on-scroll');
+
+    const delay = index % 4;
+    if (delay === 1) el.classList.add('reveal-delay-1');
+    if (delay === 2) el.classList.add('reveal-delay-2');
+    if (delay === 3) el.classList.add('reveal-delay-3');
+  });
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('is-visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, {
+    threshold: 0.14,
+    rootMargin: '0px 0px -40px 0px'
+  });
+
+  document.querySelectorAll('.reveal-on-scroll').forEach(el => {
+    observer.observe(el);
+  });
+
+  // INTERACCIÓN CHIPS METODOLOGÍA
+document.querySelectorAll('.method-chip').forEach((chip) => {
+  chip.addEventListener('click', () => {
+
+    const content = chip.closest('.method-content');
+    const box = content.querySelector('.method-info-box');
+
+    // quitar activo a todos
+    content.querySelectorAll('.method-chip').forEach(c => {
+      c.classList.remove('is-active');
+    });
+
+    // activar el clicado
+    chip.classList.add('is-active');
+
+    // cambiar texto
+    box.textContent = chip.dataset.info;
+  });
+});
+</script>
 </body>
 </html>

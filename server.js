@@ -209,6 +209,7 @@ app.use('/api/chat', ...guard, chatRoutes);
    SPA routes
    ========================================================================= */
 app.get('/register', (_req, res) => res.sendFile(path.join(__dirname, 'public/register.html')));
+app.get('/login', (_req, res) => res.sendFile(path.join(__dirname, 'public/login.html')));
 
 app.get('/', (req, res) => {
   const file = path.join(__dirname, 'public/index.html');
