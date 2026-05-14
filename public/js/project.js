@@ -6193,17 +6193,25 @@ grid.querySelector('.folder-color-unassigned')?.addEventListener('change', async
 });
 
 grid.querySelectorAll('.folder-toggle').forEach(btn => {
-  btn.addEventListener('click', async ev => {
+  const toggleFolder = (ev) => {
     ev.preventDefault();
     ev.stopPropagation();
 
     const folderId = btn.dataset.id || 'unassigned';
     const folderEl = btn.closest('.commercial-folder');
+    if (!folderEl) return;
+
     const closed = !folderEl.classList.contains('collapsed');
 
     setCommercialFolderCollapsed(folderId, closed);
     folderEl.classList.toggle('collapsed', closed);
     btn.textContent = closed ? 'Mostrar' : 'Ocultar';
+  };
+
+  btn.addEventListener('pointerdown', toggleFolder, { passive: false });
+  btn.addEventListener('click', ev => {
+    ev.preventDefault();
+    ev.stopPropagation();
   });
 });
 }
