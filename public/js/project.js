@@ -5213,24 +5213,34 @@ function estadoLabel(v) {
   const total = (unitsCache || []).length;
   btnSelectAll.textContent = (selected.size >= total && total > 0) ? 'Deseleccionar todo' : 'Seleccionar todo';
 }
+
+let unassignedSettings = {
+  name: 'Sin carpeta',
+  color: '#0f172a'
+};
+
 async function loadCommercialFolders() {
-  foldersCache = await apiGet(`/api/commercial-folders?projectId=${id}`).catch(() => []);
+  const data = await apiGet(`/api/commercial-folders?projectId=${id}`).catch(() => ({
+    folders: [],
+    unassigned: {
+      name: 'Sin carpeta',
+      color: '#0f172a'
+    }
+  }));
+
+  foldersCache = Array.isArray(data) ? data : (data.folders || []);
+  unassignedSettings = data.unassigned || {
+    name: 'Sin carpeta',
+    color: '#0f172a'
+  };
 }
 
 function getUnassignedFolderName() {
-  return localStorage.getItem(`bank73_unassigned_name_${id}`) || 'Sin carpeta';
-}
-
-function setUnassignedFolderName(name) {
-  localStorage.setItem(`bank73_unassigned_name_${id}`, name || 'Sin carpeta');
+  return unassignedSettings?.name || 'Sin carpeta';
 }
 
 function getUnassignedFolderColor() {
-  return localStorage.getItem(`bank73_unassigned_color_${id}`) || '#0f172a';
-}
-
-function setUnassignedFolderColor(color) {
-  localStorage.setItem(`bank73_unassigned_color_${id}`, color || '#0f172a');
+  return unassignedSettings?.color || '#0f172a';
 }
 
 function selectAllVisible() {
@@ -6135,6 +6145,7 @@ function wireCommercialFolders() {
   });
 
   grid.querySelector('.folder-rename-unassigned')?.addEventListener('click', async ev => {
+  ev.preventDefault();
   ev.stopPropagation();
 
   const current = getUnassignedFolderName();
@@ -6142,15 +6153,22 @@ function wireCommercialFolders() {
 
   if (!name || !name.trim()) return;
 
-  setUnassignedFolderName(name.trim());
+  await apiPatch('/api/commercial-folders/unassigned/settings', {
+    projectId: id,
+    name: name.trim()
+  });
 
   await loadUnits();
 });
 
 grid.querySelector('.folder-color-unassigned')?.addEventListener('change', async ev => {
+  ev.preventDefault();
   ev.stopPropagation();
 
-  setUnassignedFolderColor(ev.target.value);
+  await apiPatch('/api/commercial-folders/unassigned/settings', {
+    projectId: id,
+    color: ev.target.value || '#0f172a'
+  });
 
   await loadUnits();
 });

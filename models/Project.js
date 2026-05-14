@@ -33,6 +33,17 @@ const projectSchema = new Schema({
   assignedFinanciero:  [{ type: Schema.Types.ObjectId, ref: 'User', index: true }],
   assignedContable:    [{ type: Schema.Types.ObjectId, ref: 'User', index: true }],
 
+  // Comercial: configuración del grupo sin sector/carpeta
+  commercialUnassignedName: {
+    type: String,
+    default: 'Sin carpeta'
+  },
+
+  commercialUnassignedColor: {
+    type: String,
+    default: '#0f172a'
+  },
+
   // KPIs
   loanApproved:   { type: Number, default: 0 },
   loanDisbursed:  { type: Number, default: 0 },

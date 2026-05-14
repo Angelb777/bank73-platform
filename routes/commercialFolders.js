@@ -2,11 +2,32 @@ const express = require('express');
 const router = express.Router();
 const CommercialFolder = require('../models/CommercialFolder');
 const Unit = require('../models/Unit');
+const Project = require('../models/Project');
 
 router.get('/', async (req, res) => {
   const { projectId } = req.query;
-  const folders = await CommercialFolder.find({ projectId }).sort({ order: 1, createdAt: 1 });
-  res.json(folders);
+
+  const filter = { projectId };
+  if (req.tenantKey) filter.tenantKey = req.tenantKey;
+
+  const folders = await CommercialFolder.find(filter)
+    .sort({ order: 1, createdAt: 1 })
+    .lean();
+
+  const projectFilter = { _id: projectId };
+  if (req.tenantKey) projectFilter.tenantKey = req.tenantKey;
+
+  const project = await Project.findOne(projectFilter)
+    .select('commercialUnassignedName commercialUnassignedColor')
+    .lean();
+
+  res.json({
+    folders,
+    unassigned: {
+      name: project?.commercialUnassignedName || 'Sin carpeta',
+      color: project?.commercialUnassignedColor || '#0f172a'
+    }
+  });
 });
 
 router.post('/', async (req, res) => {
@@ -27,6 +48,43 @@ router.post('/', async (req, res) => {
   });
 
   res.json(folder);
+});
+
+router.patch('/unassigned/settings', async (req, res) => {
+  const { projectId, name, color } = req.body;
+
+  if (!projectId) {
+    return res.status(400).json({ error: 'projectId requerido' });
+  }
+
+  const update = {};
+
+  if (name != null) {
+    update.commercialUnassignedName = String(name || '').trim() || 'Sin carpeta';
+  }
+
+  if (color != null) {
+    update.commercialUnassignedColor = String(color || '').trim() || '#0f172a';
+  }
+
+  const filter = { _id: projectId };
+  if (req.tenantKey) filter.tenantKey = req.tenantKey;
+
+  const project = await Project.findOneAndUpdate(
+    filter,
+    { $set: update },
+    { new: true }
+  ).lean();
+
+  if (!project) {
+    return res.status(404).json({ error: 'Proyecto no encontrado' });
+  }
+
+  res.json({
+    ok: true,
+    name: project.commercialUnassignedName || 'Sin carpeta',
+    color: project.commercialUnassignedColor || '#0f172a'
+  });
 });
 
 router.patch('/:id', async (req, res) => {
