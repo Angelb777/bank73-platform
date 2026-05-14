@@ -4717,6 +4717,18 @@ function openPhaseEditor(ph = null, focus = 'plan') {
   hookTable('ph-real-sources');
 }
 
+function normalizeUnitEstadoFrontend(v) {
+  const s = String(v || '').trim().toLowerCase();
+
+  if (s === 'inventory') return 'inventario';
+  if (s === 'inventario') return 'inventario';
+
+  if (s === 'en_escrituracion') return 'tramite_legal_activado';
+  if (s === 'escriturado') return 'escriturado_traspasado';
+  if (s === 'entregado') return 'vivienda_entregada';
+
+  return s || 'disponible';
+}
 
 // ====== Comercial ======
 (function initComercial() {
@@ -5171,19 +5183,6 @@ const UNIT_ESTADOS = [
   { v: 'vivienda_entregada', l: 'Vivienda entregada' },
 ];
 
-function normalizeUnitEstadoFrontend(v) {
-  const s = String(v || '').trim().toLowerCase();
-
-  if (s === 'inventory') return 'inventario';
-  if (s === 'inventario') return 'inventario';
-
-  if (s === 'en_escrituracion') return 'tramite_legal_activado';
-  if (s === 'escriturado') return 'escriturado_traspasado';
-  if (s === 'entregado') return 'vivienda_entregada';
-
-  return s || 'disponible';
-}
-
 function estadoLabel(v) {
   const estado = normalizeUnitEstadoFrontend(v);
   return (UNIT_ESTADOS.find(e => e.v === estado)?.l) || estado.replace(/_/g, ' ');
@@ -5233,6 +5232,14 @@ async function loadCommercialFolders() {
     name: 'Sin carpeta',
     color: '#0f172a'
   };
+}
+
+function isCommercialFolderCollapsed(folderId) {
+  return localStorage.getItem(`bank73_com_folder_closed_${id}_${folderId || 'unassigned'}`) === '1';
+}
+
+function setCommercialFolderCollapsed(folderId, closed) {
+  localStorage.setItem(`bank73_com_folder_closed_${id}_${folderId || 'unassigned'}`, closed ? '1' : '0');
 }
 
 function getUnassignedFolderName() {
@@ -5580,7 +5587,7 @@ grid.innerHTML = `
   </div>
 
   <div
-  class="commercial-folder unassigned"
+  class="commercial-folder unassigned ${isCommercialFolderCollapsed('unassigned') ? 'collapsed' : ''}"
   data-folder-id=""
   style="--folder-color:${getUnassignedFolderColor()};"
   >
@@ -5589,6 +5596,10 @@ grid.innerHTML = `
 
 <div class="folder-actions">
   <span>${unassigned.length} unidades</span>
+
+  <button type="button" class="btn mini folder-toggle" data-id="unassigned">
+  ${isCommercialFolderCollapsed('unassigned') ? 'Mostrar' : 'Ocultar'}
+  </button>
 
   <input
     type="color"
@@ -5613,14 +5624,18 @@ grid.innerHTML = `
     const color = folder.color || '#0f172a';
 
     return `
-      <div class="commercial-folder"
-           data-folder-id="${folder._id}"
-           style="--folder-color:${color};">
+      <div class="commercial-folder ${isCommercialFolderCollapsed(folder._id) ? 'collapsed' : ''}"
+     data-folder-id="${folder._id}"
+     style="--folder-color:${color};">
         <div class="commercial-folder-head">
           <h3 class="folder-title">${folder.name}</h3>
 
           <div class="folder-actions">
             <span>${folderUnits.length} unidades</span>
+
+            <button type="button" class="btn mini folder-toggle" data-id="">
+            ${isCommercialFolderCollapsed('unassigned') ? 'Mostrar' : 'Ocultar'}
+            </button>
 
             <input
               type="color"
@@ -6171,6 +6186,21 @@ grid.querySelector('.folder-color-unassigned')?.addEventListener('change', async
   });
 
   await loadUnits();
+});
+
+grid.querySelectorAll('.folder-toggle').forEach(btn => {
+  btn.addEventListener('click', async ev => {
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    const folderId = btn.dataset.id || 'unassigned';
+    const folderEl = btn.closest('.commercial-folder');
+    const closed = !folderEl.classList.contains('collapsed');
+
+    setCommercialFolderCollapsed(folderId, closed);
+    folderEl.classList.toggle('collapsed', closed);
+    btn.textContent = closed ? 'Mostrar' : 'Ocultar';
+  });
 });
 }
 
