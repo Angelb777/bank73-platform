@@ -2761,9 +2761,13 @@ renderChartSummary(
   if (typeof wireBADeleteDelegation === 'function') {
   wireBADeleteDelegation();
 }
-  await loadBeforeAfterGallery();
-  addInfoBadges();
-  wireInfoTooltips();
+
+if (typeof refreshBeforeAfter === 'function') {
+  await refreshBeforeAfter();
+}
+
+addInfoBadges();
+wireInfoTooltips();
 }
 
 async function syncUnitsSoldFromPortfolio() {
