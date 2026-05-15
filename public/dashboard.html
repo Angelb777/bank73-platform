@@ -49,8 +49,72 @@
       grid-template-columns: 1fr 1fr;
       gap: 12px;
     }
+    .admin-card-head {
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:16px;
+      margin-bottom:14px;
+    }
+    .admin-card-head h2 { margin-bottom:8px; }
+    .audit-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+    .audit-summary {
+      display:grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap:10px;
+      margin:14px 0;
+    }
+    .audit-kpi {
+      border:1px solid rgba(148,163,184,.18);
+      background:rgba(15,23,42,.36);
+      border-radius:8px;
+      padding:12px;
+      min-height:70px;
+    }
+    .audit-kpi .label { color:#9ca3af; font-size:.82rem; }
+    .audit-kpi .value { font-size:1.35rem; font-weight:700; margin-top:4px; }
+    .audit-table-wrap {
+      overflow:auto;
+      border-radius:8px;
+      background:rgba(15,23,42,.28);
+    }
+    .audit-action {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:.25rem .5rem;
+      border-radius:999px;
+      background:#111827;
+      border:1px solid #334155;
+      white-space:nowrap;
+      font-size:.8rem;
+    }
+    .audit-status.success { border-color:#22c55e; color:#86efac; }
+    .audit-status.failure { border-color:#ef4444; color:#fca5a5; }
+    .audit-status.blocked { border-color:#f59e0b; color:#fbbf24; }
+    .audit-status.info { border-color:#60a5fa; color:#93c5fd; }
+    .audit-detail {
+      max-width:420px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .audit-footer {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-top:12px;
+      flex-wrap:wrap;
+    }
     @media (max-width: 860px){
       #assignRolesContainer{ grid-template-columns: 1fr; }
+      .admin-card-head { flex-direction:column; }
+      .audit-actions { justify-content:flex-start; }
+      .audit-summary { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 560px){
+      .audit-summary { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -75,8 +139,15 @@
 
     <!-- APROBACIONES -->
     <section class="card" id="approvalsCard">
-      <h2>Administrador de T4B</h2>
-      <p class="muted">Revisa y aprueba usuarios y proyectos pendientes</p>
+      <div class="admin-card-head">
+        <div>
+          <h2>Administrador de Bank73</h2>
+          <p class="muted">Revisa y aprueba usuarios y proyectos pendientes</p>
+        </div>
+        <div class="audit-actions">
+          <button id="openActivityBtn" class="btn small">Actividad</button>
+        </div>
+      </div>
 
       <div class="grid cols-2">
         <!-- Usuarios pendientes -->
@@ -123,6 +194,83 @@
             </thead>
             <tbody id="pendingProjectsTbody"></tbody>
           </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ACTIVIDAD / AUDITORÍA -->
+    <section class="card" id="activityCard" style="display:none;">
+      <div class="admin-card-head">
+        <div>
+          <h2>Actividad</h2>
+          <p class="muted">Trazabilidad de accesos, usuarios, proyectos y documentos sensibles.</p>
+        </div>
+        <div class="audit-actions">
+          <button id="refreshAuditLogs" class="btn small">Refrescar</button>
+          <button id="hideActivityBtn" class="btn ghost small">Ocultar</button>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <select id="auditActionFilter" class="input" title="Filtrar por acción">
+          <option value="">Todas las acciones</option>
+          <option value="auth.login_success">Login correcto</option>
+          <option value="auth.login_failed">Login fallido</option>
+          <option value="auth.login_blocked">Login bloqueado</option>
+          <option value="auth.register_requested">Registro solicitado</option>
+          <option value="user.approved">Usuario aprobado</option>
+          <option value="user.blocked">Usuario bloqueado</option>
+          <option value="user.deleted">Usuario eliminado</option>
+          <option value="project.created">Proyecto creado</option>
+          <option value="project.updated">Proyecto actualizado</option>
+          <option value="project.approved">Proyecto aprobado</option>
+          <option value="project.rejected">Proyecto rechazado</option>
+          <option value="project.assigned">Equipo asignado</option>
+          <option value="project.deleted">Proyecto eliminado</option>
+          <option value="document.uploaded">Documento subido</option>
+          <option value="document.downloaded">Documento descargado</option>
+          <option value="document.deleted">Documento eliminado</option>
+          <option value="security.rate_limited">Límite activado</option>
+        </select>
+        <select id="auditStatusFilter" class="input" title="Filtrar por estado">
+          <option value="">Todos los estados</option>
+          <option value="success">Correcto</option>
+          <option value="failure">Fallido</option>
+          <option value="blocked">Bloqueado</option>
+          <option value="info">Info</option>
+        </select>
+        <input id="auditSearch" class="input" type="search" placeholder="Buscar por usuario, acción, IP o detalle..." />
+      </div>
+
+      <div class="audit-summary">
+        <div class="audit-kpi"><div class="label">Eventos</div><div class="value" id="auditTotal">—</div></div>
+        <div class="audit-kpi"><div class="label">Login fallidos</div><div class="value" id="auditFailures">—</div></div>
+        <div class="audit-kpi"><div class="label">Documentos</div><div class="value" id="auditDocs">—</div></div>
+        <div class="audit-kpi"><div class="label">Último evento</div><div class="value" id="auditLatest">—</div></div>
+      </div>
+
+      <div class="audit-table-wrap">
+        <table class="table" id="auditTable">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Acción</th>
+              <th>Usuario</th>
+              <th>Estado</th>
+              <th>Recurso</th>
+              <th>IP</th>
+              <th>Detalle</th>
+            </tr>
+          </thead>
+          <tbody id="auditTbody"></tbody>
+        </table>
+      </div>
+
+      <div class="audit-footer">
+        <span id="auditPagerInfo" class="muted">—</span>
+        <div class="actions">
+          <button id="auditPrev" class="btn ghost small">Anterior</button>
+          <button id="auditNext" class="btn ghost small">Siguiente</button>
         </div>
       </div>
     </section>
@@ -228,6 +376,6 @@
   </script>
 
   <script src="/js/api.js"></script>
-  <script src="/js/dashboard.js?v=mix-usuarios-proyectos"></script>
+  <script src="/js/dashboard.js?v=audit-activity"></script>
 </body>
 </html>

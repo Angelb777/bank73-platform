@@ -17,6 +17,7 @@ const Project = require('../models/Project');
 const ProjectChecklist = require('../models/ProjectChecklist');
 const Unit = require('../models/Unit');
 const UnitDocFolder = require('../models/UnitDocFolder');
+const audit = require('../utils/audit');
 
 const router = express.Router();
 
@@ -527,6 +528,23 @@ router.post(
         }
 
         created.push(doc.toObject());
+
+        await audit(req, 'document.uploaded', {
+          targetType: 'document',
+          targetId: doc._id,
+          projectId: projectOid,
+          message: 'Documento subido',
+          metadata: {
+            originalname: doc.originalname,
+            mimetype: doc.mimetype,
+            size: doc.size,
+            category: doc.category,
+            department: doc.department,
+            unitId: doc.unitId,
+            checklistId: doc.checklistId,
+            permitCode: doc.permitCode
+          }
+        });
       }
 
       res.status(201).json(created);
@@ -636,6 +654,19 @@ router.get('/:id/download', async (req, res) => {
     }
 
     res.setHeader('Cache-Control', 'private, no-store');
+    await audit(req, 'document.downloaded', {
+      targetType: 'document',
+      targetId: doc._id,
+      projectId: doc.projectId,
+      message: 'Documento descargado',
+      metadata: {
+        originalname: doc.originalname,
+        mimetype: doc.mimetype,
+        size: doc.size,
+        category: doc.category,
+        department: doc.department
+      }
+    });
     res.download(absPath, doc.originalname || path.basename(absPath));
   } catch (e) {
     console.error('[documents.download] error:', e);
@@ -669,6 +700,20 @@ async function deleteDocHandler(req, res) {
     }
 
     await Document.deleteOne({ _id: docId, tenantKey });
+
+    await audit(req, 'document.deleted', {
+      targetType: 'document',
+      targetId: doc._id,
+      projectId: doc.projectId,
+      message: 'Documento eliminado',
+      metadata: {
+        originalname: doc.originalname,
+        mimetype: doc.mimetype,
+        size: doc.size,
+        category: doc.category,
+        department: doc.department
+      }
+    });
 
     const absPath = path.isAbsolute(doc.path) ? doc.path : path.join(__dirname, '..', doc.path);
 

@@ -122,6 +122,27 @@ if (roleSelectDefault) {
   const assignCancelBtn = document.getElementById('assignCancel');
   const assignSaveBtn = document.getElementById('assignSave');
 
+  // Actividad / auditoría
+  const activityCard = document.getElementById('activityCard');
+  const openActivityBtn = document.getElementById('openActivityBtn');
+  const hideActivityBtn = document.getElementById('hideActivityBtn');
+  const refreshAuditLogsBtn = document.getElementById('refreshAuditLogs');
+  const auditActionFilter = document.getElementById('auditActionFilter');
+  const auditStatusFilter = document.getElementById('auditStatusFilter');
+  const auditSearch = document.getElementById('auditSearch');
+  const auditTbody = document.getElementById('auditTbody');
+  const auditTotal = document.getElementById('auditTotal');
+  const auditFailures = document.getElementById('auditFailures');
+  const auditDocs = document.getElementById('auditDocs');
+  const auditLatest = document.getElementById('auditLatest');
+  const auditPagerInfo = document.getElementById('auditPagerInfo');
+  const auditPrev = document.getElementById('auditPrev');
+  const auditNext = document.getElementById('auditNext');
+
+  let auditPage = 1;
+  const auditLimit = 50;
+  let auditLastTotal = 0;
+
   document.getElementById('logoutBtn')?.addEventListener('click', clearAuthAndGoHome);
 
   // ---------- Pequeño wrapper fetch ----------
@@ -238,6 +259,19 @@ async function apiAssignProject(id, assignmentsOrLegacy, modoFlexible = false) {
     return xfetch(`/api/projects/${id}`, { method: 'DELETE' });
   }
 
+  async function apiGetAuditLogs() {
+    const qs = new URLSearchParams({
+      page: String(auditPage),
+      limit: String(auditLimit)
+    });
+
+    if (auditActionFilter?.value) qs.set('action', auditActionFilter.value);
+    if (auditStatusFilter?.value) qs.set('status', auditStatusFilter.value);
+    if (auditSearch?.value?.trim()) qs.set('q', auditSearch.value.trim());
+
+    return xfetch(`/api/admin/audit-logs?${qs.toString()}`);
+  }
+
   // ---------- CACHES de candidatos (para pintar nombres) ----------
   let promotersMap = new Map();   // id -> {name,email}
   let commercialsMap = new Map(); // id -> {name,email}
@@ -247,6 +281,88 @@ async function apiAssignProject(id, assignmentsOrLegacy, modoFlexible = false) {
     return u.name || u.email || String(id);
   }
   function normalize(s) { return (s || '').toString().toLowerCase(); }
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+const ACTION_LABELS = {
+  'auth.login_success': 'Login correcto',
+  'auth.login_failed': 'Login fallido',
+  'auth.login_blocked': 'Login bloqueado',
+  'auth.register_requested': 'Registro solicitado',
+  'user.approved': 'Usuario aprobado',
+  'user.blocked': 'Usuario bloqueado',
+  'user.deleted': 'Usuario eliminado',
+  'project.created': 'Proyecto creado',
+  'project.updated': 'Proyecto actualizado',
+  'project.approved': 'Proyecto aprobado',
+  'project.rejected': 'Proyecto rechazado',
+  'project.assigned': 'Equipo asignado',
+  'project.deleted': 'Proyecto eliminado',
+  'document.uploaded': 'Documento subido',
+  'document.downloaded': 'Documento descargado',
+  'document.deleted': 'Documento eliminado',
+  'security.rate_limited': 'Límite activado'
+};
+
+const STATUS_LABELS = {
+  success: 'Correcto',
+  failure: 'Fallido',
+  blocked: 'Bloqueado',
+  info: 'Info'
+};
+
+function actionLabel(action) {
+  return ACTION_LABELS[action] || action || '-';
+}
+
+function statusLabel(status) {
+  return STATUS_LABELS[status] || status || '-';
+}
+
+function formatShortDate(value) {
+  if (!value) return '-';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '-';
+  return d.toLocaleString();
+}
+
+function formatTimeAgo(value) {
+  if (!value) return '-';
+  const d = new Date(value);
+  const diff = Date.now() - d.getTime();
+  if (!Number.isFinite(diff)) return '-';
+  const min = Math.max(0, Math.round(diff / 60000));
+  if (min < 1) return 'Ahora';
+  if (min < 60) return `${min} min`;
+  const hours = Math.round(min / 60);
+  if (hours < 24) return `${hours} h`;
+  return `${Math.round(hours / 24)} d`;
+}
+
+function targetText(log) {
+  if (!log?.targetType) return '-';
+  const id = log.targetId ? String(log.targetId).slice(-6) : '';
+  return id ? `${log.targetType} · ${id}` : log.targetType;
+}
+
+function detailText(log) {
+  const meta = log.metadata || {};
+  const bits = [];
+  if (log.message) bits.push(log.message);
+  if (meta.originalname) bits.push(meta.originalname);
+  if (meta.email) bits.push(meta.email);
+  if (meta.name) bits.push(meta.name);
+  if (meta.role) bits.push(`rol: ${meta.role}`);
+  if (meta.size) bits.push(`${Math.round(Number(meta.size) / 1024)} KB`);
+  return bits.filter(Boolean).join(' · ') || '-';
+}
 
 function projectMatchesQuery(p, q) {
   if (!q) return true;
@@ -452,6 +568,46 @@ function applyProjectsFilters(list) {
   });
 }
 
+  function renderAuditLogs(payload = {}) {
+    if (!auditTbody) return;
+
+    const logs = Array.isArray(payload.logs) ? payload.logs : [];
+    auditLastTotal = Number(payload.total || logs.length || 0);
+
+    if (!logs.length) {
+      auditTbody.innerHTML = `<tr><td colspan="7" class="muted">No hay actividad con estos filtros.</td></tr>`;
+    } else {
+      auditTbody.innerHTML = logs.map(log => {
+        const status = String(log.status || 'success').toLowerCase();
+        const actor = log.actorEmail || log.actorRole || '-';
+        return `
+          <tr>
+            <td>${formatShortDate(log.createdAt)}</td>
+            <td><span class="audit-action">${escapeHtml(actionLabel(log.action))}</span></td>
+            <td>${escapeHtml(actor)}</td>
+            <td><span class="badge audit-status ${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</span></td>
+            <td>${escapeHtml(targetText(log))}</td>
+            <td>${escapeHtml(log.ip || '-')}</td>
+            <td><div class="audit-detail" title="${escapeHtml(detailText(log))}">${escapeHtml(detailText(log))}</div></td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    const failureCount = logs.filter(l => l.action === 'auth.login_failed' || l.status === 'failure').length;
+    const docCount = logs.filter(l => String(l.action || '').startsWith('document.')).length;
+    const latest = logs[0]?.createdAt ? formatTimeAgo(logs[0].createdAt) : '-';
+    const maxPage = Math.max(1, Math.ceil(auditLastTotal / auditLimit));
+
+    if (auditTotal) auditTotal.textContent = String(auditLastTotal);
+    if (auditFailures) auditFailures.textContent = String(failureCount);
+    if (auditDocs) auditDocs.textContent = String(docCount);
+    if (auditLatest) auditLatest.textContent = latest;
+    if (auditPagerInfo) auditPagerInfo.textContent = `Página ${auditPage} de ${maxPage} · ${auditLastTotal} eventos`;
+    if (auditPrev) auditPrev.disabled = auditPage <= 1;
+    if (auditNext) auditNext.disabled = auditPage >= maxPage;
+  }
+
   // ---------- CARGAS ----------
   async function loadPendingUsers() {
     if (!pendingUsersTbody) return;
@@ -506,6 +662,17 @@ function applyProjectsFilters(list) {
     renderAllProjects(applyProjectsFilters(allProjectsCache)); // render con filtros (incluye búsqueda)
   } catch (e) {
     allProjectsTbody.innerHTML = `<tr><td colspan="6" class="muted">Error al cargar: ${e.message}</td></tr>`;
+  }
+ }
+
+ async function loadAuditLogs() {
+  if (!auditTbody) return;
+  auditTbody.innerHTML = `<tr><td colspan="7" class="muted">Cargando actividad...</td></tr>`;
+  try {
+    const payload = await apiGetAuditLogs();
+    renderAuditLogs(payload);
+  } catch (e) {
+    auditTbody.innerHTML = `<tr><td colspan="7" class="muted">Error al cargar actividad: ${escapeHtml(e.message)}</td></tr>`;
   }
  }
 
@@ -701,6 +868,58 @@ function applyProjectsFilters(list) {
   // Proyectos (admin)
   refreshAllProjectsBtn?.addEventListener('click', loadAllProjects);
   allProjectsFilter?.addEventListener('change', loadAllProjects);
+
+  openActivityBtn?.addEventListener('click', async () => {
+    if (!activityCard) return;
+    const isOpen = activityCard.style.display !== 'none';
+    if (isOpen) {
+      activityCard.style.display = 'none';
+      openActivityBtn.textContent = 'Actividad';
+      return;
+    }
+
+    activityCard.style.display = '';
+    openActivityBtn.textContent = 'Ocultar actividad';
+    activityCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    auditPage = 1;
+    await loadAuditLogs();
+  });
+
+  hideActivityBtn?.addEventListener('click', () => {
+    if (activityCard) activityCard.style.display = 'none';
+    if (openActivityBtn) openActivityBtn.textContent = 'Actividad';
+  });
+
+  refreshAuditLogsBtn?.addEventListener('click', loadAuditLogs);
+  auditActionFilter?.addEventListener('change', () => {
+    auditPage = 1;
+    loadAuditLogs();
+  });
+  auditStatusFilter?.addEventListener('change', () => {
+    auditPage = 1;
+    loadAuditLogs();
+  });
+
+  let auditSearchTO = null;
+  auditSearch?.addEventListener('input', () => {
+    clearTimeout(auditSearchTO);
+    auditSearchTO = setTimeout(() => {
+      auditPage = 1;
+      loadAuditLogs();
+    }, 250);
+  });
+
+  auditPrev?.addEventListener('click', () => {
+    if (auditPage <= 1) return;
+    auditPage -= 1;
+    loadAuditLogs();
+  });
+  auditNext?.addEventListener('click', () => {
+    const maxPage = Math.max(1, Math.ceil(auditLastTotal / auditLimit));
+    if (auditPage >= maxPage) return;
+    auditPage += 1;
+    loadAuditLogs();
+  });
 
   // Delegación de eventos global
   document.addEventListener('click', async (e) => {

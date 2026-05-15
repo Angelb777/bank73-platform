@@ -5,6 +5,7 @@ const User = require('../models/User');
 const { ROLES } = User;
 const auth = require('../middleware/auth');
 const { hashPassword, isHashedPassword, verifyPassword } = require('../utils/passwords');
+const audit = require('../utils/audit');
 
 const router = express.Router();
 const esc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
@@ -66,6 +67,13 @@ router.post('/login', async (req, res) => {
       if (!isProd) {
         console.warn('[LOGIN 401]', { tenantKey, email: norm, found: !!user });
       }
+      await audit(req, 'auth.login_failed', {
+        tenantKey,
+        actorEmail: norm,
+        status: 'failure',
+        message: 'Credenciales inválidas',
+        metadata: { email: norm, foundUser: !!user }
+      });
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
@@ -78,6 +86,17 @@ router.post('/login', async (req, res) => {
       const reason = user.status === 'pending'
         ? 'Cuenta pendiente de aprobación por un administrador.'
         : 'Cuenta bloqueada por un administrador.';
+      await audit(req, 'auth.login_blocked', {
+        tenantKey,
+        actorUserId: user._id,
+        actorEmail: user.email,
+        actorRole: user.role,
+        targetType: 'user',
+        targetId: user._id,
+        status: 'blocked',
+        message: reason,
+        metadata: { userStatus: user.status }
+      });
       return res.status(403).json({ error: reason, status: user.status });
     }
 
@@ -87,6 +106,16 @@ router.post('/login', async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
+
+    await audit(req, 'auth.login_success', {
+      tenantKey,
+      actorUserId: user._id,
+      actorEmail: user.email,
+      actorRole: user.role,
+      targetType: 'user',
+      targetId: user._id,
+      message: 'Login correcto'
+    });
 
     res.json({
       token,
@@ -135,6 +164,18 @@ if (!allowedRequested.includes(requested)) {
       role: 'bank',               // ROLE-SEP: valor por defecto del schema, no habilita acceso
       status: 'pending',          // ROLE-SEP: pendiente hasta aprobación de admin
       roleRequested: requested    // ROLE-SEP
+    });
+
+    await audit(req, 'auth.register_requested', {
+      tenantKey: req.tenantKey,
+      actorUserId: user._id,
+      actorEmail: user.email,
+      actorRole: user.role,
+      targetType: 'user',
+      targetId: user._id,
+      status: 'info',
+      message: 'Registro pendiente de aprobación',
+      metadata: { roleRequested: user.roleRequested, name: user.name }
     });
 
     // ROLE-SEP: no devolvemos token: cuenta pendiente

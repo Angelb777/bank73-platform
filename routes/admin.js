@@ -2,7 +2,9 @@
 const express = require('express');
 const User = require('../models/User');
 const Project = require('../models/Project'); // ROLE-SEP
+const AuditLog = require('../models/AuditLog');
 const { requireRole } = require('../middleware/rbac'); // ROLE-SEP
+const audit = require('../utils/audit');
 const router = express.Router();
 
 const { ROLES: VALID_ROLES } = require('../models/User'); // usa la misma fuente que el modelo
@@ -10,6 +12,47 @@ const VALID_PUBLISH = ['draft','pending','approved','rejected']; // ROLE-SEP
 
 // ROLE-SEP: Todas estas rutas requieren rol admin (además de auth y tenant previos en server.js)
 router.use(requireRole('admin')); // ROLE-SEP
+
+/* =========================================================================
+   ACTIVIDAD / AUDITORÍA
+   ========================================================================= */
+
+router.get('/audit-logs', async (req, res) => {
+  try {
+    const q = { tenantKey: req.tenantKey };
+    const action = String(req.query.action || '').trim();
+    const status = String(req.query.status || '').trim();
+    const search = String(req.query.q || '').trim();
+
+    if (action) q.action = action;
+    if (status) q.status = status;
+
+    if (search) {
+      const rx = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      q.$or = [
+        { action: rx },
+        { actorEmail: rx },
+        { actorRole: rx },
+        { targetType: rx },
+        { message: rx },
+        { ip: rx }
+      ];
+    }
+
+    const limit = Math.min(Math.max(Number(req.query.limit) || 80, 10), 200);
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const skip = (page - 1) * limit;
+
+    const [logs, total] = await Promise.all([
+      AuditLog.find(q).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      AuditLog.countDocuments(q)
+    ]);
+
+    res.json({ logs, total, page, limit });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 /* =========================================================================
    USUARIOS (Aprobación, bloqueo, listado)
@@ -49,6 +92,13 @@ router.post('/users/:id/approve', async (req, res) => {
     user.roleRequested = null;     // limpiar para evitar confusiones
     await user.save();
 
+    await audit(req, 'user.approved', {
+      targetType: 'user',
+      targetId: user._id,
+      message: 'Usuario aprobado',
+      metadata: { email: user.email, role: user.role, name: user.name }
+    });
+
     res.json({
       ok: true,
       user: {
@@ -82,6 +132,14 @@ router.post('/users/:id/block', async (req, res) => {
     user.status = 'blocked'; // ROLE-SEP
     await user.save();
 
+    await audit(req, 'user.blocked', {
+      targetType: 'user',
+      targetId: user._id,
+      status: 'blocked',
+      message: 'Usuario bloqueado',
+      metadata: { email: user.email, role: user.role, name: user.name }
+    });
+
     res.json({
       ok: true,
       user: {
@@ -112,6 +170,13 @@ router.delete('/users/:id', async (req, res) => {
 
     const deleted = await User.findOneAndDelete({ _id: id, tenantKey: req.tenantKey });
     if (!deleted) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    await audit(req, 'user.deleted', {
+      targetType: 'user',
+      targetId: deleted._id,
+      message: 'Usuario eliminado',
+      metadata: { email: deleted.email, role: deleted.role, name: deleted.name, status: deleted.status }
+    });
 
     res.json({ ok: true });
   } catch (e) {
@@ -152,6 +217,14 @@ router.post('/projects/:id/approve', async (req, res) => {
     proj.publishStatus = 'approved'; // ROLE-SEP
     await proj.save();
 
+    await audit(req, 'project.approved', {
+      targetType: 'project',
+      targetId: proj._id,
+      projectId: proj._id,
+      message: 'Proyecto aprobado',
+      metadata: { name: proj.name, publishStatus: proj.publishStatus }
+    });
+
     res.json({ ok: true, project: proj });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -167,6 +240,15 @@ router.post('/projects/:id/reject', async (req, res) => {
 
     proj.publishStatus = 'rejected'; // ROLE-SEP
     await proj.save();
+
+    await audit(req, 'project.rejected', {
+      targetType: 'project',
+      targetId: proj._id,
+      projectId: proj._id,
+      status: 'blocked',
+      message: 'Proyecto rechazado',
+      metadata: { name: proj.name, publishStatus: proj.publishStatus }
+    });
 
     res.json({ ok: true, project: proj });
   } catch (e) {

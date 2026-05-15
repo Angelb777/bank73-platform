@@ -14,6 +14,7 @@ const jwt = require('jsonwebtoken');
 const authMw = require('./middleware/auth');
 const { requireActiveUser } = require('./middleware/auth');
 const errorMw = require('./middleware/error');
+const audit = require('./utils/audit');
 
 // Rutas
 const authRoutes = require('./routes/auth');
@@ -97,6 +98,12 @@ function rateLimit({ windowMs, max, message }) {
     if (current.count > max) {
       const retryAfter = Math.ceil((current.resetAt - now) / 1000);
       res.setHeader('Retry-After', String(retryAfter));
+      audit(req, 'security.rate_limited', {
+        tenantKey: req.tenantKey,
+        status: 'blocked',
+        message: message || 'Demasiadas peticiones',
+        metadata: { path: req.originalUrl, method: req.method, retryAfter, count: current.count }
+      });
       return res.status(429).json({ error: message || 'Demasiadas peticiones. Inténtalo de nuevo en unos minutos.' });
     }
 

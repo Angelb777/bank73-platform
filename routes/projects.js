@@ -10,6 +10,7 @@ const Document          = require('../models/Document');
 const Venta             = require('../models/Venta');
 const Unit              = require('../models/Unit');
 const User              = require('../models/User');
+const audit             = require('../utils/audit');
 
 const router = express.Router();
 
@@ -290,6 +291,14 @@ router.post('/', requireRole('admin','bank'), async (req, res) => {
     }
 
     const p = await Project.create(body);
+    await audit(req, 'project.created', {
+      targetType: 'project',
+      targetId: p._id,
+      projectId: p._id,
+      status: 'info',
+      message: 'Proyecto creado',
+      metadata: { name: p.name, publishStatus: p.publishStatus }
+    });
     res.status(201).json(p);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -456,6 +465,13 @@ router.put('/:id', requireRole('admin','bank'), async (req, res) => {
     ).lean();
 
     if (!updated) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    await audit(req, 'project.updated', {
+      targetType: 'project',
+      targetId: updated._id,
+      projectId: updated._id,
+      message: 'Proyecto actualizado',
+      metadata: { name: updated.name, fields: Object.keys(payload) }
+    });
     res.json({ ok: true, project: updated });
   } catch (err) {
     console.error('[PUT /api/projects/:id]', err);
@@ -466,6 +482,13 @@ router.put('/:id', requireRole('admin','bank'), async (req, res) => {
 router.delete('/:id', requireRole('admin','bank'), async (req, res) => {
   const del = await Project.findOneAndDelete({ _id: req.params.id, tenantKey: req.tenantKey });
   if (!del) return res.status(404).json({ error: 'Proyecto no encontrado' });
+  await audit(req, 'project.deleted', {
+    targetType: 'project',
+    targetId: del._id,
+    projectId: del._id,
+    message: 'Proyecto eliminado',
+    metadata: { name: del.name, publishStatus: del.publishStatus }
+  });
   res.json({ ok: true });
 });
 
@@ -531,6 +554,13 @@ router.put('/:id/assign', requireRole('admin','bank'), async (req, res) => {
     );
 
     if (!proj) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    await audit(req, 'project.assigned', {
+      targetType: 'project',
+      targetId: proj._id,
+      projectId: proj._id,
+      message: 'Equipo asignado al proyecto',
+      metadata: { name: proj.name, roles: Object.keys(validated) }
+    });
     res.json({ ok: true, project: proj });
   } catch (e) {
     res.status(500).json({ error: e.message });
