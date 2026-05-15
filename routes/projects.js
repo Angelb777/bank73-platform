@@ -2326,7 +2326,10 @@ ws.addRow(['Canceladas', summary.units.canceladas]);
 const multer = require('multer');
 const XLSX = require('xlsx');
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }
+});
 
 // POST /api/projects/:id/import-dato-unico
 router.post(

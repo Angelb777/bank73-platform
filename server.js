@@ -52,18 +52,69 @@ process.on('uncaughtException', (err) => {
 /* =========================================================================
    Seguridad / middlewares base
    ========================================================================= */
-const isLanDev = (process.env.NODE_ENV !== 'production');
+const isProd = process.env.NODE_ENV === 'production';
+const jsonLimit = process.env.JSON_BODY_LIMIT || '25mb';
+const allowedOrigins = String(process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
 
-if (isLanDev) {
-  console.log('[SEC] helmet OFF (LAN/dev)');
-} else {
-  app.use(helmet());
+app.set('trust proxy', 1);
+
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false
+}));
+
+app.use(cors({
+  credentials: true,
+  origin(origin, cb) {
+    if (!origin) return cb(null, true);
+    if (!isProd) return cb(null, true);
+    if (allowedOrigins.length === 0) return cb(null, false);
+    return cb(null, allowedOrigins.includes(origin));
+  }
+}));
+app.use(morgan('dev'));
+app.use(express.json({ limit: jsonLimit }));
+app.use(express.urlencoded({ extended: true, limit: jsonLimit }));
+
+function rateLimit({ windowMs, max, message }) {
+  const hits = new Map();
+
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = `${req.ip}:${req.method}:${req.baseUrl || ''}${req.path || ''}`;
+    const current = hits.get(key);
+
+    if (!current || current.resetAt <= now) {
+      hits.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+
+    current.count += 1;
+
+    if (current.count > max) {
+      const retryAfter = Math.ceil((current.resetAt - now) / 1000);
+      res.setHeader('Retry-After', String(retryAfter));
+      return res.status(429).json({ error: message || 'Demasiadas peticiones. Inténtalo de nuevo en unos minutos.' });
+    }
+
+    return next();
+  };
 }
 
-app.use(cors({ origin: true, credentials: true }));
-app.use(morgan('dev'));
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: 'Demasiados intentos. Espera unos minutos y vuelve a intentarlo.'
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 80,
+  message: 'Demasiadas subidas en poco tiempo. Espera unos minutos.'
+});
 
 // DEV: no cachear HTML/CSS/JS
 app.use((req, res, next) => {
@@ -84,7 +135,6 @@ app.use((req, res, next) => {
 /* =========================================================================
    Static
    ========================================================================= */
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -149,7 +199,7 @@ app.use('/api', tenantMw);
 /* =========================================================================
    Rutas públicas AUTH
    ========================================================================= */
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
 
 /* =========================================================================
    Rutas protegidas
@@ -165,6 +215,7 @@ app.use('/api/projects', ...guard, processRoutes);
 
 // Resto igual
 app.use('/api/milestones', ...guard, milestoneRoutes);
+app.use('/api/documents/upload', uploadLimiter);
 app.use('/api/documents', ...guard, documentRoutes);
 app.use('/api/loans', ...guard, loanRoutes);
 app.use('/api/budget', ...guard, budgetRoutes);
@@ -200,7 +251,7 @@ app.use('/api/unit-doc-folders', ...guard, unitDocFolderRoutes);
 app.use('/api/export', ...guard, exportRoutes);
 app.use('/api/export-pdf', ...guard, exportPdfRoutes);
 app.use('/api/ventas', ...guard, ventasRoutes);
-app.use('/api/import-word', ...guard, importWordRoutes);
+app.use('/api/import-word', uploadLimiter, ...guard, importWordRoutes);
 
 // Chat
 app.use('/api/chat', ...guard, chatRoutes);

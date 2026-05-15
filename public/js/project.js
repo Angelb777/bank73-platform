@@ -268,6 +268,77 @@ function tenantHeaders() {
   return h;
 }
 
+function secureDocUrl(docId) {
+  return docId ? `/api/documents/${encodeURIComponent(docId)}/download` : '';
+}
+
+async function fetchSecureBlob(url) {
+  const resp = await fetch(url, {
+    headers: { ...authHeaders(), ...tenantHeaders() },
+    credentials: 'include'
+  });
+
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => '');
+    throw new Error(txt || `HTTP ${resp.status}`);
+  }
+
+  return resp.blob();
+}
+
+async function openSecureFile(url, filename, action = 'view') {
+  if (!url) return;
+
+  const blob = await fetchSecureBlob(url);
+  const objectUrl = URL.createObjectURL(blob);
+
+  if (action === 'download') {
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = filename || 'documento';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    return;
+  }
+
+  window.open(objectUrl, '_blank', 'noopener');
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60 * 1000);
+}
+
+async function hydrateSecureImages(root = document) {
+  const imgs = Array.from(root.querySelectorAll('img[data-secure-src]'));
+
+  await Promise.all(imgs.map(async (img) => {
+    const url = img.dataset.secureSrc;
+    if (!url || img.dataset.secureLoaded === '1') return;
+
+    try {
+      const blob = await fetchSecureBlob(url);
+      const objectUrl = URL.createObjectURL(blob);
+      img.src = objectUrl;
+      img.dataset.secureLoaded = '1';
+      img.dataset.objectUrl = objectUrl;
+    } catch (err) {
+      console.error('[secure image]', err);
+      img.alt = 'No se pudo cargar la imagen';
+    }
+  }));
+}
+
+document.addEventListener('click', (ev) => {
+  const link = ev.target.closest('.js-secure-file');
+  if (!link) return;
+
+  ev.preventDefault();
+  openSecureFile(link.dataset.url, link.dataset.filename, link.dataset.action || 'view')
+    .catch(err => {
+      console.error('[secure file]', err);
+      alert('No se pudo abrir el documento.');
+    });
+});
+
 
 async function openChecklistDocs(clId) {
   const cl = state.checklists.find(x => x._id === clId);
@@ -283,7 +354,7 @@ async function openChecklistDocs(clId) {
         </div>
       </div>
       <div class="row" style="gap:6px;">
-        <a class="btn btn-ghost btn-xs" href="/${d.path}" target="_blank">Ver</a>
+        <a class="btn btn-ghost btn-xs js-secure-file" href="#" data-url="${secureDocUrl(d._id)}" data-filename="${escapeHtml(d.originalname || d.name || 'documento')}" data-action="view">Ver</a>
         <button class="btn btn-danger btn-xs js-del-doc" data-doc="${d._id}" data-cl="${clId}">Eliminar</button>
       </div>
     </div>
@@ -1044,7 +1115,7 @@ async function renderPermitsModal() {
                   <td class="small">${d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'}</td>
                   <td class="small">${d.expiryDate ? new Date(d.expiryDate).toLocaleDateString() : '—'}</td>
                   <td class="small" style="white-space:nowrap;">
-                    <a class="btn btn-light btn-xs" href="/api/documents/${d._id}/download" target="_blank">Ver</a>
+                    <a class="btn btn-light btn-xs js-secure-file" href="#" data-url="${secureDocUrl(d._id)}" data-filename="${escapeHtml(d.originalname || d.filename || 'documento')}" data-action="view">Ver</a>
                   </td>
                 </tr>
               `).join('')}
@@ -1210,7 +1281,7 @@ async function refreshDocsListInModal(clId) {
             </div>
           </div>
           <div class="row" style="gap:6px;">
-            <a class="btn btn-ghost btn-xs" href="/${d.path}" target="_blank">Ver</a>
+            <a class="btn btn-ghost btn-xs js-secure-file" href="#" data-url="${secureDocUrl(d._id)}" data-filename="${escapeHtml(d.originalname || d.name || 'documento')}" data-action="view">Ver</a>
             <button class="btn btn-danger btn-xs js-del-doc" data-doc="${d._id}" data-cl="${clId}">Eliminar</button>
           </div>
         </div>
@@ -1252,7 +1323,7 @@ async function loadPermitsDocsList(targetEl) {
                 <td>${d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'}</td>
                 <td>${d.expiryDate ? new Date(d.expiryDate).toLocaleDateString() : '—'}</td>
                 <td style="white-space:nowrap;">
-                  <a class="btn btn-light btn-xs" href="/api/documents/${d._id}/download" target="_blank">Ver</a>
+                  <a class="btn btn-light btn-xs js-secure-file" href="#" data-url="${secureDocUrl(d._id)}" data-filename="${escapeHtml(d.originalname || d.filename || 'documento')}" data-action="view">Ver</a>
                   <button class="btn btn-danger btn-xs js-permit-doc-del">Eliminar</button>
                 </td>
               </tr>
@@ -1559,10 +1630,9 @@ function renderBeforeAfter(items){
       return;
     }
     grid.innerHTML = arr.map(it=>{
-      const cleanPath = String(it.path || '').replace(/^\/+/, '');
-      const src = `/${cleanPath}`;
+      const src = secureDocUrl(it._id);
       const title = it.label || 'Foto';
-      const downloadUrl = it._id ? `/api/documents/${it._id}/download` : src;
+      const downloadUrl = src;
 
       return `
       <figure class="ba-card">
@@ -1574,7 +1644,7 @@ function renderBeforeAfter(items){
           data-download="${escapeHtml(downloadUrl)}"
           aria-label="Ver imagen en grande"
         >
-          <img src="${escapeHtml(src)}" alt="${escapeHtml(title)}" style="width:100%;height:180px;object-fit:cover;border-radius:10px"/>
+          <img src="" data-secure-src="${escapeHtml(src)}" alt="${escapeHtml(title)}" style="width:100%;height:180px;object-fit:cover;border-radius:10px"/>
         </button>
         <figcaption class="small" style="margin-top:6px">${escapeHtml(title)}</figcaption>
         <div class="row space-between small muted">
@@ -1584,6 +1654,7 @@ function renderBeforeAfter(items){
       </figure>
     `;
     }).join('');
+    hydrateSecureImages(grid);
   };
 
   paint(before, 'baBeforeGrid');
@@ -1623,15 +1694,25 @@ function closeBAImageViewer(){
   document.body.classList.remove('ba-viewer-open');
 }
 
-function openBAImageViewer(src, title, downloadUrl){
+async function openBAImageViewer(src, title, downloadUrl){
   const viewer = ensureBAImageViewer();
   const img = viewer.querySelector('#baViewerImg');
   const titleEl = viewer.querySelector('#baViewerTitle');
   const downloadEl = viewer.querySelector('#baViewerDownload');
 
   if (img) {
-    img.src = src;
+    img.src = '';
     img.alt = title || 'Foto';
+    try {
+      const blob = await fetchSecureBlob(src);
+      const objectUrl = URL.createObjectURL(blob);
+      if (img.dataset.objectUrl) URL.revokeObjectURL(img.dataset.objectUrl);
+      img.src = objectUrl;
+      img.dataset.objectUrl = objectUrl;
+    } catch (err) {
+      console.error('[BA viewer image]', err);
+      alert('No se pudo cargar la imagen.');
+    }
   }
   if (titleEl) titleEl.textContent = title || 'Foto';
   if (downloadEl) {
@@ -1718,7 +1799,7 @@ async function refreshBeforeAfter() {
     };
 
     // URL del archivo (ajusta si tu backend usa otro nombre)
-    const getUrl = (d) => d?.url || d?.fileUrl || d?.downloadUrl || d?.path || d?.href || null;
+    const getUrl = (d) => d?._id ? secureDocUrl(d._id) : (d?.url || d?.fileUrl || d?.downloadUrl || d?.href || null);
 
     // Filtra SOLO imágenes y ordénalas por fecha
     const imgDocs = (docs || [])
@@ -6400,7 +6481,7 @@ async function loadUnidadDocs(projectId, unitId) {
       </div>
 
       <div class="doc-actions">
-        <a class="btn" href="/${d.path}" target="_blank" rel="noopener">Ver</a>
+        <a class="btn js-secure-file" href="#" data-url="${secureDocUrl(d._id)}" data-filename="${escapeHtml(d.originalname || d.name || d.title || 'documento')}" data-action="view">Ver</a>
         <button class="btn danger doc-del" data-id="${d._id}">Eliminar</button>
       </div>
     </div>
@@ -7871,8 +7952,8 @@ async function loadDocs({ q } = {}) {
         </div>
 
         <div class="doc-actions">
-          <a class="btn" href="/${d.path}" target="_blank">Ver</a>
-          <a class="btn" href="/api/documents/${d._id}/download">Descargar</a>
+          <a class="btn js-secure-file" href="#" data-url="${secureDocUrl(d._id)}" data-filename="${escapeHtml(d.originalname || d.title || d.name || 'documento')}" data-action="view">Ver</a>
+          <a class="btn js-secure-file" href="#" data-url="${secureDocUrl(d._id)}" data-filename="${escapeHtml(d.originalname || d.title || d.name || 'documento')}" data-action="download">Descargar</a>
           ${renderCompleteBtn(d)}
           ${renderReplaceBtn(d)}
           ${renderDeleteBtn(d)}

@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { ROLES } = User;
 const auth = require('../middleware/auth');
+const { hashPassword, isHashedPassword, verifyPassword } = require('../utils/passwords');
 
 const router = express.Router();
 const esc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
@@ -50,7 +51,7 @@ router.post('/login', async (req, res) => {
           {
             $set: {
               name: 'Administrador',
-              password: admPass,
+              password: hashPassword(admPass),
               role: 'admin',
               status: 'active'
             },
@@ -61,11 +62,16 @@ router.post('/login', async (req, res) => {
       }
     }
 
-    if (!user || user.password !== password) {
+    if (!user || !verifyPassword(password, user.password)) {
       if (!isProd) {
-        console.warn('[LOGIN 401]', { tenantKey, email: norm, found: !!user, passEq: user ? user.password === password : null });
+        console.warn('[LOGIN 401]', { tenantKey, email: norm, found: !!user });
       }
       return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    if (!isHashedPassword(user.password)) {
+      user.password = hashPassword(password);
+      await user.save();
     }
 
     if (user.status !== 'active') {
@@ -125,7 +131,7 @@ if (!allowedRequested.includes(requested)) {
       tenantKey: req.tenantKey,
       name,
       email: normEmail,
-      password,
+      password: hashPassword(password),
       role: 'bank',               // ROLE-SEP: valor por defecto del schema, no habilita acceso
       status: 'pending',          // ROLE-SEP: pendiente hasta aprobación de admin
       roleRequested: requested    // ROLE-SEP

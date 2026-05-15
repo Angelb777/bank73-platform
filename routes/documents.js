@@ -635,6 +635,7 @@ router.get('/:id/download', async (req, res) => {
       return res.status(404).json({ error: 'Archivo no existe en servidor' });
     }
 
+    res.setHeader('Cache-Control', 'private, no-store');
     res.download(absPath, doc.originalname || path.basename(absPath));
   } catch (e) {
     console.error('[documents.download] error:', e);

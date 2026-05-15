@@ -5,7 +5,10 @@ const multer = require('multer');
 const mammoth = require('mammoth');
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }
+});
 
 const Venta = require('../models/Venta');
 const Unit = require('../models/Unit');
