@@ -1643,11 +1643,46 @@ function openBAImageViewer(src, title, downloadUrl){
   document.body.classList.add('ba-viewer-open');
 }
 
+async function downloadBAImage(url, filename){
+  if (!url) return;
+
+  const resp = await fetch(url, {
+    headers: { ...authHeaders(), ...tenantHeaders() },
+    credentials: 'include'
+  });
+
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => '');
+    throw new Error(txt || `HTTP ${resp.status}`);
+  }
+
+  const blob = await resp.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename || 'foto';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
 (function bindBAImageViewerOnce(){
   if (window.__BA_VIEWER_BOUND__) return;
   window.__BA_VIEWER_BOUND__ = true;
 
   document.addEventListener('click', (e) => {
+    const download = e.target.closest('#baViewerDownload');
+    if (download) {
+      e.preventDefault();
+      const title = document.getElementById('baViewerTitle')?.textContent?.trim() || 'foto';
+      downloadBAImage(download.href, title).catch(err => {
+        console.error('[BA download]', err);
+        alert('No se pudo descargar la imagen.');
+      });
+      return;
+    }
+
     const opener = e.target.closest('.js-ba-open');
     if (opener) {
       e.preventDefault();
