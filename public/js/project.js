@@ -1558,16 +1558,32 @@ function renderBeforeAfter(items){
       grid.innerHTML = '<div class="small muted">Sin imágenes.</div>';
       return;
     }
-    grid.innerHTML = arr.map(it=>`
+    grid.innerHTML = arr.map(it=>{
+      const cleanPath = String(it.path || '').replace(/^\/+/, '');
+      const src = `/${cleanPath}`;
+      const title = it.label || 'Foto';
+      const downloadUrl = it._id ? `/api/documents/${it._id}/download` : src;
+
+      return `
       <figure class="ba-card">
-        <img src="/${it.path}" alt="${it.label||''}" style="width:100%;height:180px;object-fit:cover;border-radius:10px"/>
-        <figcaption class="small" style="margin-top:6px">${it.label||'Foto'}</figcaption>
+        <button
+          type="button"
+          class="ba-photo-btn js-ba-open"
+          data-src="${escapeHtml(src)}"
+          data-title="${escapeHtml(title)}"
+          data-download="${escapeHtml(downloadUrl)}"
+          aria-label="Ver imagen en grande"
+        >
+          <img src="${escapeHtml(src)}" alt="${escapeHtml(title)}" style="width:100%;height:180px;object-fit:cover;border-radius:10px"/>
+        </button>
+        <figcaption class="small" style="margin-top:6px">${escapeHtml(title)}</figcaption>
         <div class="row space-between small muted">
           <span>${getTag(it)}</span>
           <button class="btn btn-ghost btn-xs js-ba-delete" data-id="${it._id}">Eliminar</button>
         </div>
       </figure>
-    `).join('');
+    `;
+    }).join('');
   };
 
   paint(before, 'baBeforeGrid');
@@ -1575,6 +1591,80 @@ function renderBeforeAfter(items){
 }
 
 // --- 2) Helper que SÍ lee la fuente real
+function ensureBAImageViewer(){
+  let viewer = document.getElementById('baImageViewer');
+  if (viewer) return viewer;
+
+  viewer = document.createElement('div');
+  viewer.id = 'baImageViewer';
+  viewer.className = 'ba-viewer';
+  viewer.innerHTML = `
+    <div class="ba-viewer-dialog" role="dialog" aria-modal="true" aria-label="Vista ampliada de imagen">
+      <div class="ba-viewer-head">
+        <b id="baViewerTitle">Foto</b>
+        <div class="ba-viewer-actions">
+          <a id="baViewerDownload" class="btn btn-primary btn-xs" href="#" download>Descargar</a>
+          <button type="button" class="btn btn-ghost btn-xs" data-ba-viewer-close aria-label="Cerrar">X</button>
+        </div>
+      </div>
+      <div class="ba-viewer-body">
+        <img id="baViewerImg" src="" alt="" />
+      </div>
+    </div>
+  `;
+  document.body.appendChild(viewer);
+  return viewer;
+}
+
+function closeBAImageViewer(){
+  const viewer = document.getElementById('baImageViewer');
+  if (!viewer) return;
+  viewer.classList.remove('is-open');
+  document.body.classList.remove('ba-viewer-open');
+}
+
+function openBAImageViewer(src, title, downloadUrl){
+  const viewer = ensureBAImageViewer();
+  const img = viewer.querySelector('#baViewerImg');
+  const titleEl = viewer.querySelector('#baViewerTitle');
+  const downloadEl = viewer.querySelector('#baViewerDownload');
+
+  if (img) {
+    img.src = src;
+    img.alt = title || 'Foto';
+  }
+  if (titleEl) titleEl.textContent = title || 'Foto';
+  if (downloadEl) {
+    downloadEl.href = downloadUrl || src;
+    downloadEl.setAttribute('download', '');
+  }
+
+  viewer.classList.add('is-open');
+  document.body.classList.add('ba-viewer-open');
+}
+
+(function bindBAImageViewerOnce(){
+  if (window.__BA_VIEWER_BOUND__) return;
+  window.__BA_VIEWER_BOUND__ = true;
+
+  document.addEventListener('click', (e) => {
+    const opener = e.target.closest('.js-ba-open');
+    if (opener) {
+      e.preventDefault();
+      openBAImageViewer(opener.dataset.src, opener.dataset.title, opener.dataset.download);
+      return;
+    }
+
+    if (e.target.closest('[data-ba-viewer-close]') || e.target.id === 'baImageViewer') {
+      closeBAImageViewer();
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeBAImageViewer();
+  });
+})();
+
 async function refreshBeforeAfter() {
   try {
     // 1) Trae docs de beforeAfter
