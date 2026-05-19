@@ -1817,6 +1817,26 @@ if (isSoldLikeStatus(st)) U.sold++;
       try { return d ? new Date(d).toLocaleString() : '—'; } catch { return '—'; }
     }
 
+    const BRAND_BLUE = '#123B6D';
+    const BRAND_BLUE_DARK = '#0B2748';
+    const BRAND_BLUE_SOFT = '#EAF2FB';
+    const TEXT_DARK = '#111827';
+    const TEXT_MUTED = '#64748B';
+
+    const toNumber = (v) => {
+      const n = Number(v || 0);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const fmtNum = (v) => toNumber(v).toLocaleString('es-ES');
+    const fmtMoneyShort = (v) => {
+      const n = toNumber(v);
+      const abs = Math.abs(n);
+      if (abs >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
+      if (abs >= 1000) return `$${(n / 1000).toFixed(0)}k`;
+      return `$${fmtNum(n)}`;
+    };
+
     const resolveLogoPath = () => {
       const candidates = [
         path.join(process.cwd(), 'assets', 'TrustForBanksLogo.png'),
@@ -1832,34 +1852,58 @@ if (isSoldLikeStatus(st)) U.sold++;
       return found;
     };
 
+    const resolveWhiteLogoPath = () => {
+      const candidates = [
+        path.join(process.cwd(), 'assets', 'Bank73logoblanco.png'),
+        path.join(__dirname, '..', 'assets', 'Bank73logoblanco.png'),
+        path.join(process.cwd(), 'public', 'assets', 'Bank73logoblanco.png'),
+        path.join(__dirname, '..', 'public', 'assets', 'Bank73logoblanco.png'),
+      ];
+
+      const found = candidates.find(p => fs.existsSync(p)) || null;
+      if (!found) console.warn('[PDF] Logo blanco Bank73 NO encontrado. Candidatos:', candidates);
+      return found;
+    };
+
     function header(doc, { projectName, updatedAt }) {
       const margin = doc.page.margins.left;
       const pageW = doc.page.width;
       const logoPath = resolveLogoPath();
+      const whiteLogoPath = resolveWhiteLogoPath();
+
+      doc.save();
+      doc.rect(0, 0, pageW, 30).fill(BRAND_BLUE);
+      doc.restore();
 
       try {
-        if (logoPath) doc.image(logoPath, margin, 18, { width: 120 });
+        if (whiteLogoPath) doc.image(whiteLogoPath, pageW - margin - 78, 7, { width: 78 });
+      } catch (err) {
+        console.warn('[PDF] Error dibujando logo blanco en cabecera:', err?.message || err);
+      }
+
+      try {
+        if (logoPath) doc.image(logoPath, margin, 40, { width: 96 });
       } catch (err) {
         console.warn('[PDF] Error dibujando logo:', err?.message || err);
       }
 
       doc
-        .fontSize(16).fillColor('#111827')
-        .text('Resumen ejecutivo', margin + 140, 22, { width: pageW - margin * 2 - 140 });
+        .fontSize(16).fillColor(TEXT_DARK)
+        .text('Resumen ejecutivo', margin + 118, 40, { width: pageW - margin * 2 - 118 });
 
       doc
-        .fontSize(10).fillColor('#374151')
-        .text(`Proyecto: ${projectName || 'Proyecto'}`, margin + 140, 42);
+        .fontSize(10).fillColor('#334155')
+        .text(`Proyecto: ${projectName || 'Proyecto'}`, margin + 118, 60);
 
       doc
-        .fontSize(9).fillColor('#6b7280')
-        .text(`Actualizado: ${fmtDateTime(updatedAt)}`, margin + 140, 56);
+        .fontSize(9).fillColor(TEXT_MUTED)
+        .text(`Actualizado: ${fmtDateTime(updatedAt)}`, margin + 118, 74);
 
       doc.save();
-      doc.lineWidth(0.5).moveTo(margin, 74).lineTo(pageW - margin, 74).stroke('#d1d5db');
+      doc.lineWidth(0.6).moveTo(margin, 92).lineTo(pageW - margin, 92).stroke('#d1d5db');
       doc.restore();
 
-      doc.y = 88;
+      doc.y = 106;
     }
 
     function roundRect(doc, x, y, w, h, r) {
@@ -1890,24 +1934,25 @@ if (isSoldLikeStatus(st)) U.sold++;
       const contentW = pageW - margin * 2;
 
       doc.save();
-      doc.rect(0, 0, pageW, 110).fill('#0B3B2E');
+      doc.rect(0, 0, pageW, 150).fill(BRAND_BLUE);
+      doc.rect(0, 150, pageW, 7).fill(BRAND_BLUE_DARK);
       doc.restore();
 
       const logoPath = resolveLogoPath();
       if (logoPath) {
-        try { doc.image(logoPath, margin, 22, { width: 120 }); } catch (_) {}
+        try { doc.image(logoPath, margin, 30, { width: 118 }); } catch (_) {}
       }
 
       doc.fontSize(20).fillColor('white')
-        .text('Resumen ejecutivo', margin + 140, 28, { width: contentW - 140 });
+        .text('Resumen ejecutivo', margin + 140, 36, { width: contentW - 140 });
 
-      doc.fontSize(11).fillColor('#D1FAE5')
-        .text(projectName || 'Proyecto', margin + 140, 58, { width: contentW - 140 });
+      doc.fontSize(12).fillColor('#EAF2FB')
+        .text(projectName || 'Proyecto', margin + 140, 66, { width: contentW - 140 });
 
-      doc.fontSize(9).fillColor('#A7F3D0')
-        .text(`Actualizado: ${fmtDateTime(updatedAt)}`, margin + 140, 78, { width: contentW - 140 });
+      doc.fontSize(9).fillColor('#C8D8EA')
+        .text(`Actualizado: ${fmtDateTime(updatedAt)}`, margin + 140, 88, { width: contentW - 140 });
 
-      doc.y = 130;
+      doc.y = 180;
 
       const cardW = (contentW - 12) / 2;
       const cardH = 64;
@@ -1921,12 +1966,12 @@ if (isSoldLikeStatus(st)) U.sold++;
 
       const drawCard = (x, y, { label, value }) => {
         doc.save();
-        roundRect(doc, x, y, cardW, cardH, 10).fill('#F3F4F6');
-        roundRect(doc, x, y, cardW, cardH, 10).stroke('#E5E7EB');
+        roundRect(doc, x, y, cardW, cardH, 8).fill('#F8FAFC');
+        roundRect(doc, x, y, cardW, cardH, 8).stroke('#DDE7F2');
         doc.restore();
 
-        doc.fontSize(9).fillColor('#6B7280').text(label, x + 12, y + 10, { width: cardW - 24 });
-        doc.fontSize(16).fillColor('#111827').text(value, x + 12, y + 28, { width: cardW - 24 });
+        doc.fontSize(9).fillColor(TEXT_MUTED).text(label, x + 12, y + 10, { width: cardW - 24 });
+        doc.fontSize(17).fillColor(BRAND_BLUE).text(value, x + 12, y + 29, { width: cardW - 24 });
       };
 
       const x1 = margin;
@@ -1940,24 +1985,147 @@ if (isSoldLikeStatus(st)) U.sold++;
 
       doc.y = y1 + (cardH * 2) + 30;
 
-      doc.fontSize(12).fillColor('#111827').text('Riesgos y vencimientos', margin);
-      doc.moveDown(0.3);
+      const riskTop = doc.y;
+      doc.save();
+      roundRect(doc, margin, riskTop, contentW, 148, 8).fill('#FFFFFF').stroke('#DDE7F2');
+      doc.restore();
+      doc.fontSize(12).fillColor(TEXT_DARK).text('Riesgos y vencimientos', margin + 12, riskTop + 12);
 
       const list = (summary.alerts || []).slice(0, 8);
       if (!list.length) {
-        doc.fontSize(10).fillColor('#6B7280').text('Sin vencimientos críticos.', margin);
+        doc.fontSize(10).fillColor(TEXT_MUTED).text('Sin vencimientos criticos.', margin + 12, riskTop + 36);
       } else {
+        doc.y = riskTop + 36;
         list.forEach(a => {
           const due = a.due ? new Date(a.due).toISOString().slice(0, 10) : '—';
-          doc.fontSize(9).fillColor('#374151')
-            .text(`• [${a.type}] ${a.name} — ${due}`, margin, doc.y, { width: contentW });
+          doc.fontSize(9).fillColor('#334155')
+            .text(`• [${a.type}] ${a.name} — ${due}`, margin + 12, doc.y, { width: contentW - 24 });
         });
       }
 
-      doc.moveDown(0.8);
+      doc.y = riskTop + 166;
 
-      doc.fontSize(8).fillColor('#6B7280')
+      doc.fontSize(8).fillColor(TEXT_MUTED)
         .text('Documento confidencial para uso interno.', margin, pageH - doc.page.margins.bottom - 28, { width: contentW });
+    }
+
+    function backCoverPage(doc, { projectName }) {
+      const margin = doc.page.margins.left;
+      const pageW = doc.page.width;
+      const pageH = doc.page.height;
+      const contentW = pageW - margin * 2;
+      const logoPath = resolveWhiteLogoPath();
+
+      doc.save();
+      doc.rect(0, 0, pageW, pageH).fill('#F8FAFC');
+      doc.rect(0, 0, pageW, 92).fill(BRAND_BLUE);
+      doc.rect(0, pageH - 72, pageW, 72).fill(BRAND_BLUE_DARK);
+      doc.restore();
+
+      if (logoPath) {
+        try { doc.image(logoPath, margin, 30, { width: 120 }); } catch (_) {}
+      }
+
+      doc.fontSize(22).fillColor(BRAND_BLUE).text('Bank73', margin, 240, { width: contentW, align: 'center' });
+      doc.moveDown(0.4);
+      doc.fontSize(12).fillColor('#334155')
+        .text('Resumen ejecutivo para seguimiento interno', margin, doc.y, { width: contentW, align: 'center' });
+      doc.moveDown(0.5);
+      doc.fontSize(10).fillColor(TEXT_MUTED)
+        .text(projectName || 'Proyecto', margin, doc.y, { width: contentW, align: 'center' });
+
+      doc.fontSize(8).fillColor('#EAF2FB')
+        .text('Documento confidencial para uso interno.', margin, pageH - 46, { width: contentW, align: 'center' });
+    }
+
+    function coverPageV2(doc, { projectName, updatedAt, summary }) {
+      const margin = doc.page.margins.left;
+      const pageW = doc.page.width;
+      const pageH = doc.page.height;
+      const contentW = pageW - margin * 2;
+      const logoPath = resolveWhiteLogoPath();
+
+      doc.save();
+      doc.rect(0, 0, pageW, pageH).fill(BRAND_BLUE);
+      doc.polygon([0, pageH * 0.63], [pageW, pageH * 0.44], [pageW, pageH], [0, pageH]).fill(BRAND_BLUE_DARK);
+      doc.rect(0, pageH - 90, pageW, 90).fill('#071D36');
+      doc.restore();
+
+      if (logoPath) {
+        try {
+          doc.image(logoPath, (pageW - 240) / 2, 54, { width: 240 });
+        } catch (_) {}
+      }
+
+      doc.fontSize(31).fillColor('#FFFFFF')
+        .text('Resumen ejecutivo', margin, 184, { width: contentW, align: 'center' });
+      doc.fontSize(16).fillColor('#EAF2FB')
+        .text(projectName || 'Proyecto', margin, 228, { width: contentW, align: 'center' });
+      doc.fontSize(9).fillColor('#BFD2E8')
+        .text(`Actualizado: ${fmtDateTime(updatedAt)}`, margin, 254, { width: contentW, align: 'center' });
+
+      const panelY = 332;
+      const panelH = 170;
+      doc.save();
+      roundRect(doc, margin, panelY, contentW, panelH, 10).fill('#FFFFFF').stroke('#DDE7F2');
+      doc.restore();
+
+      const kpiW = contentW / 4;
+      [
+        { label: 'Progreso', value: `${summary.progressPct || 0}%` },
+        { label: 'Unidades', value: `${summary.units?.total || 0}` },
+        { label: 'Vendidas', value: `${summary.units?.sold || 0}` },
+        { label: 'Alertas <=90d', value: `${(summary.alerts || []).length}` },
+      ].forEach((item, idx) => {
+        const x = margin + (kpiW * idx);
+        if (idx > 0) {
+          doc.save();
+          doc.lineWidth(0.5).moveTo(x, panelY + 26).lineTo(x, panelY + panelH - 26).stroke('#DDE7F2');
+          doc.restore();
+        }
+        doc.fontSize(9).fillColor(TEXT_MUTED).text(item.label, x + 16, panelY + 42, { width: kpiW - 32, align: 'center' });
+        doc.fontSize(22).fillColor(BRAND_BLUE).text(item.value, x + 16, panelY + 70, { width: kpiW - 32, align: 'center' });
+      });
+
+      doc.fontSize(10).fillColor('#334155')
+        .text('Documento preparado para revision ejecutiva y seguimiento comercial, tecnico, legal y financiero.', margin + 32, panelY + 124, { width: contentW - 64, align: 'center' });
+
+      doc.fontSize(8).fillColor('#BFD2E8')
+        .text('Documento confidencial para uso interno.', margin, pageH - 62, { width: contentW, align: 'center' });
+    }
+
+    function backCoverPageV2(doc, { projectName }) {
+      const margin = doc.page.margins.left;
+      const pageW = doc.page.width;
+      const pageH = doc.page.height;
+      const contentW = pageW - margin * 2;
+      const logoPath = resolveLogoPath();
+
+      doc.save();
+      doc.rect(0, 0, pageW, pageH).fill(BRAND_BLUE);
+      doc.polygon([0, 0], [pageW, 0], [pageW, pageH * 0.36], [0, pageH * 0.58]).fill(BRAND_BLUE_DARK);
+      doc.rect(0, pageH - 96, pageW, 96).fill('#071D36');
+      doc.restore();
+
+      if (logoPath) {
+        try {
+          doc.image(logoPath, (pageW - 220) / 2, 198, { width: 220 });
+        } catch (_) {}
+      }
+
+      doc.fontSize(13).fillColor('#DCEBFA')
+        .text('Resumen ejecutivo para seguimiento interno', margin, 326, { width: contentW, align: 'center' });
+      doc.fontSize(10).fillColor('#BFD2E8')
+        .text(projectName || 'Proyecto', margin, 352, { width: contentW, align: 'center' });
+
+      doc.save();
+      roundRect(doc, margin + 82, 442, contentW - 164, 74, 8).fill('#214D7C');
+      doc.restore();
+      doc.fontSize(9).fillColor('#EAF2FB')
+        .text('Confidencial. La informacion contenida en este documento esta destinada exclusivamente a uso interno y revision autorizada.', margin + 108, 466, { width: contentW - 216, align: 'center' });
+
+      doc.fontSize(8).fillColor('#BFD2E8')
+        .text('Documento generado por Bank73 Platform', margin, pageH - 52, { width: contentW, align: 'center' });
     }
 
     function footer(doc, { page, total }) {
@@ -1969,7 +2137,8 @@ if (isSoldLikeStatus(st)) U.sold++;
       const y = pageH - bottom - 12;
 
       doc.save();
-      doc.fontSize(8).fillColor('#6b7280');
+      doc.lineWidth(0.5).moveTo(left, y - 6).lineTo(pageW - right, y - 6).stroke('#DDE7F2');
+      doc.fontSize(8).fillColor(TEXT_MUTED);
       doc.text('Confidencial', left, y, { align: 'left' });
       doc.text(`Página ${page}/${total}`, left, y, { align: 'right', width: pageW - left - right });
       doc.restore();
@@ -1978,10 +2147,10 @@ if (isSoldLikeStatus(st)) U.sold++;
     function sectionTitle(doc, title) {
       const margin = doc.page.margins.left;
       doc.moveDown(0.5);
-      doc.fontSize(12).fillColor('#111827').text(title, margin);
+      doc.fontSize(12).fillColor(BRAND_BLUE).text(title, margin);
       doc.moveDown(0.2);
       doc.save();
-      doc.lineWidth(0.5).moveTo(margin, doc.y).lineTo(doc.page.width - margin, doc.y).stroke('#e5e7eb');
+      doc.lineWidth(0.7).moveTo(margin, doc.y).lineTo(doc.page.width - margin, doc.y).stroke('#DDE7F2');
       doc.restore();
       doc.moveDown(0.6);
     }
@@ -2043,29 +2212,215 @@ if (isSoldLikeStatus(st)) U.sold++;
       return out.slice(0, 3);
     }
 
+    function chartRows(title, datasets = {}) {
+      const commercialData = datasets.commercial || {};
+      const legalData = datasets.legal || {};
+      const technicalData = datasets.technical || {};
+      const financialData = datasets.financial || {};
+      const kpisData = datasets.kpis || {};
+      const alertsData = datasets.alerts || {};
+
+      const simple = (arr, labelKey, valueKey = 'count', totalLabel = 'Total', valueFmt = fmtNum) => {
+        const rows = (arr || []).map(x => ({
+          label: x?.[labelKey] || 'N/D',
+          value: valueFmt(x?.[valueKey], x)
+        }));
+        const total = (arr || []).reduce((a, x) => a + toNumber(x?.[valueKey]), 0);
+        return { columns: ['Concepto', 'Valor'], rows, total: { label: totalLabel, value: valueFmt(total) } };
+      };
+
+      if (title === 'Estatus lotes / unidades') return simple(datasets.unitsByStatus, 'status', 'count', 'Total unidades');
+      if (title === 'Ventas mensuales') return simple(datasets.salesMonthly, 'month', 'units', 'Total ventas');
+      if (title === 'CPP por banco') return simple(datasets.cppByBank, 'bank', 'count', 'Total CPP');
+      if (title === 'Proformas por banco') return simple(datasets.proformasByBank, 'bank', 'count', 'Total proformas');
+      if (title === 'Ventas por modelo de vivienda') return simple(commercialData.salesByModel, 'model', 'count', 'Total ventas por modelo');
+      if (title === 'Perfil cliente') return simple(commercialData.clientProfile, 'profile', 'count', 'Total perfiles');
+      if (title === 'Tipo de empresa') return simple(commercialData.companyType, 'type', 'count', 'Total empresas');
+      if (title === 'Estatus en banco') return simple(commercialData.bankStatus, 'status', 'count', 'Total estados banco');
+      if (title === 'Minutas de liberación') return simple(legalData.minutasLiberacion, 'status', 'count', 'Total minutas');
+      if (title === 'Minutas de segregación') return simple(legalData.minutasSegregacion, 'status', 'count', 'Total minutas');
+      if (title === 'Minutas de préstamo') return simple(legalData.minutasPrestamo, 'status', 'count', 'Total minutas');
+      if (title === 'Estatus construcción') return simple(technicalData.constructionStatus, 'status', 'count', 'Total estatus');
+      if (title === 'Fase de construcción') return simple(technicalData.constructionPhase, 'phase', 'count', 'Total fases');
+      if (title === 'Modelos en construcción') return simple(technicalData.modelsInConstruction, 'model', 'count', 'Total modelos');
+      if (title === 'Avance de construcción') return simple(technicalData.constructionProgressRanges, 'range', 'count', 'Total unidades');
+      if (title === 'Alertas por severidad') return simple(alertsData.bySeverity, 'severity', 'count', 'Total alertas');
+      if (title === 'Expedientes atrasados por etapa') return simple(kpisData.delaysByStage, 'stage', 'count', 'Total atrasados');
+
+      if (title === 'Progreso por fase') {
+        return {
+          columns: ['Fase', '%'],
+          rows: (datasets.progressByPhase || []).map(x => ({ label: x.phase || 'N/D', value: `${fmtNum(x.pct)}%` })),
+          total: null
+        };
+      }
+
+      if (title === 'Permisos por institución') {
+        const rows = (datasets.permitsByInstitution || []).map(x => ({
+          label: x.institution || 'N/D',
+          value: `${fmtNum(x.approved)} aprob. · ${fmtNum(x.inProcess)} tram. · ${fmtNum(x.pending)} pend. · ${fmtNum(x.rejected)} rech.`
+        }));
+        const total = (datasets.permitsByInstitution || []).reduce((a, x) =>
+          a + toNumber(x.approved) + toNumber(x.inProcess) + toNumber(x.pending) + toNumber(x.rejected), 0);
+        return { columns: ['Institución', 'Detalle'], rows, total: { label: 'Total permisos', value: fmtNum(total) } };
+      }
+
+      if (title === 'Hipotecas por banco') {
+        return {
+          columns: ['Banco', 'Hipotecas / monto'],
+          rows: (datasets.mortgagesByBank || []).map(x => ({ label: x.bank || 'N/D', value: `${fmtNum(x.count)} · ${fmtMoneyShort(x.amount)}` })),
+          total: {
+            label: 'Total hipotecas',
+            value: `${fmtNum((datasets.mortgagesByBank || []).reduce((a, x) => a + toNumber(x.count), 0))} · ${fmtMoneyShort((datasets.mortgagesByBank || []).reduce((a, x) => a + toNumber(x.amount), 0))}`
+          }
+        };
+      }
+
+      if (title === 'Ventas vs ventas caídas') {
+        const rows = (commercialData.salesVsFallenByYear || []).map(x => ({ label: x.year || 'N/D', value: `${fmtNum(x.sales)} ventas · ${fmtNum(x.fallen)} caidas` }));
+        return { columns: ['Año', 'Detalle'], rows, total: { label: 'Ventas reales', value: fmtNum((commercialData.salesVsFallenByYear || []).reduce((a, x) => a + toNumber(x.sales), 0)) } };
+      }
+
+      if (title === 'Montos CPP por banco') {
+        const rows = (commercialData.cppAmountByBank || []).map(x => ({ label: x.bank || 'N/D', value: `${fmtMoneyShort(x.amount)} · ${fmtNum(x.count)} CPP` }));
+        return { columns: ['Banco', 'Monto / CPP'], rows, total: { label: 'Total monto CPP', value: fmtMoneyShort((commercialData.cppAmountByBank || []).reduce((a, x) => a + toNumber(x.amount), 0)) } };
+      }
+
+      if (title === 'Firma de protocolo por banco') {
+        const rows = (legalData.protocolByBank || []).map(x => ({
+          label: x.bank || 'N/D',
+          value: `Cliente ${fmtNum(x.cliente)} · Banco cliente ${fmtNum(x.bancoCliente)} · Interino ${fmtNum(x.bancoInterino)}`
+        }));
+        const total = (legalData.protocolByBank || []).reduce((a, x) => a + toNumber(x.cliente) + toNumber(x.bancoCliente) + toNumber(x.bancoInterino), 0);
+        return { columns: ['Banco', 'Firmas'], rows, total: { label: 'Total firmas protocolo', value: fmtNum(total) } };
+      }
+
+      if (title === 'Líneas de crédito') {
+        const rows = (financialData.creditLines || []).map(x => ({ label: x.name || 'Linea financiera', value: `${fmtMoneyShort(x.debt)} deuda · ${fmtMoneyShort(x.amortizedAmount)} amort.` }));
+        return { columns: ['Línea', 'Detalle'], rows, total: { label: 'Total deuda', value: fmtMoneyShort(financialData.totals?.debt) } };
+      }
+
+      if (title === 'Cobertura CPP vs préstamo') {
+        const fc = financialData.cppCoverage || {};
+        return {
+          columns: ['Concepto', 'Monto'],
+          rows: [
+            { label: 'Deuda actual', value: fmtMoneyShort(fc.totalDebt) },
+            { label: 'CPP vigentes', value: `${fmtMoneyShort(fc.cppVigenteAmount)} · ${fmtNum(fc.coverageCppVigentePct)}%` },
+            { label: 'CPP en trámite', value: `${fmtMoneyShort(fc.cppTramiteAmount)} · ${fmtNum(fc.coverageCppTramitePct)}%` }
+          ],
+          total: null
+        };
+      }
+
+      if (title === 'Comparación por fase') {
+        const phases = datasets.finance?.phases || [];
+        const sumAmount = (items) => (items || []).reduce((a, it) => a + toNumber(it?.amount), 0);
+        const rows = phases.map(ph => {
+          const plan = sumAmount(ph.planUses);
+          const real = sumAmount(ph.uses);
+          return {
+            label: ph.name || ph.title || ph.phase || 'Fase',
+            value: `${fmtMoneyShort(plan)} plan · ${fmtMoneyShort(real)} real`
+          };
+        });
+        return {
+          columns: ['Fase', 'Plan / real'],
+          rows,
+          total: {
+            label: 'Total fases',
+            value: `${fmtMoneyShort(phases.reduce((a, ph) => a + sumAmount(ph.planUses), 0))} plan · ${fmtMoneyShort(phases.reduce((a, ph) => a + sumAmount(ph.uses), 0))} real`
+          }
+        };
+      }
+
+      return null;
+    }
+
+    function drawDataTable(doc, table) {
+      if (!table || !Array.isArray(table.rows) || !table.rows.length) return;
+
+      const margin = doc.page.margins.left;
+      const contentW = doc.page.width - margin * 2;
+      const maxRows = 12;
+      const rows = table.rows.slice(0, maxRows);
+      const hidden = table.rows.length - rows.length;
+      const rowH = 16;
+      const headerH = 18;
+      const totalH = table.total ? 18 : 0;
+      const extraH = hidden > 0 ? 14 : 0;
+      const tableH = headerH + rows.length * rowH + totalH + extraH;
+      const leftW = Math.round(contentW * 0.42);
+      const rightW = contentW - leftW;
+      const x = margin;
+      const y = doc.y;
+
+      doc.save();
+      roundRect(doc, x, y, contentW, tableH, 6).fill('#FFFFFF').stroke('#DDE7F2');
+      doc.rect(x, y, contentW, headerH).fill(BRAND_BLUE_SOFT);
+      doc.restore();
+
+      doc.fontSize(8).fillColor(BRAND_BLUE);
+      doc.text(table.columns?.[0] || 'Concepto', x + 8, y + 5, { width: leftW - 12 });
+      doc.text(table.columns?.[1] || 'Valor', x + leftW, y + 5, { width: rightW - 8, align: 'right' });
+
+      let yy = y + headerH;
+      rows.forEach((r, idx) => {
+        if (idx % 2 === 1) {
+          doc.save();
+          doc.rect(x, yy, contentW, rowH).fill('#F8FAFC');
+          doc.restore();
+        }
+        doc.fontSize(8).fillColor('#334155');
+        doc.text(String(r.label ?? 'N/D'), x + 8, yy + 4, { width: leftW - 12, ellipsis: true });
+        doc.fontSize(8).fillColor(TEXT_DARK);
+        doc.text(String(r.value ?? '0'), x + leftW, yy + 4, { width: rightW - 8, align: 'right', ellipsis: true });
+        yy += rowH;
+      });
+
+      if (hidden > 0) {
+        doc.fontSize(7).fillColor(TEXT_MUTED)
+          .text(`+ ${hidden} filas adicionales no mostradas`, x + 8, yy + 3, { width: contentW - 16 });
+        yy += extraH;
+      }
+
+      if (table.total) {
+        doc.save();
+        doc.lineWidth(0.5).moveTo(x, yy).lineTo(x + contentW, yy).stroke('#DDE7F2');
+        doc.restore();
+        doc.fontSize(8).fillColor(BRAND_BLUE);
+        doc.text(String(table.total.label || 'Total'), x + 8, yy + 5, { width: leftW - 12 });
+        doc.text(String(table.total.value || '0'), x + leftW, yy + 5, { width: rightW - 8, align: 'right' });
+      }
+
+      doc.y = y + tableH + 10;
+    }
+
     function drawChart(doc, { title, dataUrl, datasets }) {
       const margin = doc.page.margins.left;
 
-      doc.fontSize(13).fillColor('#111827').text(title, margin);
+      doc.fontSize(13).fillColor(TEXT_DARK).text(title, margin);
       doc.moveDown(0.4);
 
       const buf = dataUrlToBuffer(dataUrl);
       if (buf) {
         const imgTop = doc.y;
-        const imgH = 280;
+        const imgH = 230;
 
         doc.image(buf, margin, imgTop, { fit: [doc.page.width - margin * 2, imgH], align: 'center' });
         doc.y = imgTop + imgH + 12;
       } else {
-        doc.fontSize(10).fillColor('#6b7280').text('Gráfica no disponible.', margin);
+        doc.fontSize(10).fillColor(TEXT_MUTED).text('Grafica no disponible.', margin);
         doc.moveDown(0.6);
       }
 
+      drawDataTable(doc, chartRows(title, datasets));
+
       const insights = buildInsights(title, datasets);
       if (insights.length) {
-        doc.fontSize(10).fillColor('#374151').text('Notas:', margin);
+        doc.fontSize(10).fillColor(BRAND_BLUE).text('Notas:', margin);
         doc.moveDown(0.2);
-        doc.fontSize(9).fillColor('#4b5563');
+        doc.fontSize(8).fillColor('#475569');
         insights.forEach(t => doc.text(`• ${t}`, margin));
       }
 
@@ -2084,30 +2439,44 @@ if (isSoldLikeStatus(st)) U.sold++;
         return;
       }
 
-      const colGap = 12;
+      const colGap = 14;
       const pageW = doc.page.width - margin * 2;
       const colW = (pageW - colGap) / 2;
-      const imgH = 160;
+      const imgH = 150;
+      const cardH = imgH + 34;
 
       for (let i = 0; i < items.length; i += 2) {
         const left = items[i];
         const right = items[i + 1];
         const y0 = doc.y;
 
-        const b1 = await anyImageToBuffer(left);
-        if (b1) doc.image(b1, margin, y0, { fit: [colW, imgH] });
-
-        if (right) {
-          const b2 = await anyImageToBuffer(right);
-          if (b2) doc.image(b2, margin + colW + colGap, y0, { fit: [colW, imgH] });
-        }
-
-        doc.y = y0 + imgH + 12;
-
-        if (doc.y > doc.page.height - doc.page.margins.bottom - 80) {
+        if (y0 + cardH > doc.page.height - doc.page.margins.bottom - 28) {
           doc.addPage();
           header(doc, meta);
         }
+
+        const y = doc.y;
+        const drawPhotoCard = async (src, x, label) => {
+          doc.save();
+          roundRect(doc, x, y, colW, cardH, 8).fill('#FFFFFF').stroke('#DDE7F2');
+          doc.fontSize(9).fillColor(BRAND_BLUE).text(label, x + 10, y + 9, { width: colW - 20 });
+          doc.restore();
+
+          const b = await anyImageToBuffer(src);
+          if (b) {
+            doc.image(b, x + 10, y + 26, { fit: [colW - 20, imgH] });
+          } else {
+            doc.fontSize(9).fillColor(TEXT_MUTED).text('Imagen no disponible', x + 10, y + 78, { width: colW - 20, align: 'center' });
+          }
+        };
+
+        await drawPhotoCard(left, margin, `Foto ${i + 1}`);
+
+        if (right) {
+          await drawPhotoCard(right, margin + colW + colGap, `Foto ${i + 2}`);
+        }
+
+        doc.y = y + cardH + 14;
       }
     }
 
@@ -2255,27 +2624,35 @@ ws.addRow(['Canceladas', summary.units.canceladas]);
     }
 
     const PDFDocument = require('pdfkit');
-    const doc = new PDFDocument({ margin: 40, bufferPages: true });
+    const doc = new PDFDocument({ margin: 40, bufferPages: true, autoFirstPage: false });
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="resumen_${id}.pdf"`);
     doc.pipe(res);
 
-    coverPage(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt, summary });
+    doc.addPage();
+    coverPageV2(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt, summary });
 
     doc.addPage();
     header(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt });
-    sectionTitle(doc, 'Resumen');
+    sectionTitle(doc, 'Resumen de riesgos y vencimientos');
 
-    doc.fontSize(11).fillColor('#111827').text('Vencimientos próximos (top 10):');
-    doc.moveDown(0.3);
+    const riskRows = (summary.alerts || []).slice(0, 10).map(a => ({
+      label: `[${a.type}] ${a.name}`,
+      value: a.due ? new Date(a.due).toISOString().slice(0, 10) : 'N/D'
+    }));
+    drawDataTable(doc, {
+      columns: ['Vencimiento próximo', 'Fecha'],
+      rows: riskRows.length ? riskRows : [{ label: 'Sin vencimientos criticos', value: '-' }],
+      total: riskRows.length ? { label: 'Total alertas <=90 dias', value: fmtNum(riskRows.length) } : null
+    });
 
-    if (!(summary.alerts || []).length) {
-      doc.fontSize(10).fillColor('#6b7280').text('Sin vencimientos críticos.');
-    } else {
-      (summary.alerts || []).slice(0, 10).forEach(a => {
-        doc.fontSize(9).fillColor('#4b5563')
-          .text(`• [${a.type}] ${a.name} — ${a.due ? new Date(a.due).toISOString().slice(0, 10) : '—'}`);
+    const noteRows = (datasets.alerts?.notes || []).map(n => ({ label: n, value: '' }));
+    if (noteRows.length) {
+      drawDataTable(doc, {
+        columns: ['Lectura ejecutiva', ''],
+        rows: noteRows,
+        total: null
       });
     }
 
@@ -2339,9 +2716,13 @@ ws.addRow(['Canceladas', summary.units.canceladas]);
       }
     }
 
+    doc.addPage();
+    backCoverPageV2(doc, { projectName: summary.projectName });
+
     const range = doc.bufferedPageRange();
     for (let i = range.start; i < range.start + range.count; i++) {
       doc.switchToPage(i);
+      if (i === range.start || i === range.start + range.count - 1) continue;
       footer(doc, { page: i + 1, total: range.count });
     }
 

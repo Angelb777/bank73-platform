@@ -3183,6 +3183,7 @@ const datasets = {
   legal: payload.legal || {},
   technical: payload.technical || {},
   financial: payload.financial || {},
+  finance: payload.finance || {},
 };
 
 // 3) ✅ antes/después desde la UI (si no existe, manda [])
