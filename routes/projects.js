@@ -258,16 +258,13 @@ router.post('/', requireRole('admin','bank'), async (req, res) => {
     body.publishStatus = 'pending';
     body.createdBy = toObjectId(req.user.userId);
 
-    // Se mantienen requerimientos actuales
+    // Crear proyecto ya no requiere exponer/asignar usuarios en el alta.
+    // Si llegan asignaciones legacy, se validan contra el tenant, pero son opcionales.
     const promotersRaw   = Array.isArray(body.assignedPromoters)   ? body.assignedPromoters   : [];
     const commercialsRaw = Array.isArray(body.assignedCommercials) ? body.assignedCommercials : [];
 
     const validPromoters   = await validateAssignees({ tenantKey, role:'promoter',   ids: promotersRaw });
     const validCommercials = await validateAssignees({ tenantKey, role:'commercial', ids: commercialsRaw });
-
-    if (validPromoters.length === 0) {
-      return res.status(400).json({ error: 'Debes asignar al menos un promotor activo del tenant.' });
-    }
 
     body.assignedPromoters   = validPromoters;
     body.assignedCommercials = validCommercials;

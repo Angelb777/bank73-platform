@@ -231,13 +231,10 @@
     modal.classList.add('show');
 
     // Modo nuevo (todos los roles)
-    if (assigneesContainer) {
-      await loadAllRoleAssignees();
-      return;
-    }
+    // Por privacidad, la creacion no carga ni muestra directorios de usuarios.
 
     // Fallback legacy (por si falta el contenedor por cualquier razón)
-    if (selPromotersLegacy) {
+    if (!assigneesContainer && selPromotersLegacy) {
       selPromotersLegacy.innerHTML = `<option>Cargando...</option>`;
       try {
         const data = await API.get(`/api/projects/assignees?role=promoter`);
@@ -258,7 +255,7 @@
       }
     }
 
-    if (selCommercialsLegacy) {
+    if (!assigneesContainer && selCommercialsLegacy) {
       selCommercialsLegacy.innerHTML = `<option>Cargando...</option>`;
       try {
         const data = await API.get(`/api/projects/assignees?role=commercial`);
@@ -305,39 +302,12 @@
 
           if (!name) return alert('El nombre es obligatorio.');
 
-          // Recoger asignaciones
-          const assignedByRole = {};
-          ASSIGNABLE_ROLES.forEach(r => assignedByRole[r] = []);
-
-          if (assigneesContainer) {
-            for (const r of ASSIGNABLE_ROLES) {
-              const sel = selectsByRole.get(r);
-              assignedByRole[r] = getSelectedValues(sel);
-            }
-          } else {
-            // Legacy fallback
-            assignedByRole.promoter = getSelectedValues(selPromotersLegacy);
-            assignedByRole.commercial = getSelectedValues(selCommercialsLegacy);
-          }
-
-          // Promoter obligatorio
-          if (!assignedByRole.promoter || !assignedByRole.promoter.length) {
-            return alert('Debes seleccionar al menos un promotor.');
-          }
-
-          // Compatibilidad backend actual
-          const assignedPromoters = assignedByRole.promoter || [];
-          const assignedCommercials = assignedByRole.commercial || [];
-
           const payload = {
             name,
             description,
             status,
             loanApproved,
-            budgetApproved,
-            assignedPromoters,
-            assignedCommercials,
-            assignedByRole
+            budgetApproved
           };
 
           await API.post('/api/projects', payload);
