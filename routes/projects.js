@@ -2362,6 +2362,7 @@ const upload = multer({
 });
 
 // POST /api/projects/:id/import-dato-unico
+// POST /api/projects/:id/import-dato-unico
 router.post(
   '/:id/import-dato-unico',
   requireRole('admin', 'bank'),
@@ -2394,6 +2395,7 @@ router.post(
       const normHeader = (s) => String(s || '')
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[º°]/g, '°')
         .replace(/\s+/g, ' ')
         .trim()
         .toUpperCase();
@@ -2437,7 +2439,15 @@ router.post(
         const str = String(v).trim();
         if (!str || str.toUpperCase() === 'N/A' || str === '-') return undefined;
 
-        const n = Number(str.replace(/\./g, '').replace(',', '.'));
+        const n = Number(
+          str
+            .replace(/\$/g, '')
+            .replace(/%/g, '')
+            .replace(/\s/g, '')
+            .replace(/\./g, '')
+            .replace(',', '.')
+        );
+
         return Number.isFinite(n) ? n : undefined;
       };
 
@@ -2447,22 +2457,25 @@ router.post(
       };
 
       const parseBool = (v) => {
-        const t = String(v ?? '').trim().toUpperCase();
+        const t = normTxt(v);
         if (!t || t === '-' || t === 'N/A') return false;
-
         if (['SI', 'S', 'YES', 'Y', 'TRUE', '1', 'X', 'OK'].includes(t)) return true;
         if (['NO', 'N', 'FALSE', '0'].includes(t)) return false;
-
         return false;
       };
 
-      // Detectar columnas duplicadas "DIAS TRANSCURRIDOS"
+      const calcDays = (a, b) => {
+        const d1 = asDate(a);
+        const d2 = asDate(b);
+        if (!d1 || !d2) return undefined;
+        const diff = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+        return diff >= 0 ? diff : undefined;
+      };
+
       const idxDiasTrans = header
         .map((h, i) => normHeader(h) === 'DIAS TRANSCURRIDOS' ? i : -1)
         .filter(i => i >= 0);
 
-      // ✅ IMPORTANTE:
-      // Filtrar filas DESPUÉS de mapear por cabeceras, no por posición fija [0]/[1]
       const dataRows = rows
         .slice(2)
         .filter(r => Array.isArray(r) && r.some(v => String(v ?? '').trim() !== ''))
@@ -2476,7 +2489,6 @@ router.post(
           const loteRaw = normTxt(lote);
           const manzanaRaw = normTxt(manzana);
 
-          // ignorar filas tipo TOTAL / ETAPA / separadores
           if (!lote && !manzana) return false;
           if (loteRaw === 'TOTAL' || manzanaRaw === 'TOTAL') return false;
           if (loteRaw.startsWith('ETAPA') || manzanaRaw.startsWith('ETAPA')) return false;
@@ -2506,158 +2518,113 @@ router.post(
           {
             $set: {
               estado: estadoValue,
-              status: estadoValue.toUpperCase()
+              status: String(estadoValue || '').toUpperCase()
             }
           }
         );
       };
 
       const parseEstadoLibre = (raw) => {
-  const t = normTxt(raw);
-  if (!t) return null;
+        const t = normTxt(raw);
+        if (!t) return null;
 
-  if (t.includes('CANCEL') || t.includes('ANUL')) return 'cancelado';
+        if (t.includes('CANCEL') || t.includes('ANUL')) return 'cancelado';
 
-  // disponible
-  if (t.includes('NOCPP/NOCLIENTE')) return 'disponible';
-  if (t.includes('NO CLIENTE')) return 'disponible';
-  if (t.includes('SIN CLIENTE')) return 'disponible';
-  if (t.includes('INVENTARIO')) return 'inventario';
-  if (t.includes('LIBRE')) return 'disponible';
-  if (t.includes('DISPON')) return 'disponible';
+        if (t.includes('NOCPP/NOCLIENTE')) return 'disponible';
+        if (t.includes('NO CLIENTE')) return 'disponible';
+        if (t.includes('SIN CLIENTE')) return 'disponible';
+        if (t.includes('INVENTARIO')) return 'inventario';
+        if (t.includes('LIBRE')) return 'disponible';
+        if (t.includes('DISPON')) return 'disponible';
 
-  // reservado
-  if (t.includes('RESERV')) return 'reservado';
+        if (t.includes('RESERV')) return 'reservado';
 
-  // escrituración
-  if (t.includes('CPP/CLIENTE')) return 'con_cpp';
-if (t.includes('CON CPP')) return 'con_cpp';
-if (t === 'CPP') return 'con_cpp';
-if ((t.includes('EN') && t.includes('ESCRIT')) || t.includes('ESCRITURACION')) return 'tramite_legal_activado';
+        if (t.includes('CPP/CLIENTE')) return 'con_cpp';
+        if (t.includes('CON CPP')) return 'con_cpp';
+        if (t === 'CPP') return 'con_cpp';
 
-if (t.includes('TRAMITE LEGAL') || t.includes('TRÁMITE LEGAL')) return 'tramite_legal_activado';
-if (t.includes('ESCRITURAD')) return 'escriturado_traspasado';
-if (t.includes('TRASPAS')) return 'escriturado_traspasado';
-if (t.includes('ENTREG')) return 'vivienda_entregada';
+        if ((t.includes('EN') && t.includes('ESCRIT')) || t.includes('ESCRITURACION')) {
+          return 'tramite_legal_activado';
+        }
 
-  return null;
-  };
+        if (t.includes('TRAMITE LEGAL')) return 'tramite_legal_activado';
+        if (t.includes('ESCRITURAD')) return 'escriturado_traspasado';
+        if (t.includes('TRASPAS')) return 'escriturado_traspasado';
+        if (t.includes('ENTREG')) return 'vivienda_entregada';
+
+        return null;
+      };
 
       function inferEstado(rowObj, r) {
-  const clienteNombre = clean(get(rowObj, ['CLIENTE', 'CLIENTE ']));
-  const banco = clean(get(rowObj, ['BANCO']));
-  const numCPP = clean(get(rowObj, ['N° CPP', 'Nº CPP', 'NUM CPP']));
-  const statusBanco = normTxt(get(rowObj, ['STATUS EN BANCO', 'STATUS  EN BANCO']));
-  const estatusLote = normTxt(get(rowObj, ['ESTATUS LOTE']));
-  const estatusCtto = normTxt(get(rowObj, ['ESTATUS CTTO', 'ESTATUS CTTO ', 'ESTATUS CTTO.']));
+        const clienteNombre = clean(get(rowObj, ['CLIENTE', 'CLIENTE ', 'NICKNAME', 'RESUMEN CLIENTE']));
+        const banco = clean(get(rowObj, ['BANCO']));
+        const numCPP = clean(get(rowObj, ['N° CPP', 'Nº CPP', 'NUM CPP', 'NUMERO CPP']));
+        const statusBanco = normTxt(get(rowObj, ['STATUS EN BANCO', 'STATUS  EN BANCO', 'ESTATUS BANCO']));
+        const estatusLote = normTxt(get(rowObj, ['ESTATUS LOTE', 'ESTADO LOTE']));
+        const estatusCtto = normTxt(get(rowObj, ['ESTATUS CTTO', 'ESTATUS CTTO ', 'ESTATUS CTTO.', 'ESTATUS CONTRATO']));
 
-  const ingresoRP = parseBool(get(rowObj, ['INGRESO AL RP']));
-  const fechaInscripcion = asDate(get(rowObj, ['FECHA DE INSCRIPCION']));
-  const entregaCasa = parseBool(get(rowObj, ['ENTREGA DE CASA']));
-  const entregaANATI = parseBool(get(rowObj, ['ENTREGA ANATI']));
+        const ingresoRP = parseBool(get(rowObj, ['INGRESO AL RP', 'INGRESO RP']));
+        const fechaInscripcion = asDate(get(rowObj, ['FECHA DE INSCRIPCION', 'FECHA INSCRIPCION']));
+        const entregaCasa = parseBool(get(rowObj, ['ENTREGA DE CASA', 'ENTREGA CASA']));
+        const entregaANATI = parseBool(get(rowObj, ['ENTREGA ANATI']));
 
-  const hasCliente = !!clienteNombre;
-  const hasBanco = !!banco;
-  const hasCpp = !!numCPP || /CPP|APROB|CON CPP|INC/.test(statusBanco);
+        const hasCliente = !!clienteNombre;
+        const hasBanco = !!banco;
+        const hasCpp = !!numCPP || /CPP|APROB|CON CPP|INC/.test(statusBanco);
 
-  // =========================================================
-  // 0) BLINDAJE DE DISPONIBLE
-  // Si no hay cliente y además el Excel dice inventario/libre/sin cliente,
-  // esto debe seguir siendo disponible en ambos excels.
-  // =========================================================
-  if (!hasCliente) {
-    if (
-      estatusCtto.includes('NOCPP/NOCLIENTE') ||
-      estatusCtto.includes('NO CLIENTE') ||
-      estatusCtto.includes('SIN CLIENTE') ||
-      estatusLote.includes('INVENTARIO') ||
-      estatusLote.includes('LIBRE')
-    ) {
-      if (estatusLote.includes('INVENTARIO')) return 'inventario';
-return 'disponible';
-    }
-  }
+        if (!hasCliente) {
+          if (
+            estatusCtto.includes('NOCPP/NOCLIENTE') ||
+            estatusCtto.includes('NO CLIENTE') ||
+            estatusCtto.includes('SIN CLIENTE') ||
+            estatusLote.includes('INVENTARIO') ||
+            estatusLote.includes('LIBRE')
+          ) {
+            if (estatusLote.includes('INVENTARIO')) return 'inventario';
+            return 'disponible';
+          }
+        }
 
-  // =========================================================
-  // 1) PRIORIDAD REAL DEL PROCESO
-  // Esto debe ir ANTES que leer ESTATUS LOTE / CTTO
-  // para no dejar entregadas como en_escrituracion.
-  // =========================================================
-  if (entregaCasa || entregaANATI) {
-  return 'vivienda_entregada';
-}
+        if (entregaCasa || entregaANATI) return 'vivienda_entregada';
+        if (fechaInscripcion) return 'escriturado_traspasado';
+        if (estatusLote === 'TRASPASADO') return 'escriturado_traspasado';
 
-if (fechaInscripcion) {
-  return 'escriturado_traspasado';
-}
+        if (ingresoRP || hasBanco || hasCpp) {
+          if (estatusLote === 'RESERVA') return 'reservado';
+          if (ingresoRP) return 'tramite_legal_activado';
+          if (hasCpp) return 'con_cpp';
+          if (hasBanco) return 'con_cpp';
+        }
 
-  // Si está traspasado y no hay entrega todavía, lo dejamos como escriturado
-  if (estatusLote === 'TRASPASADO') {
-  return 'escriturado_traspasado';
-}
+        if (estatusLote) {
+          if (estatusLote === 'INVENTARIO') return 'inventario';
+          if (estatusLote === 'LIBRE') return 'disponible';
+          if (estatusLote === 'RESERVA') return 'reservado';
+          if (estatusLote === 'CON CPP') return 'con_cpp';
 
-  // Si ya hay señales bancarias / CPP / RP, está en escrituración
-  if (ingresoRP || hasBanco || hasCpp) {
-    // salvo que el excel explícitamente diga reserva
-    if (estatusLote === 'RESERVA') return 'reservado';
-    if (ingresoRP) return 'tramite_legal_activado';
-if (hasCpp) return 'con_cpp';
-if (hasBanco) return 'con_cpp';
-  }
+          const estadoLote = parseEstadoLibre(estatusLote);
+          if (estadoLote) return estadoLote;
+        }
 
-  // =========================================================
-  // 2) ESTATUS LOTE
-  // Solo para casos que no estén ya resueltos arriba
-  // =========================================================
-  if (estatusLote) {
-    if (estatusLote === 'INVENTARIO') {
-  return 'inventario';
-}
+        if (estatusCtto) {
+          const estadoCtto = parseEstadoLibre(estatusCtto);
+          if (estadoCtto) return estadoCtto;
+        }
 
-if (estatusLote === 'LIBRE') {
-  return 'disponible';
-}
+        const idxEstatus = header.findIndex(h => {
+          const hh = normHeader(h);
+          return hh === 'ESTATUS CTTO' || hh.startsWith('ESTATUS CTTO');
+        });
 
-    if (estatusLote === 'RESERVA') {
-      return 'reservado';
-    }
+        if (idxEstatus >= 0) {
+          const estadoAlLado = parseEstadoLibre(r[idxEstatus + 1]);
+          if (estadoAlLado) return estadoAlLado;
+        }
 
-    if (estatusLote === 'CON CPP') {
-  return 'con_cpp';
-}
+        if (!hasCliente) return 'disponible';
 
-    const estadoLote = parseEstadoLibre(estatusLote);
-    if (estadoLote) return estadoLote;
-  }
-
-  // =========================================================
-  // 3) ESTATUS CTTO
-  // =========================================================
-  if (estatusCtto) {
-    const estadoCtto = parseEstadoLibre(estatusCtto);
-    if (estadoCtto) return estadoCtto;
-  }
-
-  // A veces el estado real viene en la columna de al lado
-  const idxEstatus = header.findIndex(h => {
-    const hh = normHeader(h);
-    return hh === 'ESTATUS CTTO' || hh.startsWith('ESTATUS CTTO');
-  });
-
-  if (idxEstatus >= 0) {
-    const estadoAlLado = parseEstadoLibre(r[idxEstatus + 1]);
-    if (estadoAlLado) return estadoAlLado;
-  }
-
-  // =========================================================
-  // 4) FALLBACK FINAL
-  // =========================================================
-  if (!hasCliente) {
-    return 'disponible';
-  }
-
-  return 'reservado';
-}
+        return 'reservado';
+      }
 
       for (const r of dataRows) {
         const rowObj = {};
@@ -2673,45 +2640,100 @@ if (estatusLote === 'LIBRE') {
 
         const estado = inferEstado(rowObj, r);
 
-// =========================================================
-// Soporte para 2 formatos de Excel:
-// 1) Excel nuevo: trae PRECIO DE VENTA + MONTO FINANCIAMIENTO CPP
-// 2) Excel viejo: solo trae VALOR
-// =========================================================
-const precioVentaExcel = toNum0(get(rowObj, [
-  'PRECIO DE VENTA',
-  'PRECIO VENTA'
-]));
+        const precioVentaExcel = toNum0(get(rowObj, [
+          'PRECIO DE VENTA',
+          'PRECIO VENTA',
+          'PRECIO LISTA',
+          'PRECIO'
+        ]));
 
-const montoCppExcel = toNum0(get(rowObj, [
-  'MONTO FINANCIAMIENTO CPP',
-  'MONTO CPP',
-  'VALOR CPP',
-  'MONTO DE FINANCIAMIENTO CPP'
-]));
+        const montoCppExcel = toNum0(get(rowObj, [
+          'MONTO FINANCIAMIENTO CPP',
+          'MONTO DE FINANCIAMIENTO CPP',
+          'MONTO CPP',
+          'VALOR CPP',
+          'MONTO A FINANCIAR',
+          'MONTO FINANCIAMIENTO'
+        ]));
 
-const valorLegacyExcel = toNum0(get(rowObj, [
-  'VALOR',
-  'VALOR '
-]));
+        const valorLegacyExcel = toNum0(get(rowObj, [
+          'VALOR',
+          'VALOR '
+        ]));
 
-// Si viene precio de venta explícito, úsalo.
-// Si no viene, usa VALOR como fallback para no romper el excel viejo.
-const precioVentaFinal = precioVentaExcel > 0
-  ? precioVentaExcel
-  : valorLegacyExcel;
+        const porcentajeFinanciamientoExcel = toNum0(get(rowObj, [
+          '% FINANCIAMIENTO',
+          'PORCENTAJE FINANCIAMIENTO',
+          'PORCENTAJE DE FINANCIAMIENTO'
+        ]));
 
-// Si viene monto CPP explícito, úsalo.
-// Si no viene, usa VALOR como fallback para el excel viejo.
-const montoFinanciamientoCPPFinal = montoCppExcel > 0
-  ? montoCppExcel
-  : valorLegacyExcel;
+        const precioVentaFinal = precioVentaExcel > 0
+          ? precioVentaExcel
+          : valorLegacyExcel;
 
-// valor se mantiene por compatibilidad temporal
-const valorLegacyFinal = montoFinanciamientoCPPFinal;
+        let montoFinanciamientoCPPFinal = montoCppExcel > 0
+          ? montoCppExcel
+          : valorLegacyExcel;
 
-// Para Unit, el precioLista debe representar el precio comercial / venta
-const precioLista = precioVentaFinal;
+        if (!montoFinanciamientoCPPFinal && precioVentaFinal > 0 && porcentajeFinanciamientoExcel > 0) {
+          montoFinanciamientoCPPFinal = precioVentaFinal * (porcentajeFinanciamientoExcel / 100);
+        }
+
+        const porcentajeFinanciamientoFinal = precioVentaFinal > 0
+          ? Number(((montoFinanciamientoCPPFinal / precioVentaFinal) * 100).toFixed(2))
+          : porcentajeFinanciamientoExcel || 0;
+
+        const abonoInicialFinal = Math.max(precioVentaFinal - montoFinanciamientoCPPFinal, 0);
+        const valorLegacyFinal = montoFinanciamientoCPPFinal;
+        const precioLista = precioVentaFinal;
+
+        const areaAbiertaExcel = toNum0(get(rowObj, [
+          'AREA ABIERTA',
+          'ÁREA ABIERTA',
+          'AREA ABIERTA VIVIENDA',
+          'AREA ABIERTA VIVIENDA M2'
+        ]));
+
+        const areaCerradaExcel = toNum0(get(rowObj, [
+          'AREA CERRADA',
+          'ÁREA CERRADA',
+          'AREA CERRADA VIVIENDA',
+          'AREA CERRADA VIVIENDA M2'
+        ]));
+
+        const areaTotalConstruccionFinal =
+          areaAbiertaExcel + areaCerradaExcel ||
+          toNum0(get(rowObj, [
+            'AREA TOTAL CONSTRUCCION',
+            'ÁREA TOTAL CONSTRUCCIÓN',
+            'AREA TOTAL DE CONSTRUCCION',
+            'AREA TOTAL CONSTRUCCIÓN'
+          ]));
+
+        const m2UnidadFinal = toNum0(get(rowObj, [
+          'M2 UNIDAD',
+          'M² UNIDAD',
+          'M2',
+          'METROS UNIDAD',
+          'AREA UNIDAD',
+          'ÁREA UNIDAD'
+        ]));
+
+        const entregaExpedienteBanco = asDate(get(rowObj, [
+          'ENTREGA DE EXPEDIENTE A BANCO',
+          'ENTREGA EXPEDIENTE A BANCO',
+          'ENTREGA EXPEDIENTE BANCO'
+        ]));
+
+        const recibidoCPP = asDate(get(rowObj, [
+          'RECIBIDO DE CPP',
+          'RECIBIDO CPP',
+          'FECHA RECIBIDO CPP'
+        ]));
+
+        const tiempoAprobacionFinal =
+          asNum(get(rowObj, ['TIEMPO DE APROBACION', 'TIEMPO APROBACION'])) ??
+          calcDays(entregaExpedienteBanco, recibidoCPP);
 
         if (!unit) {
           unit = await Unit.create({
@@ -2720,6 +2742,7 @@ const precioLista = precioVentaFinal;
             manzana,
             lote,
             modelo: clean(get(rowObj, ['MODELO', 'MODELO '])),
+            m2: m2UnidadFinal,
             precioLista
           });
 
@@ -2733,7 +2756,8 @@ const precioLista = precioVentaFinal;
             {
               $set: {
                 precioLista,
-                modelo: clean(get(rowObj, ['MODELO', 'MODELO '])) || unit.modelo || ''
+                modelo: clean(get(rowObj, ['MODELO', 'MODELO '])) || unit.modelo || '',
+                ...(m2UnidadFinal > 0 ? { m2: m2UnidadFinal } : {})
               }
             }
           );
@@ -2749,42 +2773,150 @@ const precioLista = precioVentaFinal;
           manzana,
           lote,
 
-          clienteNombre: clean(get(rowObj, ['CLIENTE', 'CLIENTE '])),
+          // =========================
+          // Cliente 1
+          // =========================
+          clienteNombre: clean(get(rowObj, ['CLIENTE', 'CLIENTE ', 'NICKNAME', 'RESUMEN CLIENTE', 'CLIENTE RESUMEN'])),
           cedula: clean(get(rowObj, ['CEDULA', 'CÉDULA'])),
-          empresa: clean(get(rowObj, ['EMPRESA'])),
 
+          primerNombre: clean(get(rowObj, ['PRIMER NOMBRE'])),
+          segundoNombre: clean(get(rowObj, ['SEGUNDO NOMBRE'])),
+          primerApellido: clean(get(rowObj, ['APELLIDO PATERNO', 'PRIMER APELLIDO'])),
+          segundoApellido: clean(get(rowObj, ['APELLIDO MATERNO', 'SEGUNDO APELLIDO'])),
+          apellidoCasada: clean(get(rowObj, ['APELLIDO DE CASADA'])),
+
+          sexo: clean(get(rowObj, ['SEXO'])),
+          profesion: clean(get(rowObj, ['PROFESION', 'PROFESIÓN'])),
+          estadoCivil: clean(get(rowObj, ['ESTADO CIVIL'])),
+          direccion: clean(get(rowObj, ['DIRECCION', 'DIRECCIÓN', 'DIRECCION DOMICILIO', 'DIRECCIÓN DOMICILIO'])),
+
+          telefonoResidencial: clean(get(rowObj, ['TELEFONO RESIDENCIAL', 'TELÉFONO RESIDENCIAL', 'TEL RESIDENCIAL'])),
+          telefonoOficina: clean(get(rowObj, ['TELEFONO OFICINA', 'TELÉFONO OFICINA', 'TEL OFICINA'])),
+          celular: clean(get(rowObj, ['CELULAR', 'TELEFONO CELULAR', 'TELÉFONO CELULAR'])),
+          correo: clean(get(rowObj, ['CORREO', 'EMAIL', 'E-MAIL'])),
+
+          perfilCliente: clean(get(rowObj, ['PERFIL CLIENTE', 'PERFIL'])),
+          tipoEmpresa: clean(get(rowObj, ['TIPO EMPRESA', 'TIPO DE EMPRESA'])),
+          sectorEmpresa: clean(get(rowObj, ['SECTOR EMPRESA', 'SECTOR EMPRESARIAL'])),
+          ingresoMensual: asNum(get(rowObj, ['INGRESO MENSUAL', 'SALARIO', 'INGRESOS'])),
+          cargo: clean(get(rowObj, ['CARGO', 'CARGO QUE DESEMPEÑA'])),
+          antiguedadLaboral: clean(get(rowObj, ['ANTIGUEDAD LABORAL', 'ANTIGÜEDAD LABORAL'])),
+
+          // =========================
+          // Cliente 2
+          // =========================
+          cliente2PrimerNombre: clean(get(rowObj, ['CLIENTE 2 - PRIMER NOMBRE', 'CLIENTE 2 PRIMER NOMBRE', 'CO-SOLICITANTE PRIMER NOMBRE'])),
+          cliente2SegundoNombre: clean(get(rowObj, ['CLIENTE 2 - SEGUNDO NOMBRE', 'CLIENTE 2 SEGUNDO NOMBRE', 'CO-SOLICITANTE SEGUNDO NOMBRE'])),
+          cliente2PrimerApellido: clean(get(rowObj, ['CLIENTE 2 - APELLIDO PATERNO', 'CLIENTE 2 PRIMER APELLIDO', 'CO-SOLICITANTE PRIMER APELLIDO'])),
+          cliente2SegundoApellido: clean(get(rowObj, ['CLIENTE 2 - APELLIDO MATERNO', 'CLIENTE 2 SEGUNDO APELLIDO', 'CO-SOLICITANTE SEGUNDO APELLIDO'])),
+          cliente2ApellidoCasada: clean(get(rowObj, ['CLIENTE 2 - APELLIDO DE CASADA', 'CLIENTE 2 APELLIDO DE CASADA'])),
+          cliente2Cedula: clean(get(rowObj, ['CLIENTE 2 - CEDULA', 'CLIENTE 2 - CÉDULA', 'CLIENTE 2 CEDULA', 'CO-SOLICITANTE CEDULA'])),
+
+          cliente2Sexo: clean(get(rowObj, ['CLIENTE 2 - SEXO', 'CLIENTE 2 SEXO'])),
+          cliente2Profesion: clean(get(rowObj, ['CLIENTE 2 - PROFESION', 'CLIENTE 2 - PROFESIÓN', 'CLIENTE 2 PROFESION'])),
+          cliente2EstadoCivil: clean(get(rowObj, ['CLIENTE 2 - ESTADO CIVIL', 'CLIENTE 2 ESTADO CIVIL'])),
+          cliente2Direccion: clean(get(rowObj, ['CLIENTE 2 - DIRECCION', 'CLIENTE 2 - DIRECCIÓN', 'CLIENTE 2 DIRECCION'])),
+
+          cliente2TelefonoResidencial: clean(get(rowObj, ['CLIENTE 2 - TELEFONO RESIDENCIAL', 'CLIENTE 2 TEL RESIDENCIAL'])),
+          cliente2TelefonoOficina: clean(get(rowObj, ['CLIENTE 2 - TELEFONO OFICINA', 'CLIENTE 2 TEL OFICINA'])),
+          cliente2Celular: clean(get(rowObj, ['CLIENTE 2 - CELULAR', 'CLIENTE 2 CELULAR'])),
+          cliente2Correo: clean(get(rowObj, ['CLIENTE 2 - CORREO', 'CLIENTE 2 EMAIL', 'CLIENTE 2 E-MAIL'])),
+
+          cliente2IngresoMensual: asNum(get(rowObj, ['CLIENTE 2 - INGRESO MENSUAL', 'CLIENTE 2 INGRESO MENSUAL'])),
+          cliente2Cargo: clean(get(rowObj, ['CLIENTE 2 - CARGO', 'CLIENTE 2 CARGO'])),
+          cliente2AntiguedadLaboral: clean(get(rowObj, ['CLIENTE 2 - ANTIGUEDAD LABORAL', 'CLIENTE 2 ANTIGÜEDAD LABORAL'])),
+
+          // =========================
+          // Referencias personales
+          // =========================
+          referencia1Nombre: clean(get(rowObj, ['REFERENCIA 1 - NOMBRE', 'REFERENCIA 1 NOMBRE'])),
+          referencia1Relacion: clean(get(rowObj, ['REFERENCIA 1 - RELACION', 'REFERENCIA 1 - RELACIÓN', 'REFERENCIA 1 RELACION'])),
+          referencia1Telefono: clean(get(rowObj, ['REFERENCIA 1 - TELEFONO', 'REFERENCIA 1 - TELÉFONO', 'REFERENCIA 1 TELEFONO'])),
+          referencia1TelefonoTrabajo: clean(get(rowObj, ['REFERENCIA 1 - TEL. TRABAJO', 'REFERENCIA 1 TEL TRABAJO', 'REFERENCIA 1 TELEFONO TRABAJO'])),
+
+          referencia2Nombre: clean(get(rowObj, ['REFERENCIA 2 - NOMBRE', 'REFERENCIA 2 NOMBRE'])),
+          referencia2Relacion: clean(get(rowObj, ['REFERENCIA 2 - RELACION', 'REFERENCIA 2 - RELACIÓN', 'REFERENCIA 2 RELACION'])),
+          referencia2Telefono: clean(get(rowObj, ['REFERENCIA 2 - TELEFONO', 'REFERENCIA 2 - TELÉFONO', 'REFERENCIA 2 TELEFONO'])),
+          referencia2TelefonoTrabajo: clean(get(rowObj, ['REFERENCIA 2 - TEL. TRABAJO', 'REFERENCIA 2 TEL TRABAJO', 'REFERENCIA 2 TELEFONO TRABAJO'])),
+
+          // =========================
+          // Unidad / inmueble
+          // =========================
+          numeroFinca: clean(get(rowObj, ['NUMERO DE FINCA', 'NÚMERO DE FINCA', 'FINCA'])),
+          codigoUbicacion: clean(get(rowObj, ['CODIGO UBICACION', 'CÓDIGO UBICACIÓN', 'CODIGO DE UBICACION'])),
+          calle: clean(get(rowObj, ['CALLE'])),
+
+          loteEsquina: clean(get(rowObj, ['LOTE ESQUINA'])),
+          metrosExtra: asNum(get(rowObj, ['M2 EXTRA', 'M² EXTRA', 'METROS EXTRA'])),
+          precioLoteEsquina: asNum(get(rowObj, ['PRECIO LOTE ESQUINA', 'PRECIO LOTE ESQUINERO'])),
+          precioM2Extra: asNum(get(rowObj, ['PRECIO M2 EXTRA', 'PRECIO M² EXTRA'])),
+
+          areaAbierta: areaAbiertaExcel,
+          areaCerrada: areaCerradaExcel,
+          areaTotalConstruccion: areaTotalConstruccionFinal,
+
+          recamaras: asNum(get(rowObj, ['RECAMARAS', 'RECÁMARAS', 'HABITACIONES'])),
+          banos: asNum(get(rowObj, ['BANOS', 'BAÑOS'])),
+
+          valorMejoras: asNum(get(rowObj, ['VALOR MEJORAS', 'VALOR DE MEJORAS'])),
+          valorTerreno: asNum(get(rowObj, ['VALOR TERRENO', 'VALOR DE TERRENO'])),
+
+          // =========================
+          // Financiamiento / proforma
+          // =========================
           banco: clean(get(rowObj, ['BANCO'])),
           oficialBanco: clean(get(rowObj, ['OFICIAL DE BANCO', 'OFICIAL BANCO'])),
-          statusBanco: clean(get(rowObj, ['STATUS EN BANCO', 'STATUS  EN BANCO'])),
-          numCPP: clean(get(rowObj, ['N° CPP', 'Nº CPP', 'NUM CPP'])),
+          statusBanco: clean(get(rowObj, ['STATUS EN BANCO', 'STATUS  EN BANCO', 'ESTATUS BANCO'])),
+          estatusCPP: clean(get(rowObj, ['ESTATUS CPP', 'STATUS CPP'])),
+          numCPP: clean(get(rowObj, ['N° CPP', 'Nº CPP', 'NUM CPP', 'NUMERO CPP'])),
 
-montoFinanciamientoCPP: montoFinanciamientoCPPFinal,
-precioVenta: precioVentaFinal,
+          precioVenta: precioVentaFinal,
+          montoFinanciamientoCPP: montoFinanciamientoCPPFinal,
+          porcentajeFinanciamiento: porcentajeFinanciamientoFinal,
 
-// legacy para compatibilidad con código viejo
-valor: valorLegacyFinal,
+          abonoCliente: abonoInicialFinal,
+          abonoInicial: abonoInicialFinal,
 
-          aperturaCtaBanco: parseBool(get(rowObj, ['APERTURA CTA BANCO'])),
-          primeraMensual: parseBool(get(rowObj, ['1RA MENSUAL', 'PRIMERA MENSUAL'])),
-          pagoMinuta: parseBool(get(rowObj, ['PAGO MINUTA'])),
-          tiempoAprobacionDias: asNum(get(rowObj, ['TIEMPO DE APROBACION', 'TIEMPO APROBACION'])),
+          cesionAFavorDe: clean(get(rowObj, ['CESION A FAVOR DE', 'CESIÓN A FAVOR DE'])),
+          fechaProbableEntrega: asDate(get(rowObj, ['FECHA PROBABLE ENTREGA', 'FECHA PROBABLE DE ENTREGA'])),
 
-          entregaExpedienteBanco: asDate(get(rowObj, ['ENTREGA DE EXPEDIENTE A BANCO'])),
-          recibidoCPP: asDate(get(rowObj, ['RECIBIDO DE CPP'])),
-          plazoAprobacionDias: asNum(get(rowObj, ['PLAZO APROBACION'])),
+          fechaEntregaProformaBanco: asDate(get(rowObj, ['ENTREGA DE PROFORMA AL BANCO', 'FECHA ENTREGA PROFORMA BANCO'])),
+          fechaProforma: asDate(get(rowObj, ['FECHA PROFORMA'])),
 
-          fechaValorCPP: asDate(get(rowObj, ['FECHA VALOR DE CPP'])),
+          entregaExpedienteBanco,
+          recibidoCPP,
+          plazoAprobacionDias: asNum(get(rowObj, ['PLAZO APROBACION', 'PLAZO APROBACIÓN'])),
+          fechaValorCPP: asDate(get(rowObj, ['FECHA VALOR DE CPP', 'FECHA VALOR CPP'])),
           fechaVencimientoCPP: asDate(get(rowObj, [
             'FECHA DE VENCIMIENTO CPP',
-            'FECHA DE VENCIMIENTO CCP'
+            'FECHA DE VENCIMIENTO CCP',
+            'VENCIMIENTO CPP'
           ])),
           vencimientoCPPBnMivi: asDate(get(rowObj, ['VENCIMIENTO CPP BN-MIVI'])),
 
-          fechaContratoCliente: asDate(get(rowObj, ['FECHA CONTRATO FIRMADO POR CLIENTE'])),
+          tiempoAprobacionDias: tiempoAprobacionFinal,
 
-          estatusContrato: clean(get(rowObj, ['ESTATUS CTTO'])),
-          pagare: clean(get(rowObj, ['PAGARE'])),
+          aperturaCtaBanco: parseBool(get(rowObj, ['APERTURA CTA BANCO', 'APERTURA CUENTA BANCO'])),
+          primeraMensual: parseBool(get(rowObj, ['1RA MENSUAL', 'PRIMERA MENSUAL'])),
+          pagoMinuta: parseBool(get(rowObj, ['PAGO MINUTA'])),
+          polizas: parseBool(get(rowObj, ['POLIZAS', 'PÓLIZAS'])),
+          tipoPoliza: clean(get(rowObj, ['TIPO POLIZA', 'TIPO PÓLIZA'])),
+          polizaVida: clean(get(rowObj, ['POLIZA VIDA', 'PÓLIZA VIDA', 'POLIZA DE VIDA'])),
+          abonoAlte: asNum(get(rowObj, ['ABONO ALTE'])),
+
+          valor: valorLegacyFinal,
+
+          // =========================
+          // Contrato / protocolo / notaría / RP
+          // =========================
+          fechaContratoCliente: asDate(get(rowObj, ['FECHA CONTRATO FIRMADO POR CLIENTE', 'FECHA CONTRATO CLIENTE'])),
+          estatusContrato: clean(get(rowObj, ['ESTATUS CTTO', 'ESTATUS CONTRATO'])),
+          montoContrato: asNum(get(rowObj, ['MONTO CONTRATO', 'MONTO DEL CONTRATO'])),
+          pagare: clean(get(rowObj, ['PAGARE', 'PAGARÉ'])),
           fechaFirma: asDate(get(rowObj, ['FECHA FIRMA'])),
+          contratoFirmado: parseBool(get(rowObj, ['CONTRATO FIRMADO'])),
+
+          fechaActivacionTramite: asDate(get(rowObj, ['FECHA ACTIVACION TRAMITE', 'FECHA ACTIVACIÓN TRÁMITE LEGAL'])),
 
           protocoloFirmaCliente: parseBool(get(rowObj, ['PROTOCOLO FIRMA CLIENTE', 'PROTOCOLO FIRMA DE CLIENTE'])),
           fechaEntregaBanco: asDate(get(rowObj, ['FECHA DE ENTREGA A BANCO', 'FECHA ENTREGA BANCO'])),
@@ -2803,53 +2935,88 @@ valor: valorLegacyFinal,
           ])),
           diasTranscurridosProtocolo: asNum(idxDiasTrans[1] !== undefined ? r[idxDiasTrans[1]] : undefined),
 
+          pagoImpuestos: parseBool(get(rowObj, ['PAGO DE IMPUESTOS', 'PAGO IMPUESTOS'])),
           cierreNotaria: parseBool(get(rowObj, ['CIERRE DE NOTARIA'])),
-          fechaPagoImpuesto: asDate(get(rowObj, ['FECHA DE PAGO DE IMPUESTO'])),
-          ingresoRP: parseBool(get(rowObj, ['INGRESO AL RP'])),
-          fechaInscripcion: asDate(get(rowObj, ['FECHA DE INSCRIPCION'])),
+          fechaPagoImpuesto: asDate(get(rowObj, ['FECHA DE PAGO DE IMPUESTO', 'FECHA PAGO IMPUESTO'])),
+          ingresoRP: parseBool(get(rowObj, ['INGRESO AL RP', 'INGRESO RP'])),
+          fechaIngresoRP: asDate(get(rowObj, ['FECHA INGRESO RP', 'FECHA DE INGRESO RP'])),
+          fechaInscripcion: asDate(get(rowObj, ['FECHA DE INSCRIPCION', 'FECHA INSCRIPCION'])),
 
           solicitudDesembolso: parseBool(get(rowObj, ['SOLICITUD DE DESEMBOLSO'])),
-          fechaRecibidoCheque: asDate(get(rowObj, ['FECHA DE RECIBIDO DE CK'])),
+          fechaDesembolso: asDate(get(rowObj, ['FECHA DESEMBOLSO', 'FECHA DE DESEMBOLSO'])),
+          fechaRecibidoCheque: asDate(get(rowObj, ['FECHA DE RECIBIDO DE CK', 'FECHA RECIBIDO CHEQUE'])),
 
+          // =========================
+          // MIVI
+          // =========================
           expedienteMIVI: clean(get(rowObj, ['EXPEDIENTE MIVI'])),
           entregaExpMIVI: asDate(get(rowObj, [
             'FECHA DE ENTREGA DE EXPEDIENTE MIVI',
             'FECHA ENTREGA EXPEDIENTE MIVI',
             'ENTREGA EXP MIVI'
           ])),
-          resolucionMIVI: clean(get(rowObj, ['N° DE RESOLUCION MIVI', 'RESOLUCION MIVI'])),
+          resolucionMIVI: clean(get(rowObj, ['N° DE RESOLUCION MIVI', 'RESOLUCION MIVI', 'N° RESOLUCION MIVI'])),
           fechaResolucionMIVI: asDate(get(rowObj, ['FECHA RESOLUCION', 'FECHA RESOLUCION MIVI'])),
           solicitudMiviDesembolso: asDate(get(rowObj, ['SOLICITUD MIVI DESEMBOLSO'])),
           desembolsoMivi: clean(get(rowObj, ['DESEMBOLSO MIVI'])),
           fechaPagoMivi: asDate(get(rowObj, ['FECHA DE PAGO MIVI', 'FECHA PAGO MIVI'])),
 
-          enConstruccion: parseBool(get(rowObj, ['EN CONSTRUCCION'])),
-          faseConstruccion: clean(get(rowObj, ['FASE CONSTRUCCION'])),
+          // =========================
+          // Técnico / construcción / permisos
+          // =========================
+          enConstruccion: parseBool(get(rowObj, ['EN CONSTRUCCION', 'EN CONSTRUCCIÓN'])),
+          estatusConstruccion: clean(get(rowObj, ['ESTATUS CONSTRUCCION', 'ESTATUS CONSTRUCCIÓN'])),
+          faseConstruccion: clean(get(rowObj, ['FASE CONSTRUCCION', 'FASE CONSTRUCCIÓN'])),
+
+          permisoConstruccionMunicipal: parseBool(get(rowObj, ['PERMISO CONSTRUCCION MUNICIPAL', 'PERMISO CONSTRUCCIÓN MUNICIPAL'])),
           permisoConstruccionNum: clean(get(rowObj, [
             'PERMISOS DE CONSTRUCCION N° RESOLUCION',
             'PERMISO DE CONSTRUCCION N° RESOLUCION',
             'PERMISOS DE CONSTRUCCION NRO RESOLUCION',
-            'PERMISOS DE CONSTRUCCION Nº RESOLUCION'
+            'PERMISOS DE CONSTRUCCION Nº RESOLUCION',
+            'RESOLUCION PERMISO CONSTRUCCION'
           ])),
           permisoOcupacion: parseBool(get(rowObj, ['PERMISO DE OCUPACION', 'PERMISO OCUPACION'])),
           permisoOcupacionNum: clean(get(rowObj, [
             'N° PERMISO DE OCUPACION',
             'Nº PERMISO DE OCUPACION',
-            'NUMERO PERMISO DE OCUPACION'
+            'NUMERO PERMISO DE OCUPACION',
+            'RESOLUCION PERMISO OCUPACION'
           ])),
+          fechaEmisionPermisoOcupacion: asDate(get(rowObj, ['FECHA EMISION PERMISO OCUPACION', 'FECHA EMISIÓN PERMISO OCUPACIÓN'])),
           constructora: clean(get(rowObj, ['CONSTUCTOR', 'CONSTRUCTOR', 'CONSTRUCTORA'])),
+
+          // =========================
+          // Legal / avalúo / minutas / paz y salvo
+          // =========================
+          solicitudAvaluo: clean(get(rowObj, ['SOLICITUD DE AVALUO', 'SOLICITUD AVALUO', 'SOLICITUD DE AVALÚO'])),
+          avaluoRealizado: clean(get(rowObj, ['AVALUO REALIZADO', 'AVALÚO REALIZADO'])),
+          fechaAvaluo: asDate(get(rowObj, ['FECHA AVALUO', 'FECHA AVALÚO'])),
+          empresaAvaluadora: clean(get(rowObj, ['EMPRESA AVALUADORA'])),
+
+          mLiberacion: clean(get(rowObj, ['M. DE LIBERACION', 'MINUTA LIBERACION', 'MINUTA LIBERACIÓN'])),
+          mSegregacion: clean(get(rowObj, ['M. SEGREGACION', 'MINUTA SEGREGACION', 'MINUTA SEGREGACIÓN'])),
+          mPrestamo: clean(get(rowObj, ['M. PRESTAMO', 'MINUTA PRESTAMO', 'MINUTA PRÉSTAMO'])),
 
           pazSalvoGesproban: parseBool(get(rowObj, ['PAZ Y SALVO GESPROBAN'])),
           pazSalvoPromotora: parseBool(get(rowObj, ['PAZ Y SALVO PROMOTORA'])),
 
-          mLiberacion: clean(get(rowObj, ['M. DE LIBERACION'])),
-          mSegregacion: clean(get(rowObj, ['M. SEGREGACION'])),
-          mPrestamo: clean(get(rowObj, ['M. PRESTAMO'])),
-          solicitudAvaluo: clean(get(rowObj, ['SOLICITUD DE AVALUO', 'SOLICITUD AVALUO'])),
-          avaluoRealizado: clean(get(rowObj, ['AVALUO REALIZADO'])),
-          entregaCasa: clean(get(rowObj, ['ENTREGA DE CASA'])),
+          // =========================
+          // Entrega / captación / observaciones
+          // =========================
+          entregaCasa: clean(get(rowObj, ['ENTREGA DE CASA', 'ENTREGA CASA'])),
           entregaANATI: clean(get(rowObj, ['ENTREGA ANATI'])),
-          comentario: clean(get(rowObj, ['COMENTARIO']))
+          fechaEntregaVivienda: asDate(get(rowObj, ['FECHA ENTREGA VIVIENDA', 'FECHA DE ENTREGA VIVIENDA'])),
+
+          captadoAtencionOficina: parseBool(get(rowObj, ['CAPTADO ATENCION OFICINA', 'CAPTADO ATENCIÓN OFICINA'])),
+          captadoMailInternet: parseBool(get(rowObj, ['CAPTADO MAIL INTERNET', 'CAPTADO MAIL / INTERNET'])),
+          captadoEnProyecto: parseBool(get(rowObj, ['CAPTADO EN PROYECTO'])),
+          captadoMercadeoProspecto: parseBool(get(rowObj, ['CAPTADO MERCADEO PROSPECTO', 'CAPTADO MERCADEO / PROSPECTO'])),
+
+          proformaSolicitadaPor: clean(get(rowObj, ['PROFORMA SOLICITADA POR'])),
+          referidoPor: clean(get(rowObj, ['REFERIDO POR'])),
+          observacionCliente: clean(get(rowObj, ['OBSERVACION CLIENTE', 'OBSERVACIÓN CLIENTE'])),
+          comentario: clean(get(rowObj, ['COMENTARIO', 'COMENTARIO INTERNO']))
         };
 
         await Venta.findOneAndUpdate(
@@ -2861,7 +3028,6 @@ valor: valorLegacyFinal,
         ventasUpserted++;
       }
 
-      // Recalcular KPIs de cabecera
       const [unitsForProject, ventasForProject, unitsTotal, unitsSold] = await Promise.all([
         Unit.find({ tenantKey, projectId: id, deletedAt: null }).lean(),
         Venta.find({ tenantKey, projectId: id }).lean(),
@@ -2871,8 +3037,28 @@ valor: valorLegacyFinal,
           projectId: id,
           deletedAt: null,
           $or: [
-            { estado: { $in: ['reservado', 'con_cpp', 'tramite_legal_activado', 'escriturado_traspasado', 'vivienda_entregada'] } },
-{ status: { $in: ['RESERVADO', 'CON_CPP', 'TRAMITE_LEGAL_ACTIVADO', 'ESCRITURADO_TRASPASADO', 'VIVIENDA_ENTREGADA'] } }
+            {
+              estado: {
+                $in: [
+                  'reservado',
+                  'con_cpp',
+                  'tramite_legal_activado',
+                  'escriturado_traspasado',
+                  'vivienda_entregada'
+                ]
+              }
+            },
+            {
+              status: {
+                $in: [
+                  'RESERVADO',
+                  'CON_CPP',
+                  'TRAMITE_LEGAL_ACTIVADO',
+                  'ESCRITURADO_TRASPASADO',
+                  'VIVIENDA_ENTREGADA'
+                ]
+              }
+            }
           ]
         })
       ]);
@@ -2880,18 +3066,17 @@ valor: valorLegacyFinal,
       const unitById2 = new Map((unitsForProject || []).map(u => [String(u._id), u]));
 
       const soldVals = (ventasForProject || [])
-  .map(v => {
-    const vvPrecio = toNum0(v.precioVenta);
-    if (vvPrecio > 0) return vvPrecio;
+        .map(v => {
+          const vvPrecio = toNum0(v.precioVenta);
+          if (vvPrecio > 0) return vvPrecio;
 
-    const u = unitById2.get(String(v.unitId));
-    const unitPrecio = toNum0(u?.precioLista);
-    if (unitPrecio > 0) return unitPrecio;
+          const u = unitById2.get(String(v.unitId));
+          const unitPrecio = toNum0(u?.precioLista);
+          if (unitPrecio > 0) return unitPrecio;
 
-    // fallback legacy
-    return toNum0(v.valor);
-  })
-  .filter(n => n > 0);
+          return toNum0(v.valor);
+        })
+        .filter(n => n > 0);
 
       const ticketPromedio = soldVals.length
         ? Math.round(soldVals.reduce((a, b) => a + b, 0) / soldVals.length)
@@ -2900,6 +3085,7 @@ valor: valorLegacyFinal,
       const valorTotalVentas = soldVals.reduce((a, b) => a + b, 0);
 
       const p = await Project.findOne({ _id: id, tenantKey });
+
       if (p) {
         const FIELD_CANDIDATES = {
           unitsTotal: ['unitsTotal', 'unidadesTotales', 'unidades_totales'],
@@ -2933,7 +3119,12 @@ valor: valorLegacyFinal,
         rows: dataRows.length,
         unitsUpserted,
         ventasUpserted,
-        kpisProyecto: { unitsTotal, unitsSold, ticketPromedio, valorTotalVentas }
+        kpisProyecto: {
+          unitsTotal,
+          unitsSold,
+          ticketPromedio,
+          valorTotalVentas
+        }
       });
 
     } catch (e) {
