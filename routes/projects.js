@@ -2396,6 +2396,126 @@ if (isSoldLikeStatus(st)) U.sold++;
       doc.y = y + tableH + 10;
     }
 
+    function buildExecutiveKpis({ project, summary, datasets }) {
+      const kpis = datasets?.kpis || {};
+      const units = kpis.units || summary.units || {};
+      const loan = kpis.loan || {};
+      const cpp = kpis.cpp || {};
+      const permits = kpis.permits || {};
+      const mortgagesByBank = datasets?.mortgagesByBank || [];
+      const proformasByBank = datasets?.proformasByBank || [];
+
+      const top = [
+        { label: 'Loan aprobado', value: fmtMoneyShort(project?.loanApproved ?? loan.approved) },
+        { label: 'Desembolsado', value: fmtMoneyShort(project?.loanDisbursed ?? loan.disbursed) },
+        { label: 'Budget aprobado', value: fmtMoneyShort(project?.budgetApproved) },
+        { label: 'Gasto', value: fmtMoneyShort(project?.budgetSpent ?? datasets?.financial?.totals?.disbursed) },
+        { label: 'Unidades totales', value: fmtNum(summary.units?.total ?? units.total) },
+        { label: 'Unidades vendidas', value: fmtNum(summary.units?.sold ?? units.sold) },
+      ];
+
+      const operational = [
+        { label: 'Progreso global', value: `${fmtNum(kpis.progressPct ?? summary.progressPct)}%` },
+        {
+          label: 'Unidades',
+          value: `${fmtNum(units.total ?? summary.units?.total)} totales`,
+          sub: `${fmtNum(units.available ?? summary.units?.available)} disp · ${fmtNum(units.sold ?? summary.units?.sold)} vend · ${fmtNum(units.escrituradas ?? summary.units?.escrituradas)} escr.`
+        },
+        { label: 'Absorción 3m', value: `${fmtNum(kpis.absorption3m)} u/mes` },
+        { label: 'Ticket promedio', value: fmtMoneyShort(kpis.avgTicket) },
+        { label: 'Inventario a valor', value: fmtMoneyShort(kpis.inventoryValue) },
+        {
+          label: 'CPP',
+          value: `${fmtNum(cpp.active)} activos`,
+          sub: `30d:${fmtNum(cpp.due30)} · 60d:${fmtNum(cpp.due60)} · 90d:${fmtNum(cpp.due90)}`
+        },
+        {
+          label: 'Permisos',
+          value: `${fmtNum(permits.approved)} A / ${fmtNum(permits.inProcess)} T / ${fmtNum(permits.pending)} P`,
+          sub: `${fmtNum(permits.pct)}%`
+        },
+        { label: 'Hipotecas 30d', value: fmtNum(kpis.clientMortgages30d) },
+      ];
+
+      const commercial = [
+        {
+          label: 'Ventas',
+          value: `${fmtNum(summary.units?.sold ?? units.sold)}/${fmtNum(summary.units?.total ?? units.total)}`,
+          sub: `${summary.units?.total ? Math.round((summary.units.sold || 0) * 100 / summary.units.total) : 0}% vendido`
+        },
+        {
+          label: 'CPP activos',
+          value: fmtNum(cpp.active),
+          sub: `30d:${fmtNum(cpp.due30)} · 60d:${fmtNum(cpp.due60)} · 90d:${fmtNum(cpp.due90)}`
+        },
+        {
+          label: 'Hipotecas',
+          value: fmtNum(mortgagesByBank.reduce((a, x) => a + toNumber(x.count), 0)),
+          sub: `${fmtNum(mortgagesByBank.length)} bancos`
+        },
+        {
+          label: 'Proformas',
+          value: fmtNum(proformasByBank.reduce((a, x) => a + toNumber(x.count), 0)),
+          sub: `${fmtNum(proformasByBank.length)} bancos`
+        },
+      ];
+
+      return { top, operational, commercial };
+    }
+
+    function drawKpiGrid(doc, items, { columns = 3, tone = 'blue' } = {}) {
+      const margin = doc.page.margins.left;
+      const contentW = doc.page.width - margin * 2;
+      const gap = 10;
+      const cardW = (contentW - gap * (columns - 1)) / columns;
+      const cardH = 64;
+      const startY = doc.y;
+      const accent = tone === 'green' ? '#0F766E' : (tone === 'purple' ? '#5B4BDB' : BRAND_BLUE);
+      const pale = tone === 'green' ? '#ECFDF5' : (tone === 'purple' ? '#F1EFFE' : BRAND_BLUE_SOFT);
+
+      items.forEach((item, idx) => {
+        const col = idx % columns;
+        const row = Math.floor(idx / columns);
+        const x = margin + col * (cardW + gap);
+        const y = startY + row * (cardH + gap);
+
+        doc.save();
+        roundRect(doc, x, y, cardW, cardH, 8).fill('#FFFFFF').stroke('#DDE7F2');
+        doc.rect(x, y, 4, cardH).fill(accent);
+        roundRect(doc, x + cardW - 32, y + 8, 18, 18, 9).fill(pale);
+        doc.restore();
+
+        doc.fontSize(7).fillColor(accent).text(String(item.label || '').toUpperCase(), x + 12, y + 10, { width: cardW - 50, ellipsis: true });
+        doc.fontSize(16).fillColor(TEXT_DARK).text(item.value || '0', x + 12, y + 27, { width: cardW - 24, ellipsis: true });
+        if (item.sub) {
+          doc.fontSize(7).fillColor(TEXT_MUTED).text(item.sub, x + 12, y + 48, { width: cardW - 24, ellipsis: true });
+        }
+      });
+
+      const rows = Math.ceil(items.length / columns);
+      doc.y = startY + rows * (cardH + gap) + 4;
+    }
+
+    function drawKpiSection(doc, title, items, opts = {}) {
+      const margin = doc.page.margins.left;
+      const contentW = doc.page.width - margin * 2;
+      const sectionY = doc.y;
+      const columns = opts.columns || 3;
+      const rows = Math.ceil(items.length / columns);
+      const gridH = rows * 74 - 10;
+      const sectionH = 34 + gridH + 14;
+
+      doc.save();
+      roundRect(doc, margin, sectionY, contentW, sectionH, 10).fill('#F8FAFC').stroke('#DDE7F2');
+      doc.rect(margin, sectionY, contentW, 30).fill(BRAND_BLUE_SOFT);
+      doc.restore();
+
+      doc.fontSize(10).fillColor(BRAND_BLUE).text(title, margin + 14, sectionY + 9, { width: contentW - 28 });
+      doc.y = sectionY + 42;
+      drawKpiGrid(doc, items, { columns, tone: opts.tone || 'blue' });
+      doc.y = sectionY + sectionH + 12;
+    }
+
     function drawChart(doc, { title, dataUrl, datasets }) {
       const margin = doc.page.margins.left;
 
@@ -2635,7 +2755,16 @@ ws.addRow(['Canceladas', summary.units.canceladas]);
 
     doc.addPage();
     header(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt });
-    sectionTitle(doc, 'Resumen de riesgos y vencimientos');
+    sectionTitle(doc, 'Resumen ejecutivo de KPIs');
+
+    const executiveKpis = buildExecutiveKpis({ project, summary, datasets });
+    drawKpiSection(doc, 'Finanzas', executiveKpis.top, { columns: 3, tone: 'blue' });
+    drawKpiSection(doc, 'Operación', executiveKpis.operational, { columns: 4, tone: 'green' });
+    drawKpiSection(doc, 'Comercial', executiveKpis.commercial, { columns: 4, tone: 'purple' });
+
+    doc.addPage();
+    header(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt });
+    sectionTitle(doc, 'Riesgos y vencimientos');
 
     const riskRows = (summary.alerts || []).slice(0, 10).map(a => ({
       label: `[${a.type}] ${a.name}`,
