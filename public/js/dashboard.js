@@ -96,6 +96,11 @@ function renderRoleOptions(selected = '') {
   const usersStatusFilter = document.getElementById('usersStatusFilter');
   const usersSearch = document.getElementById('usersSearch');
   const roleSelectDefault = document.getElementById('roleSelectDefault');
+  const usersCardBody = document.getElementById('usersCardBody');
+  const toggleUsersCardBtn = document.getElementById('toggleUsersCard');
+  const usersPagerInfo = document.getElementById('usersPagerInfo');
+  const usersPrev = document.getElementById('usersPrev');
+  const usersNext = document.getElementById('usersNext');
 
   // Rellenar el "Rol por defecto al aprobar" con TODOS los roles
 if (roleSelectDefault) {
@@ -112,9 +117,18 @@ if (roleSelectDefault) {
   const allProjectsFilter = document.getElementById('allProjectsFilter');
   const allProjectsSearch = document.getElementById('allProjectsSearch');
   const refreshAllProjectsBtn = document.getElementById('refreshAllProjects');
+  const allProjectsPagerInfo = document.getElementById('allProjectsPagerInfo');
+  const allProjectsPrev = document.getElementById('allProjectsPrev');
+  const allProjectsNext = document.getElementById('allProjectsNext');
 
   // Caché de proyectos (última carga)
   let allProjectsCache = [];
+  let usersPage = 1;
+  let usersLastTotal = 0;
+  let allProjectsPage = 1;
+  let allProjectsLastTotal = 0;
+  const usersPageSize = 10;
+  const allProjectsPageSize = 10;
 
   // Modal asignación (si existe en el HTML)
   const assignModal = document.getElementById('assignModal');
@@ -281,6 +295,22 @@ async function apiAssignProject(id, assignmentsOrLegacy, modoFlexible = false) {
     return u.name || u.email || String(id);
   }
   function normalize(s) { return (s || '').toString().toLowerCase(); }
+
+  function maxPageFor(total, pageSize) {
+    return Math.max(1, Math.ceil(Number(total || 0) / pageSize));
+  }
+
+  function slicePage(list, page, pageSize) {
+    const start = (page - 1) * pageSize;
+    return list.slice(start, start + pageSize);
+  }
+
+  function pagerText(page, total, pageSize, label) {
+    if (!total) return `0 ${label}`;
+    const start = (page - 1) * pageSize + 1;
+    const end = Math.min(total, page * pageSize);
+    return `${start}-${end} de ${total} ${label}`;
+  }
 
 function escapeHtml(value = '') {
   return String(value)
@@ -467,6 +497,14 @@ function applyProjectsFilters(list) {
   function renderUsers(list) {
     if (!usersTbody) return;
     usersTbody.innerHTML = '';
+    usersLastTotal = Array.isArray(list) ? list.length : 0;
+    usersPage = Math.min(usersPage, maxPageFor(usersLastTotal, usersPageSize));
+    if (usersPage < 1) usersPage = 1;
+
+    if (usersPagerInfo) usersPagerInfo.textContent = pagerText(usersPage, usersLastTotal, usersPageSize, 'usuarios');
+    if (usersPrev) usersPrev.disabled = usersPage <= 1;
+    if (usersNext) usersNext.disabled = usersPage >= maxPageFor(usersLastTotal, usersPageSize);
+
     if (!list.length) {
       usersTbody.innerHTML = `<tr><td class="muted" colspan="7">No hay usuarios.</td></tr>`;
       return;
@@ -474,7 +512,7 @@ function applyProjectsFilters(list) {
     let myId = null;
     try { myId = window.API?.getAuth?.().userId || null; } catch (_) {}
 
-    list.forEach((u) => {
+    slicePage(list, usersPage, usersPageSize).forEach((u) => {
       const st = userStatus(u);
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -535,11 +573,19 @@ function applyProjectsFilters(list) {
   function renderAllProjects(list) {
   if (!allProjectsTbody) return;
   allProjectsTbody.innerHTML = '';
+  allProjectsLastTotal = Array.isArray(list) ? list.length : 0;
+  allProjectsPage = Math.min(allProjectsPage, maxPageFor(allProjectsLastTotal, allProjectsPageSize));
+  if (allProjectsPage < 1) allProjectsPage = 1;
+
+  if (allProjectsPagerInfo) allProjectsPagerInfo.textContent = pagerText(allProjectsPage, allProjectsLastTotal, allProjectsPageSize, 'proyectos');
+  if (allProjectsPrev) allProjectsPrev.disabled = allProjectsPage <= 1;
+  if (allProjectsNext) allProjectsNext.disabled = allProjectsPage >= maxPageFor(allProjectsLastTotal, allProjectsPageSize);
+
   if (!list.length) {
     allProjectsTbody.innerHTML = `<tr><td colspan="6" class="muted">No hay proyectos.</td></tr>`;
     return;
   }
-  list.forEach((p) => {
+  slicePage(list, allProjectsPage, allProjectsPageSize).forEach((p) => {
     const st = (p.publishStatus || 'pending').toLowerCase();
     const proms = (p.assignedPromoters || []).map(id => nameOf(promotersMap, id)).filter(Boolean);
     const comms = (p.assignedCommercials || []).map(id => nameOf(commercialsMap, id)).filter(Boolean);
@@ -656,8 +702,7 @@ function applyProjectsFilters(list) {
   if (!allProjectsTbody) return;
   try {
     await refreshAssigneesCaches(); // precarga nombres de equipo
-    const publishStatus = allProjectsFilter?.value || '';
-    const list = await apiGetAllProjects(publishStatus);
+    const list = await apiGetAllProjects('');
     allProjectsCache = Array.isArray(list) ? list : []; // guardamos la última carga
     renderAllProjects(applyProjectsFilters(allProjectsCache)); // render con filtros (incluye búsqueda)
   } catch (e) {
@@ -862,12 +907,34 @@ function applyProjectsFilters(list) {
 
   // Listado general de usuarios
   document.getElementById('refreshUsers')?.addEventListener('click', loadUsers);
-  usersStatusFilter?.addEventListener('change', loadUsers);
-  usersSearch?.addEventListener('input', loadUsers);
+  usersStatusFilter?.addEventListener('change', () => {
+    usersPage = 1;
+    loadUsers();
+  });
+  usersSearch?.addEventListener('input', () => {
+    usersPage = 1;
+    loadUsers();
+  });
+  usersPrev?.addEventListener('click', () => {
+    if (usersPage <= 1) return;
+    usersPage -= 1;
+    loadUsers();
+  });
+  usersNext?.addEventListener('click', () => {
+    if (usersPage >= maxPageFor(usersLastTotal, usersPageSize)) return;
+    usersPage += 1;
+    loadUsers();
+  });
+  toggleUsersCardBtn?.addEventListener('click', () => {
+    if (!usersCardBody) return;
+    const collapsed = usersCardBody.classList.toggle('is-collapsed');
+    toggleUsersCardBtn.textContent = collapsed ? 'v' : '^';
+    toggleUsersCardBtn.setAttribute('aria-expanded', String(!collapsed));
+    toggleUsersCardBtn.setAttribute('aria-label', collapsed ? 'Mostrar usuarios' : 'Ocultar usuarios');
+  });
 
   // Proyectos (admin)
   refreshAllProjectsBtn?.addEventListener('click', loadAllProjects);
-  allProjectsFilter?.addEventListener('change', loadAllProjects);
 
   openActivityBtn?.addEventListener('click', async () => {
     if (!activityCard) return;
@@ -968,6 +1035,7 @@ function applyProjectsFilters(list) {
         await apiDeleteUser(id);
         delBtn.closest('tr')?.remove();
         loadPendingUsers();
+        loadUsers();
       } catch (err) {
         delBtn.disabled = false;
         alert(err.message || 'No se pudo eliminar');
@@ -1197,7 +1265,7 @@ if (pAssign && assignModal && assignProjectNameEl) {
       pDelete.disabled = true;
       try {
         await apiDeleteProject(id);
-        pDelete.closest('tr')?.remove();
+        await loadAllProjects();
       } catch (err) {
         pDelete.disabled = false;
         alert(err.message || 'No se pudo eliminar el proyecto');
@@ -1258,11 +1326,9 @@ if (pAssign && assignModal && assignProjectNameEl) {
   }
 });
 
-  // Proyectos (admin) - refrescar del servidor
-refreshAllProjectsBtn?.addEventListener('click', loadAllProjects);
-
 // Proyectos (admin) - filtros client-side
 allProjectsFilter?.addEventListener('change', () => {
+  allProjectsPage = 1;
   renderAllProjects(applyProjectsFilters(allProjectsCache));
 });
 
@@ -1271,8 +1337,21 @@ let projSearchTO = null;
 allProjectsSearch?.addEventListener('input', () => {
   clearTimeout(projSearchTO);
   projSearchTO = setTimeout(() => {
+    allProjectsPage = 1;
     renderAllProjects(applyProjectsFilters(allProjectsCache));
   }, 150);
+});
+
+allProjectsPrev?.addEventListener('click', () => {
+  if (allProjectsPage <= 1) return;
+  allProjectsPage -= 1;
+  renderAllProjects(applyProjectsFilters(allProjectsCache));
+});
+
+allProjectsNext?.addEventListener('click', () => {
+  if (allProjectsPage >= maxPageFor(allProjectsLastTotal, allProjectsPageSize)) return;
+  allProjectsPage += 1;
+  renderAllProjects(applyProjectsFilters(allProjectsCache));
 });
 
   // ---------- INIT ----------

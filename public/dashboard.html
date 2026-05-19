@@ -107,9 +107,39 @@
       margin-top:12px;
       flex-wrap:wrap;
     }
+    .section-head {
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:16px;
+      margin-bottom:12px;
+    }
+    .section-head h2 { margin:0 0 8px; }
+    .collapse-toggle {
+      width:36px;
+      height:36px;
+      min-width:36px;
+      padding:0;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      border-radius:10px;
+      line-height:1;
+      font-weight:700;
+    }
+    .collapsible-body.is-collapsed { display:none; }
+    .pager {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-top:12px;
+      flex-wrap:wrap;
+    }
     @media (max-width: 860px){
       #assignRolesContainer{ grid-template-columns: 1fr; }
       .admin-card-head { flex-direction:column; }
+      .section-head { align-items:center; }
       .audit-actions { justify-content:flex-start; }
       .audit-summary { grid-template-columns: 1fr 1fr; }
     }
@@ -276,37 +306,52 @@
     </section>
 
     <!-- USUARIOS (lista completa) -->
-    <section class="card">
-      <h2>Usuarios</h2>
-      <p class="muted">Lista de usuarios del tenant. Puedes aprobar, bloquear o eliminar.</p>
-
-      <div class="toolbar">
-        <select id="usersStatusFilter" class="input">
-          <option value="">Todos</option>
-          <option value="pending">Pendientes</option>
-          <option value="active">Activos</option>
-          <option value="blocked">Bloqueados</option>
-        </select>
-        <input id="usersSearch" class="input" type="search" placeholder="Buscar por nombre o email..." />
-        <button id="refreshUsers" class="btn small">Refrescar</button>
+    <section class="card" id="usersCard">
+      <div class="section-head">
+        <div>
+          <h2>Usuarios</h2>
+          <p class="muted">Lista de usuarios del tenant. Puedes aprobar, bloquear o eliminar.</p>
+        </div>
+        <button id="toggleUsersCard" class="btn ghost small collapse-toggle" type="button" aria-label="Ocultar usuarios" aria-expanded="true">^</button>
       </div>
 
-      <div id="msg" class="msg"></div>
+      <div id="usersCardBody" class="collapsible-body">
+        <div class="toolbar">
+          <select id="usersStatusFilter" class="input">
+            <option value="">Todos</option>
+            <option value="pending">Pendientes</option>
+            <option value="active">Activos</option>
+            <option value="blocked">Bloqueados</option>
+          </select>
+          <input id="usersSearch" class="input" type="search" placeholder="Buscar por nombre o email..." />
+          <button id="refreshUsers" class="btn small">Refrescar</button>
+        </div>
 
-      <table class="table" id="usersTable">
-        <thead>
-          <tr>
-            <th>Nombre</th>
-            <th>Email</th>
-            <th>Rol</th>
-            <th>Solicitado</th>
-            <th>Estado</th>
-            <th>Creado</th>
-            <th style="width:380px;">Acciones</th>
-          </tr>
-        </thead>
-        <tbody id="usersTbody"></tbody>
-      </table>
+        <div id="msg" class="msg"></div>
+
+        <table class="table" id="usersTable">
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Email</th>
+              <th>Rol</th>
+              <th>Solicitado</th>
+              <th>Estado</th>
+              <th>Creado</th>
+              <th style="width:380px;">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="usersTbody"></tbody>
+        </table>
+
+        <div class="pager">
+          <span id="usersPagerInfo" class="muted">-</span>
+          <div class="actions">
+            <button id="usersPrev" class="btn ghost small" type="button">Anterior</button>
+            <button id="usersNext" class="btn ghost small" type="button">Siguiente</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- PROYECTOS (ADMIN - lista completa) -->
@@ -339,6 +384,14 @@
         </thead>
         <tbody id="allProjectsTbody"></tbody>
       </table>
+
+      <div class="pager">
+        <span id="allProjectsPagerInfo" class="muted">-</span>
+        <div class="actions">
+          <button id="allProjectsPrev" class="btn ghost small" type="button">Anterior</button>
+          <button id="allProjectsNext" class="btn ghost small" type="button">Siguiente</button>
+        </div>
+      </div>
     </section>
   </main>
 
