@@ -45,9 +45,48 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
     docs:      document.getElementById('tab-docs'),
     chat:      document.getElementById('tab-chat'),
   };
+  let __summaryDirty = false;
+
+  async function refreshSummaryFromServer() {
+    if (typeof loadSummary === 'function') {
+      await loadSummary();
+      __summaryDirty = false;
+      return;
+    }
+
+    const payload = await API.get(`/api/projects/${id}/summary?ts=${Date.now()}`);
+    window.__LAST_SUMMARY_PAYLOAD__ = payload;
+    if (typeof renderSummaryUI === 'function') await renderSummaryUI(payload);
+    if (typeof renderResumen === 'function') await renderResumen(payload);
+    if (typeof renderSummary === 'function') await renderSummary(payload);
+    __summaryDirty = false;
+  }
+
+  async function markProjectDataChanged({ refreshSummary = false, refreshHeader = true } = {}) {
+    __summaryDirty = true;
+
+    try {
+      if (refreshHeader && typeof refreshTopHeaderKpis === 'function') {
+        await refreshTopHeaderKpis();
+      }
+
+      const resumenActive = !!panes.resumen?.classList.contains('active');
+      if (refreshSummary || resumenActive) {
+        await refreshSummaryFromServer();
+      }
+    } catch (e) {
+      console.warn('[Project] No se pudo refrescar el resumen tras guardar cambios', e);
+    }
+  }
+
   function activateTab(key){
     document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === key));
     Object.entries(panes).forEach(([k,el]) => el && el.classList.toggle('active', k === key));
+    if (key === 'resumen' && __summaryDirty) {
+      refreshSummaryFromServer().catch(e => {
+        console.warn('[Summary] No se pudo refrescar al abrir la pestana resumen', e);
+      });
+    }
   }
   document.addEventListener('click', (ev) => {
   const btn = ev.target.closest('.tab[data-tab]');
@@ -111,6 +150,7 @@ if (addBtn) {
         __permits = await apiPermitsGetProject(true);
         renderPermitsModal();
         await reloadProyecto(false);
+        await markProjectDataChanged({ refreshSummary: true });
       };
     } catch (e) {
       console.error(e);
@@ -137,11 +177,7 @@ if (!modalBody.__permitsBound) {
   renderPermitsModal();                             // 3) repinta modal
 
   // 4) ✅ refresca RESUMEN (gráficas)
-  const payload = await API.get(`/api/projects/${id}/summary?ts=${Date.now()}`);
-  window.__LAST_SUMMARY_PAYLOAD__ = payload;
-  if (typeof renderSummaryUI === 'function') renderSummaryUI(payload);
-  if (typeof renderResumen === 'function')   renderResumen(payload);
-  if (typeof renderSummary === 'function')   renderSummary(payload);
+  await markProjectDataChanged({ refreshSummary: true });
 
 } catch (e) {
   console.error(e);
@@ -616,6 +652,7 @@ applyBtn.onclick = async () => {
     __permits = await apiPermitsGetProject();   // GET
     renderPermitsModal();
     updatePermitsByInstitutionChart();
+    await markProjectDataChanged({ refreshSummary: true });
   } catch (e) {
     console.error('[Permits] init error', e);
     alert(`No se pudo instanciar la plantilla de permisos:\n${e.message || e}`);
@@ -1157,6 +1194,7 @@ async function renderPermitsModal() {
         __permits = await apiPermitsGetProject(true);
         renderPermitsModal();
         updatePermitsByInstitutionChart();
+        await markProjectDataChanged({ refreshSummary: true });
       } catch (e) {
         console.error(e);
         alert('No se pudo actualizar el estado.');
@@ -3001,8 +3039,8 @@ async function syncUnitsSoldFromPortfolio() {
     // 3) (opcional) Línea pequeña “x/y unidades vendidas (%)” si la tienes
     const unitsTxt = document.getElementById('summaryUnits');
     if (unitsTxt) {
-      let sold = headerKpisFixed.unitsSold ?? 0;
-      let total = headerKpisFixed.unitsTotal ?? 0;
+      let sold = Number(me.unitsSold || 0);
+      let total = Number(me.unitsTotal || 0);
       let pct = total ? Math.round(100 * sold / total) : 0;
       unitsTxt.textContent = `${sold}/${total} unidades vendidas (${pct}%)`;
     }
@@ -3017,6 +3055,7 @@ async function loadSummary() {
   try {
     // evitar caché del navegador
     const res = await API.get(`/api/projects/${id}/summary?ts=${Date.now()}`);
+    window.__LAST_SUMMARY_PAYLOAD__ = res;
 
     // 🔥 recalcular progreso EXACTAMENTE igual que Proyecto
  try {
@@ -3277,6 +3316,7 @@ const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
     await refreshBeforeAfter();
 
     await syncUnitsSoldFromPortfolio();
+    __summaryDirty = false;
   } catch (e) {
     console.error('Error cargando resumen', e);
   }
@@ -4171,6 +4211,7 @@ async function saveFinanceProjectKpis() {
   try {
     await API.put(`/api/projects/${id}/finance/kpis`, payload);
     await loadFinance();
+    await markProjectDataChanged();
     alert('KPIs actualizados');
   } catch (e) {
     console.error(e);
@@ -4574,6 +4615,7 @@ function renderPhases(phases = []) {
       try {
         await API.del(`/api/projects/${id}/finance/phases/${ph._id}`);
         await loadFinance();
+        await markProjectDataChanged();
       } catch (e) {
         console.error(e);
         alert('No se pudo eliminar la fase');
@@ -4637,6 +4679,7 @@ if (!hasRealData && !startedByDate) {
       try {
         await API.del(`/api/projects/${id}/finance/phases/${ph._id}`);
         await loadFinance();
+        await markProjectDataChanged();
       } catch (e) {
         console.error(e);
         alert('No se pudo eliminar la fase');
@@ -4662,6 +4705,7 @@ if (!hasRealData && !startedByDate) {
           disbRequestedAt: new Date().toISOString()
         });
         await loadFinance();
+        await markProjectDataChanged();
       } catch (e) {
         console.error(e);
         alert('No se pudo solicitar el desembolso');
@@ -4675,6 +4719,7 @@ if (!hasRealData && !startedByDate) {
           disbRequestedAt: null
         });
         await loadFinance();
+        await markProjectDataChanged();
       } catch (e) {
         console.error(e);
         alert('No se pudo actualizar el estado del desembolso');
@@ -4870,6 +4915,7 @@ function openPhaseEditor(ph = null, focus = 'plan') {
 
       modalBackdrop.style.display = 'none';
       await loadFinance();
+      await markProjectDataChanged();
     } catch (e) {
       console.error(e);
       alert('No se pudo guardar la fase');
@@ -7609,6 +7655,7 @@ const uBody = {
     modalFicha.style.display = 'none';
 
     await loadUnits();
+    await markProjectDataChanged();
 
   } catch (e) {
     console.error(e);
@@ -7826,6 +7873,7 @@ const uBody = {
 
     closeBatch();
     await loadUnits();
+    await markProjectDataChanged();
   }
 
   function openDel() { if (!selected.size) return alert('Selecciona al menos una unidad.'); modalDel.style.display='flex'; }
@@ -7844,6 +7892,7 @@ const uBody = {
     selected.clear();
     closeDel();
     await loadUnits();
+    await markProjectDataChanged();
   }
 
   // === Eventos ===
@@ -7907,6 +7956,7 @@ if (btnExportarExcel) {
         await apiPost('/api/units/batch', body);
         modalCrear.style.display = 'none';
         await loadUnits();
+        await markProjectDataChanged();
       } catch (e) { alert('Error creando unidades: ' + e.message); }
     });
   }
