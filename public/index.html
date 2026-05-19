@@ -33,7 +33,7 @@
         <a href="#solucion" class="nav-link">Bank73</a>
         <a href="#modulos" class="nav-link">Control</a>
         <a href="#beneficios" class="nav-link">Beneficios</a>
-        <a href="#metodologia" class="nav-link">Metodología</a>
+        <a href="#metodologia" class="nav-link methodology-nav-link" hidden>Metodología</a>
         <a href="/login" class="btn btn-primary">Acceder</a>
       </nav>
 
@@ -351,7 +351,7 @@
     </section>
 
     <!-- Metodología -->
-      <!--<section id="metodologia" class="section alt">
+      <section id="metodologia" class="section alt methodology-secret" hidden aria-hidden="true">
       <div class="container">
         <div style="
   position:relative;
@@ -679,7 +679,7 @@
   </div>
 </details>
 
-</div>-->
+</div>
 </section>
 
     <!-- CTA Final -->
@@ -748,6 +748,65 @@
   document.querySelectorAll('.reveal-on-scroll').forEach(el => {
     observer.observe(el);
   });
+
+  // Toggle secreto para demos comerciales: Ctrl + 2580 o escribir 2580
+  const methodologySection = document.getElementById('metodologia');
+  const methodologyNavLink = document.querySelector('.methodology-nav-link');
+  const methodologyStorageKey = 'bank73:methodology-visible';
+  const methodologyCode = '2580';
+  let methodologyBuffer = '';
+  let methodologyBufferTimer = null;
+
+  function setMethodologyVisible(visible, options = {}) {
+    if (!methodologySection) return;
+
+    methodologySection.hidden = !visible;
+    methodologySection.setAttribute('aria-hidden', String(!visible));
+    if (methodologyNavLink) methodologyNavLink.hidden = !visible;
+
+    localStorage.setItem(methodologyStorageKey, visible ? '1' : '0');
+
+    if (visible && options.scroll) {
+      methodologySection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  if (methodologySection) {
+    setMethodologyVisible(localStorage.getItem(methodologyStorageKey) === '1');
+
+    document.addEventListener('keydown', (event) => {
+      const target = event.target;
+      const isTyping = target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      );
+      const digit = /^\d$/.test(event.key)
+        ? event.key
+        : (event.code.match(/^(Digit|Numpad)(\d)$/) || [])[2];
+      const hasDemoModifier = event.ctrlKey && !event.altKey && !event.metaKey;
+      const canUsePlainCode = !event.ctrlKey && !event.altKey && !event.metaKey && !isTyping;
+
+      if (!digit || (!hasDemoModifier && !canUsePlainCode)) return;
+
+      if (hasDemoModifier) event.preventDefault();
+      methodologyBuffer += digit;
+      methodologyBuffer = methodologyBuffer.slice(-methodologyCode.length);
+
+      clearTimeout(methodologyBufferTimer);
+      methodologyBufferTimer = setTimeout(() => {
+        methodologyBuffer = '';
+      }, 1600);
+
+      if (methodologyBuffer === methodologyCode) {
+        const nextVisible = methodologySection.hidden;
+        methodologyBuffer = '';
+        clearTimeout(methodologyBufferTimer);
+        setMethodologyVisible(nextVisible, { scroll: nextVisible });
+      }
+    });
+  }
 
   // INTERACCIÓN CHIPS METODOLOGÍA
 document.querySelectorAll('.method-chip').forEach((chip) => {
