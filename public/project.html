@@ -1584,7 +1584,7 @@
 
   <!-- Modal edición por lote -->
   <div id="modalBatch" class="modal-backdrop" style="display:none;">
-    <div class="modal" style="width:min(820px, 92vw);">
+    <div class="modal" style="width:min(1120px, 96vw);">
       <div class="modal-head">
         <b>Editar selección (lote)</b>
         <button class="btn btn-ghost btn-xs" id="batchCerrar">Cerrar</button>
@@ -1593,7 +1593,7 @@
         <div class="muted">Se aplicarán solo los campos que completes.</div>
         <div class="grid-2">
           <div>
-            <h4>Unit</h4>
+            <h4>Unidad</h4>
             <label>Estado</label>
             <select id="b-estado">
   <option value="">(no cambiar)</option>
@@ -1608,10 +1608,111 @@
             <label>Modelo</label><input id="b-modelo" />
             <label>m²</label><input id="b-m2" type="number" />
             <label>Precio lista</label><input id="b-precio" type="number" />
+            <h4>Datos del inmueble</h4>
+            <label>Numero de finca</label><input id="b-numeroFinca" />
+            <label>Codigo ubicacion</label><input id="b-codigoUbicacion" />
+            <label>Calle</label><input id="b-calle" />
+            <label>Lote esquina</label>
+            <select id="b-loteEsquina">
+              <option value="">(no cambiar)</option>
+              <option value="SI">Si</option>
+              <option value="NO">No</option>
+            </select>
+            <label>Metros extra</label><input id="b-metrosExtra" type="number" />
+            <label>Precio lote esquinero</label><input id="b-precioLoteEsquina" type="number" />
+            <label>Precio metro extra</label><input id="b-precioM2Extra" type="number" />
+            <label>Area abierta vivienda</label><input id="b-areaAbierta" type="number" />
+            <label>Area cerrada vivienda</label><input id="b-areaCerrada" type="number" />
+            <label>Recamaras</label><input id="b-recamaras" type="number" />
+            <label>Banos</label><input id="b-banos" type="number" />
+            <label>Valor mejoras</label><input id="b-valorMejoras" type="number" />
+            <label>Valor terreno</label><input id="b-valorTerreno" type="number" />
+
+            <h4>Cliente / comprador</h4>
+            <label>Nickname cliente</label><input id="b-clienteNombre" />
+            <label>Cedula</label><input id="b-cedula" />
+            <label>Primer nombre</label><input id="b-primerNombre" />
+            <label>Segundo nombre</label><input id="b-segundoNombre" />
+            <label>Apellido paterno</label><input id="b-primerApellido" />
+            <label>Apellido materno</label><input id="b-segundoApellido" />
+            <label>Apellido de casada</label><input id="b-apellidoCasada" />
+            <label>Sexo</label>
+            <select id="b-sexo">
+              <option value="">(no cambiar)</option>
+              <option value="M">Masculino</option>
+              <option value="F">Femenino</option>
+            </select>
+            <label>Profesion</label><input id="b-profesion" />
+            <label>Estado civil</label>
+            <select id="b-estadoCivil">
+              <option value="">(no cambiar)</option>
+              <option value="Soltero">Soltero</option>
+              <option value="Casado">Casado</option>
+            </select>
+            <label>Direccion</label><input id="b-direccion" />
+            <label>Telefono residencial</label><input id="b-telefonoResidencial" />
+            <label>Telefono oficina</label><input id="b-telefonoOficina" />
+            <label>Celular</label><input id="b-celular" />
+            <label>Correo</label><input id="b-correo" />
+            <label>Perfil</label>
+            <select id="b-perfilCliente">
+              <option value="">(no cambiar)</option>
+              <option value="Independiente">Independiente</option>
+              <option value="Asalariado">Asalariado</option>
+            </select>
+            <label>Tipo de empresa</label>
+            <select id="b-tipoEmpresa">
+              <option value="">(no cambiar)</option>
+              <option value="Privada">Privada</option>
+              <option value="Gubernamental">Gubernamental</option>
+            </select>
+            <label>Sector empresarial</label>
+            <select id="b-sectorEmpresa">
+              <option value="">(no cambiar)</option>
+              <option value="Agr&iacute;cola">Agr&iacute;cola</option>
+              <option value="Profesional id&oacute;neo">Profesional id&oacute;neo</option>
+              <option value="Otros">Otros</option>
+            </select>
+            <label>Empresa</label><input id="b-empresa" />
+            <label>Lugar de trabajo</label><input id="b-lugarTrabajo" />
+            <label>Ingreso mensual</label><input id="b-ingresoMensual" type="number" />
+            <label>Cargo</label><input id="b-cargo" />
+            <label>Antiguedad laboral</label><input id="b-antiguedadLaboral" />
+
+            <h4>Cliente 2 / co-solicitante</h4>
+            <label>Primer nombre</label><input id="b-cliente2PrimerNombre" />
+            <label>Segundo nombre</label><input id="b-cliente2SegundoNombre" />
+            <label>Apellido paterno</label><input id="b-cliente2PrimerApellido" />
+            <label>Apellido materno</label><input id="b-cliente2SegundoApellido" />
+            <label>Apellido de casada</label><input id="b-cliente2ApellidoCasada" />
+            <label>Cedula</label><input id="b-cliente2Cedula" />
+            <label>Sexo</label>
+            <select id="b-cliente2Sexo">
+              <option value="">(no cambiar)</option>
+              <option value="M">Masculino</option>
+              <option value="F">Femenino</option>
+            </select>
+            <label>Profesion</label><input id="b-cliente2Profesion" />
+            <label>Estado civil</label>
+            <select id="b-cliente2EstadoCivil">
+              <option value="">(no cambiar)</option>
+              <option value="Soltero">Soltero</option>
+              <option value="Casado">Casado</option>
+            </select>
+            <label>Direccion</label><input id="b-cliente2Direccion" />
+            <label>Telefono residencial</label><input id="b-cliente2TelefonoResidencial" />
+            <label>Telefono oficina</label><input id="b-cliente2TelefonoOficina" />
+            <label>Celular</label><input id="b-cliente2Celular" />
+            <label>Correo</label><input id="b-cliente2Correo" />
+            <label>Lugar de trabajo</label><input id="b-cliente2LugarTrabajo" />
+            <label>Ingreso mensual</label><input id="b-cliente2IngresoMensual" type="number" />
+            <label>Cargo</label><input id="b-cliente2Cargo" />
+            <label>Antiguedad laboral</label><input id="b-cliente2AntiguedadLaboral" />
           </div>
           <div>
             <h4>Comercial (Venta)</h4>
             <label>Banco</label><input id="b-banco" />
+            <label>Oficial banco</label><input id="b-oficialBanco" />
             <label>Status en Banco</label>
 <select id="b-statusBancoSel"></select>
 
@@ -1620,6 +1721,90 @@
 </div>
             <label>N° CPP</label><input id="b-numCPP" />
             <label>Valor</label><input id="b-valor" type="number" />
+            <label>Estatus CPP</label>
+            <select id="b-estatusCPP">
+              <option value="">(no cambiar)</option>
+              <option value="Documentaci&oacute;n entregada">Documentaci&oacute;n entregada</option>
+              <option value="En comit&eacute;">En comit&eacute;</option>
+              <option value="Aprobado">Aprobado</option>
+              <option value="CPP recibida">CPP recibida</option>
+            </select>
+            <label>Precio de venta</label><input id="b-precioVenta" type="number" />
+            <label>Monto financiamiento CPP / hipoteca</label><input id="b-montoFinanciamientoCPP" type="number" />
+            <label>% financiamiento</label><input id="b-porcentajeFinanciamiento" type="number" />
+            <label>Cesion a favor de</label><input id="b-cesionAFavorDe" />
+            <label>Fecha probable entrega</label><input id="b-fechaProbableEntrega" type="date" />
+            <label>Fecha proforma</label><input id="b-fechaProforma" type="date" />
+            <label>Vencimiento CPP</label><input id="b-fechaVencimientoCPP" type="date" />
+
+            <h4>Contrato / protocolo</h4>
+            <label>Fecha contrato firmado por cliente</label><input id="b-fechaContratoCliente" type="date" />
+            <label>Monto contrato</label><input id="b-montoContrato" type="number" />
+            <label>Contrato firmado</label>
+            <select id="b-contratoFirmado"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
+            <label>Fecha activacion tramite legal</label><input id="b-fechaActivacionTramite" type="date" />
+            <label>Protocolo firma cliente</label>
+            <select id="b-protocoloFirmaCliente"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
+            <label>Fecha entrega a banco</label><input id="b-fechaEntregaBanco" type="date" />
+            <label>Pago impuestos</label>
+            <select id="b-pagoImpuestos"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
+            <label>Ingreso RP</label>
+            <select id="b-ingresoRP"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
+            <label>Fecha inscripcion</label><input id="b-fechaInscripcion" type="date" />
+            <label>Solicitud desembolso</label>
+            <select id="b-solicitudDesembolso"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
+            <label>Fecha desembolso</label><input id="b-fechaDesembolso" type="date" />
+
+            <h4>Tecnico / permisos</h4>
+            <label>En construccion</label>
+            <select id="b-enConstruccion"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
+            <label>Estatus construccion</label>
+            <select id="b-estatusConstruccion">
+              <option value="">(no cambiar)</option>
+              <option value="Pendiente">Pendiente</option>
+              <option value="Obra gris">Obra gris</option>
+              <option value="Acabados">Acabados</option>
+              <option value="Culminada">Culminada</option>
+            </select>
+            <label>Fase construccion</label><input id="b-faseConstruccion" />
+            <label>Permiso construccion municipal</label>
+            <select id="b-permisoConstruccionMunicipal"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
+            <label>Resolucion permiso construccion</label><input id="b-permisoConstruccionNum" />
+            <label>Permiso ocupacion municipal</label>
+            <select id="b-permisoOcupacion"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
+            <label>Resolucion permiso ocupacion</label><input id="b-permisoOcupacionNum" />
+            <label>Fecha emision permiso ocupacion</label><input id="b-fechaEmisionPermisoOcupacion" type="date" />
+            <label>Constructora</label><input id="b-constructora" />
+
+            <h4>Legal / entrega / captacion</h4>
+            <label>Solicitud avaluo</label><input id="b-solicitudAvaluo" />
+            <label>Avaluo realizado</label><input id="b-avaluoRealizado" />
+            <label>Fecha avaluo</label><input id="b-fechaAvaluo" type="date" />
+            <label>Empresa avaluadora</label><input id="b-empresaAvaluadora" />
+            <label>Minuta liberacion / desafectacion</label>
+            <select id="b-mLiberacion"><option value="">(no cambiar)</option><option value="Solicitada">Solicitada</option><option value="Lista">Lista</option><option value="No aplica">No aplica</option></select>
+            <label>Minuta segregacion / venta</label>
+            <select id="b-mSegregacion"><option value="">(no cambiar)</option><option value="Solicitada">Solicitada</option><option value="Lista">Lista</option><option value="No aplica">No aplica</option></select>
+            <label>Minuta prestamo</label>
+            <select id="b-mPrestamo"><option value="">(no cambiar)</option><option value="Solicitada">Solicitada</option><option value="Lista">Lista</option><option value="No aplica">No aplica</option></select>
+            <label>Paz y salvo Gesproban</label>
+            <select id="b-pazSalvoGesproban"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
+            <label>Paz y salvo Promotora</label>
+            <select id="b-pazSalvoPromotora"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
+            <label>Entrega de casa</label><input id="b-entregaCasa" />
+            <label>Fecha entrega vivienda</label><input id="b-fechaEntregaVivienda" type="date" />
+            <label>Captado atencion oficina</label>
+            <select id="b-captadoAtencionOficina"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
+            <label>Captado mail / internet</label>
+            <select id="b-captadoMailInternet"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
+            <label>Captado en proyecto</label>
+            <select id="b-captadoEnProyecto"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
+            <label>Captado mercadeo / prospecteo</label>
+            <select id="b-captadoMercadeoProspecto"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
+            <label>Proforma solicitada por</label><input id="b-proformaSolicitadaPor" />
+            <label>Referido por</label><input id="b-referidoPor" />
+            <label>Observacion cliente</label><input id="b-observacionCliente" />
+            <label>Comentario interno</label><input id="b-comentario" />
           </div>
         </div>
       </div>

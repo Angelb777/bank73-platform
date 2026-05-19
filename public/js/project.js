@@ -5753,11 +5753,24 @@ function showCppExpiryPopup(alerts = []) {
 }
     // Grid
     // ----- Render grid mejorado -----
+function getDisplayClienteName(venta, unit) {
+  const nickname = String(venta?.clienteNombre || '').trim();
+  if (nickname) return nickname;
+
+  const fullName = [
+    venta?.primerNombre,
+    venta?.primerApellido,
+    venta?.segundoApellido
+  ].map(x => String(x || '').trim()).filter(Boolean).join(' ');
+
+  return fullName || venta?.cliente?.nombre || unit?.clienteId?.nombre || '';
+}
+
 function renderUnitCard(u) {
   const venta = ventasMap.get(String(u._id));
   const banco = venta?.banco || '';
   const cpp = venta?.numCPP || '';
-  const cliente = venta?.clienteNombre || venta?.cliente?.nombre || u.clienteId?.nombre || '';
+  const cliente = getDisplayClienteName(venta, u);
   const idu = String(u._id);
   const estadoTxt = estadoLabel(u.estado || 'disponible');
   const impago = /mora|impago|rechaz|atras|vencid|moros/i.test(venta?.statusBanco || '');
@@ -7610,6 +7623,9 @@ const uBody = {
   // === Batch ===
   function openBatch() {
   if (!selected.size) return alert('Selecciona al menos una unidad.');
+  modalBatch.querySelectorAll('input, select').forEach(el => {
+    el.value = '';
+  });
   modalBatch.style.display='flex';
 
   // ✅ llenar select y permitir "(no cambiar)"
@@ -7622,6 +7638,171 @@ const uBody = {
   );
 }
   function closeBatch(){ modalBatch.style.display='none'; }
+
+  function addBatchField(update, field, type = 'text') {
+    const el = document.getElementById(`b-${field}`);
+    if (!el) return;
+
+    const raw = String(el.value || '').trim();
+    if (!raw) return;
+
+    if (type === 'number') {
+      const num = Number(raw);
+      if (Number.isFinite(num)) update[field] = num;
+      return;
+    }
+
+    if (type === 'date') {
+      const dt = new Date(raw);
+      if (!Number.isNaN(dt.getTime())) update[field] = dt.toISOString();
+      return;
+    }
+
+    if (type === 'boolean') {
+      update[field] = raw === 'true';
+      return;
+    }
+
+    update[field] = raw;
+  }
+
+  function collectBatchVentaUpdate() {
+    const update = {};
+
+    [
+      'banco',
+      'oficialBanco',
+      'numCPP',
+      'estatusCPP',
+      'cesionAFavorDe',
+      'numeroFinca',
+      'codigoUbicacion',
+      'calle',
+      'loteEsquina',
+      'estatusConstruccion',
+      'faseConstruccion',
+      'permisoConstruccionNum',
+      'permisoOcupacionNum',
+      'constructora',
+      'solicitudAvaluo',
+      'avaluoRealizado',
+      'empresaAvaluadora',
+      'mLiberacion',
+      'mSegregacion',
+      'mPrestamo',
+      'entregaCasa',
+      'proformaSolicitadaPor',
+      'referidoPor',
+      'observacionCliente',
+      'comentario'
+    ].forEach(field => addBatchField(update, field));
+
+    [
+      'clienteNombre',
+      'cedula',
+      'empresa',
+      'primerNombre',
+      'segundoNombre',
+      'primerApellido',
+      'segundoApellido',
+      'apellidoCasada',
+      'sexo',
+      'profesion',
+      'estadoCivil',
+      'direccion',
+      'telefonoResidencial',
+      'telefonoOficina',
+      'celular',
+      'correo',
+      'perfilCliente',
+      'tipoEmpresa',
+      'sectorEmpresa',
+      'lugarTrabajo',
+      'cargo',
+      'antiguedadLaboral',
+      'cliente2PrimerNombre',
+      'cliente2SegundoNombre',
+      'cliente2PrimerApellido',
+      'cliente2SegundoApellido',
+      'cliente2ApellidoCasada',
+      'cliente2Cedula',
+      'cliente2Sexo',
+      'cliente2Profesion',
+      'cliente2EstadoCivil',
+      'cliente2Direccion',
+      'cliente2TelefonoResidencial',
+      'cliente2TelefonoOficina',
+      'cliente2Celular',
+      'cliente2Correo',
+      'cliente2LugarTrabajo',
+      'cliente2Cargo',
+      'cliente2AntiguedadLaboral'
+    ].forEach(field => addBatchField(update, field));
+
+    [
+      'valor',
+      'precioVenta',
+      'montoFinanciamientoCPP',
+      'porcentajeFinanciamiento',
+      'metrosExtra',
+      'precioLoteEsquina',
+      'precioM2Extra',
+      'areaAbierta',
+      'areaCerrada',
+      'recamaras',
+      'banos',
+      'valorMejoras',
+      'valorTerreno',
+      'montoContrato',
+      'ingresoMensual',
+      'cliente2IngresoMensual'
+    ].forEach(field => addBatchField(update, field, 'number'));
+
+    [
+      'fechaProbableEntrega',
+      'fechaProforma',
+      'fechaVencimientoCPP',
+      'fechaContratoCliente',
+      'fechaActivacionTramite',
+      'fechaEntregaBanco',
+      'fechaInscripcion',
+      'fechaDesembolso',
+      'fechaEmisionPermisoOcupacion',
+      'fechaAvaluo',
+      'fechaEntregaVivienda'
+    ].forEach(field => addBatchField(update, field, 'date'));
+
+    [
+      'contratoFirmado',
+      'protocoloFirmaCliente',
+      'pagoImpuestos',
+      'ingresoRP',
+      'solicitudDesembolso',
+      'enConstruccion',
+      'permisoConstruccionMunicipal',
+      'permisoOcupacion',
+      'pazSalvoGesproban',
+      'pazSalvoPromotora',
+      'captadoAtencionOficina',
+      'captadoMailInternet',
+      'captadoEnProyecto',
+      'captadoMercadeoProspecto'
+    ].forEach(field => addBatchField(update, field, 'boolean'));
+
+    const sb = getStatusBancoValue('b-statusBancoSel','b-statusBancoOther');
+    if (sb) update.statusBanco = sb;
+
+    if (update.valor != null && update.montoFinanciamientoCPP == null) update.montoFinanciamientoCPP = update.valor;
+    if (update.montoFinanciamientoCPP != null && update.valor == null) update.valor = update.montoFinanciamientoCPP;
+    if (update.areaAbierta != null && update.areaCerrada != null) {
+      update.areaTotalConstruccion = Number(update.areaAbierta || 0) + Number(update.areaCerrada || 0);
+    }
+    if (update.precioVenta != null && update.montoFinanciamientoCPP != null) {
+      update.abonoInicial = Math.max(Number(update.precioVenta || 0) - Number(update.montoFinanciamientoCPP || 0), 0);
+    }
+
+    return update;
+  }
 
   async function aplicarBatch() {
         // ROLE-SEP: bloquear edición si commercial y no aprobado
@@ -7640,12 +7821,7 @@ const uBody = {
     if (Object.keys(updUnit).length) await apiPatch('/api/units/batch', { ids, update: updUnit, projectId: id });
 
     // Venta updates
-    const updVenta = {};
-    const banco = document.getElementById('b-banco').value; if (banco) updVenta.banco = banco;
-    const sb = getStatusBancoValue('b-statusBancoSel','b-statusBancoOther');
-    if (sb) updVenta.statusBanco = sb;
-    const cpp = document.getElementById('b-numCPP').value; if (cpp) updVenta.numCPP = cpp;
-    const val = document.getElementById('b-valor').value; if (val) updVenta.valor = Number(val);
+    const updVenta = collectBatchVentaUpdate();
     if (Object.keys(updVenta).length) await apiPatch('/api/ventas/batch', { unitIds: ids, update: updVenta, upsert: true, projectId: id });
 
     closeBatch();
