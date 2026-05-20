@@ -1028,18 +1028,22 @@
     <div class="tabpane" id="tab-resumen">
 
   <!-- Cabecera + export -->
-  <section id="summaryHeader" class="row space-between">
-    <div>
+  <section id="summaryHeader" class="summary-header">
+    <div class="summary-title-block">
       <h2 id="summaryProjectName">Proyecto</h2>
       <div class="small muted" id="summaryUpdatedAt">Actualizado: —</div>
     </div>
-    <div class="row gap-8">
+    <div class="summary-export-actions">
       <a id="exportSummaryPdf"  class="btn btn-primary btn-sm"  href="#">PDF</a>
       <a id="exportSummaryXlsx" class="btn btn-ghost  btn-sm"  href="#">Excel</a>
     </div>
-    <div class="row gap-8" style="margin-top:10px;">
-    <input type="file" id="datoUnicoFile" accept=".xlsx,.xls" />
-    <button id="importDatoUnicoBtn" class="btn btn-primary btn-sm" type="button">Importar Dato Único</button>
+    <div class="summary-import-actions">
+      <label class="summary-file-picker" for="datoUnicoFile">
+        <span class="summary-file-picker-label">Seleccionar Excel</span>
+        <span class="summary-file-picker-name" id="datoUnicoFileName">Ningún archivo seleccionado</span>
+      </label>
+      <input class="summary-file-input" type="file" id="datoUnicoFile" accept=".xlsx,.xls" />
+      <button id="importDatoUnicoBtn" class="btn btn-primary btn-sm" type="button">Importar Dato Único</button>
     </div>
   </section>
 

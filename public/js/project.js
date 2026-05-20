@@ -3255,6 +3255,14 @@ const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
 
     // ===== Importar Dato Único (bind una sola vez) =====
     const importBtn = document.getElementById('importDatoUnicoBtn');
+    const datoUnicoInput = document.getElementById('datoUnicoFile');
+    const datoUnicoFileName = document.getElementById('datoUnicoFileName');
+    if (datoUnicoInput && datoUnicoFileName && !datoUnicoInput.dataset.bound) {
+      datoUnicoInput.dataset.bound = '1';
+      datoUnicoInput.addEventListener('change', () => {
+        datoUnicoFileName.textContent = datoUnicoInput.files?.[0]?.name || 'Ningún archivo seleccionado';
+      });
+    }
     if (importBtn && !importBtn.dataset.bound) {
       importBtn.dataset.bound = '1';
       importBtn.addEventListener('click', async () => {
