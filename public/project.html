@@ -10,9 +10,6 @@
 
   <style>
    /* ===== Ajustes existentes ===== */
-#pstatusSel { color:#000; background:#fff; }
-#pstatusSel option { color:#000; background:#fff; }
-
 /* ===== Proyecto: layout y componentes ===== */
 .proyecto-topbar {
   display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:space-between;
@@ -993,23 +990,25 @@
     <div class="proyecto-topbar">
       <h2 id="pname">Proyecto</h2>
       <div class="status-controls">
-  <label for="pstatusSel" class="status-label">Estado</label>
+        <div class="project-status-picker">
+          <label for="pstatusSel" class="status-label">Estado</label>
 
-  <div class="select-wrap">
-    <select id="pstatusSel" class="select-clean">
-      <option value="EN_CURSO">EN_CURSO</option>
-      <option value="EN_MARCHA">EN_MARCHA</option>
-      <option value="PAUSADO">PAUSADO</option>
-      <option value="FINALIZADO">FINALIZADO</option>
-    </select>
-    <!-- chevron -->
-    <svg class="chev" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-    </svg>
-  </div>
+          <div class="select-wrap">
+            <select id="pstatusSel" class="select-clean">
+              <option value="EN_CURSO">EN_CURSO</option>
+              <option value="EN_MARCHA">EN_MARCHA</option>
+              <option value="PAUSADO">PAUSADO</option>
+              <option value="FINALIZADO">FINALIZADO</option>
+            </select>
+            <!-- chevron -->
+            <svg class="chev" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            </svg>
+          </div>
+        </div>
 
-  <button id="saveStatusBtn" class="btn-primary">Guardar</button>
-</div>
+        <button id="saveStatusBtn" class="btn-primary">Guardar</button>
+      </div>
 
     </div>
 
