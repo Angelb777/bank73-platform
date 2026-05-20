@@ -1790,6 +1790,24 @@ if (isSoldLikeStatus(st)) U.sold++;
       alerts: expiries
     };
 
+    const safeReportFilenamePart = (value, fallback = 'Proyecto') => {
+      const cleanName = String(value || fallback)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return (cleanName || fallback).slice(0, 90);
+    };
+
+    const downloadDateStamp = (date = new Date()) => {
+      const pad = n => String(n).padStart(2, '0');
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    };
+
+    const reportFilename = (ext) =>
+      `Informe Bank73 - ${safeReportFilenamePart(summary.projectName)} - ${downloadDateStamp()}.${ext}`;
+
     const charts = req.body?.charts && typeof req.body.charts === 'object' ? req.body.charts : {};
     const datasets = (req.body?.datasets && typeof req.body.datasets === 'object') ? req.body.datasets : {};
     const beforeAfter =
@@ -2756,7 +2774,7 @@ ws.addRow(['Canceladas', summary.units.canceladas]);
       }
 
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', `attachment; filename="resumen_${id}.xlsx"`);
+      res.setHeader('Content-Disposition', `attachment; filename="${reportFilename('xlsx')}"`);
       await wb.xlsx.write(res);
       return res.end();
     }
@@ -2765,7 +2783,7 @@ ws.addRow(['Canceladas', summary.units.canceladas]);
     const doc = new PDFDocument({ margin: 40, bufferPages: true, autoFirstPage: false });
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="resumen_${id}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${reportFilename('pdf')}"`);
     doc.pipe(res);
 
     doc.addPage();

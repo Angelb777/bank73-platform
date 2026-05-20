@@ -3110,6 +3110,32 @@ async function loadSummary() {
       URL.revokeObjectURL(a.href);
     };
 
+    const safeReportFilenamePart = (value, fallback = 'Proyecto') => {
+      const clean = String(value || fallback)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return (clean || fallback).slice(0, 90);
+    };
+
+    const downloadDateStamp = () => {
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    };
+
+    const exportReportFilename = (payload, ext) => {
+      const projectName =
+        payload?.project?.name ||
+        payload?.projectName ||
+        document.getElementById('pname')?.textContent ||
+        'Proyecto';
+
+      return `Informe Bank73 - ${safeReportFilenamePart(projectName)} - ${downloadDateStamp()}.${ext}`;
+    };
+
     const exportSummary = async (format) => {
   const btn = format === 'pdf' ? pdf : exl;
   const originalText = btn?.textContent || '';
@@ -3205,7 +3231,7 @@ const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
       }
 
       const ext = (format === 'pdf') ? 'pdf' : 'xlsx';
-      await downloadBlob(resp2, `resumen_${id}.${ext}`);
+      await downloadBlob(resp2, exportReportFilename(payload, ext));
       } finally {
   [pdf, exl].forEach(b => {
     if (!b) return;
