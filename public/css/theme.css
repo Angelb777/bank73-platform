@@ -1020,12 +1020,41 @@ body.ba-viewer-open {
 .btn-primary:hover{ filter: brightness(1.03); }
 .btn-primary:active{ transform: translateY(1px); }
 
-/* Responsive: apilar en pantallas estrechas */
+/* Responsive: mantener Estado + Guardar en una sola fila */
 @media (max-width: 640px){
-  .status-controls{ flex-wrap:wrap; justify-content:flex-end; gap:8px }
-  .project-status-picker{ width:100%; }
-  .select-wrap{ flex:1; }
-  .select-clean{ width:100%; }
+  .status-controls{
+    width:100%;
+    flex-wrap:nowrap;
+    justify-content:space-between;
+    gap:8px;
+  }
+
+  .project-status-picker{
+    flex:1 1 auto;
+    min-width:0;
+  }
+
+  .status-label{
+    padding:0 12px;
+  }
+
+  .select-wrap{
+    flex:1 1 auto;
+    min-width:0;
+  }
+
+  .select-clean{
+    width:100%;
+    min-width:0;
+    padding-left:12px;
+    padding-right:34px;
+  }
+
+  #saveStatusBtn{
+    flex:0 0 auto;
+    padding-left:12px;
+    padding-right:12px;
+  }
 }
 
 /* ===== FICHA UNIDAD (contraste en secciones) ===== */
@@ -2004,7 +2033,7 @@ body {
   }
 
   .select-clean{
-    min-width:140px;
+    min-width:0;
   }
 
   /* ===== KPIS ===== */
