@@ -133,7 +133,9 @@ if (roleSelectDefault) {
   // Modal asignación (si existe en el HTML)
   const assignModal = document.getElementById('assignModal');
   const assignProjectNameEl = document.getElementById('assignProjectName');
+  const assignTeamSuggestionEl = document.getElementById('assignTeamSuggestion');
   const assignCancelBtn = document.getElementById('assignCancel');
+  const assignCloseBtn = document.getElementById('assignClose');
   const assignSaveBtn = document.getElementById('assignSave');
 
   // Actividad / auditoría
@@ -544,6 +546,43 @@ function applyProjectsFilters(list) {
   }
 
   // ---------- RENDER: Proyectos Pendientes ----------
+  function teamSuggestionHtml(s = {}) {
+    const roles = ['promoter','commercial','legal','tecnico','gerencia','socios','financiero','contable'];
+    const rows = roles
+      .map(r => {
+        const list = Array.isArray(s?.[r]) ? s[r].filter(Boolean) : [];
+        if (!list.length) return '';
+        return `<div><b>${escapeHtml(ROLE_LABEL(r))}:</b> ${escapeHtml(list.join(', '))}</div>`;
+      })
+      .filter(Boolean);
+
+    if (s?.notes) rows.push(`<div><b>Notas:</b> ${escapeHtml(s.notes)}</div>`);
+    return rows.length ? `<div class="muted" style="margin-top:6px; font-size:.82rem;">${rows.join('')}</div>` : '<span class="muted">—</span>';
+  }
+
+  function renderAssignTeamSuggestion(s = {}) {
+    if (!assignTeamSuggestionEl) return;
+    const roles = ['promoter','commercial','legal','tecnico','gerencia','socios','financiero','contable'];
+    const rows = roles
+      .map(r => {
+        const list = Array.isArray(s?.[r]) ? s[r].filter(Boolean) : [];
+        if (!list.length) return '';
+        return `<div><b>${escapeHtml(ROLE_LABEL(r))}:</b> ${escapeHtml(list.join(', '))}</div>`;
+      })
+      .filter(Boolean);
+
+    if (s?.notes) rows.push(`<div><b>Notas:</b> ${escapeHtml(s.notes)}</div>`);
+
+    if (!rows.length) {
+      assignTeamSuggestionEl.style.display = 'none';
+      assignTeamSuggestionEl.innerHTML = '';
+      return;
+    }
+
+    assignTeamSuggestionEl.innerHTML = `<div class="title">Equipo sugerido por el solicitante</div>${rows.join('')}`;
+    assignTeamSuggestionEl.style.display = '';
+  }
+
   function renderPendingProjects(list) {
     if (!pendingProjectsTbody) return;
     pendingProjectsTbody.innerHTML = '';
@@ -556,7 +595,10 @@ function applyProjectsFilters(list) {
       const st = (p.publishStatus || 'pending').toLowerCase();
       tr.innerHTML = `
         <td>${p.name || '-'}</td>
-        <td>${p.description || '-'}</td>
+        <td>
+          <div>${p.description || '-'}</div>
+          ${teamSuggestionHtml(p.teamSuggestion)}
+        </td>
         <td><span class="badge ${st}">${st.toUpperCase()}</span></td>
         <td>
           <div class="actions">
@@ -1226,6 +1268,7 @@ if (pAssign && assignModal && assignProjectNameEl) {
 
     const candidatesByRole = {};
     candidatesByRoleArr.forEach(({ role, users }) => { candidatesByRole[role] = users || []; });
+    renderAssignTeamSuggestion(project.teamSuggestion || {});
 
     // 2) Determinar preseleccionados por rol
     // Recomendado backend: project.assignees = { promoter:[ids], commercial:[ids], gerencia:[ids], ... }
@@ -1297,6 +1340,7 @@ if (pAssign && assignModal && assignProjectNameEl) {
 
   // Modal asignación: guardar/cerrar (si existe)
   assignCancelBtn?.addEventListener('click', () => assignModal?.classList.remove('show'));
+  assignCloseBtn?.addEventListener('click', () => assignModal?.classList.remove('show'));
   assignSaveBtn?.addEventListener('click', async () => {
   if (!assignModal) return;
   const id = assignModal.dataset.projectId;

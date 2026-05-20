@@ -124,6 +124,7 @@
   const modal = document.getElementById('modalBackdrop');
   const fab = document.getElementById('fabPlus');
   const btnCancel = document.getElementById('cancelCreate');
+  const btnCloseCreate = document.getElementById('closeCreateModal');
   const btnCreate = document.getElementById('createProject');
 
   // Nuevo contenedor de roles (tu HTML final lo trae)
@@ -226,6 +227,24 @@
     return Array.from(selectEl?.selectedOptions || []).map(o => o.value);
   }
 
+  function splitSuggestions(value) {
+    return String(value || '')
+      .split(/\r?\n|,/)
+      .map(x => x.trim())
+      .filter(Boolean)
+      .slice(0, 12);
+  }
+
+  function collectTeamSuggestion() {
+    const roles = ['promoter','commercial','legal','tecnico','gerencia','socios','financiero','contable'];
+    const out = {};
+    roles.forEach(r => {
+      out[r] = splitSuggestions(document.getElementById(`ts-${r}`)?.value);
+    });
+    out.notes = document.getElementById('ts-notes')?.value?.trim() || '';
+    return out;
+  }
+
   const openModal = async () => {
     if (!modal) return;
     modal.classList.add('show');
@@ -286,6 +305,7 @@
     if (fab) fab.style.display = '';
     if (fab) fab.addEventListener('click', openModal);
     if (btnCancel) btnCancel.addEventListener('click', closeModal);
+    if (btnCloseCreate) btnCloseCreate.addEventListener('click', closeModal);
 
     if (btnCreate) {
       btnCreate.addEventListener('click', async () => {
@@ -307,7 +327,8 @@
             description,
             status,
             loanApproved,
-            budgetApproved
+            budgetApproved,
+            teamSuggestion: collectTeamSuggestion()
           };
 
           await API.post('/api/projects', payload);
@@ -315,7 +336,7 @@
           closeModal();
 
           // reset campos
-          ['pName', 'pDesc', 'kLoanApproved', 'kBudgetApproved'].forEach(id => {
+          ['pName', 'pDesc', 'kLoanApproved', 'kBudgetApproved', 'ts-promoter', 'ts-commercial', 'ts-legal', 'ts-tecnico', 'ts-gerencia', 'ts-socios', 'ts-financiero', 'ts-contable', 'ts-notes'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
           });

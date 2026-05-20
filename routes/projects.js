@@ -100,6 +100,26 @@ async function validateAssignees({ tenantKey, role, ids }) {
   return users.map(u => u._id);
 }
 
+function sanitizeTeamSuggestion(input) {
+  const allowed = ['promoter','commercial','legal','tecnico','gerencia','socios','financiero','contable'];
+  const out = {};
+
+  for (const role of allowed) {
+    const raw = Array.isArray(input?.[role])
+      ? input[role]
+      : String(input?.[role] || '').split(/\r?\n|,/);
+
+    out[role] = Array.from(new Set(raw
+      .map(v => String(v || '').trim())
+      .filter(Boolean)
+      .map(v => v.slice(0, 120))
+    )).slice(0, 12);
+  }
+
+  out.notes = String(input?.notes || '').trim().slice(0, 1000);
+  return out;
+}
+
 /* =========================================================================
    LISTADOS SIN :id (deben ir ANTES que cualquier ruta con :id)
    ========================================================================= */
@@ -257,6 +277,7 @@ router.post('/', requireRole('admin','bank'), async (req, res) => {
 
     body.publishStatus = 'pending';
     body.createdBy = toObjectId(req.user.userId);
+    body.teamSuggestion = sanitizeTeamSuggestion(body.teamSuggestion || {});
 
     // Crear proyecto ya no requiere exponer/asignar usuarios en el alta.
     // Si llegan asignaciones legacy, se validan contra el tenant, pero son opcionales.

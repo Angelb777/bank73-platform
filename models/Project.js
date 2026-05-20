@@ -21,6 +21,18 @@ const projectSchema = new Schema({
 
   createdBy: { type: Schema.Types.ObjectId, ref: 'User', index: true },
 
+  teamSuggestion: {
+    promoter:   [{ type: String, trim: true }],
+    commercial: [{ type: String, trim: true }],
+    legal:      [{ type: String, trim: true }],
+    tecnico:    [{ type: String, trim: true }],
+    gerencia:   [{ type: String, trim: true }],
+    socios:     [{ type: String, trim: true }],
+    financiero: [{ type: String, trim: true }],
+    contable:   [{ type: String, trim: true }],
+    notes:      { type: String, trim: true, default: '' }
+  },
+
   // Asignaciones (legacy + nuevos roles)
   assignedPromoters:   [{ type: Schema.Types.ObjectId, ref: 'User', index: true }],
   assignedCommercials: [{ type: Schema.Types.ObjectId, ref: 'User', index: true }],

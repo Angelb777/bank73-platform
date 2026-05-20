@@ -31,11 +31,34 @@
     .modal-backdrop.show { display: flex; }
 
     .modal {
+      position: relative;
       background: #fff; color:#000;
       border-radius: 10px;
       width: 100%;
       max-width: 760px;
       padding: 20px;
+    }
+    .modal.create-modal {
+      max-height: calc(100vh - 80px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 0;
+    }
+    .create-modal-body {
+      overflow: auto;
+      padding: 28px 28px 18px;
+      min-height: 0;
+    }
+    .create-modal-actions {
+      position: sticky;
+      bottom: 0;
+      margin-top: 0;
+      padding: 14px 28px;
+      border-top: 1px solid #e5e7eb;
+      background: rgba(255,255,255,.96);
+      box-shadow: 0 -10px 24px rgba(15,23,42,.08);
+      z-index: 2;
     }
     .modal .row {
       display: flex;
@@ -46,6 +69,32 @@
     }
     .modal h3 { margin-top: 0; }
     .modal input, .modal textarea, .modal select { border: 1px solid #ccc; background: #fff; color: #000; }
+    .modal-close {
+      position:absolute;
+      top:14px;
+      right:14px;
+      width:34px;
+      height:34px;
+      border-radius:999px;
+      border:1px solid #d1d5db;
+      background:#f8fafc;
+      color:#0f172a;
+      font-size:22px;
+      line-height:1;
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:0;
+      }
+    .modal-close:hover { background:#e5e7eb; }
+    #cancelCreate {
+      color:#1f2937;
+      background:#e5e7eb;
+      border:1px solid #cbd5e1;
+      box-shadow:none;
+    }
+    #cancelCreate:hover { background:#d1d5db; }
 
     .muted { opacity:.7; font-size:.9rem; }
     #noProjectsBanner { margin:20px 0; text-align:center; display:none; }
@@ -156,6 +205,43 @@
       border: 1px solid rgba(13,110,253,.25);
       vertical-align: middle;
     }
+
+    .team-suggestion {
+      margin-top: 12px;
+      padding: 14px;
+      border: 1px solid rgba(15, 23, 42, .16);
+      border-radius: 10px;
+      background: #f8fafc;
+    }
+    .team-suggestion-head {
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      align-items:flex-start;
+      margin-bottom:10px;
+    }
+    .team-suggestion-head strong { display:block; }
+    .team-suggestion-grid {
+      display:grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap:10px;
+    }
+    .team-suggestion label {
+      display:flex;
+      flex-direction:column;
+      gap:5px;
+      font-size:12px;
+      color:#334155;
+    }
+    .team-suggestion input,
+    .team-suggestion textarea {
+      width:100%;
+      border-radius:8px;
+      padding:9px 10px;
+    }
+    @media (max-width: 720px) {
+      .team-suggestion-grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 
@@ -200,7 +286,9 @@
 
   <!-- MODAL -->
   <div class="modal-backdrop" id="modalBackdrop">
-    <div class="modal" style="max-height:calc(100vh - 80px); overflow:auto; padding-bottom:96px;">
+    <div class="modal create-modal">
+      <button id="closeCreateModal" class="modal-close" type="button" aria-label="Cerrar">×</button>
+      <div class="create-modal-body">
       <h3>Crear nuevo proyecto</h3>
 
       <div class="row" style="justify-content:flex-start; gap:12px; flex-wrap: wrap;">
@@ -233,7 +321,31 @@
         </div>
       </div>
 
-      <div class="row">
+      <div class="team-suggestion">
+        <div class="team-suggestion-head">
+          <div>
+            <strong>Equipo sugerido</strong>
+            <div class="muted">Opcional. Escribe uno o varios nombres por rol, separados por coma.</div>
+          </div>
+        </div>
+        <div class="team-suggestion-grid">
+          <label>Promotor<input id="ts-promoter" type="text" placeholder="Ej: Juan Perez, Maria Lopez" /></label>
+          <label>Comercial<input id="ts-commercial" type="text" placeholder="Ej: Estíbaliz Sánchez" /></label>
+          <label>Legal<input id="ts-legal" type="text" placeholder="Ej: Equipo legal banco X" /></label>
+          <label>Técnico<input id="ts-tecnico" type="text" placeholder="Ej: Supervisor obra" /></label>
+          <label>Gerencia<input id="ts-gerencia" type="text" placeholder="Ej: Gerencia regional" /></label>
+          <label>Socios<input id="ts-socios" type="text" placeholder="Ej: Socio responsable" /></label>
+          <label>Financiero<input id="ts-financiero" type="text" placeholder="Ej: Analista financiero" /></label>
+          <label>Contable<input id="ts-contable" type="text" placeholder="Ej: Contabilidad" /></label>
+        </div>
+        <label style="margin-top:10px;">Notas para el admin
+          <textarea id="ts-notes" rows="3" placeholder="Cualquier comentario adicional sobre el equipo o la asignación."></textarea>
+        </label>
+      </div>
+
+      </div>
+
+      <div class="row create-modal-actions">
         <button id="cancelCreate" class="btn ghost">Cancelar</button>
         <button id="createProject" class="btn">Crear</button>
       </div>
