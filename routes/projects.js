@@ -1810,6 +1810,11 @@ if (isSoldLikeStatus(st)) U.sold++;
 
     const charts = req.body?.charts && typeof req.body.charts === 'object' ? req.body.charts : {};
     const datasets = (req.body?.datasets && typeof req.body.datasets === 'object') ? req.body.datasets : {};
+    const exportedProgressPct = Number(datasets?.kpis?.progressPct);
+    if (Number.isFinite(exportedProgressPct)) {
+      summary.progressPct = exportedProgressPct;
+    }
+
     const beforeAfter =
       Array.isArray(req.body?.beforeAfter) ? req.body.beforeAfter :
       Array.isArray(req.body?.datasets?.beforeAfter) ? req.body.datasets.beforeAfter :
