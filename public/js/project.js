@@ -2048,6 +2048,62 @@ function renderChartSummary(containerId, items, {
   `;
 }
 
+function renderFinancePhaseSummary(phases = []) {
+  const el = document.getElementById('sumPhaseChartSummary');
+  if (!el) return;
+
+  el.closest('.summary-chart-card')?.classList.add('summary-phase-card');
+
+  const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const sum = (items) => (items || []).reduce((acc, item) => acc + Number(item?.amount || 0), 0);
+  const money = (amount) => `$${formatMoney(amount)}`;
+
+  const rows = (items) => {
+    const data = Array.isArray(items) ? items : [];
+    if (!data.length) return '<div class="summary-phase-line"><span>Sin partidas</span><strong>$0</strong></div>';
+    return data.map(item => `
+      <div class="summary-phase-line">
+        <span>${escapeHtml(item?.name || 'Partida')}</span>
+        <strong>${money(item?.amount)}</strong>
+      </div>
+    `).join('');
+  };
+
+  const group = (title, items) => `
+    <div class="summary-phase-group">
+      <div class="summary-phase-group-title">${title}</div>
+      ${rows(items)}
+      <div class="summary-phase-line summary-phase-total">
+        <span>Total</span>
+        <strong>${money(sum(items))}</strong>
+      </div>
+    </div>
+  `;
+
+  if (!Array.isArray(phases) || !phases.length) {
+    el.innerHTML = '<div class="small muted">Sin fases financieras registradas</div>';
+    return;
+  }
+
+  el.innerHTML = phases.map((phase) => `
+    <section class="summary-phase-item">
+      <div class="summary-phase-title">${escapeHtml(phase?.name || phase?.title || phase?.phase || 'Fase')}</div>
+      <div class="summary-phase-columns">
+        ${group('Usos estimados', phase?.planUses)}
+        ${group('Fuentes estimadas', phase?.planSources)}
+        ${group('Usos reales', phase?.uses)}
+        ${group('Fuentes reales', phase?.sources)}
+      </div>
+    </section>
+  `).join('');
+}
+
 function renderMiniKpiBox(containerId, rows = []) {
   const el = document.getElementById(containerId);
   if (!el) return;
@@ -2299,6 +2355,7 @@ async function renderSummaryUI(payload) {
   }
 
   renderPhaseChart(financePhases, 'sumPhaseChart');
+  renderFinancePhaseSummary(financePhases);
 
   // Cabecera textual
   const name = project.name || 'Proyecto';
@@ -2419,9 +2476,16 @@ try {
   try {
     const fin = await API.get(`/api/projects/${id}/finance?ts=${Date.now()}`);
     const phases = fin?.finance?.phases || [];
+    window.__LAST_SUMMARY_PAYLOAD__ = window.__LAST_SUMMARY_PAYLOAD__ || {};
+    window.__LAST_SUMMARY_PAYLOAD__.finance = {
+      ...(window.__LAST_SUMMARY_PAYLOAD__.finance || {}),
+      phases
+    };
     if (phases.length) {
       renderPhaseChart(phases, 'sumPhaseChart');
+      renderFinancePhaseSummary(phases);
     } else {
+      renderFinancePhaseSummary([]);
       console.warn('[Resumen] Finanzas sin fases');
     }
   } catch (e) {

@@ -10,6 +10,7 @@ const Document          = require('../models/Document');
 const Venta             = require('../models/Venta');
 const Unit              = require('../models/Unit');
 const User              = require('../models/User');
+const ProjectFinance    = require('../models/ProjectFinance');
 const audit             = require('../utils/audit');
 
 const router = express.Router();
@@ -594,7 +595,8 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     const project = await Project.findOne({ _id: id, tenantKey }).lean();
     if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
 
-    const financePhases = Array.isArray(project?.finance?.phases) ? project.finance.phases : [];
+    const financeDoc = await ProjectFinance.findOne({ project: id }).lean();
+    const financePhases = Array.isArray(financeDoc?.phases) ? financeDoc.phases : [];
 
     const [checklists, documents, ventasRaw, units, permits] = await Promise.all([
       ProjectChecklist.find({
@@ -1557,7 +1559,8 @@ router.post('/:id/summary/export', requireProjectAccess(), async (req, res) => {
       })(),
 
       (async () => {
-        return Array.isArray(project?.finance?.phases) ? project.finance.phases : [];
+        const financeDoc = await ProjectFinance.findOne({ project: id }).lean();
+        return Array.isArray(financeDoc?.phases) ? financeDoc.phases : [];
       })()
     ]);
 
@@ -1810,6 +1813,10 @@ if (isSoldLikeStatus(st)) U.sold++;
 
     const charts = req.body?.charts && typeof req.body.charts === 'object' ? req.body.charts : {};
     const datasets = (req.body?.datasets && typeof req.body.datasets === 'object') ? req.body.datasets : {};
+    const exportedFinancePhases =
+      Array.isArray(financePhases) && financePhases.length
+        ? financePhases
+        : (Array.isArray(datasets?.finance?.phases) ? datasets.finance.phases : []);
     const exportedProgressPct = Number(datasets?.kpis?.progressPct);
     if (Number.isFinite(exportedProgressPct)) {
       summary.progressPct = exportedProgressPct;
@@ -2355,22 +2362,38 @@ if (isSoldLikeStatus(st)) U.sold++;
       }
 
       if (title === 'Comparación por fase') {
-        const phases = datasets.finance?.phases || [];
+        const phases = exportedFinancePhases;
         const sumAmount = (items) => (items || []).reduce((a, it) => a + toNumber(it?.amount), 0);
-        const rows = phases.map(ph => {
-          const plan = sumAmount(ph.planUses);
-          const real = sumAmount(ph.uses);
-          return {
-            label: ph.name || ph.title || ph.phase || 'Fase',
-            value: `${fmtMoneyShort(plan)} plan · ${fmtMoneyShort(real)} real`
-          };
+        const rows = [];
+
+        phases.forEach(ph => {
+          const phaseName = ph.name || ph.title || ph.phase || 'Fase';
+          [
+            { label: 'Usos estimados', items: ph.planUses },
+            { label: 'Fuentes estimadas', items: ph.planSources },
+            { label: 'Usos reales', items: ph.uses },
+            { label: 'Fuentes reales', items: ph.sources }
+          ].forEach(group => {
+            const items = Array.isArray(group.items) ? group.items : [];
+            if (items.length) {
+              items.forEach(item => rows.push({
+                label: `${phaseName} - ${group.label}: ${item.name || 'Partida'}`,
+                value: fmtMoneyShort(item.amount)
+              }));
+            } else {
+              rows.push({
+                label: `${phaseName} - ${group.label}`,
+                value: fmtMoneyShort(0)
+              });
+            }
+          });
         });
         return {
-          columns: ['Fase', 'Plan / real'],
+          columns: ['Fase / partida', 'Monto'],
           rows,
           total: {
-            label: 'Total fases',
-            value: `${fmtMoneyShort(phases.reduce((a, ph) => a + sumAmount(ph.planUses), 0))} plan · ${fmtMoneyShort(phases.reduce((a, ph) => a + sumAmount(ph.uses), 0))} real`
+            label: 'Usos estimados / reales',
+            value: `${fmtMoneyShort(phases.reduce((a, ph) => a + sumAmount(ph.planUses), 0))} / ${fmtMoneyShort(phases.reduce((a, ph) => a + sumAmount(ph.uses), 0))}`
           }
         };
       }
@@ -2435,6 +2458,79 @@ if (isSoldLikeStatus(st)) U.sold++;
       }
 
       doc.y = y + tableH + 10;
+    }
+
+    function drawFinancePhaseDetails(doc, phases, meta) {
+      const margin = doc.page.margins.left;
+      const contentW = doc.page.width - margin * 2;
+      const bottom = doc.page.height - doc.page.margins.bottom - 26;
+      const groups = [
+        { title: 'Usos estimados', itemsKey: 'planUses' },
+        { title: 'Fuentes estimadas', itemsKey: 'planSources' },
+        { title: 'Usos reales', itemsKey: 'uses' },
+        { title: 'Fuentes reales', itemsKey: 'sources' }
+      ];
+
+      const addContinuationPage = () => {
+        doc.addPage();
+        header(doc, meta);
+        sectionTitle(doc, 'Detalle financiero por fase');
+      };
+
+      const ensureRoom = (height) => {
+        if (doc.y + height > bottom) addContinuationPage();
+      };
+
+      if (!Array.isArray(phases) || !phases.length) {
+        drawDataTable(doc, {
+          columns: ['Fase / partida', 'Monto'],
+          rows: [{ label: 'Sin fases financieras registradas', value: '-' }],
+          total: null
+        });
+        return;
+      }
+
+      ensureRoom(26);
+      doc.fontSize(10).fillColor(BRAND_BLUE).text('Detalle de fuentes y usos por fase', margin);
+      doc.moveDown(0.5);
+
+      phases.forEach((phase) => {
+        const phaseName = phase.name || phase.title || phase.phase || 'Fase';
+        ensureRoom(30);
+        doc.fontSize(10).fillColor(TEXT_DARK).text(phaseName, margin, doc.y, { width: contentW });
+        doc.moveDown(0.25);
+
+        groups.forEach((group) => {
+          const items = Array.isArray(phase[group.itemsKey]) ? phase[group.itemsKey] : [];
+          const rows = items.length ? items : [{ name: 'Sin partidas', amount: 0 }];
+          const total = rows.reduce((sum, item) => sum + toNumber(item.amount), 0);
+
+          ensureRoom(24);
+          doc.fontSize(8).fillColor(BRAND_BLUE).text(group.title, margin + 8, doc.y, { width: contentW - 16 });
+          doc.moveDown(0.2);
+
+          rows.forEach((item) => {
+            ensureRoom(15);
+            const y = doc.y;
+            doc.fontSize(8).fillColor('#475569')
+              .text(item.name || 'Partida', margin + 16, y + 2, { width: contentW * 0.62, ellipsis: true });
+            doc.fontSize(8).fillColor(TEXT_DARK)
+              .text(fmtMoneyShort(item.amount), margin + contentW * 0.68, y + 2, { width: contentW * 0.28, align: 'right' });
+            doc.y = y + 14;
+          });
+
+          ensureRoom(17);
+          doc.save();
+          doc.lineWidth(0.4).moveTo(margin + 16, doc.y).lineTo(margin + contentW, doc.y).stroke('#DDE7F2');
+          doc.restore();
+          doc.fontSize(8).fillColor(BRAND_BLUE)
+            .text(`Total ${group.title.toLowerCase()}`, margin + 16, doc.y + 4, { width: contentW * 0.62 });
+          doc.text(fmtMoneyShort(total), margin + contentW * 0.68, doc.y + 4, { width: contentW * 0.28, align: 'right' });
+          doc.y += 22;
+        });
+
+        doc.moveDown(0.35);
+      });
     }
 
     function buildExecutiveKpis({ project, summary, datasets }) {
@@ -2557,7 +2653,7 @@ if (isSoldLikeStatus(st)) U.sold++;
       doc.y = sectionY + sectionH + 12;
     }
 
-    function drawChart(doc, { title, dataUrl, datasets }) {
+    function drawChart(doc, { title, dataUrl, datasets, meta }) {
       const margin = doc.page.margins.left;
 
       doc.fontSize(13).fillColor(TEXT_DARK).text(title, margin);
@@ -2575,7 +2671,11 @@ if (isSoldLikeStatus(st)) U.sold++;
         doc.moveDown(0.6);
       }
 
-      drawDataTable(doc, chartRows(title, datasets));
+      if (title === 'Comparación por fase') {
+        drawFinancePhaseDetails(doc, exportedFinancePhases, meta);
+      } else {
+        drawDataTable(doc, chartRows(title, datasets));
+      }
 
       const insights = buildInsights(title, datasets);
       if (insights.length) {
@@ -2720,6 +2820,47 @@ ws.addRow(['Canceladas', summary.units.canceladas]);
       ws.addRow(['Vencimientos críticos (≤90d)']);
       ws.addRow(['Tipo', 'Nombre', 'Vence']);
       (summary.alerts || []).forEach(a => ws.addRow([a.type, a.name, a.due ? new Date(a.due).toISOString().slice(0, 10) : '—']));
+
+      if (exportedFinancePhases.length) {
+        const wsFinance = wb.addWorksheet('Detalle financiero');
+        wsFinance.columns = [
+          { header: 'Fase', key: 'phase', width: 28 },
+          { header: 'Bloque', key: 'group', width: 24 },
+          { header: 'Partida', key: 'item', width: 42 },
+          { header: 'Monto', key: 'amount', width: 18 }
+        ];
+        wsFinance.getRow(1).font = { bold: true };
+
+        exportedFinancePhases.forEach(phase => {
+          const phaseName = phase.name || phase.title || phase.phase || 'Fase';
+          [
+            { title: 'Usos estimados', items: phase.planUses },
+            { title: 'Fuentes estimadas', items: phase.planSources },
+            { title: 'Usos reales', items: phase.uses },
+            { title: 'Fuentes reales', items: phase.sources }
+          ].forEach(group => {
+            const items = Array.isArray(group.items) && group.items.length
+              ? group.items
+              : [{ name: 'Sin partidas', amount: 0 }];
+
+            items.forEach(item => wsFinance.addRow({
+              phase: phaseName,
+              group: group.title,
+              item: item.name || 'Partida',
+              amount: toNumber(item.amount)
+            }));
+            wsFinance.addRow({
+              phase: phaseName,
+              group: `Total ${group.title.toLowerCase()}`,
+              item: '',
+              amount: items.reduce((sum, item) => sum + toNumber(item.amount), 0)
+            });
+          });
+          wsFinance.addRow([]);
+        });
+
+        wsFinance.getColumn('amount').numFmt = '#,##0.00';
+      }
 
       const wsBA = wb.addWorksheet('Antes-Después');
       wsBA.getCell('A1').value = 'Evidencia fotográfica — Antes / Después';
@@ -2871,7 +3012,12 @@ ws.addRow(['Canceladas', summary.units.canceladas]);
         doc.addPage();
         header(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt });
         sectionTitle(doc, sec.section);
-        drawChart(doc, { title: expectedTitle, dataUrl: chartsSafe[realKey], datasets });
+        drawChart(doc, {
+          title: expectedTitle,
+          dataUrl: chartsSafe[realKey],
+          datasets,
+          meta: { projectName: summary.projectName, updatedAt: summary.updatedAt }
+        });
       }
     }
 
@@ -2882,7 +3028,12 @@ ws.addRow(['Canceladas', summary.units.canceladas]);
         doc.addPage();
         header(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt });
         sectionTitle(doc, 'Otras gráficas');
-        drawChart(doc, { title: k, dataUrl: chartsSafe[k], datasets });
+        drawChart(doc, {
+          title: k,
+          dataUrl: chartsSafe[k],
+          datasets,
+          meta: { projectName: summary.projectName, updatedAt: summary.updatedAt }
+        });
       }
     }
 
