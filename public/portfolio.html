@@ -134,6 +134,96 @@
       align-items: center;
       justify-content: flex-end;
       min-width: 140px; /* para equilibrar y ayudar al centrado */
+      gap: 10px;
+    }
+
+    .filter-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.06);
+      color: rgba(235,245,255,0.92);
+      font-size: 0;
+      cursor: pointer;
+      transition: background .15s ease, border-color .15s ease;
+    }
+
+    .filter-button:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.24);
+    }
+
+    .filter-icon {
+      width: 18px;
+      height: 18px;
+      display: block;
+      fill: currentColor;
+    }
+
+    .filter-modal .modal {
+      max-width: 520px;
+      padding: 20px;
+    }
+
+    .filter-modal h3 {
+      margin-bottom: 12px;
+    }
+
+    .filter-grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .filter-grid label {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 14px;
+    }
+
+    .filter-grid select,
+    .filter-grid input {
+      border-radius: 10px;
+      border: 1px solid #cbd5e1;
+      padding: 10px 12px;
+      background: #fff;
+      color: #0f172a;
+      font-size: 14px;
+    }
+
+    .filter-actions {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+
+    @media (max-width: 720px) {
+      .topbar {
+        flex-wrap: wrap;
+        padding: 8px 12px;
+        align-items: center;
+      }
+      .topbar-left, .topbar-right {
+        min-width: 40px;
+        flex: 0 0 auto;
+      }
+      .topbar-center { order: 2; width: 100%; display:flex; justify-content:center; padding:6px 0; }
+      .topbar-left { order: 1; }
+      .topbar-right { order: 3; }
+      .topbar-search { width: 100%; max-width: none; min-width: 0; }
+      .filter-modal .modal {
+        max-width: calc(100vw - 32px);
+      }
+      .filter-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     /* Buscador minimal negro */
@@ -171,8 +261,8 @@
 }
 
     @media (max-width: 720px) {
-      .topbar-left, .topbar-right { min-width: 90px; }
-      .topbar-search { width: min(520px, 86vw); }
+      .topbar-left, .topbar-right { min-width: 40px; flex: 0 0 auto; }
+      .topbar-search { width: 100%; max-width: none; min-width: 0; }
     }
 
     /* =========================
@@ -264,7 +354,62 @@
     </div>
 
     <div class="topbar-right">
+      <button id="portfolioFilterBtn" class="filter-button" type="button" title="Abrir filtros" aria-label="Abrir filtros">
+        <svg viewBox="0 0 24 24" class="filter-icon" aria-hidden="true">
+          <path d="M3 4h18l-6 8.4V19l-6 3v-7.6L3 4z" />
+        </svg>
+      </button>
       <button id="logoutBtn" class="btn">Salir</button>
+    </div>
+  </div>
+
+  <!-- MODAL FILTROS -->
+  <div class="modal-backdrop" id="filterModalBackdrop">
+    <div class="modal create-modal filter-modal">
+      <button id="closeFilterModal" class="modal-close" type="button" aria-label="Cerrar">×</button>
+      <div class="create-modal-body">
+        <h3>Filtrar proyectos</h3>
+        <div class="filter-grid">
+          <label>
+            Promotor
+            <select id="filterPromoter">
+              <option value="">Todos los promotores</option>
+            </select>
+          </label>
+
+          <label>
+            Estado del proyecto
+            <select id="filterStatus">
+              <option value="">Todos los estados</option>
+              <option value="EN_CURSO">EN_CURSO</option>
+              <option value="EN_MARCHA">EN_MARCHA</option>
+              <option value="PAUSADO">PAUSADO</option>
+              <option value="FINALIZADO">FINALIZADO</option>
+            </select>
+          </label>
+
+          <label>
+            Ordenar por
+            <select id="filterSort">
+              <option value="updatedAt_desc">Última edición</option>
+              <option value="updatedAt_asc">Más antiguo</option>
+              <option value="createdAt_desc">Creación reciente</option>
+              <option value="createdAt_asc">Creación antigua</option>
+              <option value="name_asc">Nombre A-Z</option>
+              <option value="name_desc">Nombre Z-A</option>
+            </select>
+          </label>
+
+          <label>
+            Solo con unidades vendidas
+            <input id="filterSoldOnly" type="checkbox" />
+          </label>
+        </div>
+      </div>
+      <div class="row create-modal-actions filter-actions">
+        <button id="clearFilters" class="btn ghost" type="button">Limpiar</button>
+        <button id="applyFilters" class="btn" type="button">Aplicar</button>
+      </div>
     </div>
   </div>
 

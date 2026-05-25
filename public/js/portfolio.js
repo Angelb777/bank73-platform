@@ -3,6 +3,17 @@
 
   const container = document.getElementById('cards');
   const banner = document.getElementById('noProjectsBanner');
+  const filterBtn = document.getElementById('portfolioFilterBtn');
+  const filterModalBackdrop = document.getElementById('filterModalBackdrop');
+  const filterPromoter = document.getElementById('filterPromoter');
+  const filterStatus = document.getElementById('filterStatus');
+  const filterSort = document.getElementById('filterSort');
+  const filterSoldOnly = document.getElementById('filterSoldOnly');
+  const applyFiltersBtn = document.getElementById('applyFilters');
+  const clearFiltersBtn = document.getElementById('clearFilters');
+  const closeFilterModalBtn = document.getElementById('closeFilterModal');
+  const promoterMap = new Map();
+  let promoterOptionsLoaded = false;
 
   // Auth / rol
   const auth = API.getAuth ? API.getAuth() : {
@@ -45,6 +56,95 @@
     };
   };
 
+  async function loadPromotersForFilters() {
+    if (!filterPromoter || promoterOptionsLoaded) return;
+
+    filterPromoter.innerHTML = '<option value="">Cargando promotores...</option>';
+    try {
+      const data = await API.get('/api/projects/assignees?role=promoter');
+      const list = (data && data.users) || [];
+      if (!list.length) {
+        filterPromoter.innerHTML = '<option value="">No hay promotores disponibles</option>';
+        return;
+      }
+
+      filterPromoter.innerHTML = '<option value="">Todos los promotores</option>';
+      list.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u._id;
+        opt.textContent = `${u.name || '(sin nombre)'} — ${u.email || ''}`.trim();
+        filterPromoter.appendChild(opt);
+        promoterMap.set(String(u._id), u.name || u.email || 'Promotor');
+      });
+      promoterOptionsLoaded = true;
+      decoratePromoterNames();
+    } catch (e) {
+      filterPromoter.innerHTML = '<option value="">No se pudieron cargar los promotores</option>';
+      console.warn('Error cargando promotores:', e);
+    }
+  }
+
+  function decoratePromoterNames() {
+    FULL_LIST.forEach(p => {
+      const ids = Array.isArray(p.assignedPromoters) ? p.assignedPromoters : [];
+      p.promoterNames = ids
+        .map(id => promoterMap.get(String(id)))
+        .filter(Boolean);
+    });
+  }
+
+  function sortProjects(list) {
+    const sortBy = filterSort?.value || 'updatedAt_desc';
+    return [...list].sort((a, b) => {
+      if (sortBy === 'updatedAt_desc') return new Date(b.updatedAt) - new Date(a.updatedAt);
+      if (sortBy === 'updatedAt_asc') return new Date(a.updatedAt) - new Date(b.updatedAt);
+      if (sortBy === 'createdAt_desc') return new Date(b.createdAt) - new Date(a.createdAt);
+      if (sortBy === 'createdAt_asc') return new Date(a.createdAt) - new Date(b.createdAt);
+      if (sortBy === 'name_asc') return String(a.name || '').localeCompare(String(b.name || ''));
+      if (sortBy === 'name_desc') return String(b.name || '').localeCompare(String(a.name || ''));
+      return 0;
+    });
+  }
+
+  function filterProjects(list) {
+    if (!Array.isArray(list)) return [];
+
+    const search = norm(searchInput?.value || '');
+    const promoterId = filterPromoter?.value || '';
+    const status = filterStatus?.value || '';
+    const soldOnly = filterSoldOnly?.checked;
+
+    let filtered = list;
+
+    if (search) {
+      filtered = filtered.filter(p => {
+        const hay = norm(`${p.name || ''} ${p.description || ''} ${p.status || ''} ${p.promoterNames?.join(' ') || ''}`);
+        return hay.includes(search);
+      });
+    }
+
+    if (promoterId) {
+      filtered = filtered.filter(p => {
+        const ids = Array.isArray(p.assignedPromoters) ? p.assignedPromoters : [];
+        return ids.some(id => String(id) === promoterId);
+      });
+    }
+
+    if (status) {
+      filtered = filtered.filter(p => String(p.status || '') === status);
+    }
+
+    if (soldOnly) {
+      filtered = filtered.filter(p => Number(p.unitsSold || 0) > 0);
+    }
+
+    return sortProjects(filtered);
+  }
+
+  function applyAllFilters() {
+    renderList(filterProjects(FULL_LIST));
+  }
+
   // ===== UI Cards =====
   function statusBadge(status) {
     const s = status || 'EN_CURSO';
@@ -58,6 +158,10 @@
 
   function card(p) {
     const soldPct = p.unitsTotal ? Math.round((p.unitsSold / p.unitsTotal) * 100) : 0;
+    const promoterLine = Array.isArray(p.promoterNames) && p.promoterNames.length
+      ? `<p class="small muted">Promotor: ${escapeHtml(p.promoterNames.join(', '))}</p>`
+      : '';
+
     return `
       <div class="card ${statusClass(p.status)}">
         <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -65,6 +169,7 @@
           ${statusBadge(p.status)}
         </div>
         <p class="muted">${p.description ? escapeHtml(p.description) : ''}</p>
+        ${promoterLine}
         <div class="progress"><div style="width:${soldPct}%"></div></div>
         <p class="small muted">${p.unitsSold || 0}/${p.unitsTotal || 0} unidades vendidas (${soldPct}%)</p>
         <div class="row">
@@ -87,27 +192,15 @@
     container.innerHTML = list.map(card).join('');
   }
 
-  function applyPortfolioFilter(q) {
-    const query = norm(q);
-    if (!query) return renderList(FULL_LIST);
-
-    const filtered = FULL_LIST.filter(p => {
-      const hay = norm(`${p.name || ''} ${p.description || ''} ${p.status || ''}`);
-      return hay.includes(query);
-    });
-
-    renderList(filtered);
-  }
-
   async function loadList() {
     try {
       const list = await API.get('/api/projects/portfolio');
       FULL_LIST = Array.isArray(list) ? list : [];
-      renderList(FULL_LIST);
+      decoratePromoterNames();
+      applyAllFilters();
 
       // Reaplicar filtro si ya había texto
-      const s = document.getElementById('portfolioSearch');
-      if (s && s.value) applyPortfolioFilter(s.value);
+      if (searchInput && searchInput.value) applyAllFilters();
     } catch (e) {
       container.innerHTML = `<div class="card">Error: ${escapeHtml(e.message || e)}</div>`;
       if (banner) banner.style.display = 'none';
@@ -117,7 +210,57 @@
   // Hook buscador (NO se inyecta nada, existe en tu HTML)
   const searchInput = document.getElementById('portfolioSearch');
   if (searchInput) {
-    searchInput.addEventListener('input', debounce((e) => applyPortfolioFilter(e.target.value), 120));
+    searchInput.addEventListener('input', debounce(() => applyAllFilters(), 120));
+  }
+
+  if (filterBtn) {
+    filterBtn.addEventListener('click', async () => {
+      if (filterModalBackdrop) filterModalBackdrop.classList.add('show');
+      await loadPromotersForFilters();
+    });
+  }
+
+  if (closeFilterModalBtn) {
+    closeFilterModalBtn.addEventListener('click', () => {
+      if (filterModalBackdrop) filterModalBackdrop.classList.remove('show');
+    });
+  }
+
+  if (applyFiltersBtn) {
+    applyFiltersBtn.addEventListener('click', () => {
+      applyAllFilters();
+      if (filterModalBackdrop) filterModalBackdrop.classList.remove('show');
+    });
+  }
+
+  if (clearFiltersBtn) {
+    clearFiltersBtn.addEventListener('click', () => {
+      if (filterPromoter) filterPromoter.value = '';
+      if (filterStatus) filterStatus.value = '';
+      if (filterSort) filterSort.value = 'updatedAt_desc';
+      if (filterSoldOnly) filterSoldOnly.checked = false;
+      applyAllFilters();
+    });
+  }
+
+  if (filterModalBackdrop) {
+    filterModalBackdrop.addEventListener('click', (e) => {
+      if (e.target === filterModalBackdrop) {
+        filterModalBackdrop.classList.remove('show');
+      }
+    });
+  }
+
+  if (filterStatus) {
+    filterStatus.addEventListener('change', () => applyAllFilters());
+  }
+
+  if (filterSort) {
+    filterSort.addEventListener('change', () => applyAllFilters());
+  }
+
+  if (filterSoldOnly) {
+    filterSoldOnly.addEventListener('change', () => applyAllFilters());
   }
 
   // ===== Modal crear proyecto =====

@@ -143,7 +143,49 @@ router.get('/portfolio', async (req, res) => {
   try {
     const q = buildPortfolioQuery(req);
 
-    const projects = await Project.find(q).sort({ updatedAt: -1 }).lean();
+    const search = String(req.query.q || '').trim();
+    const promoterId = String(req.query.promoterId || '').trim();
+    const statusFilter = String(req.query.status || '').trim();
+
+    const extra = [];
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escaped, 'i');
+      extra.push({
+        $or: [
+          { name: regex },
+          { description: regex },
+          { status: regex }
+        ]
+      });
+    }
+
+    if (promoterId && mongoose.Types.ObjectId.isValid(promoterId)) {
+      extra.push({
+        $or: [
+          { assignedPromoters: toObjectId(promoterId) },
+          { 'assignees.promoter': toObjectId(promoterId) }
+        ]
+      });
+    }
+
+    if (statusFilter) {
+      q.status = statusFilter;
+    }
+
+    if (extra.length) {
+      q.$and = (q.$and || []).concat(extra);
+    }
+
+    let sort = { updatedAt: -1 };
+    const sortBy = String(req.query.sortBy || '').trim();
+    if (sortBy === 'createdAt_asc') sort = { createdAt: 1 };
+    else if (sortBy === 'createdAt_desc') sort = { createdAt: -1 };
+    else if (sortBy === 'name_asc') sort = { name: 1 };
+    else if (sortBy === 'name_desc') sort = { name: -1 };
+    else if (sortBy === 'updatedAt_asc') sort = { updatedAt: 1 };
+
+    const projects = await Project.find(q).sort(sort).lean();
     if (!projects.length) return res.json([]);
 
     const pids = projects.map(p => p._id);
@@ -235,6 +277,9 @@ console.log('[DEBUG PORTFOLIO ESTADOS]', JSON.stringify(debugEstados, null, 2));
         name: p.name,
         description: p.description,
         status: p.status,
+        assignedPromoters: Array.isArray(p.assignedPromoters) ? p.assignedPromoters : [],
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
         unitsTotal: m?.total ?? p.unitsTotal ?? 0,
         unitsSold: m?.sold ?? 0,
       };
