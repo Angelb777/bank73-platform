@@ -211,7 +211,7 @@
 
     @media (max-width: 720px) {
       .topbar {
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         padding: 8px 12px;
         align-items: center;
       }
@@ -219,10 +219,12 @@
         min-width: 40px;
         flex: 0 0 auto;
       }
-      .topbar-center { order: 2; width: 100%; display:flex; justify-content:center; padding:6px 0; }
       .topbar-left { order: 1; }
+      .topbar-center { order: 2; flex: 1 1 auto; min-width: 0; display:flex; justify-content:center; align-items:center; padding:6px 0; }
       .topbar-right { order: 3; }
-      .topbar-search { width: 100%; max-width: calc(100% - 140px); min-width: 0; height:36px; padding:0 10px; }
+      .brand { display: none; }
+      .topbar-search { width: 100%; max-width: calc(100% - 130px); min-width: 0; height:36px; padding:0 10px; }
+      .topbar-right .btn { height: 36px; padding: 0 12px; font-size: 13px; display: inline-flex; align-items: center; }
       .filter-modal .modal {
         max-width: calc(100vw - 32px);
       }
@@ -267,7 +269,7 @@
 
     @media (max-width: 720px) {
       .topbar-left, .topbar-right { min-width: 40px; flex: 0 0 auto; }
-      .topbar-search { width: 100%; max-width: calc(100% - 140px); min-width: 0; height:36px; padding:0 10px; }
+      .topbar-search { width: 100%; max-width: calc(100% - 130px); min-width: 0; height:36px; padding:0 10px; }
     }
 
     /* =========================
