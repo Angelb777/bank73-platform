@@ -22,8 +22,8 @@
   };
   const role = (auth.role || '').toLowerCase();
 
-  // ✅ Solo admin o bank pueden crear
-  const CAN_CREATE = role === 'admin' || role === 'bank';
+  // ✅ Solo admin, bank y promoter pueden crear
+  const CAN_CREATE = role === 'admin' || role === 'bank' || role === 'promoter';
 
   // Roles
   const ALL_ROLES = [
