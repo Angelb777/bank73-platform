@@ -3945,7 +3945,7 @@ return {
 
       <div class="subtasks">
         ${(cl.subtasks||[]).map(s => `
-          <label class="subtask">
+          <div class="subtask">
             <input type="checkbox" class="js-subtoggle subtask-check"
   data-id="${cl._id}"
   data-sid="${s._id||s.id||s.title}"
@@ -3953,7 +3953,11 @@ return {
   ${disabled ? 'disabled' : ''}
 />
             <span class="subtask-title">${s.title || s.name}</span>
-          </label>
+            <button class="btn btn-danger btn-xs js-del-sub"
+              data-id="${cl._id}"
+              data-sid="${s._id||s.id||s.title}"
+              ${disabled ? 'disabled' : ''}>Eliminar</button>
+          </div>
         `).join('')}
         <div class="row">
           <input type="text" class="w-100" placeholder="Nueva subtarea…" data-newsub="${cl._id}" ${disabled ? 'disabled' : ''}/>
@@ -4140,6 +4144,21 @@ return {
       await reloadProyecto(false);
     };
   });
+
+  // Subtareas: eliminar (solo si ACTIVO)
+  document.querySelectorAll('.js-del-sub').forEach(btn => {
+    btn.onclick = async () => {
+      const clId = btn.dataset.id, sid = btn.dataset.sid;
+      if (!isActiveById(clId)) {
+        alert('Checklist bloqueado: valida los anteriores o desbloquéalo manualmente tocando la tarjeta.');
+        return;
+      }
+      if (!confirm('¿Eliminar esta subtarea?')) return;
+      await API.del(`/api/checklists/${clId}/subtasks/${sid}`);
+      await reloadProyecto(false);
+    };
+  });
+
     // Botón de documentos por checklist (abre modal)
   document.querySelectorAll('.js-open-docs').forEach(btn => {
     btn.onclick = () => {

@@ -374,6 +374,18 @@ router.put('/checklists/:id/subtasks/:sid', async (req, res) => {
   res.json({ ok: true });
 });
 
+// DELETE /api/checklists/:id/subtasks/:sid
+router.delete('/checklists/:id/subtasks/:sid', async (req, res) => {
+  const { id, sid } = req.params;
+  const cl = await ProjectChecklist.findById(id);
+  if (!cl) return res.status(404).json({ error: 'Checklist no encontrado' });
+  const st = cl.subtasks.id(sid);
+  if (!st) return res.status(404).json({ error: 'Subtarea no encontrada' });
+  st.deleteOne();
+  await cl.save();
+  res.json({ ok: true, checklist: cl });
+});
+
 /* =========================================================================
    Migración desde colección legacy "checklists" a ProjectChecklist
    ========================================================================= */
