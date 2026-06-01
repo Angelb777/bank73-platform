@@ -1847,16 +1847,30 @@ async function refreshBeforeAfter() {
 
     // ✅ MODO SEGURO: exporta todas las fotos en orden (sin depender de side)
     window.__BEFORE_AFTER__ = imgDocs
-      .map(d => toAbs(getUrl(d)))
-      .filter(Boolean);
+      .map(d => ({
+        src: toAbs(getUrl(d)),
+        createdAt: d.createdAt || d.updatedAt || null
+      }))
+      .filter(d => d.src);
 
     console.log('[BA] docs total:', docs.length);
     console.log('[BA] imgDocs:', imgDocs.length);
     console.log('[BA] export list len:', window.__BEFORE_AFTER__.length);
     console.log('[BA] first:', window.__BEFORE_AFTER__[0]);
 
-    // 3) Render UI con el array normalizado
-    renderBeforeAfter(docs);
+    // 3) En informe de periodo, mostrar solo evidencia subida en ese intervalo.
+    const activePeriod = window.__ACTIVE_SUMMARY_PERIOD__;
+    const visibleDocs = activePeriod
+      ? docs.filter(d => {
+          const rawDate = d.createdAt || d.updatedAt;
+          if (!rawDate) return false;
+          const time = new Date(rawDate).getTime();
+          const start = new Date(`${activePeriod.from}T00:00:00.000Z`).getTime();
+          const end = new Date(`${activePeriod.to}T23:59:59.999Z`).getTime();
+          return Number.isFinite(time) && time >= start && time <= end;
+        })
+      : docs;
+    renderBeforeAfter(visibleDocs);
 
   } catch (e) {
     console.error('refreshBeforeAfter error', e);
@@ -2130,10 +2144,12 @@ async function renderSummaryUI(payload) {
   // 1) Datos base
   const project = payload.project || {};
   const headerKpis = payload.headerKpis || {};
+  const reportPeriod = payload.reportPeriod || null;
+  const isPeriodView = !!reportPeriod;
 
   // ✅ Cargar permisos reales para que la gráfica salga bien desde el inicio
   try {
-    if (!__permits?.items?.length) {
+    if (!isPeriodView && !__permits?.items?.length) {
       __permits = await apiPermitsGetProject(true);
     }
   } catch (e) {
@@ -2156,6 +2172,7 @@ async function renderSummaryUI(payload) {
   const legal      = payload.legal      || {};
   const technical  = payload.technical  || {};
   const financial  = payload.financial  || {};
+  const periodActivity = payload.periodActivity || null;
 
   // Helpers locales
   const toNum = (v) => {
@@ -2270,14 +2287,147 @@ async function renderSummaryUI(payload) {
       { totalLabel, formatter }
     );
   };
+
+  const summaryTab = document.getElementById('tab-resumen');
+  const periodSection = document.getElementById('summaryPeriodActivity');
+  if (summaryTab) summaryTab.classList.toggle('is-period-report', isPeriodView);
+  if (periodSection) periodSection.hidden = !isPeriodView;
+
+  if (isPeriodView) {
+    const projectNameEl = document.getElementById('summaryProjectName');
+    const updatedAtEl = document.getElementById('summaryUpdatedAt');
+    if (projectNameEl) projectNameEl.textContent = project.name || 'Proyecto';
+    if (updatedAtEl) updatedAtEl.textContent = `Avances registrados: ${reportPeriod.from} a ${reportPeriod.to}`;
+
+    const totals = periodActivity?.totals || {};
+    renderTargetKpis('summaryPeriodKpis', [
+      { title: 'Avances registrados', value: totals.events || 0 },
+      { title: 'Ventas formalizadas (contrato)', value: totals.contracts || 0, sub: formatMoney(totals.salesAmount || 0) },
+      { title: 'Permisos aprobados', value: totals.permitsApproved || 0, sub: `${totals.permitsSubmitted || 0} presentados` },
+      { title: 'Tareas completadas', value: totals.tasksCompleted || 0, sub: `${totals.tasksValidated || 0} validadas` },
+      { title: 'CPP emitidos', value: totals.cpp || 0, sub: formatMoney(totals.cppAmount || 0) },
+      { title: 'Desembolsos recibidos', value: formatMoney(totals.disbursedAmount || 0) }
+    ]);
+
+    const periodComparison = payload.periodComparison || null;
+    const comparisonCard = document.getElementById('summaryPeriodCompareCard');
+    const salesSeries = periodComparison?.salesSeries || null;
+    if (comparisonCard) comparisonCard.hidden = !periodComparison || (!Array.isArray(periodComparison.metrics) || !periodComparison.metrics.length) && !salesSeries;
+
+    // Si backend envío series de ventas, renderizar comparación por mes (preferible)
+    if (salesSeries && ctx('sumPeriodComparison')) {
+      sumDestroy('periodComparison');
+      __sumCharts.periodComparison = new Chart(ctx('sumPeriodComparison'), {
+        type: 'line',
+        data: {
+          labels: salesSeries.labels.map(l => l),
+          datasets: [
+            { label: 'Periodo actual', data: salesSeries.current.map(n => Number(n)), borderColor: 'rgba(54, 162, 235, 1)', backgroundColor: 'rgba(54, 162, 235, 0.08)', tension: 0.35, fill: false, pointRadius: 3 },
+            { label: 'Periodo comparativo', data: salesSeries.previous.map(n => Number(n)), borderColor: 'rgba(220, 53, 69, 1)', backgroundColor: 'rgba(220, 53, 69, 0.08)', tension: 0.35, fill: false, pointRadius: 3 }
+          ]
+        },
+        options: summaryChartOpts({
+          plugins: { legend: { position: 'bottom' } },
+          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+        })
+      });
+
+      const comparisonSummary = document.getElementById('sumPeriodComparisonSummary');
+      if (comparisonSummary) {
+        const totalCur = (salesSeries.current || []).reduce((a, b) => a + (Number(b) || 0), 0);
+        const totalPrev = (salesSeries.previous || []).reduce((a, b) => a + (Number(b) || 0), 0);
+        const diff = totalCur - totalPrev;
+        const diffPct = totalPrev ? Math.round((diff / Math.abs(totalPrev)) * 100) : 0;
+        const trend = diff > 0 ? `+${formatMoney(diff)} (${diffPct}%)` : diff < 0 ? `${formatMoney(diff)} (${diffPct}%)` : 'Sin cambio';
+        const granularity = salesSeries.granularity === 'day' ? 'Días' : 'Meses';
+
+        comparisonSummary.innerHTML = `
+          <div class="summary-chart-summary-row"><strong>Periodo actual:</strong> ${periodComparison.period || reportPeriod.label} · ${formatMoney(totalCur)}</div>
+          <div class="summary-chart-summary-row"><strong>Periodo comparativo:</strong> ${periodComparison.previousPeriod || 'Mismo periodo del año anterior'} · ${formatMoney(totalPrev)}</div>
+          <div class="summary-chart-summary-row"><strong>Variación:</strong> ${trend}</div>
+          <div class="summary-chart-summary-row"><strong>Granularidad:</strong> ${granularity}</div>
+          <div class="summary-chart-summary-row small muted">Si no se indica comparativo, se usa por defecto el mismo intervalo del año anterior.</div>
+        `;
+      }
+
+    } else {
+      // Fallback: usar métricas agregadas
+      if (comparisonCard) comparisonCard.hidden = !periodComparison || !Array.isArray(periodComparison.metrics) || !periodComparison.metrics.length;
+      const comparisonItems = (periodComparison?.metrics || []).map(item => ({ label: item.label, current: item.current || 0, previous: item.previous || 0 }));
+      if (ctx('sumPeriodComparison') && comparisonItems.length) {
+        sumDestroy('periodComparison');
+        __sumCharts.periodComparison = new Chart(ctx('sumPeriodComparison'), {
+          type: 'bar',
+          data: {
+            labels: comparisonItems.map(x => x.label),
+            datasets: [
+              { label: 'Periodo actual', data: comparisonItems.map(x => x.current), backgroundColor: 'rgba(54, 162, 235, 0.8)' },
+              { label: 'Periodo comparativo', data: comparisonItems.map(x => x.previous), backgroundColor: 'rgba(153, 102, 255, 0.8)' }
+            ]
+          },
+          options: summaryChartOpts({ plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } })
+        });
+      }
+
+      const comparisonSummary = document.getElementById('sumPeriodComparisonSummary');
+      if (comparisonSummary) {
+        const rows = (periodComparison?.metrics || []).map(item => `
+          <div class="summary-chart-summary-row"><strong>${item.label}:</strong> ${item.current.toLocaleString()} vs ${item.previous.toLocaleString()}</div>
+        `).join('');
+        comparisonSummary.innerHTML = rows || '<div class="small muted">No hay datos comparativos disponibles para este periodo.</div>';
+      }
+    }
+
+    sumDestroy('periodEvents');
+    const eventCounts = periodActivity?.counts || [];
+    const periodChartCard = document.getElementById('summaryPeriodChartCard');
+    // Ocultar 'Hitos por tipo' cuando estamos mostrando series de ventas (no aporta)
+    if (periodChartCard) periodChartCard.hidden = !!salesSeries || eventCounts.length === 0;
+    if (!salesSeries && ctx('sumPeriodEvents')) {
+      __sumCharts.periodEvents = new Chart(ctx('sumPeriodEvents'), {
+        type: 'bar',
+        data: {
+          labels: eventCounts.map(x => x.type),
+          datasets: [{ label: 'Avances', data: eventCounts.map(x => toNum(x.count)) }]
+        },
+        options: summaryChartOpts({
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+        })
+      });
+    }
+    renderChartSummary(
+      'sumPeriodEventsSummary',
+      eventCounts.map(x => ({ label: x.type, value: toNum(x.count) })),
+      { totalLabel: 'Total avances' }
+    );
+
+    const timeline = document.getElementById('summaryPeriodTimeline');
+    if (timeline) {
+      timeline.innerHTML = (periodActivity?.events || []).map(event => `
+        <div class="summary-period-row">
+          <span>${new Date(event.date).toLocaleDateString()}</span>
+          <strong>${event.type}</strong>
+          <span>${event.detail || ''}</span>
+        </div>
+      `).join('') || '<div class="small muted">No hay avances fechados dentro del periodo seleccionado.</div>';
+    }
+
+    if (typeof refreshBeforeAfter === 'function') await refreshBeforeAfter();
+    addInfoBadges();
+    wireInfoTooltips();
+    return;
+  }
+
   // 3) Cabecera fija
+  const periodUnits = payload.kpis?.units || {};
   const headerKpisFixed = {
     ...headerKpis,
-    unitsTotal: (project.unitsTotal ?? headerKpis.unitsTotal ?? 0),
-    unitsSold:  (project.unitsSold  ?? headerKpis.unitsSold  ?? 0),
+    unitsTotal: isPeriodView ? (periodUnits.total || 0) : (project.unitsTotal ?? headerKpis.unitsTotal ?? 0),
+    unitsSold:  isPeriodView ? (periodUnits.sold || 0) : (project.unitsSold  ?? headerKpis.unitsSold  ?? 0),
   };
 
-  renderHeaderKpis(project, headerKpisFixed);
+  if (!isPeriodView) renderHeaderKpis(project, headerKpisFixed);
 
     // 4) Texto unidades vendidas
   let sold = headerKpisFixed.unitsSold ?? 0;
@@ -2327,7 +2477,7 @@ async function renderSummaryUI(payload) {
   };
 
     // ✅ FIX SUMMARY: recalcula ventas y CPP activos desde datos reales
-  try {
+  if (!isPeriodView) try {
     const unitsFix = await API.get(`/api/units?projectId=${id}&ts=${Date.now()}`);
     const ventasFix = await API.get(`/api/ventas?projectId=${id}&ts=${Date.now()}`);
 
@@ -2363,7 +2513,11 @@ async function renderSummaryUI(payload) {
   const updatedAtEl = document.getElementById('summaryUpdatedAt');
 
   if (projectNameEl) projectNameEl.textContent = name;
-  if (updatedAtEl) updatedAtEl.textContent = 'Actualizado: ' + (new Date(project?.updatedAt || Date.now())).toLocaleString();
+  if (updatedAtEl) {
+    updatedAtEl.textContent = isPeriodView
+      ? `Actividad del periodo: ${reportPeriod.from} a ${reportPeriod.to}`
+      : 'Actualizado: ' + (new Date(project?.updatedAt || Date.now())).toLocaleString();
+  }
 
   // Tarjetas KPI
   const u = kpis.units || {};
@@ -2372,7 +2526,7 @@ let cpp = kpis.cpp || {};
 const app = kpis.appraisal || {};
 
 // ✅ FIX: usar la misma fuente que los KPIs globales del proyecto
-try {
+if (!isPeriodView) try {
   const portfolio = await API.get(`/api/projects/portfolio?ts=${Date.now()}`);
   const me = (portfolio || []).find(p => String(p._id) === String(id));
 
@@ -2391,7 +2545,7 @@ try {
 }
 
 // ✅ FIX: CPP activos = tienen numCPP y NO están vencidos
-try {
+if (!isPeriodView) try {
   const ventas = await API.get(`/api/ventas?projectId=${id}&ts=${Date.now()}`);
 
   const today = new Date();
@@ -2473,7 +2627,7 @@ try {
   ]);
 
   // Finanzas
-  try {
+  if (!isPeriodView) try {
     const fin = await API.get(`/api/projects/${id}/finance?ts=${Date.now()}`);
     const phases = fin?.finance?.phases || [];
     window.__LAST_SUMMARY_PAYLOAD__ = window.__LAST_SUMMARY_PAYLOAD__ || {};
@@ -2526,7 +2680,7 @@ try {
   // ---------- Permisos por institución ----------
   sumDestroy('p2');
   if (ctx('sumPermitsByInstitution')) {
-    const inst = (__permits?.items?.length)
+    const inst = (!isPeriodView && __permits?.items?.length)
       ? buildPermitsByInstitution(__permits.items)
       : permitsByInstitution;
 
@@ -2904,7 +3058,23 @@ renderChartSummary(
     headerKpis.budgetApproved ??
     0;
 
-  renderTargetKpis('summaryFinancialKpis', [
+  renderTargetKpis('summaryFinancialKpis', isPeriodView ? [
+    {
+      title: 'Totales financieros',
+      value: 'Sin historico',
+      sub: 'No existen movimientos fechados para reconstruir este periodo'
+    },
+    {
+      title: 'CPP del periodo',
+      value: formatMoney(fc.cppVigenteAmount || 0),
+      sub: `${fc.coverageCppVigentePct || 0}% cobertura sobre datos fechables`
+    },
+    {
+      title: 'CPP en tramite',
+      value: `${cpp.active || 0} activos`,
+      sub: `30d:${cpp.due30 || 0} - 60d:${cpp.due60 || 0} - 90d:${cpp.due90 || 0}`
+    }
+  ] : [
     {
       title: 'Loan aprobado',
       value: formatMoney(loanApprovedSummary)
@@ -3117,12 +3287,16 @@ window.__BEFORE_AFTER__ = [];
 
 async function loadSummary() {
   try {
+    const activePeriod = window.__ACTIVE_SUMMARY_PERIOD__ || null;
+    const periodQuery = activePeriod
+      ? `&dateFrom=${encodeURIComponent(activePeriod.from)}&dateTo=${encodeURIComponent(activePeriod.to)}${activePeriod.compareFrom && activePeriod.compareTo ? `&compareDateFrom=${encodeURIComponent(activePeriod.compareFrom)}&compareDateTo=${encodeURIComponent(activePeriod.compareTo)}` : ''}`
+      : '';
     // evitar caché del navegador
-    const res = await API.get(`/api/projects/${id}/summary?ts=${Date.now()}`);
+    const res = await API.get(`/api/projects/${id}/summary?ts=${Date.now()}${periodQuery}`);
     window.__LAST_SUMMARY_PAYLOAD__ = res;
 
     // 🔥 recalcular progreso EXACTAMENTE igual que Proyecto
- try {
+ if (!activePeriod) try {
   const raw = await API.get(`/api/projects/${id}/checklists?ts=${Date.now()}`);
   const list = (raw?.checklists || raw || []);
 
@@ -3144,6 +3318,79 @@ async function loadSummary() {
     // ===== Exportación (RESUMEN) => POST + incluir gráficas (canvas) =====
     const exl = document.getElementById('exportSummaryXlsx');
     const pdf = document.getElementById('exportSummaryPdf');
+    const reportDateFrom = document.getElementById('summaryReportDateFrom');
+    const reportDateTo = document.getElementById('summaryReportDateTo');
+    const compareDateFrom = document.getElementById('summaryCompareDateFrom');
+    const compareDateTo = document.getElementById('summaryCompareDateTo');
+    const reportDateApply = document.getElementById('summaryReportDateApply');
+    const reportDateClear = document.getElementById('summaryReportDateClear');
+
+    if (activePeriod) {
+      if (reportDateFrom) reportDateFrom.value = activePeriod.from || '';
+      if (reportDateTo) reportDateTo.value = activePeriod.to || '';
+      if (compareDateFrom) compareDateFrom.value = activePeriod.compareFrom || '';
+      if (compareDateTo) compareDateTo.value = activePeriod.compareTo || '';
+    }
+
+    if (reportDateApply && !reportDateApply.dataset.bound) {
+      reportDateApply.dataset.bound = '1';
+      reportDateApply.addEventListener('click', async () => {
+        try {
+          window.__ACTIVE_SUMMARY_PERIOD__ = selectedReportPeriod();
+          await loadSummary();
+        } catch (err) {
+          alert(err.message || 'No se pudo aplicar el periodo.');
+        }
+      });
+    }
+
+    if (reportDateClear && !reportDateClear.dataset.bound) {
+      reportDateClear.dataset.bound = '1';
+      reportDateClear.addEventListener('click', async () => {
+        if (reportDateFrom) reportDateFrom.value = '';
+        if (reportDateTo) reportDateTo.value = '';
+        if (compareDateFrom) compareDateFrom.value = '';
+        if (compareDateTo) compareDateTo.value = '';
+        window.__ACTIVE_SUMMARY_PERIOD__ = null;
+        await loadSummary();
+      });
+    }
+
+    const selectedReportPeriod = () => {
+      const from = reportDateFrom?.value || '';
+      const to = reportDateTo?.value || '';
+      const compareFrom = compareDateFrom?.value || '';
+      const compareTo = compareDateTo?.value || '';
+      if (!from && !to && (compareFrom || compareTo)) throw new Error('Selecciona primero el periodo del resumen antes de indicar un comparativo.');
+      if (!from && !to) return null;
+      if (!from || !to) throw new Error('Selecciona las dos fechas del periodo o limpia el filtro para generar el informe global.');
+      if (from > to) throw new Error('La fecha inicial no puede ser posterior a la fecha final.');
+      if ((compareFrom && !compareTo) || (!compareFrom && compareTo)) throw new Error('Selecciona las dos fechas del periodo de comparación o déjalo vacío.');
+      if (compareFrom && compareTo && compareFrom > compareTo) throw new Error('La fecha inicial de comparación no puede ser posterior a la fecha final.');
+      const daysBetween = (a, b) => Math.round((new Date(`${b}T00:00:00.000Z`).getTime() - new Date(`${a}T00:00:00.000Z`).getTime()) / 86400000) + 1;
+      if (compareFrom && compareTo) {
+        const currentDays = daysBetween(from, to);
+        const comparisonDays = daysBetween(compareFrom, compareTo);
+        const daysDifference = Math.abs(currentDays - comparisonDays);
+        const currentStart = new Date(`${from}T00:00:00.000Z`);
+        const comparisonStart = new Date(`${compareFrom}T00:00:00.000Z`);
+        const monthShift = Math.abs((comparisonStart.getFullYear() - currentStart.getFullYear()) * 12 + (comparisonStart.getMonth() - currentStart.getMonth()));
+        const sameStartDay = currentStart.getDate() === comparisonStart.getDate();
+        const isAdjacentMonth = sameStartDay && monthShift === 1 && daysDifference <= 4;
+        if (currentDays !== comparisonDays && !isAdjacentMonth) {
+          throw new Error('El periodo de comparación debe tener la misma duración que el periodo analizado, salvo meses consecutivos con distinta cantidad de días.');
+        }
+      }
+      return { from, to, compareFrom, compareTo, label: `${from} - ${to}` };
+    };
+
+    const inReportPeriod = (value, period) => {
+      if (!period) return true;
+      const time = new Date(value || 0).getTime();
+      const from = new Date(`${period.from}T00:00:00.000Z`).getTime();
+      const to = new Date(`${period.to}T23:59:59.999Z`).getTime();
+      return Number.isFinite(time) && time >= from && time <= to;
+    };
 
     const captureCanvas = (canvasId) => {
       const c = document.getElementById(canvasId);
@@ -3190,14 +3437,15 @@ async function loadSummary() {
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     };
 
-    const exportReportFilename = (payload, ext) => {
+    const exportReportFilename = (payload, ext, reportPeriod) => {
       const projectName =
         payload?.project?.name ||
         payload?.projectName ||
         document.getElementById('pname')?.textContent ||
         'Proyecto';
 
-      return `Informe Bank73 - ${safeReportFilenamePart(projectName)} - ${downloadDateStamp()}.${ext}`;
+      const periodPart = reportPeriod ? ` - ${reportPeriod.from}_a_${reportPeriod.to}` : '';
+      return `Informe Bank73 - ${safeReportFilenamePart(projectName)}${periodPart} - ${downloadDateStamp()}.${ext}`;
     };
 
     const exportSummary = async (format) => {
@@ -3217,8 +3465,19 @@ async function loadSummary() {
 if (btn) {
   btn.textContent = format === 'pdf' ? 'Generando PDF...' : 'Generando Excel...';
 }
+      const reportPeriod = selectedReportPeriod();
+      const activePeriod = window.__ACTIVE_SUMMARY_PERIOD__ || null;
+      const periodKey = (period) => period ? `${period.from}|${period.to}|${period.compareFrom || ''}|${period.compareTo || ''}` : '';
+      if (periodKey(reportPeriod) !== periodKey(activePeriod)) {
+        window.__ACTIVE_SUMMARY_PERIOD__ = reportPeriod;
+        await loadSummary();
+      }
+      const payload = window.__LAST_SUMMARY_PAYLOAD__ || {};
+
       // Capturamos charts (los que existan)
-            const charts = {
+      const charts = reportPeriod ? {
+        'Avances registrados en el periodo': captureCanvas('sumPeriodComparison') || captureCanvas('sumPeriodEvents'),
+      } : {
         'Estatus lotes / unidades': captureCanvas('sumUnitsDonut'),
         'Ventas mensuales': captureCanvas('sumSalesMonthly'),
         'Ventas vs ventas caídas': captureCanvas('sumSalesVsFallen'),
@@ -3253,10 +3512,7 @@ if (btn) {
       // Limpia nulls
 Object.keys(charts).forEach(k => { if (!charts[k]) delete charts[k]; });
 
-// 1) payload del summary: si no existe, no rompe
-const payload = window.__LAST_SUMMARY_PAYLOAD__ || {};
-
-// 2) datasets (para que el backend pueda sacar "insights")
+// Datasets del resumen global o del periodo seleccionado.
 const datasets = {
   permitsByInstitution: payload.permitsByInstitution || [],
   cppByBank: payload.cppByBank || [],
@@ -3274,10 +3530,13 @@ const datasets = {
   technical: payload.technical || {},
   financial: payload.financial || {},
   finance: payload.finance || {},
+  periodActivity: payload.periodActivity || null,
+  periodComparison: payload.periodComparison || null,
 };
 
 // 3) ✅ antes/después desde la UI (si no existe, manda [])
-const beforeAfter = Array.isArray(window.__BEFORE_AFTER__) ? window.__BEFORE_AFTER__ : [];
+const beforeAfter = (Array.isArray(window.__BEFORE_AFTER__) ? window.__BEFORE_AFTER__ : [])
+  .filter(item => !reportPeriod || inReportPeriod(item?.createdAt, reportPeriod));
 
 const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
   method: 'POST',
@@ -3286,7 +3545,7 @@ const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
     ...(typeof authHeaders === 'function' ? authHeaders() : {}),
     ...(typeof tenantHeaders === 'function' ? tenantHeaders() : {}),
   },
-  body: JSON.stringify({ format, charts, datasets, beforeAfter })
+  body: JSON.stringify({ format, charts, datasets, beforeAfter, reportPeriod })
 });
 
       if (!resp2.ok) {
@@ -3295,7 +3554,7 @@ const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
       }
 
       const ext = (format === 'pdf') ? 'pdf' : 'xlsx';
-      await downloadBlob(resp2, exportReportFilename(payload, ext));
+      await downloadBlob(resp2, exportReportFilename(payload, ext, reportPeriod));
       } finally {
   [pdf, exl].forEach(b => {
     if (!b) return;
@@ -3341,7 +3600,7 @@ const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
     }
 
     // ===== Pintar todo el resumen =====
-    renderSummaryUI(res);
+    await renderSummaryUI(res);
 
     // ===== Importar Dato Único (bind una sola vez) =====
     const importBtn = document.getElementById('importDatoUnicoBtn');
@@ -3414,7 +3673,7 @@ const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
     // Refrescar la grilla A/D directamente desde /api/documents
     await refreshBeforeAfter();
 
-    await syncUnitsSoldFromPortfolio();
+    if (!activePeriod) await syncUnitsSoldFromPortfolio();
     __summaryDirty = false;
   } catch (e) {
     console.error('Error cargando resumen', e);

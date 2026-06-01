@@ -23,7 +23,7 @@ const projectPermitItemSchema = new Schema({
   observations:[{ type: String }],
   slaDays:     { type: Number },
   dependencies:[{ type: String }],
-});
+}, { timestamps: true });
 
 const projectPermitSchema = new Schema({
   tenantKey:   { type: String, index: true },

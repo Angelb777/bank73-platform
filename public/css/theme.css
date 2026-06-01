@@ -653,9 +653,10 @@ input[type="checkbox"].chk-box { width: auto; transform: translateY(1px); }
 /* Tooltip simple para los gráficos del Resumen */
 #summaryHeader.summary-header {
   display: grid;
-  grid-template-columns: minmax(220px, auto) auto minmax(360px, 1fr);
+  grid-template-columns: minmax(230px, 310px) auto minmax(390px, 1fr);
   align-items: end;
-  gap: 12px;
+  column-gap: 30px;
+  row-gap: 12px;
   margin-bottom: 18px;
 }
 
@@ -670,13 +671,116 @@ input[type="checkbox"].chk-box { width: auto; transform: translateY(1px); }
 #summaryHeader .summary-export-actions,
 #summaryHeader .summary-import-actions {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
+  min-width: 0;
 }
 
 #summaryHeader .summary-import-actions {
   justify-content: flex-end;
+}
+
+#summaryHeader .summary-date-filter {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(226px, auto)) 70px;
+  align-items: end;
+  gap: 7px;
+  min-height: 72px;
+  margin-left: 6px;
+  padding: 7px 10px;
+  border: 1px solid rgba(148, 163, 184, .28);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .045);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+
+#summaryHeader .summary-date-group {
+  display: grid;
+  gap: 4px;
   min-width: 0;
+}
+
+#summaryHeader .summary-date-group-compare {
+  padding-left: 8px;
+  border-left: 1px solid rgba(148, 163, 184, .2);
+}
+
+#summaryHeader .summary-date-filter-title {
+  color: #e6ecff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+#summaryHeader .summary-date-fields {
+  display: grid;
+  grid-template-columns: repeat(2, 112px);
+  gap: 6px;
+}
+
+#summaryHeader .summary-date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.1;
+}
+
+#summaryHeader .summary-date-field input {
+  width: 112px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid rgba(148, 163, 184, .25);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, .45);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  color-scheme: dark;
+}
+
+#summaryHeader .summary-date-field input:focus {
+  outline: none;
+  border-color: rgba(90, 162, 255, .7);
+  box-shadow: 0 0 0 2px rgba(90, 162, 255, .14);
+}
+
+#summaryHeader .summary-date-buttons {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  align-self: end;
+}
+
+#summaryHeader .summary-date-apply,
+#summaryHeader .summary-date-clear {
+  width: 70px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid rgba(148, 163, 184, .2);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+#summaryHeader .summary-date-apply {
+  border-color: rgba(90, 162, 255, .5);
+  background: rgba(90, 162, 255, .16);
+  color: #e6ecff;
+  font-weight: 700;
+}
+
+#summaryHeader .summary-date-apply:hover {
+  background: rgba(90, 162, 255, .27);
+}
+
+#summaryHeader .summary-date-clear:hover {
+  border-color: rgba(90, 162, 255, .55);
+  color: var(--text);
 }
 
 #summaryHeader .summary-file-input {
@@ -690,8 +794,8 @@ input[type="checkbox"].chk-box { width: auto; transform: translateY(1px); }
 #summaryHeader .summary-file-picker {
   display: inline-flex;
   align-items: center;
-  min-width: 300px;
-  max-width: min(470px, 100%);
+  min-width: 0;
+  width: min(310px, 100%);
   height: 52px;
   border: 1px solid rgba(148, 163, 184, .28);
   border-radius: 12px;
@@ -737,6 +841,14 @@ input[type="checkbox"].chk-box { width: auto; transform: translateY(1px); }
     grid-column: 1 / -1;
     justify-content: flex-start;
   }
+
+  #summaryHeader .summary-export-actions {
+    flex-wrap: wrap;
+  }
+
+  #summaryHeader .summary-date-filter {
+    grid-template-columns: repeat(2, minmax(226px, auto)) 70px;
+  }
 }
 
 @media (max-width: 720px) {
@@ -752,7 +864,28 @@ input[type="checkbox"].chk-box { width: auto; transform: translateY(1px); }
   }
 
   #summaryHeader .summary-file-picker,
-  #summaryHeader #importDatoUnicoBtn {
+  #summaryHeader #importDatoUnicoBtn,
+  #summaryHeader .summary-date-filter {
+    width: 100%;
+  }
+
+  #summaryHeader .summary-date-filter {
+    height: auto;
+    grid-template-columns: 1fr;
+  }
+
+  #summaryHeader .summary-date-group-compare {
+    padding-left: 0;
+    border-left: 0;
+    padding-top: 6px;
+    border-top: 1px solid rgba(148, 163, 184, .2);
+  }
+
+  #summaryHeader .summary-date-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #summaryHeader .summary-date-field input {
     width: 100%;
   }
 }
@@ -1929,6 +2062,52 @@ button.small.danger{ color:#fff !important; }
   margin-top: 14px;
   border-top: 1px solid rgba(255,255,255,.08);
   padding-top: 12px;
+}
+
+#tab-resumen.is-period-report > #summaryKpis,
+#tab-resumen.is-period-report > #summaryResumeBox,
+#tab-resumen.is-period-report > .phase,
+#tab-resumen.is-period-report > .summary-global-only,
+#tab-resumen.is-period-report > .summary-block:not(.summary-period-activity) {
+  display: none;
+}
+
+#tab-resumen .summary-period-activity[hidden] {
+  display: none;
+}
+
+#tab-resumen #summaryPeriodChartCard[hidden] {
+  display: none;
+}
+
+#tab-resumen .summary-period-log-card {
+  padding: 16px;
+}
+
+#tab-resumen .summary-period-log-card h3 {
+  margin: 0 0 12px;
+}
+
+#tab-resumen .summary-period-timeline {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+#tab-resumen .summary-period-row {
+  display: grid;
+  grid-template-columns: 92px 152px minmax(120px, 1fr);
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, .16);
+  font-size: 12px;
+}
+
+#tab-resumen .summary-period-row strong {
+  color: var(--text);
+}
+
+#tab-resumen .summary-period-row span {
+  color: var(--text-muted);
 }
 
 #tab-resumen .summary-phase-card {

@@ -27,6 +27,7 @@ const PhaseSchema = new Schema({
   // Desembolso por fase (banco)
 disbExpected:  { type: Number, default: 0 },   // desembolso esperado en esta fase
 disbActual:    { type: Number, default: 0 },   // desembolso ya realizado (real)
+disbActualAt:  { type: Date, default: null },  // fecha en la que se registro un desembolso real
 disbRequested: { type: Boolean, default: false }, // se solicitó al banco
 disbRequestedAt:{ type: Date, default: null },
 
@@ -38,7 +39,7 @@ disbRequestedAt:{ type: Date, default: null },
   // alertas
   alertDaysBefore: { type: Number, default: 15 },        // días antes del fin para alerta
   alerted:         { type: Boolean, default: false },    // flag para no alertar dos veces (si decides persistir)
-}, { _id: true });
+}, { _id: true, timestamps: true });
 
 const DisbursementSchema = new Schema({
   date:   { type: Date, required: true },

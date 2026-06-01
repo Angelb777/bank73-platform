@@ -1035,6 +1035,38 @@
     <div class="summary-export-actions">
       <a id="exportSummaryPdf"  class="btn btn-primary btn-sm"  href="#">PDF</a>
       <a id="exportSummaryXlsx" class="btn btn-ghost  btn-sm"  href="#">Excel</a>
+      <div class="summary-date-filter" aria-label="Rango de fechas para el informe">
+        <div class="summary-date-group">
+          <span class="summary-date-filter-title">Periodo del resumen</span>
+          <div class="summary-date-fields">
+            <label class="summary-date-field">
+              <span>Desde</span>
+              <input id="summaryReportDateFrom" type="date" />
+            </label>
+            <label class="summary-date-field">
+              <span>Hasta</span>
+              <input id="summaryReportDateTo" type="date" />
+            </label>
+          </div>
+        </div>
+        <div class="summary-date-group summary-date-group-compare">
+          <span class="summary-date-filter-title">Comparar con</span>
+          <div class="summary-date-fields">
+            <label class="summary-date-field">
+              <span>Desde</span>
+              <input id="summaryCompareDateFrom" type="date" />
+            </label>
+            <label class="summary-date-field">
+              <span>Hasta</span>
+              <input id="summaryCompareDateTo" type="date" />
+            </label>
+          </div>
+        </div>
+        <div class="summary-date-buttons">
+          <button id="summaryReportDateApply" class="summary-date-apply" type="button">Aplicar</button>
+          <button id="summaryReportDateClear" class="summary-date-clear" type="button" title="Informe global">Limpiar</button>
+        </div>
+      </div>
     </div>
     <div class="summary-import-actions">
       <label class="summary-file-picker" for="datoUnicoFile">
@@ -1043,6 +1075,31 @@
       </label>
       <input class="summary-file-input" type="file" id="datoUnicoFile" accept=".xlsx,.xls" />
       <button id="importDatoUnicoBtn" class="btn btn-primary btn-sm" type="button">Importar Dato Único</button>
+    </div>
+  </section>
+
+  <section id="summaryPeriodActivity" class="summary-block summary-period-activity" hidden>
+    <div class="summary-block-title">Avances registrados en el periodo</div>
+    <section id="summaryPeriodKpis" class="kpis-grid" style="margin-top:12px;"></section>
+    <div class="charts-grid" style="margin-top:12px;">
+      <div id="summaryPeriodCompareCard" class="card summary-chart-card">
+        <h3>Comparación con periodo comparativo</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumPeriodComparison"></canvas>
+        </div>
+        <div id="sumPeriodComparisonSummary" class="summary-chart-summary"></div>
+      </div>
+      <div id="summaryPeriodChartCard" class="card summary-chart-card">
+        <h3>Hitos por tipo</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumPeriodEvents"></canvas>
+        </div>
+        <div id="sumPeriodEventsSummary" class="summary-chart-summary"></div>
+      </div>
+      <div class="card summary-period-log-card">
+        <h3>Actividad reciente del periodo</h3>
+        <div id="summaryPeriodTimeline" class="summary-period-timeline"></div>
+      </div>
     </div>
   </section>
 
@@ -1263,7 +1320,7 @@
   </section>
 
   <!-- Alertas + Conclusiones -->
-  <section class="grid-2" style="margin-top:16px;">
+  <section class="grid-2 summary-global-only" style="margin-top:16px;">
     <div class="card">
       <h3>Vencimientos críticos (CPP / Permisos)</h3>
       <div id="summaryAlerts"></div>
@@ -1275,7 +1332,7 @@
   </section>
 
   <!-- Antes / Después -->
-  <section class="card" style="margin-top:16px;">
+  <section class="card summary-period-evidence" style="margin-top:16px;">
   <div class="ba-two">
     <div class="ba-col">
       <h3>Antes</h3>

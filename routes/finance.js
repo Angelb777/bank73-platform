@@ -188,6 +188,7 @@ router.post('/projects/:projectId/finance/phases', async (req, res) => {
       planUses = [], planSources = [],
       disbExpected = 0,
       disbActual = 0,
+      disbActualAt = null,
       disbRequested = false,
       disbRequestedAt = null,
       interesesDevengados = 0,
@@ -205,7 +206,7 @@ router.post('/projects/:projectId/finance/phases', async (req, res) => {
       name, startDate, endDate,
       uses, sources,
       planUses, planSources,
-      disbExpected, disbActual, disbRequested, disbRequestedAt,
+      disbExpected, disbActual, disbActualAt: disbActualAt || (toNum(disbActual) > 0 ? new Date() : null), disbRequested, disbRequestedAt,
       interesesDevengados, aportesPropios, preventas,
       alertDaysBefore
     });
@@ -224,16 +225,20 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
     const doc = await getOrCreate(projectId);
     const ph = doc.phases.id(phaseId);
     if (!ph) return res.status(404).json({ error: 'Fase no encontrada' });
+    const hadActualDisbursement = toNum(ph.disbActual) > 0;
 
     const fields = [
       'name','startDate','endDate',
       'uses','sources',
       'planUses','planSources',
-      'disbExpected','disbActual','disbRequested','disbRequestedAt',
+      'disbExpected','disbActual','disbActualAt','disbRequested','disbRequestedAt',
       'interesesDevengados','aportesPropios','preventas',
       'alertDaysBefore','alerted'
     ];
     for (const f of fields) if (f in req.body) ph[f] = req.body[f];
+    if (!hadActualDisbursement && toNum(ph.disbActual) > 0 && !ph.disbActualAt) {
+      ph.disbActualAt = new Date();
+    }
 
     await doc.save();
     res.json({ ok: true, phase: ph, kpis: doc.kpis() });

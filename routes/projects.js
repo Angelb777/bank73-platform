@@ -121,6 +121,204 @@ function sanitizeTeamSuggestion(input) {
   return out;
 }
 
+function parseReportPeriod(source = {}) {
+  const from = String(source.dateFrom || source.from || '').trim();
+  const to = String(source.dateTo || source.to || '').trim();
+  if (!from && !to) return null;
+  if (!from || !to || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    const err = new Error('Debes indicar dateFrom y dateTo con formato YYYY-MM-DD.');
+    err.status = 400;
+    throw err;
+  }
+
+  const start = new Date(`${from}T00:00:00.000Z`);
+  const end = new Date(`${to}T23:59:59.999Z`);
+  if (
+    !Number.isFinite(start.getTime()) ||
+    !Number.isFinite(end.getTime()) ||
+    start.toISOString().slice(0, 10) !== from ||
+    end.toISOString().slice(0, 10) !== to ||
+    start > end
+  ) {
+    const err = new Error('El rango de fechas no es valido.');
+    err.status = 400;
+    throw err;
+  }
+
+  return { from, to, start, end, label: `${from} - ${to}` };
+}
+
+function getPreviousReportPeriod(period) {
+  if (!period) return null;
+  // Restar exactamente 1 año manteniendo el mismo mes/día
+  const start = new Date(period.start);
+  const end = new Date(period.end);
+  start.setFullYear(start.getFullYear() - 1);
+  end.setFullYear(end.getFullYear() - 1);
+  const from = start.toISOString().slice(0, 10);
+  const to = end.toISOString().slice(0, 10);
+  return { from, to, start, end, label: `${from} - ${to}` };
+}
+
+function getReportPeriodDays(period) {
+  if (!period) return 0;
+  return Math.round((period.end.getTime() - period.start.getTime()) / 86400000) + 1;
+}
+
+function getMonthShift(base, compare) {
+  const yearDiff = compare.getFullYear() - base.getFullYear();
+  const monthDiff = compare.getMonth() - base.getMonth();
+  return yearDiff * 12 + monthDiff;
+}
+
+function isAdjacentMonthComparison(reportPeriod, comparisonPeriod) {
+  if (!reportPeriod || !comparisonPeriod) return false;
+  const startSameDay = reportPeriod.start.getDate() === comparisonPeriod.start.getDate();
+  const monthShift = Math.abs(getMonthShift(comparisonPeriod.start, reportPeriod.start));
+  const dayDifference = Math.abs(getReportPeriodDays(reportPeriod) - getReportPeriodDays(comparisonPeriod));
+  return startSameDay && monthShift === 1 && dayDifference <= 4;
+}
+
+function parseComparisonReportPeriod(source = {}, reportPeriod) {
+  if (!reportPeriod) return null;
+  const from = String(source.compareDateFrom || source.compareFrom || '').trim();
+  const to = String(source.compareDateTo || source.compareTo || '').trim();
+  if (!from && !to) return getPreviousReportPeriod(reportPeriod);
+  const comparisonPeriod = parseReportPeriod({ dateFrom: from, dateTo: to });
+  const currentDays = getReportPeriodDays(reportPeriod);
+  const compareDays = getReportPeriodDays(comparisonPeriod);
+  const daysDifference = Math.abs(currentDays - compareDays);
+  
+  if (currentDays === compareDays || daysDifference <= 1 || isAdjacentMonthComparison(reportPeriod, comparisonPeriod)) {
+    return comparisonPeriod;
+  }
+
+  const err = new Error('El periodo de comparacion debe tener duracion similar al periodo analizado. Para meses consecutivos se permite una diferencia de hasta 4 dias.');
+  err.status = 400;
+  throw err;
+}
+
+function dateInReportPeriod(value, period) {
+  if (!period || !value) return !period;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) && time >= period.start.getTime() && time <= period.end.getTime();
+}
+
+function anyDateInReportPeriod(item, fields, period) {
+  if (!period) return true;
+  return fields.some(field => dateInReportPeriod(item?.[field], period));
+}
+
+function buildPeriodActivity({ period, ventas = [], documents = [], checklists = [], permits = [], financePhases = [] }) {
+  if (!period) return null;
+
+  const events = [];
+  const pushEvent = (date, type, detail, amount) => {
+    if (!dateInReportPeriod(date, period)) return false;
+    events.push({ date, type, detail: detail || '', amount: Number(amount) || 0 });
+    return true;
+  };
+  const periodDateOrFallback = (...dates) =>
+    dates.find(date => dateInReportPeriod(date, period)) || dates.find(Boolean);
+
+  ventas.forEach(v => {
+    const unit = [v.manzana, v.lote].filter(Boolean).join('-') || 'Unidad';
+    const client = v.clienteNombre || [v.primerNombre, v.primerApellido].filter(Boolean).join(' ') || '';
+    const detail = client ? `${unit} - ${client}` : unit;
+    let explicitEvent = false;
+    explicitEvent = pushEvent(periodDateOrFallback(v.fechaContratoCliente, v.fechaFirma), 'Venta formalizada (contrato)', detail, v.precioVenta || v.valor) || explicitEvent;
+    explicitEvent = pushEvent(periodDateOrFallback(v.fechaProforma, v.fechaEntregaProformaBanco), 'Proforma entregada', detail) || explicitEvent;
+    explicitEvent = pushEvent(v.fechaValorCPP, 'CPP emitido', detail, v.montoFinanciamientoCPP) || explicitEvent;
+    explicitEvent = pushEvent(v.fechaActivacionTramite, 'Tramite legal activado', detail) || explicitEvent;
+    explicitEvent = pushEvent(v.fechaInscripcion, 'Escritura inscrita', detail) || explicitEvent;
+    explicitEvent = pushEvent(periodDateOrFallback(v.fechaDesembolso, v.fechaRecibidoCheque), 'Desembolso recibido', detail, v.montoFinanciamientoCPP) || explicitEvent;
+    explicitEvent = pushEvent(v.fechaEntregaVivienda, 'Vivienda entregada', detail) || explicitEvent;
+    explicitEvent = pushEvent(v.fechaCaida, 'Venta caida', detail) || explicitEvent;
+    if (!explicitEvent) pushEvent(v.updatedAt || v.createdAt, 'Expediente comercial actualizado', detail);
+  });
+
+  documents.forEach(doc => {
+    if (!dateInReportPeriod(doc.createdAt, period)) return;
+    const isPhoto = doc.category === 'beforeAfter' || String(doc.mimetype || '').startsWith('image/');
+    pushEvent(doc.createdAt, isPhoto ? 'Foto subida' : 'Documento subido', doc.originalname || doc.title || 'Archivo');
+  });
+
+  checklists.forEach(cl => {
+    const completed = pushEvent(cl.completedAt, 'Tarea completada', cl.title || 'Checklist');
+    const validated = pushEvent(cl.validatedAt, 'Tarea validada', cl.title || 'Checklist');
+    if (!completed && !validated) pushEvent(cl.updatedAt || cl.createdAt, 'Checklist actualizado', cl.title || 'Checklist');
+  });
+
+  (permits || []).forEach(item => {
+    const submitted = pushEvent(item.submittedAt, 'Permiso presentado', item.title || item.code);
+    const resolved = pushEvent(item.resolvedAt, item.status === 'approved' ? 'Permiso aprobado' : 'Permiso resuelto', item.title || item.code);
+    if (!submitted && !resolved) {
+      pushEvent(item.updatedAt || item.createdAt, 'Permiso actualizado', item.title || item.code);
+    }
+  });
+
+  (financePhases || []).forEach(phase => {
+    const requested = pushEvent(phase.disbRequestedAt, 'Desembolso solicitado', phase.name || 'Fase', phase.disbExpected);
+    const disbursed = pushEvent(phase.disbActualAt, 'Desembolso financiero registrado', phase.name || 'Fase', phase.disbActual);
+    if (!requested && !disbursed) {
+      pushEvent(phase.updatedAt || phase.createdAt, 'Fase financiera actualizada', phase.name || 'Fase');
+    }
+  });
+
+  events.sort((a, b) => new Date(b.date) - new Date(a.date));
+  const countMap = new Map();
+  events.forEach(event => countMap.set(event.type, (countMap.get(event.type) || 0) + 1));
+  const counts = Array.from(countMap.entries())
+    .map(([type, count]) => ({ type, count }))
+    .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type));
+
+  const amountByType = (type) => events
+    .filter(event => event.type === type)
+    .reduce((sum, event) => sum + event.amount, 0);
+
+  const getCount = (type) => countMap.get(type) || 0;
+
+  const contracts = getCount('Venta formalizada (contrato)');
+  const cppEvents = getCount('CPP emitido');
+  const documentsUploaded = getCount('Documento subido');
+  const photosUploaded = getCount('Foto subida');
+  const tasksCompleted = getCount('Tarea completada');
+  const tasksValidated = getCount('Tarea validada');
+  const checklistUpdated = getCount('Checklist actualizado');
+  const permitsSubmitted = getCount('Permiso presentado');
+  const permitsApproved = getCount('Permiso aprobado');
+  const permitsResolved = getCount('Permiso resuelto');
+  const permitsUpdated = getCount('Permiso actualizado');
+  const disbursementsRequested = getCount('Desembolso solicitado');
+  const disbursementsReceived = getCount('Desembolso financiero registrado') + getCount('Desembolso recibido');
+
+  return {
+    period: { from: period.from, to: period.to, label: period.label },
+    counts,
+    events,
+    totals: {
+      events: events.length,
+      contracts,
+      cpp: cppEvents,
+      documents: documentsUploaded + photosUploaded,
+      photos: photosUploaded,
+      milestones: tasksCompleted + tasksValidated,
+      tasksCompleted,
+      tasksValidated,
+      checklistUpdated,
+      permitsSubmitted,
+      permitsApproved,
+      permitsResolved,
+      permitsUpdated,
+      disbursementsRequested,
+      disbursementsReceived,
+      salesAmount: amountByType('Venta formalizada (contrato)'),
+      cppAmount: amountByType('CPP emitido'),
+      disbursedAmount: amountByType('Desembolso recibido') + amountByType('Desembolso financiero registrado')
+    }
+  };
+}
+
 /* =========================================================================
    LISTADOS SIN :id (deben ir ANTES que cualquier ruta con :id)
    ========================================================================= */
@@ -636,14 +834,16 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
   try {
     const { id } = req.params;
     const tenantKey = req.tenantKey;
+    const reportPeriod = parseReportPeriod(req.query);
+    const comparisonReportPeriod = parseComparisonReportPeriod(req.query, reportPeriod);
 
     const project = await Project.findOne({ _id: id, tenantKey }).lean();
     if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
 
     const financeDoc = await ProjectFinance.findOne({ project: id }).lean();
-    const financePhases = Array.isArray(financeDoc?.phases) ? financeDoc.phases : [];
+    let financePhases = Array.isArray(financeDoc?.phases) ? financeDoc.phases : [];
 
-    const [checklists, documents, ventasRaw, units, permits] = await Promise.all([
+    let [checklists, documents, ventasRaw, units, permits] = await Promise.all([
       ProjectChecklist.find({
         projectId: new mongoose.Types.ObjectId(id),
         $or: [{ tenantKey }, { tenantKey: { $exists: false } }]
@@ -659,6 +859,159 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
         }
       })()
     ]);
+
+    const periodActivity = buildPeriodActivity({
+      period: reportPeriod,
+      ventas: ventasRaw,
+      documents,
+      checklists,
+      permits: permits?.items || [],
+      financePhases
+    });
+
+    const previousPeriodActivity = comparisonReportPeriod ? buildPeriodActivity({
+      period: comparisonReportPeriod,
+      ventas: ventasRaw,
+      documents,
+      checklists,
+      permits: permits?.items || [],
+      financePhases
+    }) : null;
+
+    const periodComparison = previousPeriodActivity ? {
+      period: reportPeriod.label,
+      previousPeriod: comparisonReportPeriod.label,
+      comparisonMode: (req.query.compareDateFrom || req.query.compareFrom) ? 'custom' : 'previous_year',
+      metrics: [
+        {
+          key: 'contracts',
+          label: 'Contratos firmados',
+          current: periodActivity?.totals?.contracts || 0,
+          previous: previousPeriodActivity?.totals?.contracts || 0
+        },
+        {
+          key: 'permitsApproved',
+          label: 'Permisos aprobados',
+          current: periodActivity?.totals?.permitsApproved || 0,
+          previous: previousPeriodActivity?.totals?.permitsApproved || 0
+        },
+        {
+          key: 'disbursementsReceived',
+          label: 'Desembolsos recibidos',
+          current: periodActivity?.totals?.disbursementsReceived || 0,
+          previous: previousPeriodActivity?.totals?.disbursementsReceived || 0
+        },
+        {
+          key: 'tasksCompleted',
+          label: 'Tareas completadas',
+          current: periodActivity?.totals?.tasksCompleted || 0,
+          previous: previousPeriodActivity?.totals?.tasksCompleted || 0
+        },
+        {
+          key: 'photos',
+          label: 'Fotos subidas',
+          current: periodActivity?.totals?.photos || 0,
+          previous: previousPeriodActivity?.totals?.photos || 0
+        }
+      ]
+    } : null;
+
+    // Si existe periodo anterior, calcular series de ventas superpuestas (mismo ciclo temporal, años diferentes)
+    if (previousPeriodActivity && reportPeriod) {
+      const pad2 = (value) => String(value).padStart(2, '0');
+      
+      const useDailyBuckets = (start, end) => {
+        const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+        return days <= 62;
+      };
+
+      const monthDiff = (start, dt) =>
+        (dt.getUTCFullYear() - start.getUTCFullYear()) * 12 + (dt.getUTCMonth() - start.getUTCMonth());
+
+      const currentDaily = useDailyBuckets(reportPeriod.start, reportPeriod.end);
+
+      const countSales = (periodRangeStart, periodRangeEnd, daily) => {
+        const map = new Map();
+        for (const v of (ventasRaw || [])) {
+          const dateStr = v?.fechaContratoCliente || v?.fechaFirma || v?.updatedAt || v?.createdAt;
+          if (!dateStr) continue;
+          const dt = new Date(dateStr);
+          if (!Number.isFinite(dt.getTime())) continue;
+          if (dt.getTime() < periodRangeStart.getTime() || dt.getTime() > periodRangeEnd.getTime()) continue;
+          const k = daily
+            ? Math.floor((dt.getTime() - periodRangeStart.getTime()) / 86400000)
+            : monthDiff(periodRangeStart, dt);
+          map.set(k, (map.get(k) || 0) + 1);
+        }
+        return map;
+      };
+
+      // Generar etiquetas basadas en el período actual (sin año)
+      const generateLabels = (start, end, daily) => {
+        const out = [];
+        if (daily) {
+          const cur = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()));
+          const last = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()));
+          while (cur.getTime() <= last.getTime()) {
+            out.push(`${pad2(cur.getUTCMonth() + 1)}-${pad2(cur.getUTCDate())}`);
+            cur.setUTCDate(cur.getUTCDate() + 1);
+          }
+        } else {
+          const cur = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+          const last = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
+          while (cur.getTime() <= last.getTime()) {
+            out.push(`${cur.getUTCFullYear()}-${pad2(cur.getUTCMonth() + 1)}`);
+            cur.setUTCMonth(cur.getUTCMonth() + 1);
+          }
+        }
+        return out;
+      };
+
+      const currentLabels = generateLabels(reportPeriod.start, reportPeriod.end, currentDaily);
+      const comparisonLabels = generateLabels(comparisonReportPeriod.start, comparisonReportPeriod.end, currentDaily);
+      const labels = Array.from(
+        { length: Math.max(currentLabels.length, comparisonLabels.length) },
+        (_, index) => currentLabels[index] || `Periodo ${index + 1}`
+      );
+      const mapCur = countSales(reportPeriod.start, reportPeriod.end, currentDaily);
+      const mapPrev = countSales(comparisonReportPeriod.start, comparisonReportPeriod.end, currentDaily);
+
+      const alignedCurrent = labels.map((_, index) => mapCur.get(index) || 0);
+      const alignedPrevious = labels.map((_, index) => mapPrev.get(index) || 0);
+
+      periodComparison.salesSeries = {
+        labels: labels,
+        current: alignedCurrent,
+        previous: alignedPrevious,
+        granularity: currentDaily ? 'day' : 'month',
+        displayMode: 'overlaid'
+      };
+    }
+
+    if (reportPeriod) {
+      checklists = checklists.filter(cl => anyDateInReportPeriod(cl, ['completedAt', 'validatedAt', 'updatedAt', 'createdAt'], reportPeriod));
+      documents = documents.filter(doc => dateInReportPeriod(doc.createdAt, reportPeriod));
+      ventasRaw = ventasRaw.filter(v => anyDateInReportPeriod(v, [
+        'fechaContratoCliente', 'fechaFirma', 'fechaActivacionTramite', 'fechaEntregaProformaBanco',
+        'fechaProforma', 'fechaValorCPP', 'fechaInscripcion', 'fechaDesembolso', 'fechaRecibidoCheque',
+        'fechaEmisionPermisoOcupacion', 'fechaEntregaVivienda', 'fechaCaida', 'updatedAt', 'createdAt'
+      ], reportPeriod));
+      if (permits) {
+        permits = {
+          ...permits,
+          items: (permits.items || []).filter(item =>
+            anyDateInReportPeriod(item, ['resolvedAt', 'submittedAt', 'updatedAt', 'createdAt'], reportPeriod)
+          )
+        };
+      }
+      financePhases = financePhases.filter(phase =>
+        anyDateInReportPeriod(phase, ['updatedAt', 'createdAt', 'disbRequestedAt', 'disbActualAt'], reportPeriod) ||
+        dateInReportPeriod(phase.startDate, reportPeriod) ||
+        dateInReportPeriod(phase.endDate, reportPeriod) ||
+        (new Date(phase.startDate).getTime() <= reportPeriod.end.getTime() &&
+          new Date(phase.endDate).getTime() >= reportPeriod.start.getTime())
+      );
+    }
 
     // =========================
     // Helpers
@@ -846,6 +1199,13 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       });
     }
 
+    const reportingUnits = reportPeriod
+      ? (units || []).filter(u =>
+          anyDateInReportPeriod(u, ['updatedAt', 'createdAt'], reportPeriod) ||
+          ventas.some(v => String(v.unitId) === String(u._id))
+        )
+      : (units || []);
+
     // =========================
     // Progreso por fase
     // =========================
@@ -906,7 +1266,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       canceladas: 0
     };
 
-    for (const u of (units || [])) {
+    for (const u of reportingUnits) {
       U.total++;
       const st = getUnitStatus(u);
 
@@ -1200,7 +1560,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       ['100%', 0]
     ]);
 
-    const technicalUnits = units || [];
+    const technicalUnits = reportingUnits;
 
     for (const u of technicalUnits) {
       const venta = ventas.find(v => String(v.unitId) === String(u._id)) || null;
@@ -1352,7 +1712,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
       : 0;
 
-    const inventoryValue = (units || [])
+    const inventoryValue = reportingUnits
       .filter(u => ['disponible', 'inventario'].includes(getUnitStatus(u)))
       .reduce((acc, u) => acc + toNum(u.precioLista), 0);
 
@@ -1513,13 +1873,13 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     const projectUnitsTotal = Number(project.unitsTotal || 0);
     const projectUnitsSold = Number(project.unitsSold || 0);
 
-    const soldLikePortfolio = (units || []).reduce((n, u) => {
+    const soldLikePortfolio = reportingUnits.reduce((n, u) => {
       return n + (isSoldLikeStatus(getUnitStatus(u)) ? 1 : 0);
     }, 0);
 
     const headerKpis = {
-      unitsTotal: projectUnitsTotal > 0 ? projectUnitsTotal : U.total,
-      unitsSold: projectUnitsSold > 0 ? projectUnitsSold : soldLikePortfolio
+      unitsTotal: reportPeriod ? U.total : (projectUnitsTotal > 0 ? projectUnitsTotal : U.total),
+      unitsSold: reportPeriod ? U.sold : (projectUnitsSold > 0 ? projectUnitsSold : soldLikePortfolio)
     };
 
     const projectHeader = {
@@ -1556,12 +1916,15 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       disbursements,
       mortgagesByBank,
       alerts: { expiries, notes, bySeverity: alertsBySeverity },
-      beforeAfter: []
+      beforeAfter: [],
+      reportPeriod: reportPeriod ? { from: reportPeriod.from, to: reportPeriod.to, label: reportPeriod.label } : null,
+      periodActivity,
+      periodComparison
     });
 
   } catch (e) {
     console.error('[GET /projects/:id/summary]', e);
-    res.status(500).json({ error: e.message });
+    res.status(e.status || 500).json({ error: e.message });
   }
 });
 
@@ -1574,6 +1937,7 @@ router.post('/:id/summary/export', requireProjectAccess(), async (req, res) => {
   try {
     const { id } = req.params;
     const tenantKey = req.tenantKey;
+    const reportPeriod = parseReportPeriod(req.body?.reportPeriod || {});
 
     const format = String(req.body?.format || 'pdf').toLowerCase();
     if (!['pdf', 'xlsx'].includes(format)) {
@@ -1583,7 +1947,7 @@ router.post('/:id/summary/export', requireProjectAccess(), async (req, res) => {
     const project = await Project.findOne({ _id: id, tenantKey }).lean();
     if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
 
-    const [checklists, documents, ventasRaw, units, permits, financePhases] = await Promise.all([
+    let [checklists, documents, ventasRaw, units, permits, financePhases] = await Promise.all([
       ProjectChecklist.find({
         projectId: new mongoose.Types.ObjectId(id),
         $or: [{ tenantKey }, { tenantKey: { $exists: false } }]
@@ -1608,6 +1972,40 @@ router.post('/:id/summary/export', requireProjectAccess(), async (req, res) => {
         return Array.isArray(financeDoc?.phases) ? financeDoc.phases : [];
       })()
     ]);
+
+    const periodActivity = buildPeriodActivity({
+      period: reportPeriod,
+      ventas: ventasRaw,
+      documents,
+      checklists,
+      permits: permits?.items || [],
+      financePhases
+    });
+
+    if (reportPeriod) {
+      checklists = checklists.filter(cl => anyDateInReportPeriod(cl, ['completedAt', 'validatedAt', 'updatedAt', 'createdAt'], reportPeriod));
+      documents = documents.filter(doc => dateInReportPeriod(doc.createdAt, reportPeriod));
+      ventasRaw = ventasRaw.filter(v => anyDateInReportPeriod(v, [
+        'fechaContratoCliente', 'fechaFirma', 'fechaActivacionTramite', 'fechaEntregaProformaBanco',
+        'fechaProforma', 'fechaValorCPP', 'fechaInscripcion', 'fechaDesembolso', 'fechaRecibidoCheque',
+        'fechaEmisionPermisoOcupacion', 'fechaEntregaVivienda', 'fechaCaida', 'updatedAt', 'createdAt'
+      ], reportPeriod));
+      if (permits) {
+        permits = {
+          ...permits,
+          items: (permits.items || []).filter(item =>
+            anyDateInReportPeriod(item, ['resolvedAt', 'submittedAt', 'updatedAt', 'createdAt'], reportPeriod)
+          )
+        };
+      }
+      financePhases = financePhases.filter(phase =>
+        anyDateInReportPeriod(phase, ['updatedAt', 'createdAt', 'disbRequestedAt', 'disbActualAt'], reportPeriod) ||
+        dateInReportPeriod(phase.startDate, reportPeriod) ||
+        dateInReportPeriod(phase.endDate, reportPeriod) ||
+        (new Date(phase.startDate).getTime() <= reportPeriod.end.getTime() &&
+          new Date(phase.endDate).getTime() >= reportPeriod.start.getTime())
+      );
+    }
 
     const norm = s => String(s || '')
       .normalize('NFD')
@@ -1735,6 +2133,13 @@ return 'disponible';
       });
     }
 
+    const reportingUnits = reportPeriod
+      ? (units || []).filter(u =>
+          anyDateInReportPeriod(u, ['updatedAt', 'createdAt'], reportPeriod) ||
+          ventas.some(v => String(v.unitId) === String(u._id))
+        )
+      : (units || []);
+
     const LEVEL2PHASE = {
       1: 'PREESTUDIOS',
       2: 'PERMISOS',
@@ -1771,7 +2176,7 @@ reserved: 0,
   sold: 0,
   canceladas: 0
 };
-    for (const u of (units || [])) {
+    for (const u of reportingUnits) {
       U.total++;
       const st = getUnitStatus(u);
       if (st === 'cancelado') U.canceladas++;
@@ -1835,7 +2240,8 @@ if (isSoldLikeStatus(st)) U.sold++;
         ? Math.round(progressByPhase.reduce((a, b) => a + b.pct, 0) / progressByPhase.length)
         : 0,
       units: U,
-      alerts: expiries
+      alerts: expiries,
+      periodLabel: reportPeriod?.label || null
     };
 
     const safeReportFilenamePart = (value, fallback = 'Proyecto') => {
@@ -1853,11 +2259,14 @@ if (isSoldLikeStatus(st)) U.sold++;
       return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
     };
 
-    const reportFilename = (ext) =>
-      `Informe Bank73 - ${safeReportFilenamePart(summary.projectName)} - ${downloadDateStamp()}.${ext}`;
+    const reportFilename = (ext) => {
+      const periodPart = reportPeriod ? ` - ${reportPeriod.from}_a_${reportPeriod.to}` : '';
+      return `Informe Bank73 - ${safeReportFilenamePart(summary.projectName)}${periodPart} - ${downloadDateStamp()}.${ext}`;
+    };
 
     const charts = req.body?.charts && typeof req.body.charts === 'object' ? req.body.charts : {};
     const datasets = (req.body?.datasets && typeof req.body.datasets === 'object') ? req.body.datasets : {};
+    const exportedPeriodActivity = periodActivity || datasets.periodActivity || null;
     const exportedFinancePhases =
       Array.isArray(financePhases) && financePhases.length
         ? financePhases
@@ -2131,7 +2540,7 @@ if (isSoldLikeStatus(st)) U.sold++;
         .text('Documento confidencial para uso interno.', margin, pageH - 46, { width: contentW, align: 'center' });
     }
 
-    function coverPageV2(doc, { projectName, updatedAt, summary }) {
+    function coverPageV2(doc, { projectName, updatedAt, summary, periodActivity }) {
       const margin = doc.page.margins.left;
       const pageW = doc.page.width;
       const pageH = doc.page.height;
@@ -2151,11 +2560,15 @@ if (isSoldLikeStatus(st)) U.sold++;
       }
 
       doc.fontSize(31).fillColor('#FFFFFF')
-        .text('Resumen ejecutivo', margin, 184, { width: contentW, align: 'center' });
+        .text(summary.periodLabel ? 'Informe de avances' : 'Resumen ejecutivo', margin, 184, { width: contentW, align: 'center' });
       doc.fontSize(16).fillColor('#EAF2FB')
         .text(projectName || 'Proyecto', margin, 228, { width: contentW, align: 'center' });
       doc.fontSize(9).fillColor('#BFD2E8')
         .text(`Actualizado: ${fmtDateTime(updatedAt)}`, margin, 254, { width: contentW, align: 'center' });
+      if (summary.periodLabel) {
+        doc.fontSize(10).fillColor('#EAF2FB')
+          .text(`Periodo analizado: ${summary.periodLabel}`, margin, 274, { width: contentW, align: 'center' });
+      }
 
       const panelY = 332;
       const panelH = 170;
@@ -2164,12 +2577,21 @@ if (isSoldLikeStatus(st)) U.sold++;
       doc.restore();
 
       const kpiW = contentW / 4;
-      [
-        { label: 'Progreso', value: `${summary.progressPct || 0}%` },
-        { label: 'Unidades', value: `${summary.units?.total || 0}` },
-        { label: 'Vendidas', value: `${summary.units?.sold || 0}` },
-        { label: 'Alertas <=90d', value: `${(summary.alerts || []).length}` },
-      ].forEach((item, idx) => {
+      const periodTotals = periodActivity?.totals || {};
+      const coverKpis = summary.periodLabel
+        ? [
+            { label: 'Avances', value: `${periodTotals.events || 0}` },
+            { label: 'Ventas', value: `${periodTotals.contracts || 0}` },
+            { label: 'CPP emitidos', value: `${periodTotals.cpp || 0}` },
+            { label: 'Fotos', value: `${periodTotals.photos || 0}` }
+          ]
+        : [
+            { label: 'Progreso', value: `${summary.progressPct || 0}%` },
+            { label: 'Unidades', value: `${summary.units?.total || 0}` },
+            { label: 'Vendidas', value: `${summary.units?.sold || 0}` },
+            { label: 'Alertas <=90d', value: `${(summary.alerts || []).length}` }
+          ];
+      coverKpis.forEach((item, idx) => {
         const x = margin + (kpiW * idx);
         if (idx > 0) {
           doc.save();
@@ -2181,7 +2603,14 @@ if (isSoldLikeStatus(st)) U.sold++;
       });
 
       doc.fontSize(10).fillColor('#334155')
-        .text('Documento preparado para revision ejecutiva y seguimiento comercial, tecnico, legal y financiero.', margin + 32, panelY + 124, { width: contentW - 64, align: 'center' });
+        .text(
+          summary.periodLabel
+            ? 'Actividad registrada con fecha dentro del periodo seleccionado.'
+            : 'Documento preparado para revision ejecutiva y seguimiento comercial, tecnico, legal y financiero.',
+          margin + 32,
+          panelY + 124,
+          { width: contentW - 64, align: 'center' }
+        );
 
       doc.fontSize(8).fillColor('#BFD2E8')
         .text('Documento confidencial para uso interno.', margin, pageH - 62, { width: contentW, align: 'center' });
@@ -2348,7 +2777,7 @@ if (isSoldLikeStatus(st)) U.sold++;
         };
       }
 
-      if (title === 'Permisos por institución') {
+      if (title === 'Permisos por institución' || title === 'Permisos por institucion') {
         const rows = (datasets.permitsByInstitution || []).map(x => ({
           label: x.institution || 'N/D',
           value: `${fmtNum(x.approved)} aprob. · ${fmtNum(x.inProcess)} tram. · ${fmtNum(x.pending)} pend. · ${fmtNum(x.rejected)} rech.`
@@ -2356,6 +2785,23 @@ if (isSoldLikeStatus(st)) U.sold++;
         const total = (datasets.permitsByInstitution || []).reduce((a, x) =>
           a + toNumber(x.approved) + toNumber(x.inProcess) + toNumber(x.pending) + toNumber(x.rejected), 0);
         return { columns: ['Institución', 'Detalle'], rows, total: { label: 'Total permisos', value: fmtNum(total) } };
+      }
+
+      if (title === 'Avances registrados en el periodo') {
+        const periodActivity = datasets.periodActivity || {};
+        const totals = periodActivity.totals || {};
+        const rows = [];
+        if (totals.events != null) rows.push({ label: 'Avances registrados', value: fmtNum(totals.events) });
+        if (totals.contracts != null) rows.push({ label: 'Ventas formalizadas (contrato)', value: fmtNum(totals.contracts) });
+        if (totals.permitsApproved != null) rows.push({ label: 'Permisos aprobados', value: fmtNum(totals.permitsApproved) });
+        if (totals.tasksCompleted != null) rows.push({ label: 'Tareas completadas', value: fmtNum(totals.tasksCompleted) });
+        if (totals.cpp != null) rows.push({ label: 'CPP emitidos', value: fmtNum(totals.cpp) });
+        if (totals.disbursedAmount != null) rows.push({ label: 'Desembolsos recibidos', value: fmtMoneyShort(totals.disbursedAmount) });
+        return {
+          columns: ['Detalle', 'Valor'],
+          rows: rows.length ? rows : [{ label: 'Sin datos de actividad', value: '-' }],
+          total: null
+        };
       }
 
       if (title === 'Hipotecas por banco') {
@@ -2451,58 +2897,73 @@ if (isSoldLikeStatus(st)) U.sold++;
 
       const margin = doc.page.margins.left;
       const contentW = doc.page.width - margin * 2;
-      const maxRows = 12;
-      const rows = table.rows.slice(0, maxRows);
-      const hidden = table.rows.length - rows.length;
+      const bottom = doc.page.height - doc.page.margins.bottom - 26;
       const rowH = 16;
       const headerH = 18;
       const totalH = table.total ? 18 : 0;
+      const maxRows = Number.isFinite(table.maxRows) ? Math.max(0, table.maxRows) : 12;
+      const rows = table.rows.slice(0, maxRows);
+      const hidden = table.rows.length - rows.length;
       const extraH = hidden > 0 ? 14 : 0;
-      const tableH = headerH + rows.length * rowH + totalH + extraH;
       const leftW = Math.round(contentW * 0.42);
       const rightW = contentW - leftW;
       const x = margin;
-      const y = doc.y;
 
-      doc.save();
-      roundRect(doc, x, y, contentW, tableH, 6).fill('#FFFFFF').stroke('#DDE7F2');
-      doc.rect(x, y, contentW, headerH).fill(BRAND_BLUE_SOFT);
-      doc.restore();
+      const drawHeader = () => {
+        const y = doc.y;
+        doc.save();
+        roundRect(doc, x, y, contentW, headerH, 6).fill('#FFFFFF').stroke('#DDE7F2');
+        doc.rect(x, y, contentW, headerH).fill(BRAND_BLUE_SOFT);
+        doc.restore();
 
-      doc.fontSize(8).fillColor(BRAND_BLUE);
-      doc.text(table.columns?.[0] || 'Concepto', x + 8, y + 5, { width: leftW - 12 });
-      doc.text(table.columns?.[1] || 'Valor', x + leftW, y + 5, { width: rightW - 8, align: 'right' });
+        doc.fontSize(8).fillColor(BRAND_BLUE);
+        doc.text(table.columns?.[0] || 'Concepto', x + 8, y + 5, { width: leftW - 12 });
+        doc.text(table.columns?.[1] || 'Valor', x + leftW, y + 5, { width: rightW - 8, align: 'right' });
+        doc.y = y + headerH;
+      };
 
-      let yy = y + headerH;
+      const ensureRoom = (height) => {
+        if (doc.y + height > bottom) {
+          doc.addPage();
+          doc.y = doc.page.margins.top;
+          drawHeader();
+        }
+      };
+
+      drawHeader();
       rows.forEach((r, idx) => {
+        ensureRoom(rowH);
         if (idx % 2 === 1) {
           doc.save();
-          doc.rect(x, yy, contentW, rowH).fill('#F8FAFC');
+          doc.rect(x, doc.y, contentW, rowH).fill('#F8FAFC');
           doc.restore();
         }
         doc.fontSize(8).fillColor('#334155');
-        doc.text(String(r.label ?? 'N/D'), x + 8, yy + 4, { width: leftW - 12, ellipsis: true });
+        doc.text(String(r.label ?? 'N/D'), x + 8, doc.y + 4, { width: leftW - 12, ellipsis: true });
         doc.fontSize(8).fillColor(TEXT_DARK);
-        doc.text(String(r.value ?? '0'), x + leftW, yy + 4, { width: rightW - 8, align: 'right', ellipsis: true });
-        yy += rowH;
+        doc.text(String(r.value ?? '0'), x + leftW, doc.y + 4, { width: rightW - 8, align: 'right', ellipsis: true });
+        doc.y += rowH;
       });
 
       if (hidden > 0) {
+        ensureRoom(extraH);
         doc.fontSize(7).fillColor(TEXT_MUTED)
-          .text(`+ ${hidden} filas adicionales no mostradas`, x + 8, yy + 3, { width: contentW - 16 });
-        yy += extraH;
+          .text(`+ ${hidden} filas adicionales no mostradas`, x + 8, doc.y + 3, { width: contentW - 16 });
+        doc.y += extraH;
       }
 
       if (table.total) {
+        ensureRoom(totalH);
         doc.save();
-        doc.lineWidth(0.5).moveTo(x, yy).lineTo(x + contentW, yy).stroke('#DDE7F2');
+        doc.lineWidth(0.5).moveTo(x, doc.y).lineTo(x + contentW, doc.y).stroke('#DDE7F2');
         doc.restore();
         doc.fontSize(8).fillColor(BRAND_BLUE);
-        doc.text(String(table.total.label || 'Total'), x + 8, yy + 5, { width: leftW - 12 });
-        doc.text(String(table.total.value || '0'), x + leftW, yy + 5, { width: rightW - 8, align: 'right' });
+        doc.text(String(table.total.label || 'Total'), x + 8, doc.y + 5, { width: leftW - 12 });
+        doc.text(String(table.total.value || '0'), x + leftW, doc.y + 5, { width: rightW - 8, align: 'right' });
+        doc.y += totalH;
       }
 
-      doc.y = y + tableH + 10;
+      doc.y += 10;
     }
 
     function drawFinancePhaseDetails(doc, phases, meta) {
@@ -2587,7 +3048,14 @@ if (isSoldLikeStatus(st)) U.sold++;
       const mortgagesByBank = datasets?.mortgagesByBank || [];
       const proformasByBank = datasets?.proformasByBank || [];
 
-      const top = [
+      const top = summary.periodLabel ? [
+        { label: 'Periodo', value: summary.periodLabel },
+        { label: 'Unidades con actividad', value: fmtNum(summary.units?.total ?? units.total) },
+        { label: 'Vendidas con actividad', value: fmtNum(summary.units?.sold ?? units.sold) },
+        { label: 'CPP del periodo', value: fmtNum(cpp.active) },
+        { label: 'Permisos del periodo', value: `${fmtNum(permits.approved)} A / ${fmtNum(permits.inProcess)} T` },
+        { label: 'Finanzas historicas', value: 'No disponibles' },
+      ] : [
         { label: 'Loan aprobado', value: fmtMoneyShort(project?.loanApproved ?? loan.approved) },
         { label: 'Desembolsado', value: fmtMoneyShort(project?.loanDisbursed ?? loan.disbursed) },
         { label: 'Budget aprobado', value: fmtMoneyShort(project?.budgetApproved) },
@@ -2712,13 +3180,37 @@ if (isSoldLikeStatus(st)) U.sold++;
         doc.image(buf, margin, imgTop, { fit: [doc.page.width - margin * 2, imgH], align: 'center' });
         doc.y = imgTop + imgH + 12;
       } else {
-        doc.fontSize(10).fillColor(TEXT_MUTED).text('Grafica no disponible.', margin);
+        doc.fontSize(10).fillColor(TEXT_MUTED).text(
+          summary.periodLabel ? 'Datos tabulados del periodo seleccionado.' : 'Grafica no disponible.',
+          margin
+        );
         doc.moveDown(0.6);
       }
 
       if (title === 'Comparación por fase') {
         drawFinancePhaseDetails(doc, exportedFinancePhases, meta);
       } else {
+        if (title === 'Avances registrados en el periodo') {
+          const periodActivity = datasets.periodActivity || {};
+          const periodComparison = datasets.periodComparison || {};
+          const totals = periodActivity.totals || {};
+          const rows = [];
+          if (periodComparison.period) rows.push(`Periodo actual: ${periodComparison.period}`);
+          if (periodComparison.previousPeriod) rows.push(`Periodo comparativo: ${periodComparison.previousPeriod}`);
+          if (totals.events != null) rows.push(`Avances registrados: ${fmtNum(totals.events)}`);
+          if (totals.contracts != null) rows.push(`Ventas formalizadas: ${fmtNum(totals.contracts)}`);
+          if (totals.cpp != null) rows.push(`CPP emitidos: ${fmtNum(totals.cpp)}`);
+          if (totals.photos != null) rows.push(`Fotos subidas: ${fmtNum(totals.photos)}`);
+          if (totals.disbursedAmount != null) rows.push(`Desembolsos recibidos: ${fmtMoneyShort(totals.disbursedAmount)}`);
+          if (rows.length) {
+            doc.fontSize(10).fillColor(TEXT_DARK).text('Resumen del periodo:', margin, doc.y, { width: doc.page.width - margin * 2 });
+            doc.moveDown(0.2);
+            rows.forEach((line) => {
+              doc.fontSize(9).fillColor(TEXT_MUTED).text(`• ${line}`, { indent: 10, width: doc.page.width - margin * 2 - 10 });
+            });
+            doc.moveDown(0.5);
+          }
+        }
         drawDataTable(doc, chartRows(title, datasets));
       }
 
@@ -2847,24 +3339,61 @@ if (isSoldLikeStatus(st)) U.sold++;
       ws.getRow(1).font = { bold: true, size: 14 };
 
       ws.addRow(['Proyecto', summary.projectName]);
+      if (summary.periodLabel) ws.addRow(['Periodo analizado', summary.periodLabel]);
       ws.addRow(['Actualizado', summary.updatedAt ? new Date(summary.updatedAt).toLocaleString() : '—']);
       ws.addRow([]);
-      ws.addRow(['Progreso global (%)', summary.progressPct]);
-      ws.addRow([]);
-      ws.addRow(['Unidades', 'Cantidad']);
-      ws.addRow(['Total', summary.units.total]);
-      ws.addRow(['Disponibles', summary.units.available]);
-      ws.addRow(['Reservadas', summary.units.reserved]);
-      ws.addRow(['Con CPP', summary.units.conCpp]);
-ws.addRow(['Trámite legal activado', summary.units.tramiteLegal]);
-ws.addRow(['Escriturado / Traspasado', summary.units.escrituradas]);
-ws.addRow(['Vivienda entregada', summary.units.entregadas]);
-ws.addRow(['Vendidas / no disponibles', summary.units.sold]);
-ws.addRow(['Canceladas', summary.units.canceladas]);
-      ws.addRow([]);
-      ws.addRow(['Vencimientos críticos (≤90d)']);
-      ws.addRow(['Tipo', 'Nombre', 'Vence']);
-      (summary.alerts || []).forEach(a => ws.addRow([a.type, a.name, a.due ? new Date(a.due).toISOString().slice(0, 10) : '—']));
+      if (reportPeriod) {
+        ws.addRow(['Avance registrado', 'Cantidad']).font = { bold: true };
+        const counts = exportedPeriodActivity?.counts || [];
+        if (counts.length) {
+          counts.forEach(row => ws.addRow([row.type, row.count]));
+        } else {
+          ws.addRow(['Sin avances fechados registrados en el periodo', 0]);
+        }
+        ws.addRow(['Total avances', exportedPeriodActivity?.totals?.events || 0]);
+      } else {
+        ws.addRow(['Progreso global (%)', summary.progressPct]);
+        ws.addRow([]);
+        ws.addRow(['Unidades', 'Cantidad']);
+        ws.addRow(['Total', summary.units.total]);
+        ws.addRow(['Disponibles', summary.units.available]);
+        ws.addRow(['Reservadas', summary.units.reserved]);
+        ws.addRow(['Con CPP', summary.units.conCpp]);
+        ws.addRow(['Trámite legal activado', summary.units.tramiteLegal]);
+        ws.addRow(['Escriturado / Traspasado', summary.units.escrituradas]);
+        ws.addRow(['Vivienda entregada', summary.units.entregadas]);
+        ws.addRow(['Vendidas / no disponibles', summary.units.sold]);
+        ws.addRow(['Canceladas', summary.units.canceladas]);
+        ws.addRow([]);
+        ws.addRow(['Vencimientos críticos (≤90d)']);
+        ws.addRow(['Tipo', 'Nombre', 'Vence']);
+        (summary.alerts || []).forEach(a => ws.addRow([a.type, a.name, a.due ? new Date(a.due).toISOString().slice(0, 10) : '—']));
+      }
+
+      if (reportPeriod) {
+        const wsPeriod = wb.addWorksheet('Actividad periodo');
+        wsPeriod.columns = [{ width: 34 }, { width: 70 }];
+        wsPeriod.addRow(['Periodo analizado', reportPeriod.label]);
+        wsPeriod.getRow(1).font = { bold: true, size: 13 };
+        wsPeriod.addRow([]);
+        wsPeriod.addRow(['Avance registrado', 'Cantidad']).font = { bold: true };
+        if ((exportedPeriodActivity?.counts || []).length) {
+          exportedPeriodActivity.counts.forEach(row => wsPeriod.addRow([row.type, row.count]));
+        } else {
+          wsPeriod.addRow(['Sin avances fechados registrados en el periodo', 0]);
+        }
+        wsPeriod.addRow(['Total avances', exportedPeriodActivity?.totals?.events || 0]);
+        wsPeriod.addRow([]);
+        wsPeriod.addRow(['Fecha / avance', 'Detalle']).font = { bold: true };
+        if ((exportedPeriodActivity?.events || []).length) {
+          exportedPeriodActivity.events.forEach(event => {
+            const date = event.date ? new Date(event.date).toISOString().slice(0, 10) : '';
+            wsPeriod.addRow([`${date} - ${event.type}`, event.detail || '']);
+          });
+        } else {
+          wsPeriod.addRow(['Sin actividad con fecha disponible', '']);
+        }
+      }
 
       if (exportedFinancePhases.length) {
         const wsFinance = wb.addWorksheet('Detalle financiero');
@@ -2978,7 +3507,83 @@ ws.addRow(['Canceladas', summary.units.canceladas]);
     doc.pipe(res);
 
     doc.addPage();
-    coverPageV2(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt, summary });
+    coverPageV2(doc, {
+      projectName: summary.projectName,
+      updatedAt: summary.updatedAt,
+      summary,
+      periodActivity: exportedPeriodActivity
+    });
+
+    if (reportPeriod) {
+      const activity = exportedPeriodActivity || { counts: [], events: [], totals: {} };
+      const totals = activity.totals || {};
+
+      doc.addPage();
+      header(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt });
+      sectionTitle(doc, 'Avances registrados en el periodo');
+      drawKpiSection(doc, 'Actividad acreditada por fecha', [
+        { label: 'Avances', value: fmtNum(totals.events) },
+        { label: 'Ventas formalizadas', value: fmtNum(totals.contracts), sub: fmtMoneyShort(totals.salesAmount) },
+        { label: 'CPP emitidos', value: fmtNum(totals.cpp), sub: fmtMoneyShort(totals.cppAmount) },
+        { label: 'Documentos / fotos', value: fmtNum(totals.documents), sub: `${fmtNum(totals.photos)} fotos` },
+        { label: 'Tareas completas', value: fmtNum(totals.milestones) },
+        { label: 'Desembolsos', value: fmtMoneyShort(totals.disbursedAmount) }
+      ], { columns: 3, tone: 'green' });
+      drawDataTable(doc, {
+        columns: ['Tipo de avance', 'Cantidad'],
+        rows: (activity.counts || []).length
+          ? activity.counts.map(item => ({ label: item.type, value: fmtNum(item.count) }))
+          : [{ label: 'Sin avances fechados registrados en el periodo', value: '0' }],
+        total: { label: 'Total avances registrados', value: fmtNum(totals.events) }
+      });
+
+      const activityChart = charts['Avances registrados en el periodo'];
+      if (activityChart) {
+        doc.addPage();
+        header(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt });
+        sectionTitle(doc, 'Distribucion de avances del periodo');
+        drawChart(doc, {
+          title: 'Avances registrados en el periodo',
+          dataUrl: activityChart,
+          datasets,
+          meta: { projectName: summary.projectName, updatedAt: summary.updatedAt }
+        });
+      }
+
+      doc.addPage();
+      header(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt });
+      sectionTitle(doc, 'Detalle de actividad registrada');
+      drawDataTable(doc, {
+        columns: ['Avance / detalle', 'Fecha'],
+        rows: (activity.events || []).length
+          ? activity.events.map(event => ({
+              label: `[${event.type}] ${event.detail || ''}`,
+              value: event.date ? new Date(event.date).toISOString().slice(0, 10) : 'N/D'
+            }))
+          : [{ label: 'No se encontraron hitos con fecha en el periodo', value: '-' }],
+        total: activity.events?.length ? { label: 'Eventos listados', value: fmtNum(activity.events.length) } : null,
+        maxRows: 30
+      });
+
+      if (Array.isArray(beforeAfter) && beforeAfter.length > 0) {
+        sectionTitle(doc, 'Evidencia fotografica del periodo');
+        await drawBeforeAfter(doc, beforeAfter, {
+          projectName: summary.projectName,
+          updatedAt: summary.updatedAt
+        });
+      }
+
+      doc.addPage();
+      backCoverPageV2(doc, { projectName: summary.projectName });
+      const periodPages = doc.bufferedPageRange();
+      for (let i = periodPages.start; i < periodPages.start + periodPages.count; i++) {
+        doc.switchToPage(i);
+        if (i === periodPages.start || i === periodPages.start + periodPages.count - 1) continue;
+        footer(doc, { page: i + 1, total: periodPages.count });
+      }
+      doc.end();
+      return;
+    }
 
     doc.addPage();
     header(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt });
@@ -3046,20 +3651,22 @@ ws.addRow(['Canceladas', summary.units.canceladas]);
         const realKey = findChartKey(chartsSafe, expectedTitle);
         if (realKey && chartsSafe[realKey]) {
           resolved.push({ expectedTitle, realKey });
+        } else if (reportPeriod) {
+          resolved.push({ expectedTitle, realKey: null });
         }
       }
 
       if (!resolved.length) continue;
 
       for (const { expectedTitle, realKey } of resolved) {
-        usedKeys.add(realKey);
+        if (realKey) usedKeys.add(realKey);
 
         doc.addPage();
         header(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt });
         sectionTitle(doc, sec.section);
         drawChart(doc, {
           title: expectedTitle,
-          dataUrl: chartsSafe[realKey],
+          dataUrl: realKey ? chartsSafe[realKey] : null,
           datasets,
           meta: { projectName: summary.projectName, updatedAt: summary.updatedAt }
         });
@@ -3096,7 +3703,7 @@ ws.addRow(['Canceladas', summary.units.canceladas]);
 
   } catch (e) {
     console.error('[POST /projects/:id/summary/export]', e);
-    res.status(500).json({ error: e.message });
+    res.status(e.status || 500).json({ error: e.message });
   }
 });
 

@@ -347,11 +347,17 @@ router.patch(
       if (!item) return res.status(404).json({ error: 'item_not_found' });
 
       // Campos permitidos desde UI
+      const previousStatus = item.status;
       const allowed = ['status', 'slaDays', 'requirements', 'observations'];
       for (const k of allowed) {
         if (Object.prototype.hasOwnProperty.call(req.body, k)) {
           item[k] = req.body[k];
         }
+      }
+      if (item.status !== previousStatus) {
+        const changedAt = new Date();
+        if (item.status === 'submitted' && !item.submittedAt) item.submittedAt = changedAt;
+        if (item.status === 'approved' || item.status === 'rejected') item.resolvedAt = changedAt;
       }
 
       await pp.save();
