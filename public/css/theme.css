@@ -2077,7 +2077,7 @@ button.small.danger{ color:#fff !important; }
 
 /* Gráfica principal de fases (más alta) */
 #tab-resumen .summary-chart-card.chart-phase-lg .summary-chart-box {
-  height: 380px;
+  height: 580px;
 }
 #tab-resumen .summary-chart-card.chart-card-sm .summary-chart-box {
   height: 580px;
@@ -2087,6 +2087,28 @@ button.small.danger{ color:#fff !important; }
   width: 100% !important;
   height: 100% !important;
   display: block;
+}
+
+#tab-finanzas .finance-charts-grid {
+  align-items: stretch;
+  gap: 16px;
+}
+
+#tab-finanzas .finance-chart-card {
+  overflow: hidden;
+}
+
+#tab-finanzas .finance-chart-box {
+  position: relative;
+  height: 580px;
+  min-height: 520px;
+  width: 100%;
+}
+
+#tab-finanzas .finance-chart-box canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 #tab-resumen .summary-chart-summary {

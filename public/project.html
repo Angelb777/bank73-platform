@@ -1301,14 +1301,24 @@
     <section id="summaryFinancialKpis" class="kpis-grid" style="margin-top:12px;"></section>
 
     <section class="grid-2" style="margin-top:12px;">
-      <div class="card summary-chart-card">
-        <h3>Comparación por fase (Finanzas)</h3>
+      <div class="card summary-chart-card chart-phase-lg">
+        <h3>Comparación por fase - Usos (Finanzas)</h3>
         <div class="summary-chart-box">
           <canvas id="sumPhaseChart"></canvas>
         </div>
         <div id="sumPhaseChartSummary" class="summary-chart-summary summary-phase-summary"></div>
       </div>
 
+      <div class="card summary-chart-card chart-phase-lg">
+        <h3>Comparación por fase - Fuentes (Finanzas)</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumPhaseSourceChart"></canvas>
+        </div>
+        <div id="sumPhaseSourceChartSummary" class="summary-chart-summary summary-phase-summary"></div>
+      </div>
+    </section>
+
+    <section class="grid-1" style="margin-top:12px;">
       <div class="card summary-chart-card">
         <h3>Cobertura CPP vs préstamo</h3>
         <div class="summary-chart-box">
@@ -1501,9 +1511,19 @@
        ========================================================= -->
   <div style="margin-top:22px;">
     <h3>Plan vs Real por fase</h3>
-    <div class="card">
-      <div class="label">Comparación por fase (no acumulado)</div>
-      <canvas id="phaseChart" height="120"></canvas>
+    <div class="grid-2 finance-charts-grid">
+      <div class="card finance-chart-card">
+        <div class="label">Comparacion por fase - Usos (no acumulado)</div>
+        <div class="finance-chart-box">
+          <canvas id="phaseChart"></canvas>
+        </div>
+      </div>
+      <div class="card finance-chart-card">
+        <div class="label">Comparacion por fase - Fuentes (no acumulado)</div>
+        <div class="finance-chart-box">
+          <canvas id="phaseSourceChart"></canvas>
+        </div>
+      </div>
     </div>
   </div>
 

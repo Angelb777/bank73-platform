@@ -2505,6 +2505,7 @@ async function renderSummaryUI(payload) {
   }
 
   renderPhaseChart(financePhases, 'sumPhaseChart');
+  renderPhaseSourceChart(financePhases, 'sumPhaseSourceChart');
   renderFinancePhaseSummary(financePhases);
 
   // Cabecera textual
@@ -2637,8 +2638,11 @@ if (!isPeriodView) try {
     };
     if (phases.length) {
       renderPhaseChart(phases, 'sumPhaseChart');
+      renderPhaseSourceChart(phases, 'sumPhaseSourceChart');
       renderFinancePhaseSummary(phases);
     } else {
+      renderPhaseChart([], 'sumPhaseChart');
+      renderPhaseSourceChart([], 'sumPhaseSourceChart');
       renderFinancePhaseSummary([]);
       console.warn('[Resumen] Finanzas sin fases');
     }
@@ -3501,7 +3505,8 @@ if (btn) {
         'Avance de construcción': captureCanvas('sumConstructionProgressRanges'),
         'Permisos por institución': captureCanvas('sumPermitsByInstitution'),
 
-        'Comparación por fase': captureCanvas('sumPhaseChart'),
+        'Comparación por fase (Usos)': captureCanvas('sumPhaseChart'),
+        'Comparación por fase (Fuentes)': captureCanvas('sumPhaseSourceChart'),
         'Líneas de crédito': captureCanvas('sumCreditLines'),
         'Cobertura CPP vs préstamo': captureCanvas('sumCppCoverage'),
 
@@ -4705,8 +4710,9 @@ async function loadFinance() {
     // Fases: cards
     renderPhases(FINANCE?.phases || []);
 
-    // Chart: Plan vs Real por fase (dos barras)
+    // Charts: Plan vs Real por fase (usos y fuentes)
     renderPhaseChart(FINANCE?.phases || []);
+    renderPhaseSourceChart(FINANCE?.phases || []);
 
     // Resumen acumulado final
     renderAccumSummary(FINANCE?.phases || []);
@@ -4846,38 +4852,190 @@ function renderRealAccumFromPhases(phases) {
 // Render: gráfica por fases (dos barras plan vs real)
 // ✅ FIX: ahora acepta canvasId para reusarla en RESUMEN sin romper FINANZAS
 // -------------------------
+
+// Paleta de colores: tonos azules para Plan, rojos para Real
+function getPhaseColors(count, type = 'plan') {
+  const blues = [
+    '#1e40af', '#1e3a8a', '#1e3f5f', '#2563eb', '#3b82f6',
+    '#60a5fa', '#93c5fd', '#bfdbfe', '#dbeafe', '#eff6ff'
+  ];
+  const reds = [
+    '#7f1d1d', '#991b1b', '#b91c1c', '#dc2626', '#ef4444',
+    '#f87171', '#fca5a5', '#fecaca', '#fee2e2', '#fef2f2'
+  ];
+  const palette = type === 'plan' ? blues : reds;
+  const colors = [];
+  for (let i = 0; i < count; i++) {
+    colors.push(palette[i % palette.length]);
+  }
+  return colors;
+}
+
 function renderPhaseChart(phases, canvasId = 'phaseChart') {
   const el = document.getElementById(canvasId);
   if (!el) return;
 
-  // si guardas chart en el canvas (como haces en export)
-  if (el._chart && typeof el._chart.destroy === 'function') el._chart.destroy();
+  const existingChart = Chart.getChart?.(el) || el._chart;
+  if (existingChart && typeof existingChart.destroy === 'function') existingChart.destroy();
 
   const labels = (phases || []).map(p => p.name || p.title || p.phase || 'Fase');
 
-  const plan = (phases || []).map(p => {
-    const planUses = (p.planUses || []).reduce((a,it)=> a + (Number(it.amount)||0), 0);
-    return planUses;
+  // Extraer todos los tipos de usos únicos
+  const allUseTypes = new Set();
+  (phases || []).forEach(p => {
+    (p.planUses || []).forEach(u => allUseTypes.add(u.name || u.id || 'Sin nombre'));
+    (p.uses || []).forEach(u => allUseTypes.add(u.name || u.id || 'Sin nombre'));
+  });
+  const useTypes = Array.from(allUseTypes).sort();
+
+  // Paletas de colores
+  const planColors = getPhaseColors(useTypes.length, 'plan');
+  const realColors = getPhaseColors(useTypes.length, 'real');
+
+  // Crear datasets: uno por cada tipo de uso (Plan y Real separados en stacks)
+  const datasets = [];
+
+  // Datasets para PLAN
+  useTypes.forEach((useName, idx) => {
+    const planData = (phases || []).map(p => {
+      const item = (p.planUses || []).find(u => (u.name || u.id || 'Sin nombre') === useName);
+      return Number(item?.amount || 0);
+    });
+    datasets.push({
+      label: `${useName} (Plan)`,
+      data: planData,
+      stack: 'plan',
+      backgroundColor: planColors[idx],
+      borderColor: planColors[idx]
+    });
   });
 
-  const real = (phases || []).map(p => {
-    const uses = (p.uses || []).reduce((a,it)=> a + (Number(it.amount)||0), 0);
-    return uses;
+  // Datasets para REAL
+  useTypes.forEach((useName, idx) => {
+    const realData = (phases || []).map(p => {
+      const item = (p.uses || []).find(u => (u.name || u.id || 'Sin nombre') === useName);
+      return Number(item?.amount || 0);
+    });
+    datasets.push({
+      label: `${useName} (Real)`,
+      data: realData,
+      stack: 'real',
+      backgroundColor: realColors[idx],
+      borderColor: realColors[idx]
+    });
   });
 
   const chart = new Chart(el.getContext('2d'), {
     type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Plan (fase)', data: plan },
-        { label: 'Real (fase)', data: real },
-      ]
-    },
-    options: { responsive: true, scales: { y: { beginAtZero: true } } }
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'nearest', intersect: true, axis: 'xy' },
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } },
+        tooltip: {
+          mode: 'nearest',
+          intersect: true,
+          callbacks: {
+            title: (items) => items?.[0]?.label || '',
+            label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.parsed.y || 0)}`
+          }
+        }
+      },
+      scales: {
+        x: { stacked: true },
+        y: { stacked: true, beginAtZero: true }
+      }
+    }
   });
 
-  // ✅ importante para export y para poder destruir
+  el._chart = chart;
+}
+
+// -------------------------
+// Render: gráfica por fases FUENTES (barras apiladas por tipo de fuente)
+// Similar a renderPhaseChart pero para sources en lugar de uses
+// -------------------------
+function renderPhaseSourceChart(phases, canvasId = 'phaseSourceChart') {
+  const el = document.getElementById(canvasId);
+  if (!el) return;
+
+  const existingChart = Chart.getChart?.(el) || el._chart;
+  if (existingChart && typeof existingChart.destroy === 'function') existingChart.destroy();
+
+  const labels = (phases || []).map(p => p.name || p.title || p.phase || 'Fase');
+
+  // Extraer todos los tipos de fuentes únicos
+  const allSourceTypes = new Set();
+  (phases || []).forEach(p => {
+    (p.planSources || []).forEach(s => allSourceTypes.add(s.name || s.id || 'Sin nombre'));
+    (p.sources || []).forEach(s => allSourceTypes.add(s.name || s.id || 'Sin nombre'));
+  });
+  const sourceTypes = Array.from(allSourceTypes).sort();
+
+  // Paletas de colores
+  const planColors = getPhaseColors(sourceTypes.length, 'plan');
+  const realColors = getPhaseColors(sourceTypes.length, 'real');
+
+  // Crear datasets: uno por cada tipo de fuente (Plan y Real separados en stacks)
+  const datasets = [];
+
+  // Datasets para PLAN
+  sourceTypes.forEach((sourceName, idx) => {
+    const planData = (phases || []).map(p => {
+      const item = (p.planSources || []).find(s => (s.name || s.id || 'Sin nombre') === sourceName);
+      return Number(item?.amount || 0);
+    });
+    datasets.push({
+      label: `${sourceName} (Plan)`,
+      data: planData,
+      stack: 'plan',
+      backgroundColor: planColors[idx],
+      borderColor: planColors[idx]
+    });
+  });
+
+  // Datasets para REAL
+  sourceTypes.forEach((sourceName, idx) => {
+    const realData = (phases || []).map(p => {
+      const item = (p.sources || []).find(s => (s.name || s.id || 'Sin nombre') === sourceName);
+      return Number(item?.amount || 0);
+    });
+    datasets.push({
+      label: `${sourceName} (Real)`,
+      data: realData,
+      stack: 'real',
+      backgroundColor: realColors[idx],
+      borderColor: realColors[idx]
+    });
+  });
+
+  const chart = new Chart(el.getContext('2d'), {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'nearest', intersect: true, axis: 'xy' },
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } },
+        tooltip: {
+          mode: 'nearest',
+          intersect: true,
+          callbacks: {
+            title: (items) => items?.[0]?.label || '',
+            label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.parsed.y || 0)}`
+          }
+        }
+      },
+      scales: {
+        x: { stacked: true },
+        y: { stacked: true, beginAtZero: true }
+      }
+    }
+  });
+
   el._chart = chart;
 }
 
