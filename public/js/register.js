@@ -7,6 +7,7 @@
   const btn    = document.getElementById('submitBtn');
   const pwd    = document.getElementById('password');
   const toggle = document.getElementById('togglePwd');
+  const promoterProfileFields = document.getElementById('promoterProfileFields');
 
   // Roles solicitables (todos menos admin). Deben coincidir con models/User.js (roleRequested enum)
   const REQUESTABLE_ROLES = [
@@ -83,6 +84,26 @@
     return 'bank';
   }
 
+  function syncPromoterProfileFields() {
+    if (!promoterProfileFields) return;
+    promoterProfileFields.style.display = getRequestedRole() === 'promoter' ? '' : 'none';
+  }
+
+  function collectPromoterProfile() {
+    if (getRequestedRole() !== 'promoter') return undefined;
+    return {
+      yearsExperience: document.getElementById('ppYearsExperience')?.value || '',
+      deliveredProjects: document.getElementById('ppDeliveredProjects')?.value || '',
+      activeProjects: document.getElementById('ppActiveProjects')?.value || '',
+      developedVolume: document.getElementById('ppDevelopedVolume')?.value || '',
+      countries: document.getElementById('ppCountries')?.value || '',
+      notes: document.getElementById('ppNotes')?.value || ''
+    };
+  }
+
+  document.getElementById('roleRequested')?.addEventListener('change', syncPromoterProfileFields);
+  syncPromoterProfileFields();
+
   // Tenancy header (usa lo que tengas en localStorage o default a bancodemo)
   function getTenant() {
     try { return localStorage.getItem('tenant') || 'bancodemo'; } catch (_) { return 'bancodemo'; }
@@ -102,6 +123,7 @@
     const email    = document.getElementById('email')?.value.trim();
     const password = document.getElementById('password')?.value;
     const roleReq  = getRequestedRole(); // uno de REQUESTABLE_ROLES
+    const promoterProfile = collectPromoterProfile();
 
     // Validación mínima de rol (evita valores raros si tocan el DOM)
     if (!REQUESTABLE_ROLES.includes(roleReq)) {
@@ -119,7 +141,8 @@
         },
         body: JSON.stringify({
           name, email, password,
-          roleRequested: roleReq
+          roleRequested: roleReq,
+          ...(promoterProfile ? { promoterProfile } : {})
         })
       });
 

@@ -53,6 +53,16 @@ const ASSIGNABLE_ROLES = [
   'contable'
 ];
 
+const PROJECT_TYPES = [
+  'Residencial vertical PH',
+  'Residencial horizontal',
+  'Comercial',
+  'Mixto',
+  'Lotes unifamiliares',
+  'Lotes, adosados y dúplex PH',
+  'Otro'
+];
+
 const ROLE_LABEL = (r) => ({
   admin: 'Admin',
   bank: 'Bank',
@@ -123,6 +133,7 @@ if (roleSelectDefault) {
 
   // Caché de proyectos (última carga)
   let allProjectsCache = [];
+  let usersCache = [];
   let usersPage = 1;
   let usersLastTotal = 0;
   let allProjectsPage = 1;
@@ -219,6 +230,12 @@ if (roleSelectDefault) {
   }
   async function apiDeleteUser(id) {
     return xfetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+  }
+  async function apiUpdatePromoterProfile(id, promoterProfile) {
+    return xfetch(`/api/admin/users/${id}/promoter-profile`, {
+      method: 'PATCH',
+      body: JSON.stringify({ promoterProfile })
+    });
   }
 
   // ---------- PROJECTS: API (pendientes admin) ----------
@@ -321,6 +338,30 @@ function escapeHtml(value = '') {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function renderProjectTypeOptions(selected = '') {
+  const sel = String(selected || '');
+  return `<option value="">No definido</option>` + PROJECT_TYPES.map(type => {
+    const s = sel === type ? ' selected' : '';
+    return `<option value="${type}"${s}>${type}</option>`;
+  }).join('');
+}
+
+function isPromoterLikeUser(u = {}) {
+  return String(u.role || '').toLowerCase() === 'promoter' ||
+    String(u.roleRequested || u.requestedRole || '').toLowerCase() === 'promoter';
+}
+
+function promoterProfileCell(u = {}) {
+  if (!isPromoterLikeUser(u)) return '<span class="muted">No definido</span>';
+  const category = u.promoterCategory || 'Emergente';
+  return `
+    <div>
+      <span>${escapeHtml(category)}</span>
+      <div><button class="btn small" data-user-promoter-profile="${u._id}">Editar perfil</button></div>
+    </div>
+  `;
 }
 
 const ACTION_LABELS = {
@@ -462,7 +503,7 @@ function applyProjectsFilters(list) {
     if (!pendingUsersTbody) return;
     pendingUsersTbody.innerHTML = '';
     if (!list.length) {
-      pendingUsersTbody.innerHTML = `<tr><td colspan="5" class="muted">No hay usuarios pendientes.</td></tr>`;
+      pendingUsersTbody.innerHTML = `<tr><td colspan="6" class="muted">No hay usuarios pendientes.</td></tr>`;
       return;
     }
     list.forEach((u) => {
@@ -478,6 +519,7 @@ function applyProjectsFilters(list) {
   <td>${u.email}</td>
   <td>${requestedAt ? new Date(requestedAt).toLocaleString() : '-'}</td>
   <td><span class="badge ${st}">${st.toUpperCase()}</span></td>
+  <td>${promoterProfileCell(u)}</td>
   <td>
     <div class="actions">
       <select class="input role-inline" data-id="${u._id}" title="Cambiar rol">
@@ -508,7 +550,7 @@ function applyProjectsFilters(list) {
     if (usersNext) usersNext.disabled = usersPage >= maxPageFor(usersLastTotal, usersPageSize);
 
     if (!list.length) {
-      usersTbody.innerHTML = `<tr><td class="muted" colspan="7">No hay usuarios.</td></tr>`;
+      usersTbody.innerHTML = `<tr><td class="muted" colspan="8">No hay usuarios.</td></tr>`;
       return;
     }
     let myId = null;
@@ -524,6 +566,7 @@ function applyProjectsFilters(list) {
         <td>${u.requestedAt ? new Date(u.requestedAt).toLocaleString() : '-'}</td>
         <td><span class="badge ${st}">${st.toUpperCase()}</span></td>
         <td>${u.createdAt ? new Date(u.createdAt).toLocaleString() : '-'}</td>
+        <td>${promoterProfileCell(u)}</td>
         <td>
           <div class="actions">
             ${st==='pending'
@@ -597,6 +640,7 @@ function applyProjectsFilters(list) {
         <td>${p.name || '-'}</td>
         <td>
           <div>${p.description || '-'}</div>
+          <div class="muted" style="font-size:.82rem;">Tipo: ${escapeHtml(p.projectType || 'No definido')}</div>
           ${teamSuggestionHtml(p.teamSuggestion)}
         </td>
         <td><span class="badge ${st}">${st.toUpperCase()}</span></td>
@@ -635,7 +679,10 @@ function applyProjectsFilters(list) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${p.name || '-'}</td>
-      <td>${p.description || '-'}</td>
+      <td>
+        <div>${p.description || '-'}</div>
+        <div class="muted" style="font-size:.82rem;">Tipo: ${escapeHtml(p.projectType || 'No definido')}</div>
+      </td>
       <td><span class="badge ${st}">${st.toUpperCase()}</span></td>
       <td>${proms.length ? proms.join(', ') : '<span class="muted">—</span>'}</td>
       <td>${comms.length ? comms.join(', ') : '<span class="muted">—</span>'}</td>
@@ -702,9 +749,12 @@ function applyProjectsFilters(list) {
     try {
       const all = await apiGetUsers({ status: 'pending' });
       const list = all.filter(isPending);
+      usersCache = usersCache.concat(list).filter((u, idx, arr) =>
+        arr.findIndex(x => String(x._id) === String(u._id)) === idx
+      );
       renderPendingUsers(list);
     } catch (e) {
-      pendingUsersTbody.innerHTML = `<tr><td colspan="5" class="muted">Error al cargar: ${e.message}</td></tr>`;
+      pendingUsersTbody.innerHTML = `<tr><td colspan="6" class="muted">Error al cargar: ${e.message}</td></tr>`;
     }
   }
   async function loadUsers() {
@@ -713,6 +763,7 @@ function applyProjectsFilters(list) {
       const status = usersStatusFilter?.value || '';
       let list = await apiGetUsers({ status });
       if (status) list = list.filter(u => userStatus(u) === status);
+      usersCache = list;
       const q = (usersSearch?.value || '').trim().toLowerCase();
       if (q) {
         list = list.filter(u =>
@@ -845,6 +896,13 @@ function applyProjectsFilters(list) {
       <textarea id="editProjDesc" class="input" rows="6" maxlength="20000" style="resize:vertical;"></textarea>
     </div>
 
+    <div style="margin-top:10px;">
+      <label class="small muted">Tipo de proyecto</label>
+      <select id="editProjType" class="input">
+        ${renderProjectTypeOptions('')}
+      </select>
+    </div>
+
     <!-- NUEVO: KPIs -->
     <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div>
@@ -895,6 +953,7 @@ function applyProjectsFilters(list) {
 
       const name = document.getElementById('editProjName').value.trim();
       const description = document.getElementById('editProjDesc').value.trim();
+      const projectType = document.getElementById('editProjType')?.value || '';
 
       // Puedes permitir nombre vacío si quieres; por defecto, exigimos nombre.
       if (!name) { alert('El nombre no puede estar vacío'); return; }
@@ -902,7 +961,8 @@ function applyProjectsFilters(list) {
       try {
   const payload = {
     name,
-    description
+    description,
+    projectType
   };
 
   // helper para añadir números sólo si hay valor
@@ -934,6 +994,99 @@ function applyProjectsFilters(list) {
     });
   }
 
+
+  function ensurePromoterProfileModal() {
+    if (document.getElementById('promoterProfileModal')) return;
+
+    const wrap = document.createElement('div');
+    wrap.id = 'promoterProfileModal';
+    wrap.style.cssText = 'display:none;position:fixed;inset:0;background:#0009;z-index:10000;align-items:center;justify-content:center;';
+    wrap.innerHTML = `
+      <div style="background:#12181f;color:#e6edf3;width:min(680px,92vw);border-radius:12px;padding:16px 18px;box-shadow:0 10px 30px rgba(0,0,0,.4);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;">
+          <div>
+            <h3 style="margin:0;font-size:1.1rem;">Perfil del promotor</h3>
+            <div id="promoterProfileUser" class="small muted"></div>
+          </div>
+          <button id="promoterProfileClose" class="btn small" style="background:#2a323d;">Cerrar</button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <label class="small muted">Años de experiencia
+            <input id="pp-yearsExperience" class="input" type="number" min="0" step="1" />
+          </label>
+          <label class="small muted">Proyectos entregados
+            <input id="pp-deliveredProjects" class="input" type="number" min="0" step="1" />
+          </label>
+          <label class="small muted">Proyectos activos
+            <input id="pp-activeProjects" class="input" type="number" min="0" step="1" />
+          </label>
+          <label class="small muted">Unidades desarrolladas
+            <input id="pp-developedVolume" class="input" type="number" min="0" step="any" />
+          </label>
+        </div>
+
+        <label class="small muted" style="display:block;margin-top:10px;">Países de operación
+          <input id="pp-countries" class="input" type="text" placeholder="Panamá, Colombia..." />
+        </label>
+        <label class="small muted" style="display:block;margin-top:10px;">Notas
+          <textarea id="pp-notes" class="input" rows="4" style="resize:vertical;"></textarea>
+        </label>
+        <div class="small muted" style="margin-top:8px;">Clasificación actual: <span id="pp-category">No definido</span></div>
+
+        <div style="margin-top:14px;display:flex;gap:10px;justify-content:flex-end;">
+          <button id="promoterProfileCancel" class="btn">Cancelar</button>
+          <button id="promoterProfileSave" class="btn small">Guardar</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(wrap);
+    const close = () => { wrap.style.display = 'none'; };
+    document.getElementById('promoterProfileClose').addEventListener('click', close);
+    document.getElementById('promoterProfileCancel').addEventListener('click', close);
+    document.getElementById('promoterProfileSave').addEventListener('click', async () => {
+      const id = wrap.dataset.userId;
+      if (!id) return;
+      const numOrBlank = (fieldId) => {
+        const value = document.getElementById(fieldId)?.value;
+        return value === '' || value === null || value === undefined ? '' : Number(value);
+      };
+      const profile = {
+        yearsExperience: numOrBlank('pp-yearsExperience'),
+        deliveredProjects: numOrBlank('pp-deliveredProjects'),
+        activeProjects: numOrBlank('pp-activeProjects'),
+        developedVolume: numOrBlank('pp-developedVolume'),
+        countries: document.getElementById('pp-countries')?.value || '',
+        notes: document.getElementById('pp-notes')?.value || ''
+      };
+
+      try {
+        await apiUpdatePromoterProfile(id, profile);
+        wrap.style.display = 'none';
+        await loadPendingUsers();
+        await loadUsers();
+      } catch (e) {
+        alert(e.message || 'No se pudo guardar el perfil del promotor');
+      }
+    });
+  }
+
+  function openPromoterProfileModal(user) {
+    ensurePromoterProfileModal();
+    const wrap = document.getElementById('promoterProfileModal');
+    const profile = user?.promoterProfile || {};
+    wrap.dataset.userId = user._id;
+    document.getElementById('promoterProfileUser').textContent = `${user.name || '-'} · ${user.email || '-'}`;
+    document.getElementById('pp-yearsExperience').value = profile.yearsExperience ?? '';
+    document.getElementById('pp-deliveredProjects').value = profile.deliveredProjects ?? '';
+    document.getElementById('pp-activeProjects').value = profile.activeProjects ?? '';
+    document.getElementById('pp-developedVolume').value = profile.developedVolume ?? '';
+    document.getElementById('pp-countries').value = Array.isArray(profile.countries) ? profile.countries.join(', ') : '';
+    document.getElementById('pp-notes').value = profile.notes || '';
+    document.getElementById('pp-category').textContent = user.promoterCategory || 'No definido';
+    wrap.style.display = 'flex';
+  }
 
   // ---------- EVENTOS ----------
   // Usuarios pendientes
@@ -1032,6 +1185,20 @@ function applyProjectsFilters(list) {
 
   // Delegación de eventos global
   document.addEventListener('click', async (e) => {
+    const promoterProfileBtn = e.target.closest?.('button[data-user-promoter-profile]');
+    if (promoterProfileBtn) {
+      const id = promoterProfileBtn.getAttribute('data-user-promoter-profile');
+      let user = usersCache.find(u => String(u._id) === String(id));
+      if (!user) {
+        const all = await apiGetUsers();
+        usersCache = all;
+        user = usersCache.find(u => String(u._id) === String(id));
+      }
+      if (!user) return alert('Usuario no encontrado');
+      openPromoterProfileModal(user);
+      return;
+    }
+
     // ---- Usuarios: aprobar ----
     const approveBtn = e.target.closest?.('button.approve');
     if (approveBtn) {
@@ -1138,6 +1305,7 @@ if (pEdit) {
     modal.dataset.projectId = id;
     document.getElementById('editProjName').value = proj.name || '';
     document.getElementById('editProjDesc').value = proj.description || '';
+    document.getElementById('editProjType').value = proj.projectType || proj.tipoProyecto || '';
     // Rellenar KPIs
 document.getElementById('ep-loanApproved').value   = proj.loanApproved ?? '';
 document.getElementById('ep-loanDisbursed').value  = proj.loanDisbursed ?? '';

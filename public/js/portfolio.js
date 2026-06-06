@@ -158,20 +158,26 @@
 
   function card(p) {
     const soldPct = p.unitsTotal ? Math.round((p.unitsSold / p.unitsTotal) * 100) : 0;
-    const promoterLine = Array.isArray(p.promoterNames) && p.promoterNames.length
-      ? `<p class="small muted">Promotor: ${escapeHtml(p.promoterNames.join(', '))}</p>`
+    const promoterText = Array.isArray(p.promoterNames) && p.promoterNames.length
+      ? `Promotor: ${escapeHtml(p.promoterNames.join(', '))}`
+      : '';
+    const typeText = p.projectType
+      ? `Tipo de proyecto: ${escapeHtml(p.projectType)}`
       : '';
 
     return `
       <div class="card ${statusClass(p.status)}">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <h3 style="margin-right:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(p.name)}</h3>
+        <div class="portfolio-card-head">
+          <h3 class="portfolio-card-title">${escapeHtml(p.name)}</h3>
           ${statusBadge(p.status)}
         </div>
-        <p class="muted">${p.description ? escapeHtml(p.description) : ''}</p>
-        ${promoterLine}
-        <div class="progress"><div style="width:${soldPct}%"></div></div>
-        <p class="small muted">${p.unitsSold || 0}/${p.unitsTotal || 0} unidades vendidas (${soldPct}%)</p>
+        <div class="portfolio-card-meta">
+          <p class="muted portfolio-card-description">${p.description ? escapeHtml(p.description) : ''}</p>
+          <p class="small muted portfolio-card-type ${typeText ? '' : 'is-empty'}">${typeText || '&nbsp;'}</p>
+          <p class="small muted portfolio-card-promoter ${promoterText ? '' : 'is-empty'}">${promoterText || '&nbsp;'}</p>
+        </div>
+        <div class="progress portfolio-card-progress"><div style="width:${soldPct}%"></div></div>
+        <p class="small muted portfolio-card-sales">${p.unitsSold || 0}/${p.unitsTotal || 0} unidades vendidas (${soldPct}%)</p>
         <div class="row">
           <a class="btn" href="/project?id=${encodeURIComponent(p._id)}&ref=portfolio">Abrir</a>
         </div>
@@ -456,6 +462,7 @@
           const name = document.getElementById('pName')?.value?.trim() || '';
           const description = document.getElementById('pDesc')?.value?.trim() || '';
           const status = document.getElementById('pStatus')?.value || 'EN_CURSO';
+          const projectType = document.getElementById('pProjectType')?.value || '';
 
           // (Estos inputs no están en tu HTML actual, pero lo mantengo sin romper)
           const kLoan = document.getElementById('kLoanApproved');
@@ -468,6 +475,7 @@
           const payload = {
             name,
             description,
+            projectType,
             status,
             loanApproved,
             budgetApproved,
@@ -479,7 +487,7 @@
           closeModal();
 
           // reset campos
-          ['pName', 'pDesc', 'kLoanApproved', 'kBudgetApproved', 'ts-promoter', 'ts-commercial', 'ts-legal', 'ts-tecnico', 'ts-gerencia', 'ts-socios', 'ts-financiero', 'ts-contable', 'ts-notes'].forEach(id => {
+          ['pName', 'pDesc', 'pProjectType', 'kLoanApproved', 'kBudgetApproved', 'ts-promoter', 'ts-commercial', 'ts-legal', 'ts-tecnico', 'ts-gerencia', 'ts-socios', 'ts-financiero', 'ts-contable', 'ts-notes'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
           });

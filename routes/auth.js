@@ -11,6 +11,32 @@ const router = express.Router();
 const esc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 const isProd = process.env.NODE_ENV === 'production';
 
+function sanitizePromoterProfile(input = {}) {
+  const hasAny = input && typeof input === 'object' && Object.values(input).some(v => {
+    if (Array.isArray(v)) return v.length > 0;
+    return v !== undefined && v !== null && String(v).trim() !== '';
+  });
+  if (!hasAny) return undefined;
+
+  const toNum = (v) => {
+    if (v === '' || v === null || v === undefined) return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  const countriesRaw = Array.isArray(input.countries)
+    ? input.countries
+    : String(input.countries || input.paisesOperacion || '').split(/\r?\n|,/);
+
+  return {
+    yearsExperience: toNum(input.yearsExperience ?? input.aniosExperiencia),
+    deliveredProjects: toNum(input.deliveredProjects ?? input.proyectosEntregados),
+    activeProjects: toNum(input.activeProjects ?? input.proyectosActivos),
+    developedVolume: toNum(input.developedVolume ?? input.volumenDesarrollado),
+    countries: Array.from(new Set(countriesRaw.map(x => String(x || '').trim()).filter(Boolean))).slice(0, 20),
+    notes: String(input.notes ?? input.notas ?? '').trim().slice(0, 1000)
+  };
+}
+
 // ROLE-SEP: helper para firmar tokens incluyendo status
 function signToken(user) {
   return jwt.sign(
@@ -156,7 +182,7 @@ if (!allowedRequested.includes(requested)) {
     const exists = await User.findOne({ tenantKey: req.tenantKey, email: normEmail });
     if (exists) return res.status(409).json({ error: 'El email ya está registrado' });
 
-    const user = await User.create({
+    const userPayload = {
       tenantKey: req.tenantKey,
       name,
       email: normEmail,
@@ -164,7 +190,14 @@ if (!allowedRequested.includes(requested)) {
       role: 'bank',               // ROLE-SEP: valor por defecto del schema, no habilita acceso
       status: 'pending',          // ROLE-SEP: pendiente hasta aprobación de admin
       roleRequested: requested    // ROLE-SEP
-    });
+    };
+
+    if (requested === 'promoter') {
+      const promoterProfile = sanitizePromoterProfile(req.body?.promoterProfile || req.body?.perfilPromotor || {});
+      if (promoterProfile) userPayload.promoterProfile = promoterProfile;
+    }
+
+    const user = await User.create(userPayload);
 
     await audit(req, 'auth.register_requested', {
       tenantKey: req.tenantKey,

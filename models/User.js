@@ -31,6 +31,7 @@ const FULL_ACCESS_ROLES = [
 ];
 
 const STATUSES = ['pending', 'active', 'blocked'];
+const PROMOTER_CATEGORIES = ['No definido', 'Emergente', 'En desarrollo', 'Consolidado', 'Institucional'];
 
 /**
  * Subdocumento opcional para rol por proyecto (granularidad).
@@ -43,6 +44,28 @@ const ProjectRoleSchema = new mongoose.Schema(
   },
   { _id: false }
 );
+
+const PromoterProfileSchema = new mongoose.Schema(
+  {
+    yearsExperience: { type: Number, min: 0, default: null },
+    deliveredProjects: { type: Number, min: 0, default: null },
+    activeProjects: { type: Number, min: 0, default: null },
+    developedVolume: { type: Number, min: 0, default: null },
+    countries: [{ type: String, trim: true }],
+    notes: { type: String, trim: true, default: '' }
+  },
+  { _id: false }
+);
+
+function calculatePromoterCategory(profile = {}) {
+  const years = Number(profile.yearsExperience || 0);
+  const delivered = Number(profile.deliveredProjects || 0);
+
+  if (years >= 15 || delivered > 20) return 'Institucional';
+  if (years >= 7 || delivered > 8) return 'Consolidado';
+  if (years >= 2 || delivered >= 1) return 'En desarrollo';
+  return 'Emergente';
+}
 
 const userSchema = new mongoose.Schema(
   {
@@ -67,7 +90,11 @@ const userSchema = new mongoose.Schema(
     },
 
     // (Opcional) Roles por proyecto para ACL fino
-    projectRoles: [ProjectRoleSchema]
+    projectRoles: [ProjectRoleSchema],
+
+    // Perfil opcional para usuarios promotores. No bloquea registro ni uso.
+    promoterProfile: { type: PromoterProfileSchema, default: undefined },
+    promoterCategory: { type: String, enum: PROMOTER_CATEGORIES, default: 'No definido' }
   },
   { timestamps: true }
 );
@@ -76,6 +103,18 @@ const userSchema = new mongoose.Schema(
 userSchema.pre('validate', function (next) {
   if (this.role) this.role = String(this.role).toLowerCase();
   if (this.roleRequested) this.roleRequested = String(this.roleRequested).toLowerCase();
+
+  const isPromoter =
+    this.role === 'promoter' ||
+    this.roleRequested === 'promoter' ||
+    !!this.promoterProfile;
+
+  if (isPromoter) {
+    this.promoterCategory = calculatePromoterCategory(this.promoterProfile || {});
+  } else {
+    this.promoterCategory = 'No definido';
+  }
+
   next();
 });
 
@@ -102,3 +141,5 @@ module.exports = mongoose.model('User', userSchema);
 module.exports.ROLES = ROLES;
 module.exports.FULL_ACCESS_ROLES = FULL_ACCESS_ROLES;
 module.exports.STATUSES = STATUSES;
+module.exports.PROMOTER_CATEGORIES = PROMOTER_CATEGORIES;
+module.exports.calculatePromoterCategory = calculatePromoterCategory;

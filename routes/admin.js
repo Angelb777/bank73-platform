@@ -10,6 +10,31 @@ const router = express.Router();
 const { ROLES: VALID_ROLES } = require('../models/User'); // usa la misma fuente que el modelo
 const VALID_PUBLISH = ['draft','pending','approved','rejected']; // ROLE-SEP
 
+function sanitizePromoterProfile(input = {}) {
+  const toNum = (v) => {
+    if (v === '' || v === null || v === undefined) return null;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0) {
+      const err = new Error('Los campos numéricos del perfil del promotor deben ser positivos.');
+      err.status = 400;
+      throw err;
+    }
+    return n;
+  };
+  const countriesRaw = Array.isArray(input.countries)
+    ? input.countries
+    : String(input.countries || input.paisesOperacion || '').split(/\r?\n|,/);
+
+  return {
+    yearsExperience: toNum(input.yearsExperience ?? input.aniosExperiencia),
+    deliveredProjects: toNum(input.deliveredProjects ?? input.proyectosEntregados),
+    activeProjects: toNum(input.activeProjects ?? input.proyectosActivos),
+    developedVolume: toNum(input.developedVolume ?? input.volumenDesarrollado),
+    countries: Array.from(new Set(countriesRaw.map(x => String(x || '').trim()).filter(Boolean))).slice(0, 20),
+    notes: String(input.notes ?? input.notas ?? '').trim().slice(0, 1000)
+  };
+}
+
 // ROLE-SEP: Todas estas rutas requieren rol admin (además de auth y tenant previos en server.js)
 router.use(requireRole('admin')); // ROLE-SEP
 
@@ -115,6 +140,41 @@ router.post('/users/:id/approve', async (req, res) => {
   }
 });
 
+router.patch('/users/:id/promoter-profile', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findOne({ _id: id, tenantKey: req.tenantKey });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    user.promoterProfile = sanitizePromoterProfile(req.body?.promoterProfile || req.body?.perfilPromotor || req.body || {});
+    await user.save();
+
+    await audit(req, 'user.promoter_profile_updated', {
+      targetType: 'user',
+      targetId: user._id,
+      message: 'Perfil del promotor actualizado',
+      metadata: { email: user.email, role: user.role, promoterCategory: user.promoterCategory }
+    });
+
+    res.json({
+      ok: true,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        roleRequested: user.roleRequested,
+        status: user.status,
+        tenantKey: user.tenantKey,
+        promoterProfile: user.promoterProfile || null,
+        promoterCategory: user.promoterCategory || 'No definido'
+      }
+    });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+
 
 // ROLE-SEP: POST /api/admin/users/:id/block -> pone status:'blocked'
 router.post('/users/:id/block', async (req, res) => {
@@ -200,8 +260,8 @@ router.get('/projects', async (req, res) => {
       }
       q.publishStatus = status; // ROLE-SEP
     }
-    const projects = await Project.find(q).sort({ createdAt: -1 });
-    res.json({ projects });
+    const projects = await Project.find(q).sort({ createdAt: -1 }).lean();
+    res.json({ projects: projects.map(p => ({ ...p, tipoProyecto: p.projectType || '' })) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

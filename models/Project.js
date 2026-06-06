@@ -3,12 +3,22 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const PUBLISH_STATUSES = ['draft', 'pending', 'approved', 'rejected'];
+const PROJECT_TYPES = [
+  'Residencial vertical PH',
+  'Residencial horizontal',
+  'Comercial',
+  'Mixto',
+  'Lotes unifamiliares',
+  'Lotes, adosados y dúplex PH',
+  'Otro'
+];
 
 const projectSchema = new Schema({
   tenantKey: { type: String, index: true },
 
   name: String,
   description: String,
+  projectType: { type: String, enum: ['', ...PROJECT_TYPES], default: '' },
 
   status: { type: String, default: 'EN_CURSO' },
 
@@ -68,3 +78,4 @@ const projectSchema = new Schema({
 
 module.exports = mongoose.model('Project', projectSchema);
 module.exports.PUBLISH_STATUSES = PUBLISH_STATUSES;
+module.exports.PROJECT_TYPES = PROJECT_TYPES;

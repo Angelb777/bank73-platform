@@ -17,6 +17,9 @@ const Project = require('../models/Project');
 const ProjectChecklist = require('../models/ProjectChecklist');
 const Unit = require('../models/Unit');
 const UnitDocFolder = require('../models/UnitDocFolder');
+const User = require('../models/User');
+const ProjectDocFolderPermission = require('../models/ProjectDocFolderPermission');
+const { PROJECT_DOC_FOLDERS } = ProjectDocFolderPermission;
 const audit = require('../utils/audit');
 
 const router = express.Router();
@@ -128,6 +131,194 @@ function getRequestedFolderId(req) {
   return s;
 }
 
+function getRequestedProjectFolder(req) {
+  const raw = req.body?.folder ?? req.body?.carpeta ?? req.query?.folder ?? req.query?.carpeta ?? '';
+  const s = norm(raw);
+  const aliases = {
+    technical: 'tecnico',
+    tecnico: 'tecnico',
+    comercial: 'comercial',
+    commercial: 'comercial',
+    financiero: 'financiero',
+    finance: 'financiero',
+    legal: 'legal',
+    gerencia: 'gerencia',
+    management: 'gerencia'
+  };
+
+  return aliases[s] || '';
+}
+
+function getRequestedSubfolder(req) {
+  return String(req.body?.subfolder ?? req.body?.subcarpeta ?? req.query?.subfolder ?? req.query?.subcarpeta ?? '').trim();
+}
+
+function getUserId(req) {
+  return req.user?.userId || req.user?._id || req.user?.id || null;
+}
+
+function isProjectFolderManager(req) {
+  return ['admin', 'promoter'].includes(norm(req.user?.role));
+}
+
+function canMoveProjectDocs(req) {
+  return ['admin', 'bank', 'promoter'].includes(norm(req.user?.role));
+}
+
+function includesId(list, id) {
+  const s = String(id || '');
+  return Array.isArray(list) && list.some(v => String(v) === s);
+}
+
+function uniqueIds(lists) {
+  const out = [];
+  const seen = new Set();
+
+  for (const list of lists || []) {
+    for (const value of (Array.isArray(list) ? list : [])) {
+      const s = String(value || '');
+      if (!s || seen.has(s)) continue;
+      seen.add(s);
+      out.push(value);
+    }
+  }
+
+  return out;
+}
+
+function getProjectAssignedUserIds(project) {
+  const ass = project?.assignees || {};
+  return uniqueIds([
+    project?.assignedUsers,
+    project?.teamUsers,
+    project?.members,
+    project?.assignedPromoters,
+    project?.assignedCommercials,
+    project?.assignedLegal,
+    project?.assignedTecnicos,
+    project?.assignedGerencia,
+    project?.assignedSocios,
+    project?.assignedFinanciero,
+    project?.assignedContable,
+    ass.promoter,
+    ass.commercial,
+    ass.legal,
+    ass.tecnico,
+    ass.gerencia,
+    ass.socios,
+    ass.financiero,
+    ass.contable
+  ]);
+}
+
+function fallbackFolderUsers(project, folder) {
+  const ass = project?.assignees || {};
+  const map = {
+    tecnico: [project?.assignedTecnicos, ass.tecnico],
+    comercial: [project?.assignedCommercials, ass.commercial],
+    financiero: [project?.assignedFinanciero, project?.assignedContable, ass.financiero, ass.contable],
+    legal: [project?.assignedLegal, ass.legal],
+    gerencia: [project?.assignedGerencia, project?.assignedSocios, ass.gerencia, ass.socios]
+  };
+
+  return uniqueIds(map[folder] || []);
+}
+
+function effectiveProjectFolder(doc) {
+  const f = norm(doc?.folder);
+  if (PROJECT_DOC_FOLDERS.includes(f)) return f;
+  return 'gerencia';
+}
+
+function inferProjectFolder(req, department, category) {
+  const requested = getRequestedProjectFolder(req);
+  if (requested) return requested;
+
+  const dep = norm(department);
+  if (dep === 'commercial') return 'comercial';
+  if (dep === 'tecnico') return 'tecnico';
+  if (dep === 'legal') return 'legal';
+
+  const cat = norm(category);
+  if (cat === 'beforeafter' || cat === 'avances' || cat === 'tecnico') return 'tecnico';
+  if (cat === 'permits' || cat === 'permisos') return 'legal';
+  if (cat === 'finanzas' || cat === 'finance' || cat === 'financiero') return 'financiero';
+  if (cat === 'legal') return 'legal';
+  if (cat === 'commercial' || cat === 'comercial') return 'comercial';
+
+  return 'gerencia';
+}
+
+function projectFolderFromChecklistRole(roleRaw) {
+  const role = norm(roleRaw);
+  if (role === 'tecnico') return 'tecnico';
+  if (role === 'legal') return 'legal';
+  if (role === 'commercial' || role === 'comercial') return 'comercial';
+  if (role === 'financiero' || role === 'contable') return 'financiero';
+  if (role === 'gerencia' || role === 'socios') return 'gerencia';
+  return '';
+}
+
+async function getProjectFolderPermissions({ tenantKey, project }) {
+  const records = await ProjectDocFolderPermission
+    .find({ tenantKey, projectId: project._id })
+    .lean();
+
+  const byFolder = new Map(records.map(r => [r.folder, r]));
+
+  return PROJECT_DOC_FOLDERS.map(folder => {
+    const record = byFolder.get(folder);
+    return {
+      folder,
+      assignedUsers: record ? (record.assignedUsers || []) : fallbackFolderUsers(project, folder),
+      subfolders: record ? (record.subfolders || []) : [],
+      explicit: !!record
+    };
+  });
+}
+
+async function getAllowedProjectFolders(req, project) {
+  if (isProjectFolderManager(req) || norm(req.user?.role) === 'bank') return PROJECT_DOC_FOLDERS.slice();
+
+  const userId = getUserId(req);
+  if (!userId) return [];
+
+  const perms = await getProjectFolderPermissions({
+    tenantKey: getTenantKey(req),
+    project
+  });
+
+  return perms
+    .filter(p => includesId(p.assignedUsers, userId))
+    .map(p => p.folder);
+}
+
+function projectFolderMongoFilter(folders) {
+  const allowed = (folders || []).filter(f => PROJECT_DOC_FOLDERS.includes(f));
+  const or = [];
+
+  if (allowed.length) or.push({ folder: { $in: allowed } });
+  if (allowed.includes('gerencia')) {
+    or.push({ folder: { $exists: false } }, { folder: null }, { folder: '' });
+  }
+
+  return or.length ? { $or: or } : { _id: { $exists: false } };
+}
+
+async function canAccessProjectDoc(req, doc) {
+  if (!doc?.projectId) return true;
+  if (isProjectFolderManager(req) || norm(req.user?.role) === 'bank') return true;
+
+  const project = await Project.findOne({
+    _id: doc.projectId,
+    tenantKey: getTenantKey(req)
+  }).lean();
+  if (!project) return false;
+
+  const allowed = await getAllowedProjectFolders(req, project);
+  return allowed.includes(effectiveProjectFolder(doc));
+}
+
 async function validateFolderAccess({ req, projectId, unitId, department, folderId }) {
   if (!folderId) return null;
 
@@ -157,17 +348,22 @@ async function validateFolderAccess({ req, projectId, unitId, department, folder
   return folder._id;
 }
 
-function buildDocsQuery(req) {
+async function buildDocsQuery(req) {
   const role = norm(req.user?.role);
   const tenantKey = getTenantKey(req);
   const and = [{ tenantKey }];
+  let projectOid = null;
+  let projectForFolderAccess = null;
 
   const category = (req.query.category || '').trim();
   if (category) and.push({ category });
 
   if (req.query.projectId) {
     const pid = safeOid(String(req.query.projectId));
-    if (pid) and.push({ $or: [{ projectId: pid }, { project: pid }] });
+    if (pid) {
+      projectOid = pid;
+      and.push({ $or: [{ projectId: pid }, { project: pid }] });
+    }
     else and.push({ _id: { $exists: false } });
   }
 
@@ -235,6 +431,36 @@ function buildDocsQuery(req) {
     }
   }
 
+  const isProjectRepositoryQuery = !!projectOid &&
+    !req.query.unitId &&
+    !req.query.checklistId &&
+    !category &&
+    !permitCode &&
+    !req.query.department;
+
+  if (projectOid && (isProjectRepositoryQuery || 'folder' in req.query || 'carpeta' in req.query || 'subfolder' in req.query || 'subcarpeta' in req.query)) {
+    projectForFolderAccess = await Project.findOne({ _id: projectOid, tenantKey }).lean();
+
+    if (!projectForFolderAccess) {
+      and.push({ _id: { $exists: false } });
+    } else {
+      let allowedFolders = await getAllowedProjectFolders(req, projectForFolderAccess);
+      const requestedFolder = getRequestedProjectFolder(req);
+
+      if (requestedFolder) {
+        allowedFolders = allowedFolders.includes(requestedFolder) ? [requestedFolder] : [];
+      }
+
+      and.push(projectFolderMongoFilter(allowedFolders));
+
+      const requestedSubfolder = getRequestedSubfolder(req);
+      if ('subfolder' in req.query || 'subcarpeta' in req.query) {
+        if (requestedSubfolder) and.push({ subfolder: requestedSubfolder });
+        else and.push({ $or: [{ subfolder: '' }, { subfolder: null }, { subfolder: { $exists: false } }] });
+      }
+    }
+  }
+
   const qraw = (req.query.q || '').trim();
   if (qraw) {
     const rx = new RegExp(escapeRegex(qraw), 'i');
@@ -253,7 +479,9 @@ function buildDocsQuery(req) {
   }
 
   // --- ACL por rol legacy + compatibilidad ---
-  if (isFullAccess(role)) {
+  if (isProjectRepositoryQuery) {
+    // El repositorio documental del proyecto se filtra por carpeta, no por ACL legacy.
+  } else if (isFullAccess(role)) {
     // ven todo
   } else if (role === 'commercial') {
     and.push({ unitId: { $exists: true, $ne: null } });
@@ -303,6 +531,150 @@ function attachProjectIdParam(req, _res, next) {
 
   next();
 }
+
+router.get(
+  '/folder-permissions',
+  attachProjectIdParam,
+  requireRole('admin', 'bank', 'promoter', 'gerencia', 'socios', 'financiero', 'contable', 'legal', 'tecnico', 'commercial'),
+  requireProjectAccess({ commercialOnlySales: false }),
+  async (req, res) => {
+    try {
+      const tenantKey = getTenantKey(req);
+      const projectOid = safeOid(String(req.query.projectId || req.params.id || ''));
+      if (!projectOid) return res.status(400).json({ error: 'projectId inválido' });
+
+      const project = await Project.findOne({ _id: projectOid, tenantKey }).lean();
+      if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+      const assignedIds = getProjectAssignedUserIds(project);
+      const projectUsers = assignedIds.length
+        ? await User.find({ tenantKey, _id: { $in: assignedIds } })
+            .select('_id name email role status')
+            .sort({ role: 1, name: 1, email: 1 })
+            .lean()
+        : [];
+
+      const permissions = await getProjectFolderPermissions({ tenantKey, project });
+      const allowedFolders = await getAllowedProjectFolders(req, project);
+
+      res.json({
+        folders: permissions
+          .filter(p => allowedFolders.includes(p.folder))
+          .map(p => ({
+            folder: p.folder,
+            assignedUsers: (p.assignedUsers || []).map(String),
+            subfolders: p.subfolders || [],
+            explicit: p.explicit
+          })),
+        projectUsers,
+        canManage: isProjectFolderManager(req),
+        canMove: canMoveProjectDocs(req),
+        canSearchAll: ['admin', 'bank', 'promoter'].includes(norm(req.user?.role))
+      });
+    } catch (e) {
+      console.error('[documents.folder-permissions.list] error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  }
+);
+
+router.patch(
+  '/folder-permissions/:folder',
+  attachProjectIdParam,
+  requireRole('admin', 'promoter'),
+  requireProjectAccess({ commercialOnlySales: false }),
+  async (req, res) => {
+    try {
+      const tenantKey = getTenantKey(req);
+      const projectOid = safeOid(String(req.body?.projectId || req.query.projectId || req.params.id || ''));
+      const folder = norm(req.params.folder);
+
+      if (!projectOid) return res.status(400).json({ error: 'projectId inválido' });
+      if (!PROJECT_DOC_FOLDERS.includes(folder)) return res.status(400).json({ error: 'folder inválida' });
+
+      const project = await Project.findOne({ _id: projectOid, tenantKey }).lean();
+      if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+      const projectUserIds = getProjectAssignedUserIds(project).map(String);
+      const requested = Array.isArray(req.body?.assignedUsers) ? req.body.assignedUsers.map(String) : [];
+      const invalid = requested.filter(uid => !projectUserIds.includes(uid));
+      if (invalid.length) {
+        return res.status(400).json({ error: 'Solo se pueden asignar usuarios ya asignados al proyecto' });
+      }
+
+      const assignedUsers = requested
+        .filter(uid => mongoose.Types.ObjectId.isValid(uid))
+        .map(uid => new mongoose.Types.ObjectId(uid));
+
+      const permission = await ProjectDocFolderPermission.findOneAndUpdate(
+        { tenantKey, projectId: projectOid, folder },
+        { $set: { assignedUsers } },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      ).lean();
+
+      await audit(req, 'document.folder_permissions.updated', {
+        targetType: 'project',
+        targetId: projectOid,
+        projectId: projectOid,
+        message: 'Permisos de carpeta documental actualizados',
+        metadata: { folder, assignedUsers: assignedUsers.map(String) }
+      });
+
+      res.json({ ok: true, folder: permission.folder, assignedUsers: permission.assignedUsers || [] });
+    } catch (e) {
+      console.error('[documents.folder-permissions.update] error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  }
+);
+
+router.post(
+  '/folder-permissions/:folder/subfolders',
+  attachProjectIdParam,
+  requireRole('admin', 'bank', 'promoter', 'gerencia', 'socios', 'financiero', 'contable', 'legal', 'tecnico', 'commercial'),
+  requireProjectAccess({ commercialOnlySales: false }),
+  async (req, res) => {
+    try {
+      const tenantKey = getTenantKey(req);
+      const projectOid = safeOid(String(req.body?.projectId || req.query.projectId || req.params.id || ''));
+      const folder = norm(req.params.folder);
+      const name = String(req.body?.name || '').trim();
+
+      if (!projectOid) return res.status(400).json({ error: 'projectId inválido' });
+      if (!PROJECT_DOC_FOLDERS.includes(folder)) return res.status(400).json({ error: 'folder inválida' });
+      if (!name) return res.status(400).json({ error: 'Nombre requerido' });
+
+      const project = await Project.findOne({ _id: projectOid, tenantKey }).lean();
+      if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+      const allowedFolders = await getAllowedProjectFolders(req, project);
+      if (!allowedFolders.includes(folder)) {
+        return res.status(403).json({ error: 'No tienes acceso a esta carpeta' });
+      }
+
+      let permission = await ProjectDocFolderPermission.findOne({ tenantKey, projectId: projectOid, folder });
+      if (!permission) {
+        permission = new ProjectDocFolderPermission({
+          tenantKey,
+          projectId: projectOid,
+          folder,
+          assignedUsers: fallbackFolderUsers(project, folder)
+        });
+      }
+
+      const exists = (permission.subfolders || []).some(sf => norm(sf.name) === norm(name));
+      if (!exists) {
+        permission.subfolders.push({ name, createdBy: getUserId(req) });
+        await permission.save();
+      }
+
+      res.status(201).json({ ok: true, subfolders: permission.subfolders || [] });
+    } catch (e) {
+      console.error('[documents.subfolders.create] error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  }
+);
 
 router.post(
   '/upload',
@@ -355,7 +727,7 @@ router.post(
       const projectOid = safeOid(projectId);
       if (!projectOid) return res.status(400).json({ error: 'projectId inválido' });
 
-      const proj = await Project.findOne({ _id: projectOid, tenantKey }).select('_id').lean();
+      const proj = await Project.findOne({ _id: projectOid, tenantKey }).lean();
       if (!proj) return res.status(404).json({ error: 'project_not_found' });
 
       let expiry = null;
@@ -410,9 +782,17 @@ router.post(
         folderId = null;
       }
 
+      let projectFolder = inferProjectFolder(req, department, category);
+      if (!PROJECT_DOC_FOLDERS.includes(projectFolder)) {
+        return res.status(400).json({ error: 'folder_invalida' });
+      }
+
+      const subfolder = getRequestedSubfolder(req);
+
       // ---- ACL ----
       const FULL = ['admin', 'bank', 'promoter', 'gerencia', 'socios', 'financiero', 'contable'];
       const LIMITED = ['legal', 'tecnico', 'commercial'];
+      let checklistFolder = '';
 
       let acl = Array.isArray(visibleToRoles)
         ? visibleToRoles.map(norm).filter(Boolean)
@@ -427,6 +807,8 @@ router.post(
           .lean();
 
         if (cl) {
+          checklistFolder = projectFolderFromChecklistRole(cl.roleOwner);
+
           const inherited = [
             ...(Array.isArray(cl.visibleToRoles) ? cl.visibleToRoles.map(norm) : []),
             norm(cl.roleOwner)
@@ -434,6 +816,10 @@ router.post(
 
           acl = Array.from(new Set([...inherited, ...FULL]));
         }
+      }
+
+      if (!getRequestedProjectFolder(req) && checklistFolder) {
+        projectFolder = checklistFolder;
       }
 
       // ✅ Docs de unidad heredan ACL según departamento
@@ -478,9 +864,22 @@ router.post(
           return res.status(400).json({ error: 'replaces_not_same_project' });
         }
 
-        if (replacedDoc.department && !canAccessDocDepartment(req, replacedDoc.department)) {
+        if (replacedDoc.unitId && replacedDoc.department && !canAccessDocDepartment(req, replacedDoc.department)) {
           return res.status(403).json({ error: 'No puedes reemplazar este documento' });
         }
+
+        if (!(await canAccessProjectDoc(req, replacedDoc))) {
+          return res.status(403).json({ error: 'No tienes acceso a la carpeta del documento a reemplazar' });
+        }
+
+        if (!getRequestedProjectFolder(req)) {
+          projectFolder = effectiveProjectFolder(replacedDoc);
+        }
+      }
+
+      const allowedProjectFolders = await getAllowedProjectFolders(req, proj);
+      if (!allowedProjectFolders.includes(projectFolder)) {
+        return res.status(403).json({ error: 'No tienes permiso para subir documentos en esta carpeta' });
       }
 
       const created = [];
@@ -499,6 +898,8 @@ router.post(
 
           department: department || undefined,
           folderId: folderOid || null,
+          folder: projectFolder,
+          subfolder,
 
           originalname: f.originalname,
           filename: f.filename,
@@ -563,9 +964,9 @@ router.post(
    ========================================================================= */
 router.get('/', async (req, res) => {
   try {
-    const q = buildDocsQuery(req);
+    const q = await buildDocsQuery(req);
     const list = await Document.find(q).sort({ createdAt: -1 }).lean();
-    res.json(list);
+    res.json(list.map(d => ({ ...d, folder: effectiveProjectFolder(d), subfolder: d.subfolder || '' })));
   } catch (e) {
     console.error('[documents.list] error:', e);
     res.status(500).json({ error: e.message });
@@ -602,8 +1003,12 @@ router.patch(
       const doc = await Document.findOne({ _id: docId, tenantKey });
       if (!doc) return res.status(404).json({ error: 'Documento no encontrado' });
 
-      if (doc.department && !canAccessDocDepartment(req, doc.department)) {
+      if (doc.unitId && doc.department && !canAccessDocDepartment(req, doc.department)) {
         return res.status(403).json({ error: 'No tienes permiso para este documento' });
+      }
+
+      if (!(await canAccessProjectDoc(req, doc))) {
+        return res.status(403).json({ error: 'No tienes acceso a la carpeta de este documento' });
       }
 
       const st = String(doc.status || 'ACTIVE').toUpperCase();
@@ -624,6 +1029,68 @@ router.patch(
   }
 );
 
+router.patch(
+  '/:id/location',
+  requireRole('admin', 'bank', 'promoter'),
+  loadDocAndAttachProject,
+  requireProjectAccess({ commercialOnlySales: false }),
+  async (req, res) => {
+    try {
+      const tenantKey = getTenantKey(req);
+      const docId = req.params.docId || req.params.id;
+      const folder = getRequestedProjectFolder(req);
+      const subfolder = getRequestedSubfolder(req);
+
+      if (!PROJECT_DOC_FOLDERS.includes(folder)) {
+        return res.status(400).json({ error: 'folder inválida' });
+      }
+
+      const doc = await Document.findOne({ _id: docId, tenantKey });
+      if (!doc) return res.status(404).json({ error: 'Documento no encontrado' });
+
+      const project = await Project.findOne({ _id: doc.projectId, tenantKey }).lean();
+      if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+      const allowedFolders = await getAllowedProjectFolders(req, project);
+      if (!allowedFolders.includes(folder)) {
+        return res.status(403).json({ error: 'No tienes acceso a la carpeta destino' });
+      }
+
+      if (!(await canAccessProjectDoc(req, doc))) {
+        return res.status(403).json({ error: 'No tienes acceso a la carpeta actual del documento' });
+      }
+
+      if (subfolder) {
+        const permission = await ProjectDocFolderPermission
+          .findOne({ tenantKey, projectId: doc.projectId, folder })
+          .lean();
+        const exists = (permission?.subfolders || []).some(sf => norm(sf.name) === norm(subfolder));
+
+        if (!exists) {
+          return res.status(400).json({ error: 'subfolder_not_found' });
+        }
+      }
+
+      doc.folder = folder;
+      doc.subfolder = subfolder || '';
+      await doc.save();
+
+      await audit(req, 'document.moved', {
+        targetType: 'document',
+        targetId: doc._id,
+        projectId: doc.projectId,
+        message: 'Documento movido de carpeta',
+        metadata: { folder, subfolder: doc.subfolder }
+      });
+
+      res.json({ ok: true, document: doc.toObject() });
+    } catch (e) {
+      console.error('[documents.location] error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  }
+);
+
 /* =========================================================================
    Descargar
    ========================================================================= */
@@ -635,11 +1102,15 @@ router.get('/:id/download', async (req, res) => {
     const doc = await Document.findOne({ _id: req.params.id, tenantKey }).lean();
     if (!doc) return res.status(404).json({ error: 'Documento no encontrado' });
 
-    if (doc.department && !canAccessDocDepartment(req, doc.department)) {
+    if (doc.unitId && doc.department && !canAccessDocDepartment(req, doc.department)) {
       return res.status(403).json({ error: 'No tienes permiso para este documento' });
     }
 
-    if (!isFullAccess(role)) {
+    if (!(await canAccessProjectDoc(req, doc))) {
+      return res.status(403).json({ error: 'No tienes acceso a la carpeta de este documento' });
+    }
+
+    if (!doc.projectId && !isFullAccess(role)) {
       const acl = (doc.visibleToRoles || []).map(norm);
 
       if (acl.length && !acl.includes(role)) {
@@ -695,8 +1166,12 @@ async function deleteDocHandler(req, res) {
     const doc = await Document.findOne({ _id: docId, tenantKey }).lean();
     if (!doc) return res.status(404).json({ error: 'Documento no encontrado' });
 
-    if (doc.department && !canAccessDocDepartment(req, doc.department)) {
+    if (doc.unitId && doc.department && !canAccessDocDepartment(req, doc.department)) {
       return res.status(403).json({ error: 'No tienes permiso para eliminar este documento' });
+    }
+
+    if (!(await canAccessProjectDoc(req, doc))) {
+      return res.status(403).json({ error: 'No tienes acceso a la carpeta de este documento' });
     }
 
     await Document.deleteOne({ _id: docId, tenantKey });

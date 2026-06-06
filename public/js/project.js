@@ -19,6 +19,7 @@
 
   const statusWrap  = document.getElementById('statusControls');
   const statusSel   = document.getElementById('pstatusSel');
+  const projectTypeText = document.getElementById('projectTypeText');
   const saveBtn     = document.getElementById('saveStatusBtn');
   const startBtn    = document.getElementById('startBtn');
 
@@ -82,6 +83,12 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
   function activateTab(key){
     document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === key));
     Object.entries(panes).forEach(([k,el]) => el && el.classList.toggle('active', k === key));
+    if (key === 'docs' && window.__docsModuleReady && typeof loadDocs === 'function') {
+      invalidateProjectDocsCache();
+      loadDocs({ q: (document.getElementById('docsSearch')?.value || '') }).catch(e => {
+        console.warn('[Docs] No se pudo refrescar al abrir la pestana', e);
+      });
+    }
     if (key === 'resumen' && __summaryDirty) {
       refreshSummaryFromServer().catch(e => {
         console.warn('[Summary] No se pudo refrescar al abrir la pestana resumen', e);
@@ -438,8 +445,12 @@ async function openChecklistDocs(clId) {
       fd.append('checklistId', clId);
       if (expInp?.value) fd.append('expiryDate', expInp.value);
       await API.upload('/api/documents/upload', fd);
+      if (typeof invalidateProjectDocsCache === 'function') invalidateProjectDocsCache();
       await reloadProyecto(false);
       await refreshDocsListInModal(clId);
+      if (document.getElementById('tab-docs')?.classList.contains('active') && typeof loadDocs === 'function') {
+        await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+      }
       fileInp.value = '';
       expInp.value = '';
     };
@@ -1497,6 +1508,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
 
   if (isFull) {
     ['resumen','proyecto','finanzas','comercial','docs','chat'].forEach(show);
+    activateTab('resumen');
     togglePartialUI(false);
     if (typeof renderProyecto === 'function') renderProyecto();
     if (document.getElementById('tab-docs')?.classList.contains('active') && typeof loadDocs === 'function') loadDocs();
@@ -1535,7 +1547,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
     if (state) state.allowedChecklistRoles = __ALLOWED_ROLES;
     ['resumen','finanzas'].forEach(hide);
     ['proyecto','comercial','docs'].forEach(show);
-    activateTab('comercial');
+    activateTab('proyecto');
     togglePartialUI(true);
     if (typeof renderProyecto === 'function') renderProyecto();
     if (document.getElementById('tab-docs')?.classList.contains('active') && typeof loadDocs === 'function') loadDocs();
@@ -2130,7 +2142,7 @@ function renderMiniKpiBox(containerId, rows = []) {
   el.innerHTML = `
     <div class="summary-resume-box">
       ${rows.map(r => `
-        <div class="summary-resume-item">
+        <div class="summary-resume-item ${r.className || ''}">
           <div class="summary-resume-title">${r.title}</div>
           <div class="summary-resume-value">${r.value}</div>
           ${r.sub ? `<div class="summary-resume-sub">${r.sub}</div>` : ''}
@@ -2217,10 +2229,19 @@ async function renderSummaryUI(payload) {
     return Math.round(avg * 10) / 10;
   }
 
-        const summaryChartOpts = (extra = {}) => ({
+  const summaryChartOpts = (extra = {}) => ({
     responsive: true,
     maintainAspectRatio: false,
     ...extra
+  });
+  const summaryLegend = (position = 'bottom') => ({
+    position,
+    labels: {
+      boxWidth: 16,
+      boxHeight: 10,
+      padding: 12,
+      font: { size: 13, weight: '600' }
+    }
   });
 
   const renderTargetKpis = (targetId, items) => {
@@ -2243,7 +2264,7 @@ async function renderSummaryUI(payload) {
           datasets: [{ data: list.map(x => toNum(x[valueKey])) }]
         },
         options: summaryChartOpts({
-          plugins: { legend: { position: 'bottom' } }
+          plugins: { legend: summaryLegend() }
         })
       });
     }
@@ -2327,7 +2348,7 @@ async function renderSummaryUI(payload) {
           ]
         },
         options: summaryChartOpts({
-          plugins: { legend: { position: 'bottom' } },
+          plugins: { legend: summaryLegend() },
           scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
         })
       });
@@ -2365,7 +2386,7 @@ async function renderSummaryUI(payload) {
               { label: 'Periodo comparativo', data: comparisonItems.map(x => x.previous), backgroundColor: 'rgba(153, 102, 255, 0.8)' }
             ]
           },
-          options: summaryChartOpts({ plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } })
+          options: summaryChartOpts({ plugins: { legend: summaryLegend() }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } })
         });
       }
 
@@ -2603,8 +2624,23 @@ if (!isPeriodView) try {
   const summaryKpisEl = document.getElementById('summaryKpis');
   if (summaryKpisEl) summaryKpisEl.innerHTML = cards.join('');
 
+  const projectTypeLabel = project.projectType || project.tipoProyecto || 'No definido';
+  const promoterNames = Array.isArray(project.promoters)
+    ? project.promoters.map(p => p?.name || p?.email).filter(Boolean)
+    : [];
+  const promoterLabel = promoterNames.length
+    ? promoterNames.join(', ')
+    : (project.promoterName || 'No definido');
+  const promoterCategoryLabel = project.promoterCategory || 'No definido';
+
   // Resumen general extra
   renderMiniKpiBox('summaryResumeBox', [
+    {
+      title: 'Perfil del proyecto',
+      value: `Tipo de proyecto: ${projectTypeLabel}`,
+      sub: `Promotor: ${promoterLabel} · Perfil del promotor: ${promoterCategoryLabel}`,
+      className: 'project-profile-kpi'
+    },
     {
       title: 'Ventas',
       value: `${sold}/${total}`,
@@ -2731,7 +2767,7 @@ if (!isPeriodView) try {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'bottom' }
+          legend: summaryLegend()
         }
       }
     });
@@ -2798,7 +2834,7 @@ if (!isPeriodView) try {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'bottom' }
+          legend: summaryLegend()
         }
       }
     });
@@ -3946,6 +3982,7 @@ function semaphoreForRole(roleKey) {
     if (pdesc)  pdesc.textContent  = p.description || '';
     if (pdesc2) pdesc2.textContent = p.description || '';
     if (statusSel) statusSel.value = (p.status || 'EN_CURSO');
+    if (projectTypeText) projectTypeText.textContent = `Tipo de proyecto: ${p.projectType || p.tipoProyecto || 'No definido'}`;
 
     kpisDiv.innerHTML = [
       kpi('Loan aprobado',     p.loanApproved),
@@ -3970,6 +4007,26 @@ function semaphoreForRole(roleKey) {
     window.__COMMERCIAL_LOCKED = false;
     if (reviewBanner) reviewBanner.style.display = 'none';
   }
+  }
+
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      const oldText = saveBtn.textContent;
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Guardando...';
+      try {
+        await API.put(`/api/projects/${id}`, {
+          status: statusSel?.value || 'EN_CURSO'
+        });
+        await loadProject();
+        if (typeof loadSummary === 'function') await loadSummary();
+      } catch (e) {
+        alert(e.message || 'No se pudo guardar el proyecto');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = oldText;
+      }
+    });
   }
 
   async function loadProyectoData() {
@@ -4220,7 +4277,7 @@ return {
             <button class="btn btn-danger btn-xs js-del-sub"
               data-id="${cl._id}"
               data-sid="${s._id||s.id||s.title}"
-              ${disabled ? 'disabled' : ''}>Eliminar</button>
+              ${disabled ? 'disabled' : ''}>X</button>
           </div>
         `).join('')}
         <div class="row">
@@ -4229,14 +4286,10 @@ return {
         </div>
       </div>
 
-      <div class="row" style="justify-content:flex-end;gap:8px;margin-top:8px;">
-  <button class="btn btn-ghost btn-xs js-open-docs" data-cl="${cl._id}" ${disabled ? 'disabled' : ''}>
-    📎 Docs (${(state.docsByChecklist[cl._id]||[]).length})
-  </button>
-</div>
-
-
       <div class="cl-actions">
+        <button class="btn btn-ghost btn-xs js-open-docs" data-cl="${cl._id}" ${disabled ? 'disabled' : ''}>
+        📎 Docs (${(state.docsByChecklist[cl._id]||[]).length})
+        </button>
         <button class="btn btn-success btn-xs js-complete" data-id="${cl._id}" ${disabled ? 'disabled' : ''}>
         ${cl.status === 'COMPLETADO' ? 'Descompletar' : 'Completar'}
         </button>
@@ -5610,7 +5663,8 @@ function normalizeUnitEstadoFrontend(v) {
   const btnCrearSubmit = document.getElementById('cl-crear');
 
   const modalFicha = document.getElementById('fichaUnidadModal');
-  const fichaCerrar = document.getElementById('fichaCerrar');
+  const fichaCerrarX = document.getElementById('fichaCerrarX');
+  const fichaExpandir = document.getElementById('fichaExpandir');
   const fichaGuardar = document.getElementById('fichaGuardar');
 
   const modalBatch = document.getElementById('modalBatch');
@@ -7393,7 +7447,7 @@ async function aplicarImportWord(unitId) {
 
   const info = (txt) => `
   <span class="info-wrap">
-    <button type="button" class="info-btn" title="${safeVal(txt)}">?</button>
+    <button type="button" class="info-btn" title="${safeVal(txt)}">i</button>
     <span class="info-tooltip">${safeVal(txt)}</span>
   </span>
 `;
@@ -7677,15 +7731,17 @@ ${inputChk('fv-pazSalvoGesproban', `Paz y salvo Gesproban ${info('Checklist inte
 ${inputChk('fv-pazSalvoPromotora', `Paz y salvo Promotora ${info('Checklist para confirmar paz y salvo de la promotora antes de cierre o entrega.')}`, !!v.pazSalvoPromotora)}
 `);
 
-const htmlMivi = seccion('MIVI', `
-${input('fv-expedienteMIVI', `Expediente MIVI ${info('Número o referencia del expediente MIVI, si aplica.')}`, v.expedienteMIVI || '')}
-${inputDate('fv-entregaExpMIVI', `Fecha entrega exp. MIVI ${info('Fecha de entrega del expediente al MIVI.')}`, v.entregaExpMIVI)}
-${input('fv-resolucionMIVI', `N° Resolución MIVI ${info('Número de resolución emitida por MIVI, si aplica.')}`, v.resolucionMIVI || '')}
-${inputDate('fv-fechaResolucionMIVI', `Fecha resolución ${info('Fecha de resolución MIVI.')}`, v.fechaResolucionMIVI)}
-${inputDate('fv-solicitudMiviDesembolso', `Solicitud MIVI desembolso ${info('Fecha de solicitud de desembolso MIVI, si aplica.')}`, v.solicitudMiviDesembolso)}
-${input('fv-desembolsoMivi', `Desembolso MIVI ${info('Estado o referencia del desembolso MIVI.')}`, v.desembolsoMivi || '')}
-${inputDate('fv-fechaPagoMivi', `Fecha pago MIVI ${info('Fecha de pago o desembolso MIVI.')}`, v.fechaPagoMivi)}
-`);
+// Bono MIVI retirado: se mantiene comentado para conservar la referencia histórica.
+// const htmlMivi = seccion('MIVI', `
+// ${input('fv-expedienteMIVI', `Expediente MIVI ${info('Número o referencia del expediente MIVI, si aplica.')}`, v.expedienteMIVI || '')}
+// ${inputDate('fv-entregaExpMIVI', `Fecha entrega exp. MIVI ${info('Fecha de entrega del expediente al MIVI.')}`, v.entregaExpMIVI)}
+// ${input('fv-resolucionMIVI', `N° Resolución MIVI ${info('Número de resolución emitida por MIVI, si aplica.')}`, v.resolucionMIVI || '')}
+// ${inputDate('fv-fechaResolucionMIVI', `Fecha resolución ${info('Fecha de resolución MIVI.')}`, v.fechaResolucionMIVI)}
+// ${inputDate('fv-solicitudMiviDesembolso', `Solicitud MIVI desembolso ${info('Fecha de solicitud de desembolso MIVI, si aplica.')}`, v.solicitudMiviDesembolso)}
+// ${input('fv-desembolsoMivi', `Desembolso MIVI ${info('Estado o referencia del desembolso MIVI.')}`, v.desembolsoMivi || '')}
+// ${inputDate('fv-fechaPagoMivi', `Fecha pago MIVI ${info('Fecha de pago o desembolso MIVI.')}`, v.fechaPagoMivi)}
+// `);
+const htmlMivi = '';
 
 const htmlEntregaOtros = seccion('Entrega / Captación / Observaciones', `
 ${input('fv-entregaCasa', `Entrega de casa ${info('Estado o confirmación de entrega de la vivienda al cliente.')}`, v.entregaCasa || '')}
@@ -7712,7 +7768,7 @@ ${input('fv-comentario', `Comentario interno ${info('Comentario interno para seg
     htmlContrato +
     htmlTecnico +
     htmlLegal +
-    htmlMivi +
+    // htmlMivi +
     htmlEntregaOtros;
 
   const checklistHTML = renderChecklistView(v);
@@ -7893,6 +7949,12 @@ if (btnImportWord && importWordInput) {
 
 }
 
+  modalFicha.classList.remove('is-fullscreen');
+  if (fichaExpandir) {
+    fichaExpandir.textContent = '⛶';
+    fichaExpandir.title = 'Pantalla completa';
+    fichaExpandir.setAttribute('aria-label', 'Pantalla completa');
+  }
   modalFicha.style.display = 'flex';
 }
 
@@ -8120,15 +8182,15 @@ const uBody = {
       fechaRecibidoCheque: vDate('fv-fechaRecibidoCheque'),
 
       // =====================================================
-      // MIVI
+      // MIVI (retirado)
       // =====================================================
-      expedienteMIVI: vVal('fv-expedienteMIVI'),
-      entregaExpMIVI: vDate('fv-entregaExpMIVI'),
-      resolucionMIVI: vVal('fv-resolucionMIVI'),
-      fechaResolucionMIVI: vDate('fv-fechaResolucionMIVI'),
-      solicitudMiviDesembolso: vDate('fv-solicitudMiviDesembolso'),
-      desembolsoMivi: vVal('fv-desembolsoMivi'),
-      fechaPagoMivi: vDate('fv-fechaPagoMivi'),
+      // expedienteMIVI: vVal('fv-expedienteMIVI'),
+      // entregaExpMIVI: vDate('fv-entregaExpMIVI'),
+      // resolucionMIVI: vVal('fv-resolucionMIVI'),
+      // fechaResolucionMIVI: vDate('fv-fechaResolucionMIVI'),
+      // solicitudMiviDesembolso: vDate('fv-solicitudMiviDesembolso'),
+      // desembolsoMivi: vVal('fv-desembolsoMivi'),
+      // fechaPagoMivi: vDate('fv-fechaPagoMivi'),
 
       // =====================================================
       // Técnico / obra / permisos
@@ -8431,8 +8493,24 @@ const uBody = {
   }
 
   // === Eventos ===
+  function cerrarFichaUnidadModal() {
+    modalFicha.classList.remove('is-fullscreen');
+    modalFicha.style.display = 'none';
+  }
+
+  function toggleFichaFullscreen() {
+    modalFicha.classList.toggle('is-fullscreen');
+    const full = modalFicha.classList.contains('is-fullscreen');
+    if (fichaExpandir) {
+      fichaExpandir.textContent = full ? '□' : '⛶';
+      fichaExpandir.title = full ? 'Restaurar tamaño' : 'Pantalla completa';
+      fichaExpandir.setAttribute('aria-label', full ? 'Restaurar tamaño' : 'Pantalla completa');
+    }
+  }
+
   if (fichaGuardar) fichaGuardar.addEventListener('click', guardarFicha);
-  if (fichaCerrar) fichaCerrar.addEventListener('click', () => modalFicha.style.display='none');
+  if (fichaCerrarX) fichaCerrarX.addEventListener('click', cerrarFichaUnidadModal);
+  if (fichaExpandir) fichaExpandir.addEventListener('click', toggleFichaFullscreen);
 
   if (filtroEstado) filtroEstado.addEventListener('change', loadUnits);
   if (buscarInput) buscarInput.addEventListener('input', () => { clearTimeout(window.__deb); window.__deb = setTimeout(loadUnits, 250); });
@@ -8516,20 +8594,67 @@ if (btnExportarExcel) {
 // ======================
 
 let _allDocs = []; // cache
+window.__docsModuleReady = true;
+
+function invalidateProjectDocsCache() {
+  _allDocs = [];
+  _docsFolderMeta = null;
+}
 
 function normStatus(s){ return String(s||'ACTIVE').toUpperCase(); }
 function isActiveDoc(d){ return normStatus(d.status) === 'ACTIVE'; }
 
+const PROJECT_DOC_FOLDERS = [
+  { id: 'tecnico', label: 'Técnico', color: '#38bdf8', icon: 'T' },
+  { id: 'comercial', label: 'Comercial', color: '#22c55e', icon: 'C' },
+  { id: 'financiero', label: 'Financiero', color: '#f59e0b', icon: '$' },
+  { id: 'legal', label: 'Legal', color: '#a78bfa', icon: 'L' },
+  { id: 'gerencia', label: 'Gerencia', color: '#60a5fa', icon: 'G' }
+];
+
+let _docsFolderMeta = null;
+let _activeDocsFolder = '';
+let _activeDocsSubfolder = '';
+let _docsManagersOpen = false;
+let _movingDocId = '';
+
+function projectDocFolderLabel(folder) {
+  const id = String(folder || '').toLowerCase();
+  return PROJECT_DOC_FOLDERS.find(f => f.id === id)?.label || 'Gerencia';
+}
+
+function projectDocFolderConfig(folder) {
+  const id = String(folder || '').toLowerCase();
+  return PROJECT_DOC_FOLDERS.find(f => f.id === id) || PROJECT_DOC_FOLDERS[PROJECT_DOC_FOLDERS.length - 1];
+}
+
+function effectiveDocFolder(d) {
+  const folder = String(d.folder || '').toLowerCase();
+  return PROJECT_DOC_FOLDERS.some(f => f.id === folder) ? folder : 'gerencia';
+}
+
+function projectDocSubfolder(d) {
+  return String(d.subfolder || '').trim();
+}
+
+async function loadDocsFolderMeta(force = false) {
+  if (_docsFolderMeta && !force) return _docsFolderMeta;
+  _docsFolderMeta = await API.get(`/api/documents/folder-permissions?projectId=${encodeURIComponent(id)}&ts=${Date.now()}`).catch(() => ({
+    folders: [],
+    projectUsers: [],
+    canManage: false
+  }));
+  _docsFolderMeta.folders = Array.isArray(_docsFolderMeta.folders) ? _docsFolderMeta.folders : [];
+  _docsFolderMeta.projectUsers = Array.isArray(_docsFolderMeta.projectUsers) ? _docsFolderMeta.projectUsers : [];
+  if (!_activeDocsFolder || !_docsFolderMeta.folders.some(f => f.folder === _activeDocsFolder)) {
+    _activeDocsFolder = _docsFolderMeta.folders[0]?.folder || '';
+    _activeDocsSubfolder = '';
+  }
+  return _docsFolderMeta;
+}
+
 function canViewGeneralDocs() {
-  return [
-    'admin',
-    'bank',
-    'promoter',
-    'gerencia',
-    'socios',
-    'financiero',
-    'contable'
-  ].includes(myRole);
+  return !!id;
 }
 
 function docExpiryMeta(d){
@@ -8583,6 +8708,11 @@ function renderDeleteBtn(d){
   return `<button class="btn btn-danger" data-del="${d._id}">Eliminar</button>`;
 }
 
+function renderMoveBtn(d, canManageDocs) {
+  if (!canManageDocs) return '';
+  return `<button class="btn btn-ghost" data-move-doc="${d._id}">Mover</button>`;
+}
+
 function canCompleteDoc(){
   return canViewGeneralDocs();
 }
@@ -8596,15 +8726,7 @@ function renderCompleteBtn(d){
 }
 
 function canReplaceDoc(){
-  return [
-    'admin',
-    'bank',
-    'promoter',
-    'gerencia',
-    'socios',
-    'financiero',
-    'contable'
-  ].includes(myRole);
+  return canViewGeneralDocs();
 }
 
 function renderReplaceBtn(d){
@@ -8635,6 +8757,8 @@ function matchesDocQuery(d, q){
     d.unitTag,
     d.permitCode,
     d.permitTitle,
+    projectDocFolderLabel(effectiveDocFolder(d)),
+    projectDocSubfolder(d),
     docDepartmentLabel(d),
     findChecklistTitle(d.checklistId)
   ];
@@ -8646,6 +8770,8 @@ async function loadDocs({ q } = {}) {
   const docsDiv    = document.getElementById('docs');
   const uploadForm = document.getElementById('uploadForm');
   const countEl    = document.getElementById('docsCount');
+  const folderSel  = document.getElementById('docsFolder');
+  const subSel     = document.getElementById('docsSubfolder');
 
   if (!docsDiv) return;
 
@@ -8657,28 +8783,103 @@ async function loadDocs({ q } = {}) {
   }
 
   if (uploadForm) uploadForm.style.display = '';
+  const meta = await loadDocsFolderMeta();
+  const visibleFolders = meta.folders || [];
+
+  if (!visibleFolders.length) {
+    docsDiv.innerHTML = '<div class="small muted">No tienes carpetas documentales asignadas en este proyecto.</div>';
+    if (uploadForm) uploadForm.style.display = 'none';
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+
+  if (!_activeDocsFolder) _activeDocsFolder = visibleFolders[0].folder;
+  const activeFolderMeta = visibleFolders.find(f => f.folder === _activeDocsFolder) || visibleFolders[0];
+  _activeDocsFolder = activeFolderMeta.folder;
+  const subfolders = Array.isArray(activeFolderMeta.subfolders) ? activeFolderMeta.subfolders : [];
+
+  if (folderSel) {
+    folderSel.innerHTML = visibleFolders
+      .map(f => `<option value="${escapeHtml(f.folder)}" ${f.folder === _activeDocsFolder ? 'selected' : ''}>${escapeHtml(projectDocFolderLabel(f.folder))}</option>`)
+      .join('');
+  }
+
+  if (subSel) {
+    subSel.innerHTML = `<option value="">Principal</option>` + subfolders
+      .map(sf => {
+        const name = sf.name || '';
+        return `<option value="${escapeHtml(name)}" ${name === _activeDocsSubfolder ? 'selected' : ''}>${escapeHtml(name)}</option>`;
+      })
+      .join('');
+  }
 
   // Carga una sola vez y cachea
   if (!_allDocs.length) {
     _allDocs = await API.get('/api/documents?projectId=' + id).catch(()=>[]);
   }
 
-  let filtered = _allDocs.slice();
+  const folderCounts = {};
+  for (const f of visibleFolders) folderCounts[f.folder] = 0;
+  (_allDocs || []).forEach(d => {
+    const f = effectiveDocFolder(d);
+    if (f in folderCounts) folderCounts[f] += 1;
+  });
 
-  // Filtro por query
-  if (q && q.trim()) {
-    filtered = filtered.filter(d => matchesDocQuery(d, q));
-  }
+  const searchText = String(q || '').trim();
+  const isGlobalDocsSearch = !!searchText && !!meta.canSearchAll;
 
-  if (!filtered.length) {
-    docsDiv.innerHTML = '<div class="small muted">No hay documentos</div>';
-    if (countEl) countEl.textContent = '';
-    return;
-  }
+  let filtered = isGlobalDocsSearch
+    ? _allDocs.slice()
+    : _allDocs
+        .filter(d => effectiveDocFolder(d) === _activeDocsFolder)
+        .filter(d => projectDocSubfolder(d) === _activeDocsSubfolder);
+
+  if (searchText) filtered = filtered.filter(d => matchesDocQuery(d, searchText));
 
   const MB = 1024*1024;
+  const activeCfg = projectDocFolderConfig(_activeDocsFolder);
+  const folderMetaById = new Map(visibleFolders.map(f => [f.folder, f]));
+  const subfolderCounts = { '': 0 };
+  subfolders.forEach(sf => { subfolderCounts[sf.name || ''] = 0; });
+  (_allDocs || [])
+    .filter(d => effectiveDocFolder(d) === _activeDocsFolder)
+    .forEach(d => {
+      const key = projectDocSubfolder(d);
+      subfolderCounts[key] = (subfolderCounts[key] || 0) + 1;
+    });
+  const assignedSet = new Set((activeFolderMeta.assignedUsers || []).map(String));
+  const managerPanel = meta.canManage && _docsManagersOpen ? `
+    <div class="docs-folder-users" id="docsManagersPanel">
+      <b>Responsables</b>
+      ${(meta.projectUsers || []).map(u => `
+        <label>
+          <input type="checkbox" class="docs-folder-user" value="${escapeHtml(String(u._id))}" ${assignedSet.has(String(u._id)) ? 'checked' : ''}>
+          <span>${escapeHtml(u.name || u.email || 'Usuario')} <span class="small muted">${escapeHtml(u.role || '')}</span></span>
+        </label>
+      `).join('') || '<span class="small muted">No hay usuarios asignados al proyecto.</span>'}
+      <button type="button" class="btn btn-ghost btn-xs" id="docsSaveFolderUsers">Guardar</button>
+    </div>
+  ` : '';
 
-  docsDiv.innerHTML = filtered.map(d => {
+  const listHtml = filtered.length ? filtered.map(d => {
+    const docFolder = effectiveDocFolder(d);
+    const docFolderMeta = folderMetaById.get(docFolder) || activeFolderMeta;
+    const docSubfolders = Array.isArray(docFolderMeta.subfolders) ? docFolderMeta.subfolders : [];
+    const movePanel = meta.canMove && _movingDocId === String(d._id) ? `
+      <div class="docs-move-panel">
+        <select class="docs-move-folder" data-doc="${escapeHtml(String(d._id))}">
+          ${visibleFolders.map(f => `<option value="${escapeHtml(f.folder)}" ${f.folder === docFolder ? 'selected' : ''}>${escapeHtml(projectDocFolderLabel(f.folder))}</option>`).join('')}
+        </select>
+        <select class="docs-move-subfolder" data-doc="${escapeHtml(String(d._id))}">
+          <option value="">Principal</option>
+          ${docSubfolders.map(sf => {
+            const name = sf.name || '';
+            return `<option value="${escapeHtml(name)}" ${name === projectDocSubfolder(d) ? 'selected' : ''}>${escapeHtml(name)}</option>`;
+          }).join('')}
+        </select>
+        <button type="button" class="btn btn-xs primary docs-apply-move" data-doc="${escapeHtml(String(d._id))}">Mover aquí</button>
+      </div>
+    ` : '';
     const sizeStr = (d.size >= MB)
       ? (d.size/MB).toFixed(2)+' MB'
       : Math.round((d.size||0)/1024)+' KB';
@@ -8707,7 +8908,11 @@ async function loadDocs({ q } = {}) {
           ${expLine}
           ${extra}
 
-          <div class="chips">${docChips(d)}</div>
+          <div class="chips">
+            <span class="chip">Carpeta: ${escapeHtml(projectDocFolderLabel(effectiveDocFolder(d)))}</span>
+            ${projectDocSubfolder(d) ? `<span class="chip">Subcarpeta: ${escapeHtml(projectDocSubfolder(d))}</span>` : ''}
+            ${docChips(d)}
+          </div>
         </div>
 
         <div class="doc-actions">
@@ -8715,13 +8920,161 @@ async function loadDocs({ q } = {}) {
           <a class="btn js-secure-file" href="#" data-url="${secureDocUrl(d._id)}" data-filename="${escapeHtml(d.originalname || d.title || d.name || 'documento')}" data-action="download">Descargar</a>
           ${renderCompleteBtn(d)}
           ${renderReplaceBtn(d)}
+          ${renderMoveBtn(d, meta.canMove)}
           ${renderDeleteBtn(d)}
         </div>
+        ${movePanel}
       </div>
     `;
-  }).join('');
+  }).join('') : '<div class="small muted">No hay documentos en esta carpeta.</div>';
+
+  docsDiv.innerHTML = `
+    <div class="docs-repo-layout">
+      <div class="docs-folder-nav">
+        ${visibleFolders.map(f => `
+          <button type="button" class="docs-folder-btn ${f.folder === _activeDocsFolder ? 'active' : ''}" data-doc-folder="${escapeHtml(f.folder)}" style="--folder-color:${projectDocFolderConfig(f.folder).color};">
+            <span class="docs-folder-icon">${escapeHtml(projectDocFolderConfig(f.folder).icon)}</span>
+            <span class="docs-folder-name">${escapeHtml(projectDocFolderLabel(f.folder))}</span>
+            <span class="docs-folder-count">${folderCounts[f.folder] || 0} documentos</span>
+          </button>
+        `).join('')}
+      </div>
+
+      <div class="docs-folder-panel" style="--folder-color:${activeCfg.color};">
+        <div class="docs-folder-head">
+          <div>
+            <h3 style="margin:0;">${escapeHtml(projectDocFolderLabel(_activeDocsFolder))}</h3>
+            <div class="small muted">${escapeHtml(isGlobalDocsSearch ? 'Resultados en todas las carpetas' : (_activeDocsSubfolder ? `Subcarpeta: ${_activeDocsSubfolder}` : 'Carpeta principal'))}</div>
+          </div>
+          <div class="docs-folder-tools">
+            ${meta.canManage ? `<button type="button" class="docs-icon-btn" id="docsToggleManagers" title="Responsables" aria-label="Responsables">👤</button>` : ''}
+            <button type="button" class="btn btn-ghost btn-xs" id="docsNewSubfolderBtn">Nueva subcarpeta</button>
+          </div>
+        </div>
+
+        <div class="docs-subfolder-grid">
+          <button type="button" class="docs-subfolder-card ${!_activeDocsSubfolder ? 'active' : ''}" data-doc-subfolder="" style="--folder-color:${activeCfg.color};">
+            <strong>Principal</strong>
+            <span class="small muted">${subfolderCounts[''] || 0} documentos</span>
+          </button>
+          ${subfolders.map(sf => {
+            const name = sf.name || '';
+            return `
+              <button type="button" class="docs-subfolder-card ${name === _activeDocsSubfolder ? 'active' : ''}" data-doc-subfolder="${escapeHtml(name)}" style="--folder-color:${activeCfg.color};">
+                <strong>${escapeHtml(name)}</strong>
+                <span class="small muted">${subfolderCounts[name] || 0} documentos</span>
+              </button>
+            `;
+          }).join('')}
+        </div>
+
+        ${managerPanel}
+        ${listHtml}
+      </div>
+    </div>
+  `;
 
   if (countEl) countEl.textContent = `${filtered.length} / ${_allDocs.length}`;
+
+  docsDiv.querySelectorAll('[data-doc-folder]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      _activeDocsFolder = btn.dataset.docFolder || '';
+      _activeDocsSubfolder = '';
+      await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+    });
+  });
+
+  docsDiv.querySelectorAll('[data-doc-subfolder]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      _activeDocsSubfolder = btn.dataset.docSubfolder || '';
+      await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+    });
+  });
+
+  document.getElementById('docsNewSubfolderBtn')?.addEventListener('click', async () => {
+    const name = prompt('Nombre de la subcarpeta:');
+    if (!name || !name.trim()) return;
+    try {
+      await API.post(`/api/documents/folder-permissions/${encodeURIComponent(_activeDocsFolder)}/subfolders`, {
+        projectId: id,
+        name: name.trim()
+      });
+      _activeDocsSubfolder = name.trim();
+      _docsFolderMeta = null;
+      await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+    } catch (e) {
+      alert('No se pudo crear la subcarpeta.');
+    }
+  });
+
+  document.getElementById('docsSaveFolderUsers')?.addEventListener('click', async () => {
+    const assignedUsers = Array.from(docsDiv.querySelectorAll('.docs-folder-user:checked')).map(input => input.value);
+    try {
+      await API.patch(`/api/documents/folder-permissions/${encodeURIComponent(_activeDocsFolder)}`, {
+        projectId: id,
+        assignedUsers
+      });
+      _docsFolderMeta = null;
+      _allDocs = [];
+      await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+    } catch (e) {
+      alert('No se pudieron guardar los responsables.');
+    }
+  });
+
+  document.getElementById('docsToggleManagers')?.addEventListener('click', async () => {
+    _docsManagersOpen = !_docsManagersOpen;
+    await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+  });
+
+  docsDiv.querySelectorAll('[data-move-doc]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const docId = btn.dataset.moveDoc || '';
+      _movingDocId = _movingDocId === docId ? '' : docId;
+      await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+    });
+  });
+
+  docsDiv.querySelectorAll('.docs-move-folder').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const docId = sel.dataset.doc || '';
+      const subSel = docsDiv.querySelector(`.docs-move-subfolder[data-doc="${CSS.escape(docId)}"]`);
+      const folderMeta = folderMetaById.get(sel.value);
+      const nextSubfolders = Array.isArray(folderMeta?.subfolders) ? folderMeta.subfolders : [];
+      if (subSel) {
+        subSel.innerHTML = '<option value="">Principal</option>' + nextSubfolders
+          .map(sf => `<option value="${escapeHtml(sf.name || '')}">${escapeHtml(sf.name || '')}</option>`)
+          .join('');
+      }
+    });
+  });
+
+  docsDiv.querySelectorAll('.docs-apply-move').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const docId = btn.dataset.doc || '';
+      const folder = docsDiv.querySelector(`.docs-move-folder[data-doc="${CSS.escape(docId)}"]`)?.value || _activeDocsFolder;
+      const subfolder = docsDiv.querySelector(`.docs-move-subfolder[data-doc="${CSS.escape(docId)}"]`)?.value || '';
+
+      try {
+        const res = await fetch(`/api/documents/${encodeURIComponent(docId)}/location`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...tenantHeaders(), ...authHeaders() },
+          credentials: 'include',
+          body: JSON.stringify({ projectId: id, folder, subfolder })
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload?.message || payload?.error || `HTTP ${res.status}`);
+
+        _movingDocId = '';
+        _activeDocsFolder = folder;
+        _activeDocsSubfolder = subfolder;
+        _allDocs = [];
+        await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+      } catch (e) {
+        alert('No se pudo mover el documento: ' + (e.message || 'Error desconocido'));
+      }
+    });
+  });
 }
 
 // wire buscador (debounce)
@@ -8743,8 +9096,27 @@ function wireDocsUpload() {
   const btn  = document.getElementById('docsUploadBtn');
   const fileEl = document.getElementById('file');
   const expEl  = document.getElementById('expiry');
+  const folderEl = document.getElementById('docsFolder');
+  const subfolderEl = document.getElementById('docsSubfolder');
+  const fileNameEl = document.getElementById('docsFileName');
 
   if (!form || !btn || !fileEl) return;
+
+  fileEl.addEventListener('change', () => {
+    const f = fileEl.files && fileEl.files[0];
+    if (fileNameEl) fileNameEl.textContent = f ? f.name : 'Ningún archivo seleccionado';
+  });
+
+  folderEl?.addEventListener('change', async () => {
+    _activeDocsFolder = folderEl.value || _activeDocsFolder;
+    _activeDocsSubfolder = '';
+    await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+  });
+
+  subfolderEl?.addEventListener('change', async () => {
+    _activeDocsSubfolder = subfolderEl.value || '';
+    await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+  });
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -8766,6 +9138,8 @@ function wireDocsUpload() {
     const fd = new FormData();
     fd.append('projectId', id);
     fd.append('file', f);
+    fd.append('folder', folderEl?.value || _activeDocsFolder || 'gerencia');
+    fd.append('subfolder', subfolderEl?.value || _activeDocsSubfolder || '');
 
     if (expEl && expEl.value) fd.append('expiryDate', expEl.value);
 
@@ -8785,6 +9159,7 @@ function wireDocsUpload() {
       }
 
       fileEl.value = '';
+      if (fileNameEl) fileNameEl.textContent = 'Ningún archivo seleccionado';
       if (expEl) expEl.value = '';
 
       _allDocs = [];

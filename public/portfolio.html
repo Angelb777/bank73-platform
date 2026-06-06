@@ -390,7 +390,7 @@
   </style>
 </head>
 
-<body>
+<body class="dark-theme">
   <!-- TOPBAR -->
   <div class="topbar">
     <div class="topbar-left">
@@ -415,6 +415,7 @@
         </svg>
         <span class="filter-label">Filtrar</span>
       </button>
+      <button id="themeToggleBtn" class="theme-toggle" type="button" data-theme-toggle title="Cambiar a modo claro" aria-label="Cambiar a modo claro">☀️</button>
       <button id="logoutBtn" class="btn">Salir</button>
     </div>
   </div>
@@ -500,6 +501,16 @@
           <option value="PAUSADO">PAUSADO</option>
           <option value="FINALIZADO">FINALIZADO</option>
         </select>
+        <select id="pProjectType" style="flex:1 1 240px;">
+          <option value="">Tipo de proyecto: No definido</option>
+          <option value="Residencial vertical PH">Residencial vertical PH</option>
+          <option value="Residencial horizontal">Residencial horizontal</option>
+          <option value="Comercial">Comercial</option>
+          <option value="Mixto">Mixto</option>
+          <option value="Lotes unifamiliares">Lotes unifamiliares</option>
+          <option value="Lotes, adosados y dúplex PH">Lotes, adosados y dúplex PH</option>
+          <option value="Otro">Otro</option>
+        </select>
         <textarea id="pDesc" rows="3" placeholder="Descripción" style="width:100%;"></textarea>
       </div>
 
@@ -554,6 +565,7 @@
   </div>
 
   <script src="/js/api.js"></script>
+  <script src="/js/theme-toggle.js"></script>
   <script src="/js/portfolio.js?v=privacy-create"></script>
 </body>
 </html>

@@ -121,6 +121,33 @@ function sanitizeTeamSuggestion(input) {
   return out;
 }
 
+function sanitizeProjectType(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const allowed = Project.PROJECT_TYPES || [];
+  if (!allowed.includes(raw)) {
+    const err = new Error(`Tipo de proyecto inválido. Usa: ${allowed.join(', ')}`);
+    err.status = 400;
+    throw err;
+  }
+  return raw;
+}
+
+function firstDefined(...values) {
+  return values.find(v => v !== undefined);
+}
+
+function promoterPublicShape(user) {
+  if (!user) return null;
+  return {
+    _id: user._id,
+    name: user.name || user.email || 'Promotor',
+    email: user.email || '',
+    promoterProfile: user.promoterProfile || null,
+    promoterCategory: user.promoterCategory || 'No definido'
+  };
+}
+
 function parseReportPeriod(source = {}) {
   const from = String(source.dateFrom || source.from || '').trim();
   const to = String(source.dateTo || source.to || '').trim();
@@ -330,9 +357,9 @@ router.get('/', async (req, res) => {
     const publish = (req.query.publishStatus || '').toLowerCase();
     if (publish && (req.user?.role === 'admin' || req.user?.role === 'bank')) q.publishStatus = publish;
     const list = await Project.find(q).sort({ createdAt: -1 }).lean();
-    res.json(list);
+    res.json(list.map(p => ({ ...p, tipoProyecto: p.projectType || '' })));
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(e.status || 500).json({ error: e.message });
   }
 });
 
@@ -474,6 +501,8 @@ console.log('[DEBUG PORTFOLIO ESTADOS]', JSON.stringify(debugEstados, null, 2));
         _id: p._id,
         name: p.name,
         description: p.description,
+        projectType: p.projectType || '',
+        tipoProyecto: p.projectType || '',
         status: p.status,
         assignedPromoters: Array.isArray(p.assignedPromoters) ? p.assignedPromoters : [],
         createdAt: p.createdAt,
@@ -522,6 +551,8 @@ router.post('/', requireRole('admin','bank'), async (req, res) => {
     body.publishStatus = 'pending';
     body.createdBy = toObjectId(req.user.userId);
     body.teamSuggestion = sanitizeTeamSuggestion(body.teamSuggestion || {});
+    body.projectType = sanitizeProjectType(firstDefined(body.projectType, body.tipoProyecto));
+    delete body.tipoProyecto;
 
     // Crear proyecto ya no requiere exponer/asignar usuarios en el alta.
     // Si llegan asignaciones legacy, se validan contra el tenant, pero son opcionales.
@@ -578,6 +609,7 @@ router.get('/:id', requireProjectAccess(), async (req, res) => {
 
     const p = await Project.findOne({ _id: id, tenantKey }).lean();
     if (!p) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    p.tipoProyecto = p.projectType || '';
 
     // Solo el admin puede abrir proyectos pendientes.
     const role = String(req.user?.role || '').toLowerCase();
@@ -657,6 +689,9 @@ router.put('/:id', requireRole('admin','bank'), async (req, res) => {
       // Admin conserva la edición completa
       if (typeof req.body.name === 'string')        payload.name = req.body.name.trim();
       if (typeof req.body.description === 'string') payload.description = req.body.description.trim();
+      if (firstDefined(req.body.projectType, req.body.tipoProyecto) !== undefined) {
+        payload.projectType = sanitizeProjectType(firstDefined(req.body.projectType, req.body.tipoProyecto));
+      }
 
       if (typeof req.body.status === 'string') {
         const st = req.body.status.trim().toUpperCase();
@@ -737,7 +772,7 @@ router.put('/:id', requireRole('admin','bank'), async (req, res) => {
     res.json({ ok: true, project: updated });
   } catch (err) {
     console.error('[PUT /api/projects/:id]', err);
-    res.status(500).json({ error: 'Error actualizando el proyecto' });
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Error actualizando el proyecto' });
   }
 });
 
@@ -839,6 +874,15 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
 
     const project = await Project.findOne({ _id: id, tenantKey }).lean();
     if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+    const promoterIds = Array.isArray(project.assignedPromoters) ? project.assignedPromoters : [];
+    const projectPromoters = promoterIds.length
+      ? await User.find(
+          { tenantKey, _id: { $in: promoterIds } },
+          { password: 0 }
+        ).lean()
+      : [];
+    const primaryPromoter = projectPromoters[0] || null;
 
     const financeDoc = await ProjectFinance.findOne({ project: id }).lean();
     let financePhases = Array.isArray(financeDoc?.phases) ? financeDoc.phases : [];
@@ -1885,6 +1929,12 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     const projectHeader = {
       name: project.name,
       description: project.description,
+      projectType: project.projectType || '',
+      tipoProyecto: project.projectType || '',
+      promoters: projectPromoters.map(promoterPublicShape).filter(Boolean),
+      promoterName: primaryPromoter?.name || primaryPromoter?.email || '',
+      promoterCategory: primaryPromoter?.promoterCategory || 'No definido',
+      promoterProfile: primaryPromoter?.promoterProfile || null,
       updatedAt: project.updatedAt,
       loanApproved: project.loanApproved || 0,
       loanDisbursed: project.loanDisbursed || 0,
@@ -1946,6 +1996,15 @@ router.post('/:id/summary/export', requireProjectAccess(), async (req, res) => {
 
     const project = await Project.findOne({ _id: id, tenantKey }).lean();
     if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+    const exportPromoterIds = Array.isArray(project.assignedPromoters) ? project.assignedPromoters : [];
+    const exportProjectPromoters = exportPromoterIds.length
+      ? await User.find(
+          { tenantKey, _id: { $in: exportPromoterIds } },
+          { password: 0 }
+        ).lean()
+      : [];
+    const exportPrimaryPromoter = exportProjectPromoters[0] || null;
 
     let [checklists, documents, ventasRaw, units, permits, financePhases] = await Promise.all([
       ProjectChecklist.find({
@@ -2235,6 +2294,9 @@ if (isSoldLikeStatus(st)) U.sold++;
 
     const summary = {
       projectName: project.name || 'Proyecto',
+      projectType: project.projectType || '',
+      promoterName: exportPrimaryPromoter?.name || exportPrimaryPromoter?.email || '',
+      promoterCategory: exportPrimaryPromoter?.promoterCategory || 'No definido',
       updatedAt: project.updatedAt,
       progressPct: progressByPhase.length
         ? Math.round(progressByPhase.reduce((a, b) => a + b.pct, 0) / progressByPhase.length)
@@ -2565,9 +2627,16 @@ if (isSoldLikeStatus(st)) U.sold++;
         .text(projectName || 'Proyecto', margin, 228, { width: contentW, align: 'center' });
       doc.fontSize(9).fillColor('#BFD2E8')
         .text(`Actualizado: ${fmtDateTime(updatedAt)}`, margin, 254, { width: contentW, align: 'center' });
+      doc.fontSize(9).fillColor('#EAF2FB')
+        .text(
+          `Tipo de proyecto: ${summary.projectType || 'No definido'} | Promotor: ${summary.promoterName || 'No definido'} | Perfil: ${summary.promoterCategory || 'No definido'}`,
+          margin,
+          272,
+          { width: contentW, align: 'center' }
+        );
       if (summary.periodLabel) {
         doc.fontSize(10).fillColor('#EAF2FB')
-          .text(`Periodo analizado: ${summary.periodLabel}`, margin, 274, { width: contentW, align: 'center' });
+          .text(`Periodo analizado: ${summary.periodLabel}`, margin, 292, { width: contentW, align: 'center' });
       }
 
       const panelY = 332;
@@ -3050,12 +3119,16 @@ if (isSoldLikeStatus(st)) U.sold++;
 
       const top = summary.periodLabel ? [
         { label: 'Periodo', value: summary.periodLabel },
+        { label: 'Tipo de proyecto', value: summary.projectType || 'No definido' },
+        { label: 'Perfil promotor', value: summary.promoterCategory || 'No definido' },
         { label: 'Unidades con actividad', value: fmtNum(summary.units?.total ?? units.total) },
         { label: 'Vendidas con actividad', value: fmtNum(summary.units?.sold ?? units.sold) },
         { label: 'CPP del periodo', value: fmtNum(cpp.active) },
         { label: 'Permisos del periodo', value: `${fmtNum(permits.approved)} A / ${fmtNum(permits.inProcess)} T` },
         { label: 'Finanzas historicas', value: 'No disponibles' },
       ] : [
+        { label: 'Tipo de proyecto', value: summary.projectType || 'No definido' },
+        { label: 'Perfil promotor', value: summary.promoterCategory || 'No definido' },
         { label: 'Loan aprobado', value: fmtMoneyShort(project?.loanApproved ?? loan.approved) },
         { label: 'Desembolsado', value: fmtMoneyShort(project?.loanDisbursed ?? loan.disbursed) },
         { label: 'Budget aprobado', value: fmtMoneyShort(project?.budgetApproved) },
@@ -3339,6 +3412,9 @@ if (isSoldLikeStatus(st)) U.sold++;
       ws.getRow(1).font = { bold: true, size: 14 };
 
       ws.addRow(['Proyecto', summary.projectName]);
+      ws.addRow(['Tipo de proyecto', summary.projectType || 'No definido']);
+      ws.addRow(['Promotor', summary.promoterName || 'No definido']);
+      ws.addRow(['Perfil del promotor', summary.promoterCategory || 'No definido']);
       if (summary.periodLabel) ws.addRow(['Periodo analizado', summary.periodLabel]);
       ws.addRow(['Actualizado', summary.updatedAt ? new Date(summary.updatedAt).toLocaleString() : '—']);
       ws.addRow([]);

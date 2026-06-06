@@ -2,6 +2,7 @@
 const mongoose = require('mongoose');
 
 const DOCUMENT_DEPARTMENTS = ['commercial', 'tecnico', 'legal'];
+const PROJECT_DOC_FOLDERS = ['tecnico', 'comercial', 'financiero', 'legal', 'gerencia'];
 
 const documentSchema = new mongoose.Schema({
   tenantKey: { type: String, index: true },
@@ -16,7 +17,6 @@ const documentSchema = new mongoose.Schema({
   department: {
     type: String,
     enum: DOCUMENT_DEPARTMENTS,
-    default: 'commercial',
     index: true
   },
 
@@ -30,6 +30,15 @@ const documentSchema = new mongoose.Schema({
 
   // ❖ Proyecto
   checklistId: { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectChecklist', index: true },
+
+  // ❖ Repositorio documental del proyecto
+  folder: {
+    type: String,
+    enum: PROJECT_DOC_FOLDERS,
+    default: 'gerencia',
+    index: true
+  },
+  subfolder: { type: String, trim: true, default: '' },
 
   // ✅ Permisos / Trámites
   permitCode: { type: String, index: true },
@@ -86,6 +95,22 @@ documentSchema.pre('validate', function (next) {
     this.department = this.department.toLowerCase().trim();
   }
 
+  if (typeof this.folder === 'string') {
+    this.folder = this.folder.toLowerCase().trim();
+    if (this.folder === 'technical') this.folder = 'tecnico';
+    if (this.folder === 'commercial') this.folder = 'comercial';
+    if (this.folder === 'finance') this.folder = 'financiero';
+    if (this.folder === 'management') this.folder = 'gerencia';
+  }
+
+  if (!this.folder) {
+    this.folder = 'gerencia';
+  }
+
+  if (typeof this.subfolder === 'string') {
+    this.subfolder = this.subfolder.trim();
+  }
+
   if (Array.isArray(this.visibleToRoles)) {
     this.visibleToRoles = this.visibleToRoles.map(r => String(r).toLowerCase().trim());
   }
@@ -112,6 +137,8 @@ documentSchema.index({
 
 // ✅ Para Resumen “Vencimientos críticos”
 documentSchema.index({ tenantKey: 1, projectId: 1, status: 1, expiryDate: 1 });
+documentSchema.index({ tenantKey: 1, projectId: 1, folder: 1, subfolder: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Document', documentSchema);
 module.exports.DOCUMENT_DEPARTMENTS = DOCUMENT_DEPARTMENTS;
+module.exports.PROJECT_DOC_FOLDERS = PROJECT_DOC_FOLDERS;

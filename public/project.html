@@ -973,12 +973,201 @@
   grid-template-columns: minmax(180px, 260px) 1fr;
   gap: 14px 18px;
 }
+.docs-control-panel{
+  border:1px solid rgba(148,163,184,.24);
+  border-radius:8px;
+  padding:14px;
+  margin:10px 0 16px;
+  background:rgba(255,255,255,.035);
+}
+.docs-upload-form{
+  display:grid;
+  grid-template-columns:minmax(180px,1.3fr) minmax(140px,.8fr) minmax(140px,.8fr) minmax(150px,.7fr) auto;
+  gap:10px;
+  align-items:center;
+  margin-bottom:12px;
+}
+.docs-file-picker{
+  min-height:42px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  border:1px solid rgba(148,163,184,.32);
+  border-radius:8px;
+  padding:6px;
+  background:rgba(15,23,42,.32);
+  cursor:pointer;
+  overflow:hidden;
+}
+.docs-file-picker input{
+  position:absolute;
+  width:1px;
+  height:1px;
+  opacity:0;
+  pointer-events:none;
+}
+.docs-file-picker span{
+  flex:0 0 auto;
+  border-radius:7px;
+  padding:8px 12px;
+  background:#4f97ff;
+  color:#fff;
+  font-weight:700;
+}
+.docs-file-picker strong{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-weight:700;
+}
+.docs-upload-form input,
+.docs-upload-form select{
+  min-height:36px;
+}
+.docs-toolbar{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:12px;
+  align-items:center;
+}
+.docs-toolbar input{
+  min-height:38px;
+  border:1px solid rgba(148,163,184,.32);
+  border-radius:8px;
+  padding:8px 12px;
+  background:rgba(15,23,42,.32);
+  color:inherit;
+}
+.docs-repo-layout{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:16px;
+  align-items:start;
+}
+.docs-folder-nav{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
+  gap:10px;
+}
+.docs-folder-btn{
+  --folder-color:#60a5fa;
+  display:flex;
+  min-height:108px;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  text-align:center;
+  border:1px solid rgba(148,163,184,.28);
+  border-radius:8px;
+  padding:14px 12px;
+  background:linear-gradient(180deg, color-mix(in srgb, var(--folder-color) 18%, transparent), rgba(255,255,255,.045));
+  color:inherit;
+  cursor:pointer;
+  box-shadow:inset 0 3px 0 var(--folder-color);
+}
+.docs-folder-btn.active{
+  border-color:var(--folder-color);
+  background:linear-gradient(180deg, color-mix(in srgb, var(--folder-color) 28%, transparent), rgba(255,255,255,.07));
+}
+.docs-folder-icon{ font-size:26px; line-height:1; }
+.docs-folder-name{ font-weight:800; }
+.docs-folder-count{ color:#cbd5e1; font-size:.82rem; }
+.docs-subfolder-bar,
+.docs-folder-head,
+.docs-folder-users{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+.docs-folder-head{
+  justify-content:space-between;
+  margin-bottom:10px;
+}
+.docs-folder-users{
+  border:1px solid rgba(148,163,184,.25);
+  border-radius:8px;
+  padding:10px;
+  margin:10px 0;
+}
+.docs-folder-users label{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:.86rem;
+}
+.docs-folder-panel{
+  border:1px solid rgba(148,163,184,.22);
+  border-radius:8px;
+  padding:14px;
+  background:rgba(255,255,255,.035);
+}
+.docs-folder-tools{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+}
+.docs-icon-btn{
+  width:38px;
+  height:38px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:8px;
+  border:1px solid rgba(148,163,184,.32);
+  background:rgba(255,255,255,.08);
+  color:inherit;
+  cursor:pointer;
+}
+.docs-subfolder-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+  gap:10px;
+  margin:12px 0 16px;
+}
+.docs-subfolder-card{
+  --folder-color:#60a5fa;
+  min-height:82px;
+  border:1px solid rgba(148,163,184,.25);
+  border-radius:8px;
+  background:rgba(255,255,255,.045);
+  color:inherit;
+  cursor:pointer;
+  padding:12px;
+  text-align:left;
+  box-shadow:inset 0 3px 0 color-mix(in srgb, var(--folder-color) 80%, white);
+}
+.docs-subfolder-card.active{
+  border-color:var(--folder-color);
+  background:color-mix(in srgb, var(--folder-color) 16%, transparent);
+}
+.docs-subfolder-card strong,
+.docs-subfolder-card span{ display:block; }
+.docs-move-panel{
+  display:grid;
+  grid-template-columns:minmax(130px,1fr) minmax(130px,1fr) auto;
+  gap:8px;
+  align-items:center;
+  margin-top:10px;
+}
+@media (max-width: 760px){
+  .docs-upload-form{ grid-template-columns:1fr; }
+  .docs-toolbar{ grid-template-columns:1fr; }
+  .docs-move-panel{ grid-template-columns:1fr; }
+}
   </style>
 </head>
-<body>
+<body class="dark-theme">
   <div class="topbar">
     <div class="brand"><a class="link" href="/portfolio">← Volver</a> &nbsp; Proyecto</div>
-    <div><button id="logoutBtn" class="btn">Salir</button></div>
+    <div class="topbar-actions">
+      <button id="projectThemeToggleBtn" class="theme-toggle" type="button" data-theme-toggle title="Cambiar a modo claro" aria-label="Cambiar a modo claro">☀️</button>
+      <button id="logoutBtn" class="btn">Salir</button>
+    </div>
   </div>
 
   <div class="container">
@@ -1013,18 +1202,19 @@
     </div>
 
     <p id="pdesc" class="muted"></p>
+    <p id="projectTypeText" class="small muted"></p>
     <div class="kpi-row" id="kpis"></div>
 
     <div class="tabs">
-      <button type="button" class="tab" data-tab="resumen" id="tabBtn-resumen">Resumen</button>
-      <button type="button" class="tab active" data-tab="proyecto" id="tabBtn-proyecto">Avances</button>
+      <button type="button" class="tab active" data-tab="resumen" id="tabBtn-resumen">Resumen</button>
+      <button type="button" class="tab" data-tab="proyecto" id="tabBtn-proyecto">Avances</button>
       <button type="button" class="tab" data-tab="finanzas" id="tabBtn-finanzas">Finanzas</button>
       <button type="button" class="tab" data-tab="comercial" id="tabBtn-comercial">Comercial</button>
       <button type="button" class="tab" data-tab="docs" id="tabBtn-docs">Docs</button>
       <button type="button" class="tab" data-tab="chat" id="tabBtn-chat">Chat</button>
     </div>
 
-    <div class="tabpane" id="tab-resumen">
+    <div class="tabpane active" id="tab-resumen">
 
   <!-- Cabecera + export -->
   <section id="summaryHeader" class="summary-header">
@@ -1369,7 +1559,7 @@
 
 </div>
 
-    <div class="tabpane active" id="tab-proyecto">
+    <div class="tabpane" id="tab-proyecto">
       <div class="phase" style="--phase-color:#0ea5e9;">
         <div class="phase-header">
           <div class="phase-title">
@@ -1649,10 +1839,13 @@
 
   <!-- Modal ficha unidad (editable) -->
   <div id="fichaUnidadModal" class="modal-backdrop" style="display:none;">
-    <div class="modal" style="width:min(920px, 95vw);">
+    <div class="modal ficha-unidad-card" style="width:min(920px, 95vw);">
       <div class="modal-head">
         <b id="fichaTitulo">Unidad</b>
-        <button class="btn btn-ghost btn-xs" id="fichaCerrar">Cerrar</button>
+        <div class="unit-modal-actions">
+          <button class="btn btn-ghost btn-xs" id="fichaExpandir" type="button" title="Pantalla completa" aria-label="Pantalla completa">⛶</button>
+          <button class="btn btn-ghost btn-xs" id="fichaCerrarX" type="button" title="Cerrar" aria-label="Cerrar">X</button>
+        </div>
       </div>
       <div class="modal-body" id="fichaContenido">
         <!-- se rellena por JS -->
@@ -1915,16 +2108,25 @@
 
 
     <div class="tabpane" id="tab-docs">
-  <form id="uploadForm" class="row">
-    <input type="file" id="file" />
-    <input type="date" id="expiry" />
-    <button class="btn" type="button" id="docsUploadBtn">Subir</button>
-  </form>
+  <div class="docs-control-panel">
+    <form id="uploadForm" class="docs-upload-form">
+      <label class="docs-file-picker">
+        <input type="file" id="file" />
+        <span>Seleccionar archivo</span>
+        <strong id="docsFileName">Ningún archivo seleccionado</strong>
+      </label>
+      <select id="docsFolder"></select>
+      <select id="docsSubfolder">
+        <option value="">Principal</option>
+      </select>
+      <input type="date" id="expiry" />
+      <button class="btn" type="button" id="docsUploadBtn">Subir</button>
+    </form>
 
-  <!-- 👇 Añadido buscador y contador -->
-  <div class="docs-toolbar" style="margin:10px 0; display:flex; gap:12px; align-items:center;">
-    <input id="docsSearch" type="search" placeholder="Buscar documentos…" style="flex:1; padding:6px 10px;">
-    <span id="docsCount" class="small muted"></span>
+    <div class="docs-toolbar">
+      <input id="docsSearch" type="search" placeholder="Buscar documentos...">
+      <span id="docsCount" class="small muted"></span>
+    </div>
   </div>
 
   <div id="docs"></div>
@@ -1965,6 +2167,7 @@
 
   <script src="/js/api.js"></script>
   <script src="/lib/chart.umd.min.js"></script>
+  <script src="/js/theme-toggle.js"></script>
   <script src="/js/project.js?v=proceso-general-v6"><!-- ROLE-SEP: bump --></script>
 
 </body>
