@@ -6195,16 +6195,22 @@ resumen[estado] = (resumen[estado] || 0) + 1;
   resumen.valor += u.precioLista || 0;
 });
 
-kpisDiv.innerHTML = `
-  <div>Disponibles: ${resumen.disponible || 0}</div>
-<div>Inventario: ${resumen.inventario || 0}</div>
-<div>Reservados: ${resumen.reservado || 0}</div>
-  <div>Con CPP: ${resumen.con_cpp || 0}</div>
-  <div>Trámite legal activado: ${resumen.tramite_legal_activado || 0}</div>
-  <div>Escriturado / Traspasado: ${resumen.escriturado_traspasado || 0}</div>
-  <div>Vivienda entregada: ${resumen.vivienda_entregada || 0}</div>
-  <div>Valor total: $${(resumen.valor || 0).toLocaleString()}</div>
-`;
+kpisDiv.innerHTML = [
+  { key: 'disponible', label: 'Disponibles', value: resumen.disponible || 0, sub: 'Listas para venta' },
+  { key: 'inventario', label: 'Inventario', value: resumen.inventario || 0, sub: 'En cartera' },
+  { key: 'reservado', label: 'Reservados', value: resumen.reservado || 0, sub: 'Separadas' },
+  { key: 'cpp', label: 'Con CPP', value: resumen.con_cpp || 0, sub: 'Contrato activo' },
+  { key: 'legal', label: 'Trámite legal', value: resumen.tramite_legal_activado || 0, sub: 'En proceso' },
+  { key: 'escriturado', label: 'Escriturado / Traspasado', value: resumen.escriturado_traspasado || 0, sub: 'Cerradas' },
+  { key: 'entregada', label: 'Vivienda entregada', value: resumen.vivienda_entregada || 0, sub: 'Entregas' },
+  { key: 'valor', label: 'Valor total', value: `$${(resumen.valor || 0).toLocaleString()}`, sub: 'Precio lista acumulado' }
+].map(item => `
+  <div class="commercial-kpi-card commercial-kpi-${item.key}">
+    <span class="commercial-kpi-label">${item.label}</span>
+    <strong class="commercial-kpi-value">${item.value}</strong>
+    <span class="commercial-kpi-sub">${item.sub}</span>
+  </div>
+`).join('');
 // ===== ALERTA CPP: 60 días antes de vencimiento =====
 function daysUntil(dateValue) {
   if (!dateValue) return null;

@@ -1225,7 +1225,8 @@
     <div class="summary-export-actions">
       <a id="exportSummaryPdf"  class="btn btn-primary btn-sm"  href="#">PDF</a>
       <a id="exportSummaryXlsx" class="btn btn-ghost  btn-sm"  href="#">Excel</a>
-      <div class="summary-date-filter" aria-label="Rango de fechas para el informe">
+    </div>
+    <div class="summary-date-filter" aria-label="Rango de fechas para el informe">
         <div class="summary-date-group">
           <span class="summary-date-filter-title">Periodo del resumen</span>
           <div class="summary-date-fields">
@@ -1257,7 +1258,6 @@
           <button id="summaryReportDateClear" class="summary-date-clear" type="button" title="Informe global">Limpiar</button>
         </div>
       </div>
-    </div>
     <div class="summary-import-actions">
       <label class="summary-file-picker" for="datoUnicoFile">
         <span class="summary-file-picker-label">Seleccionar Excel</span>
@@ -1778,14 +1778,26 @@
 
 
     <div class="tabpane" id="tab-comercial">
-  <div class="toolbar row" style="gap:8px; flex-wrap:wrap;">
-    <button id="btnCrearLote" class="btn">Crear en lote</button>
-    <button id="btnEditarSel" class="btn">Editar selección</button>
-    <button id="btnEliminarSel" class="btn btn-danger">Eliminar selección</button>
-    <button id="btnSelectAll" class="btn">Seleccionar todo</button>
-    <button id="btnExportarCsv" class="btn">Exportar CSV</button>
-    <button id="btnExportarExcel" class="btn btn-primary">Exportar Excel</button>
+  <section class="commercial-control-panel" aria-label="Controles comerciales">
+    <div class="commercial-actions-bar">
+      <div class="commercial-action-group commercial-action-main">
+        <span class="commercial-action-label">Gestión</span>
+        <button id="btnCrearLote" class="btn commercial-btn commercial-btn-primary" type="button">Crear en lote</button>
+      </div>
+      <div class="commercial-action-group commercial-action-selection">
+        <span class="commercial-action-label">Selección</span>
+        <button id="btnSelectAll" class="btn commercial-btn commercial-btn-soft" type="button">Seleccionar todo</button>
+        <button id="btnEditarSel" class="btn commercial-btn commercial-btn-soft" type="button">Editar selección</button>
+        <button id="btnEliminarSel" class="btn btn-danger commercial-btn commercial-btn-danger" type="button">Eliminar selección</button>
+      </div>
+      <div class="commercial-action-group commercial-action-export">
+        <span class="commercial-action-label">Exportar</span>
+        <button id="btnExportarCsv" class="btn commercial-btn commercial-btn-soft" type="button">CSV</button>
+        <button id="btnExportarExcel" class="btn btn-primary commercial-btn commercial-btn-primary" type="button">Excel</button>
+      </div>
+    </div>
 
+    <div class="commercial-filter-bar">
     <select id="filtroEstado">
   <option value="">Todos</option>
   <option value="disponible">Disponible</option>
@@ -1797,7 +1809,8 @@
   <option value="vivienda_entregada">Vivienda entregada</option>
 </select>
     <input id="buscarUnidad" placeholder="Buscar (manzana/lote/modelo/cliente/banco/CPP)" />
-  </div>
+    </div>
+  </section>
 
   <div id="kpisComercial" class="row gap" style="margin:8px 0"></div>
   <div id="unitsGrid" class="grid"></div>
