@@ -1202,6 +1202,79 @@
   .docs-upload-form{ grid-template-columns:1fr; }
   .docs-toolbar{ grid-template-columns:1fr; }
   .docs-move-panel{ grid-template-columns:1fr; }
+  #tab-docs,
+  #docs,
+  .docs-control-panel,
+  .docs-repo-layout,
+  .docs-folder-nav,
+  .docs-folder-panel{
+    width:100%;
+    max-width:100%;
+    min-width:0;
+    box-sizing:border-box;
+    overflow-x:hidden;
+  }
+  .docs-repo-layout{
+    grid-template-columns:1fr;
+    gap:14px;
+  }
+  .docs-folder-nav{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  .docs-folder-btn{
+    min-width:0;
+    min-height:96px;
+    padding:12px 8px;
+  }
+  .docs-folder-name,
+  .docs-folder-count{
+    max-width:100%;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .docs-folder-panel{
+    padding:12px;
+  }
+  .docs-folder-head{
+    align-items:flex-start;
+  }
+  .docs-folder-tools{
+    width:100%;
+    justify-content:flex-start;
+  }
+  .docs-subfolder-grid{
+    grid-template-columns:1fr;
+  }
+  .docs-subfolder-card{
+    min-width:0;
+  }
+  #tab-docs .doc{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:12px;
+    width:100%;
+    max-width:100%;
+    min-width:0;
+    box-sizing:border-box;
+  }
+  #tab-docs .doc > *{
+    min-width:0;
+  }
+  #tab-docs .doc-actions{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    width:100%;
+    justify-content:flex-start;
+  }
+  #tab-docs .doc-actions .btn,
+  #tab-docs .doc-actions a.btn{
+    margin-left:0;
+    flex:1 1 120px;
+    min-width:0;
+    text-align:center;
+  }
 }
   </style>
 </head>
