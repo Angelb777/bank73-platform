@@ -3887,6 +3887,38 @@ body {
     max-width:100% !important;
   }
 
+  body.light-theme .topbar{
+    background:rgba(255,255,255,.96) !important;
+    border-bottom:1px solid rgba(29,42,68,.12) !important;
+    box-shadow:0 8px 22px rgba(31,45,74,.10) !important;
+  }
+
+  body.light-theme .topbar .brand,
+  body.light-theme .topbar .brand a.link{
+    color:#172033 !important;
+  }
+
+  body.light-theme .topbar .brand a.link{
+    text-decoration-color:rgba(23,32,51,.22) !important;
+  }
+
+  body.light-theme .topbar .brand a.link:hover{
+    text-decoration-color:#172033 !important;
+  }
+
+  body.light-theme .topbar #logoutBtn,
+  body.light-theme .topbar .btn{
+    background:#172033 !important;
+    color:#ffffff !important;
+    border:1px solid #172033 !important;
+  }
+
+  body.light-theme .topbar .theme-toggle{
+    background:#ffffff !important;
+    color:#172033 !important;
+    border-color:#cfd8e8 !important;
+  }
+
   /* ===== CONTENEDORES ===== */
 
   .container,
