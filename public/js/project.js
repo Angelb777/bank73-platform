@@ -8747,6 +8747,7 @@ function renderStatusPill(d){
   const st = normStatus(d.status);
   if (st === 'COMPLETED') return `<span class="pill pill-gray">CUMPLIDO</span>`;
   if (st === 'REPLACED')  return `<span class="pill pill-gray">REEMPLAZADO</span>`;
+  if (!d.expiryDate) return '';
   return `<span class="pill pill-blue">ACTIVO</span>`;
 }
 
