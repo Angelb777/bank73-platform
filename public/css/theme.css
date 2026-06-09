@@ -581,6 +581,17 @@ body.light-theme #tab-comercial .commercial-btn-danger:hover {
   border-color: #f87171;
 }
 
+body.light-theme .docs-subfolder-delete {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #fca5a5;
+}
+
+body.light-theme .docs-subfolder-delete:hover {
+  background: #fecaca;
+  border-color: #f87171;
+}
+
 body.light-theme .tabs {
   background: rgba(255, 255, 255, .72);
   border-color: rgba(29, 42, 68, .10);

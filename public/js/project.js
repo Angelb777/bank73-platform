@@ -8967,10 +8967,13 @@ async function loadDocs({ q } = {}) {
           ${subfolders.map(sf => {
             const name = sf.name || '';
             return `
-              <button type="button" class="docs-subfolder-card ${name === _activeDocsSubfolder ? 'active' : ''}" data-doc-subfolder="${escapeHtml(name)}" style="--folder-color:${activeCfg.color};">
-                <strong>${escapeHtml(name)}</strong>
-                <span class="small muted">${subfolderCounts[name] || 0} documentos</span>
-              </button>
+              <div class="docs-subfolder-card ${name === _activeDocsSubfolder ? 'active' : ''}" data-doc-subfolder="${escapeHtml(name)}" style="--folder-color:${activeCfg.color};" role="button" tabindex="0">
+                <div>
+                  <strong>${escapeHtml(name)}</strong>
+                  <span class="small muted">${subfolderCounts[name] || 0} documentos</span>
+                </div>
+                ${meta.canMove ? `<button type="button" class="docs-subfolder-delete" data-delete-subfolder="${escapeHtml(name)}" title="Eliminar subcarpeta" aria-label="Eliminar subcarpeta ${escapeHtml(name)}">Eliminar</button>` : ''}
+              </div>
             `;
           }).join('')}
         </div>
@@ -8995,6 +8998,44 @@ async function loadDocs({ q } = {}) {
     btn.addEventListener('click', async () => {
       _activeDocsSubfolder = btn.dataset.docSubfolder || '';
       await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+    });
+    btn.addEventListener('keydown', async (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      _activeDocsSubfolder = btn.dataset.docSubfolder || '';
+      await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+    });
+  });
+
+  docsDiv.querySelectorAll('[data-delete-subfolder]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const name = btn.dataset.deleteSubfolder || '';
+      if (!name) return;
+      const count = subfolderCounts[name] || 0;
+      const msg = count
+        ? `Eliminar la subcarpeta "${name}"? Sus ${count} documento(s) pasarán a Principal.`
+        : `Eliminar la subcarpeta "${name}"?`;
+      if (!confirm(msg)) return;
+
+      try {
+        const res = await fetch(`/api/documents/folder-permissions/${encodeURIComponent(_activeDocsFolder)}/subfolders`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', ...tenantHeaders(), ...authHeaders() },
+          credentials: 'include',
+          body: JSON.stringify({ projectId: id, name })
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload?.message || payload?.error || `HTTP ${res.status}`);
+
+        if (_activeDocsSubfolder === name) _activeDocsSubfolder = '';
+        _docsFolderMeta = null;
+        _allDocs = [];
+        await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+      } catch (err) {
+        alert('No se pudo eliminar la subcarpeta: ' + (err.message || 'Error desconocido'));
+      }
     });
   });
 

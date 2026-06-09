@@ -676,6 +676,62 @@ router.post(
   }
 );
 
+router.delete(
+  '/folder-permissions/:folder/subfolders',
+  attachProjectIdParam,
+  requireRole('admin', 'bank', 'promoter'),
+  requireProjectAccess({ commercialOnlySales: false }),
+  async (req, res) => {
+    try {
+      const tenantKey = getTenantKey(req);
+      const projectOid = safeOid(String(req.body?.projectId || req.query.projectId || req.params.id || ''));
+      const folder = norm(req.params.folder);
+      const name = String(req.body?.name || req.body?.subfolder || req.query?.name || req.query?.subfolder || '').trim();
+
+      if (!projectOid) return res.status(400).json({ error: 'projectId inválido' });
+      if (!PROJECT_DOC_FOLDERS.includes(folder)) return res.status(400).json({ error: 'folder inválida' });
+      if (!name) return res.status(400).json({ error: 'Nombre requerido' });
+
+      const project = await Project.findOne({ _id: projectOid, tenantKey }).lean();
+      if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+      const allowedFolders = await getAllowedProjectFolders(req, project);
+      if (!allowedFolders.includes(folder)) {
+        return res.status(403).json({ error: 'No tienes acceso a esta carpeta' });
+      }
+
+      const permission = await ProjectDocFolderPermission.findOne({ tenantKey, projectId: projectOid, folder });
+      if (!permission) return res.status(404).json({ error: 'Subcarpeta no encontrada' });
+
+      const before = Array.isArray(permission.subfolders) ? permission.subfolders.length : 0;
+      permission.subfolders = (permission.subfolders || []).filter(sf => norm(sf.name) !== norm(name));
+      if (permission.subfolders.length === before) {
+        return res.status(404).json({ error: 'Subcarpeta no encontrada' });
+      }
+
+      const moved = await Document.updateMany(
+        { tenantKey, projectId: projectOid, folder, subfolder: name },
+        { $set: { subfolder: '' } }
+      );
+
+      await permission.save();
+
+      await audit(req, 'document.subfolder.deleted', {
+        targetType: 'project',
+        targetId: projectOid,
+        projectId: projectOid,
+        message: 'Subcarpeta documental eliminada',
+        metadata: { folder, subfolder: name, movedDocuments: moved.modifiedCount || 0 }
+      });
+
+      res.json({ ok: true, subfolders: permission.subfolders || [], movedDocuments: moved.modifiedCount || 0 });
+    } catch (e) {
+      console.error('[documents.subfolders.delete] error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  }
+);
+
 router.post(
   '/upload',
   multiUpload,
