@@ -3220,18 +3220,25 @@ body.light-theme #cards .card.status-FINALIZADO .badge {
 #tab-finanzas .finance-control-grid {
   display: grid;
   gap: 16px;
+  min-width: 0;
 }
 
 #tab-finanzas .finance-panel {
+  min-width: 0;
+  max-width: 100%;
   padding: 14px;
   border: 1px solid rgba(148,163,184,.20);
   border-radius: 14px;
   background: rgba(15,23,42,.64);
+  overflow: hidden;
 }
 
 #tab-finanzas .finance-table-wrap {
   width: 100%;
+  max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
   margin-top: 12px;
 }
 
@@ -3265,13 +3272,17 @@ body.light-theme #cards .card.status-FINALIZADO .badge {
   display: grid;
   gap: 12px;
   margin-top: 12px;
+  min-width: 0;
 }
 
 #tab-finanzas .finance-loan-line-card {
+  min-width: 0;
+  max-width: 100%;
   padding: 12px;
   border: 1px solid rgba(148,163,184,.20);
   border-radius: 14px;
   background: rgba(2,6,23,.28);
+  overflow: hidden;
 }
 
 #tab-finanzas .finance-loan-line-head {
@@ -3279,6 +3290,7 @@ body.light-theme #cards .card.status-FINALIZADO .badge {
   grid-template-columns: minmax(180px, 280px) 1fr auto;
   align-items: end;
   gap: 12px;
+  min-width: 0;
 }
 
 #tab-finanzas .finance-loan-line-head label,
@@ -3309,6 +3321,7 @@ body.light-theme #cards .card.status-FINALIZADO .badge {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  min-width: 0;
 }
 
 #tab-finanzas .finance-loan-line-metrics > span:not(.finance-status) {
@@ -3475,10 +3488,13 @@ body.light-theme #cards .card.status-FINALIZADO .badge {
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 12px;
   margin-top: 12px;
+  min-width: 0;
 }
 
 #tab-finanzas .finance-unit-card {
   --accent: rgba(148,163,184,.72);
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid rgba(148,163,184,.22);
   border-left: 6px solid var(--accent);
   border-radius: 14px;
@@ -3514,6 +3530,7 @@ body.light-theme #cards .card.status-FINALIZADO .badge {
 #tab-finanzas .finance-unit-card summary strong,
 #tab-finanzas .finance-unit-card summary span {
   display: block;
+  overflow-wrap: anywhere;
 }
 
 #tab-finanzas .finance-unit-card summary span {
@@ -3529,6 +3546,7 @@ body.light-theme #cards .card.status-FINALIZADO .badge {
 #tab-finanzas .finance-unit-money b {
   display: block;
   margin-bottom: 5px;
+  overflow-wrap: anywhere;
 }
 
 #tab-finanzas .finance-unit-fields {
@@ -3626,8 +3644,27 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
 }
 
 @media (max-width: 720px) {
+  #tab-finanzas {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
   #tab-finanzas .finance-control-shell {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     padding: 12px;
+    overflow: hidden;
+  }
+  #tab-finanzas .finance-section-head,
+  #tab-finanzas .finance-panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+    min-width: 0;
+  }
+  #tab-finanzas .finance-section-head > *,
+  #tab-finanzas .finance-panel-head > * {
+    min-width: 0;
+    max-width: 100%;
   }
   #tab-finanzas .finance-edit-kpi-grid,
   #tab-finanzas .finance-loan-summary-grid,
@@ -3637,9 +3674,37 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
   }
   #tab-finanzas .finance-loan-line-head {
     grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  #tab-finanzas .finance-loan-line-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+  #tab-finanzas .finance-loan-line-metrics > span:not(.finance-status),
+  #tab-finanzas .finance-loan-line-metrics > .finance-status {
+    width: 100%;
+    justify-content: center;
+    min-width: 0;
+    white-space: normal;
+    text-align: center;
+  }
+  #tab-finanzas .finance-loan-line-metrics > span:not(.finance-status) {
+    font-size: 13px;
+    padding: 6px 8px;
+  }
+  #tab-finanzas .finance-loan-line-metrics b {
+    font-size: 14px;
   }
   #tab-finanzas .finance-inline-actions {
     justify-content: flex-start;
+  }
+  #tab-finanzas .finance-inline-actions .btn {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  #tab-finanzas .finance-loan-line-notes input {
+    width: 100%;
   }
   #tab-finanzas .finance-unit-card summary {
     align-items: flex-start;
@@ -3658,15 +3723,17 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
     border-radius: 12px;
   }
   #tab-finanzas .finance-table-wrap {
-    margin-left: -4px;
-    margin-right: -4px;
+    width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+    margin-right: 0;
     padding-bottom: 4px;
   }
   #tab-finanzas .finance-loan-table {
-    min-width: 720px;
+    min-width: 640px;
   }
   #tab-finanzas .finance-readonly-table {
-    min-width: 660px;
+    min-width: 620px;
   }
   #tab-finanzas .finance-loan-table th,
   #tab-finanzas .finance-loan-table td {
