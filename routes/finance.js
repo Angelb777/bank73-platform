@@ -79,7 +79,7 @@ function loanEntryStatus(entry, today = new Date()) {
 
 function normalizeLoanEntry(raw = {}) {
   return {
-    _id: raw._id,
+    _id: mongoose.isValidObjectId(raw._id) ? raw._id : undefined,
     disbursementDate: cleanDate(raw.disbursementDate),
     loanNumber: String(raw.loanNumber || '').trim(),
     disbursementAmount: toNum(raw.disbursementAmount),
@@ -96,7 +96,7 @@ function normalizeLoanLine(raw = {}, idx = 0) {
         e.disbursementDate || e.loanNumber || e.disbursementAmount || e.maturityDate || e.amortizedAmount || e.notes
       );
   return {
-    _id: raw._id,
+    _id: mongoose.isValidObjectId(raw._id) ? raw._id : undefined,
     name: String(raw.name || `Linea ${idx + 1}`).trim(),
     entries,
     notes: String(raw.notes || '').trim(),
@@ -111,7 +111,7 @@ function normalizeUnitAmortization(raw = {}) {
     amount: toNum(a.amount),
   })).filter(a => a.loanLineId || a.loanLineName || a.amount) : [];
   return {
-    _id: raw._id,
+    _id: mongoose.isValidObjectId(raw._id) ? raw._id : undefined,
     unitId,
     clientName: String(raw.clientName || '').trim(),
     lot: String(raw.lot || '').trim(),

@@ -4626,9 +4626,12 @@ let FINANCE = null;
 let FINANCE_KPIS = null;
 let FINANCE_CONTROL = null;
 let FINANCE_COMMERCIAL_UNITS = [];
+let FINANCE_LOAN_LINES_SAVE_IN_PROGRESS = false;
+let FINANCE_LOAN_LINES_RENDER_TIMER = null;
 
 const fmt = (n) => (Number(n || 0)).toLocaleString('es-ES');
 const sumItems = (arr = []) => (arr || []).reduce((a, it) => a + (Number(it?.amount) || 0), 0);
+const isMongoIdLike = (v) => /^[a-f\d]{24}$/i.test(String(v || ''));
 
 function numOr0(v) {
   const n = Number(v);
@@ -4710,11 +4713,11 @@ function financeEntryStatus(line) {
 
 function collectFinanceLoanLines() {
   return Array.from(document.querySelectorAll('.finance-loan-line-card[data-line-card]')).map((card, idx) => ({
-    _id: card.dataset.id && !card.dataset.id.startsWith('new-') ? card.dataset.id : undefined,
+    _id: isMongoIdLike(card.dataset.id) ? card.dataset.id : undefined,
     name: card.querySelector('[data-line-field="name"]')?.value || `Linea ${idx + 1}`,
     notes: card.querySelector('[data-line-field="notes"]')?.value || '',
     entries: Array.from(card.querySelectorAll('[data-entry-row]')).map(row => ({
-      _id: row.dataset.entryId && !row.dataset.entryId.startsWith('new-') ? row.dataset.entryId : undefined,
+      _id: isMongoIdLike(row.dataset.entryId) ? row.dataset.entryId : undefined,
       disbursementDate: row.querySelector('[data-field="disbursementDate"]')?.value || null,
       loanNumber: row.querySelector('[data-field="loanNumber"]')?.value || '',
       disbursementAmount: numOr0(row.querySelector('[data-field="disbursementAmount"]')?.value),
@@ -5304,6 +5307,11 @@ function refreshFinanceDerivedUI() {
 
 async function saveFinanceLoanLines(btn = null) {
   const originalLabel = btn?.textContent || 'Guardar';
+  FINANCE_LOAN_LINES_SAVE_IN_PROGRESS = true;
+  if (FINANCE_LOAN_LINES_RENDER_TIMER) {
+    clearTimeout(FINANCE_LOAN_LINES_RENDER_TIMER);
+    FINANCE_LOAN_LINES_RENDER_TIMER = null;
+  }
   try {
     setFinanceButtonState(btn, 'Guardando...', true);
     const loanLines = collectFinanceLoanLines();
@@ -5317,6 +5325,8 @@ async function saveFinanceLoanLines(btn = null) {
     setFinanceButtonState(btn, originalLabel, false);
     console.error('[Finance] error guardando lineas', e);
     alert('No se pudieron guardar las lineas de prestamo');
+  } finally {
+    FINANCE_LOAN_LINES_SAVE_IN_PROGRESS = false;
   }
 }
 
@@ -5513,7 +5523,12 @@ function bindFinanceOnce() {
     renderFinanceControlKpis();
   });
   document.getElementById('financeLoanLinesBody')?.addEventListener('change', () => {
-    renderFinanceLoanLines(collectFinanceLoanLines());
+    if (FINANCE_LOAN_LINES_RENDER_TIMER) clearTimeout(FINANCE_LOAN_LINES_RENDER_TIMER);
+    FINANCE_LOAN_LINES_RENDER_TIMER = setTimeout(() => {
+      FINANCE_LOAN_LINES_RENDER_TIMER = null;
+      if (FINANCE_LOAN_LINES_SAVE_IN_PROGRESS) return;
+      renderFinanceLoanLines(collectFinanceLoanLines());
+    }, 120);
   });
   document.getElementById('financeLoanLinesBody')?.addEventListener('click', async (ev) => {
     const saveBtn = ev.target.closest('[data-finance-save-line]');
