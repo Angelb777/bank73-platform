@@ -3091,6 +3091,600 @@ body.light-theme #cards .card.status-FINALIZADO .badge {
   height: 100% !important;
 }
 
+#tab-finanzas .finance-loan-chart-panel {
+  margin-top: 16px;
+}
+
+#tab-finanzas .finance-loan-chart-box {
+  height: 300px;
+  min-height: 260px;
+  margin-top: 12px;
+}
+
+#tab-finanzas .finance-control-shell {
+  margin-top: 22px;
+  padding: 18px;
+  border: 1px solid rgba(148,163,184,.20);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.018));
+  box-shadow: 0 18px 42px rgba(2,6,23,.22);
+}
+
+#tab-finanzas .finance-bank-kpis {
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid rgba(148,163,184,.20);
+  border-radius: 16px;
+  background: rgba(15,23,42,.58);
+}
+
+#tab-finanzas .finance-edit-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+#tab-finanzas .finance-edit-kpi {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: 12px;
+  background: rgba(2,6,23,.26);
+}
+
+#tab-finanzas .finance-edit-kpi span {
+  color: var(--muted, #94a3b8);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+#tab-finanzas .finance-edit-kpi input {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+}
+
+#tab-finanzas .finance-section-head,
+#tab-finanzas .finance-panel-head,
+#tab-finanzas .finance-panel-actions,
+#tab-finanzas .finance-unit-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+#tab-finanzas .finance-section-head h3,
+#tab-finanzas .finance-panel-head h4 {
+  margin: 0;
+}
+
+#tab-finanzas .finance-section-head p {
+  margin: 4px 0 0;
+  color: var(--muted, #94a3b8);
+}
+
+#tab-finanzas .finance-control-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+#tab-finanzas .finance-kpi-card {
+  --fin-accent: #5aa2ff;
+  position: relative;
+  overflow: hidden;
+  min-height: 82px;
+  padding: 12px;
+  border: 1px solid rgba(148,163,184,.20);
+  border-radius: 12px;
+  background: rgba(15,23,42,.72);
+}
+
+#tab-finanzas .finance-kpi-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--fin-accent);
+}
+
+#tab-finanzas .finance-kpi-card span {
+  display: block;
+  color: var(--muted, #94a3b8);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+#tab-finanzas .finance-kpi-card strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--text, #e7e9f0);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+#tab-finanzas .finance-kpi-card.is-ok { --fin-accent: #22c55e; }
+#tab-finanzas .finance-kpi-card.is-warn { --fin-accent: #f59e0b; }
+#tab-finanzas .finance-kpi-card.is-danger { --fin-accent: #ef4444; }
+#tab-finanzas .finance-kpi-card.is-promoter { --fin-accent: #a855f7; }
+#tab-finanzas .finance-kpi-card.is-cpp { --fin-accent: #38bdf8; }
+#tab-finanzas .finance-kpi-card.is-line1 { --fin-accent: #14b8a6; }
+#tab-finanzas .finance-kpi-card.is-line2 { --fin-accent: #6366f1; }
+
+#tab-finanzas .finance-control-grid {
+  display: grid;
+  gap: 16px;
+}
+
+#tab-finanzas .finance-panel {
+  padding: 14px;
+  border: 1px solid rgba(148,163,184,.20);
+  border-radius: 14px;
+  background: rgba(15,23,42,.64);
+}
+
+#tab-finanzas .finance-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 12px;
+}
+
+#tab-finanzas .finance-loan-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+#tab-finanzas .finance-loan-summary-card {
+  padding: 11px;
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: 12px;
+  background: rgba(2,6,23,.30);
+}
+
+#tab-finanzas .finance-loan-summary-card span {
+  display: block;
+  color: var(--muted, #94a3b8);
+  font-size: 12px;
+}
+
+#tab-finanzas .finance-loan-summary-card strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 18px;
+}
+
+#tab-finanzas .finance-loan-lines {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+#tab-finanzas .finance-loan-line-card {
+  padding: 12px;
+  border: 1px solid rgba(148,163,184,.20);
+  border-radius: 14px;
+  background: rgba(2,6,23,.28);
+}
+
+#tab-finanzas .finance-loan-line-head {
+  display: grid;
+  grid-template-columns: minmax(180px, 280px) 1fr auto;
+  align-items: end;
+  gap: 12px;
+}
+
+#tab-finanzas .finance-loan-line-head label,
+#tab-finanzas .finance-loan-line-notes {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+#tab-finanzas .finance-loan-line-head label span {
+  color: var(--muted, #94a3b8);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+#tab-finanzas .finance-loan-line-head input,
+#tab-finanzas .finance-loan-line-notes input {
+  width: 100%;
+  border: 1px solid rgba(148,163,184,.24);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(255,255,255,.06);
+  color: var(--text, #e7e9f0);
+}
+
+#tab-finanzas .finance-loan-line-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+#tab-finanzas .finance-loan-line-metrics > span:not(.finance-status) {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid rgba(148,163,184,.16);
+  border-radius: 999px;
+  color: var(--muted, #94a3b8);
+  background: rgba(255,255,255,.035);
+  font-size: 14px;
+  line-height: 1.15;
+}
+
+#tab-finanzas .finance-loan-line-metrics b {
+  color: var(--text, #e7e9f0);
+  font-size: 15px;
+  line-height: 1;
+}
+
+#tab-finanzas .finance-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+#tab-finanzas .finance-loan-line-notes {
+  margin-top: 10px;
+}
+
+#tab-finanzas .finance-loan-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: separate;
+  border-spacing: 0 8px;
+}
+
+#tab-finanzas .finance-loan-table th {
+  color: var(--muted, #94a3b8);
+  font-size: 12px;
+  text-align: left;
+  padding: 0 8px;
+}
+
+#tab-finanzas .finance-loan-table td {
+  padding: 8px;
+  background: rgba(2,6,23,.44);
+  border-top: 1px solid rgba(148,163,184,.14);
+  border-bottom: 1px solid rgba(148,163,184,.14);
+}
+
+#tab-finanzas .finance-loan-table td:first-child {
+  border-left: 1px solid rgba(148,163,184,.14);
+  border-radius: 10px 0 0 10px;
+}
+
+#tab-finanzas .finance-loan-table td:last-child {
+  border-right: 1px solid rgba(148,163,184,.14);
+  border-radius: 0 10px 10px 0;
+}
+
+#tab-finanzas .finance-sale-entry-row td {
+  background: rgba(14,165,233,.08);
+  border-color: rgba(56,189,248,.22);
+}
+
+#tab-finanzas .finance-sale-entry-row input:disabled {
+  color: var(--text, #e7e9f0);
+  border-color: rgba(56,189,248,.18);
+  background: rgba(14,165,233,.06);
+  opacity: 1;
+}
+
+#tab-finanzas .btn.is-saving {
+  opacity: .78;
+  cursor: wait;
+}
+
+#tab-finanzas .finance-loan-table input,
+#tab-finanzas .finance-unit-fields input,
+#tab-finanzas .finance-unit-fields select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(148,163,184,.24);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(255,255,255,.06);
+  color: var(--text, #e7e9f0);
+}
+
+#tab-finanzas .finance-loan-table input:disabled {
+  opacity: 1;
+  color: var(--text, #e7e9f0);
+  background: rgba(255,255,255,.035);
+  cursor: default;
+}
+
+#tab-finanzas .finance-readonly-table {
+  min-width: 760px;
+}
+
+#tab-finanzas .finance-commercial-base {
+  padding: 8px 10px;
+  border: 1px dashed rgba(148,163,184,.25);
+  border-radius: 10px;
+  color: var(--muted, #94a3b8);
+  background: rgba(255,255,255,.035);
+}
+
+#tab-finanzas .finance-line-notes td {
+  padding-top: 0;
+  background: transparent;
+  border: 0;
+}
+
+#tab-finanzas .finance-balance {
+  white-space: nowrap;
+  font-weight: 800;
+}
+
+#tab-finanzas .finance-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  border: 1px solid rgba(148,163,184,.26);
+  color: #e5e7eb;
+  background: rgba(148,163,184,.14);
+  white-space: nowrap;
+}
+
+#tab-finanzas .finance-status.is-ok,
+#tab-finanzas .finance-status.is-amortized {
+  color: #bbf7d0;
+  border-color: rgba(34,197,94,.34);
+  background: rgba(34,197,94,.14);
+}
+
+#tab-finanzas .finance-status.is-upcoming,
+#tab-finanzas .finance-status.is-warn,
+#tab-finanzas .finance-status.is-pending,
+#tab-finanzas .finance-status.is-missing {
+  color: #fde68a;
+  border-color: rgba(245,158,11,.36);
+  background: rgba(245,158,11,.14);
+}
+
+#tab-finanzas .finance-status.is-overdue,
+#tab-finanzas .finance-status.is-danger {
+  color: #fecaca;
+  border-color: rgba(239,68,68,.38);
+  background: rgba(239,68,68,.14);
+}
+
+#tab-finanzas .finance-unit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+#tab-finanzas .finance-unit-card {
+  --accent: rgba(148,163,184,.72);
+  border: 1px solid rgba(148,163,184,.22);
+  border-left: 6px solid var(--accent);
+  border-radius: 14px;
+  background: #0b1220;
+  overflow: hidden;
+}
+
+#tab-finanzas .finance-unit-card.estado-disponible { --accent:#22c55e; }
+#tab-finanzas .finance-unit-card.estado-inventario { --accent:#09edd2; }
+#tab-finanzas .finance-unit-card.estado-reservado { --accent:#eab308; }
+#tab-finanzas .finance-unit-card.estado-con_cpp { --accent:#3b82f6; }
+#tab-finanzas .finance-unit-card.estado-tramite_legal_activado { --accent:#a855f7; }
+#tab-finanzas .finance-unit-card.estado-escriturado_traspasado { --accent:#ef4444; }
+#tab-finanzas .finance-unit-card.estado-vivienda_entregada { --accent:#94a3b8; }
+
+#tab-finanzas .finance-unit-card summary strong {
+  color: var(--text, #e7e9f0);
+}
+
+#tab-finanzas .finance-unit-card summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+#tab-finanzas .finance-unit-card summary::-webkit-details-marker {
+  display: none;
+}
+
+#tab-finanzas .finance-unit-card summary strong,
+#tab-finanzas .finance-unit-card summary span {
+  display: block;
+}
+
+#tab-finanzas .finance-unit-card summary span {
+  margin-top: 3px;
+  color: var(--muted, #94a3b8);
+  font-size: 13px;
+}
+
+#tab-finanzas .finance-unit-money {
+  text-align: right;
+}
+
+#tab-finanzas .finance-unit-money b {
+  display: block;
+  margin-bottom: 5px;
+}
+
+#tab-finanzas .finance-unit-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 14px 14px;
+}
+
+#tab-finanzas .finance-unit-fields label {
+  color: var(--muted, #94a3b8);
+  font-size: 12px;
+}
+
+#tab-finanzas .finance-field-wide {
+  grid-column: 1 / -1;
+}
+
+#tab-finanzas .finance-unit-footer {
+  padding: 12px 14px;
+  border-top: 1px solid rgba(148,163,184,.16);
+  color: var(--muted, #94a3b8);
+}
+
+body.light-theme #tab-finanzas .finance-control-shell,
+body.light-theme #tab-finanzas .finance-bank-kpis,
+body.light-theme #tab-finanzas .finance-panel,
+body.light-theme #tab-finanzas .finance-kpi-card,
+body.light-theme #tab-finanzas .finance-unit-card,
+body.light-theme #tab-finanzas .finance-loan-line-card {
+  background: #ffffff;
+  border-color: #d7dfec;
+  color: #172033;
+  box-shadow: 0 10px 28px rgba(31,45,74,.10);
+}
+
+body.light-theme #tab-finanzas .finance-unit-card {
+  border-left-color: var(--accent);
+}
+
+body.light-theme #tab-finanzas .finance-loan-table td {
+  background: #f8fafc;
+  border-color: #d7dfec;
+}
+
+body.light-theme #tab-finanzas .finance-loan-table input,
+body.light-theme #tab-finanzas .finance-unit-fields input,
+body.light-theme #tab-finanzas .finance-unit-fields select,
+body.light-theme #tab-finanzas .finance-edit-kpi input,
+body.light-theme #tab-finanzas .finance-loan-line-head input,
+body.light-theme #tab-finanzas .finance-loan-line-notes input {
+  background: #ffffff;
+  border-color: #cfd8e8;
+  color: #172033;
+}
+
+body.light-theme #tab-finanzas .finance-edit-kpi,
+body.light-theme #tab-finanzas .finance-loan-summary-card {
+  background: #f8fafc;
+  border-color: #d7dfec;
+}
+
+body.light-theme #tab-finanzas .finance-sale-entry-row td {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+body.light-theme #tab-finanzas .finance-sale-entry-row input:disabled {
+  background: #f8fbff;
+  border-color: #bfdbfe;
+  color: #172033;
+}
+
+body.light-theme #tab-finanzas .finance-status.is-ok,
+body.light-theme #tab-finanzas .finance-status.is-amortized {
+  color: #047857;
+  border-color: #34d399;
+  background: #d1fae5;
+}
+
+body.light-theme #tab-finanzas .finance-status.is-upcoming,
+body.light-theme #tab-finanzas .finance-status.is-warn,
+body.light-theme #tab-finanzas .finance-status.is-pending,
+body.light-theme #tab-finanzas .finance-status.is-missing {
+  color: #92400e;
+  border-color: #f59e0b;
+  background: #fef3c7;
+}
+
+body.light-theme #tab-finanzas .finance-status.is-overdue,
+body.light-theme #tab-finanzas .finance-status.is-danger {
+  color: #991b1b;
+  border-color: #f87171;
+  background: #fee2e2;
+}
+
+@media (max-width: 720px) {
+  #tab-finanzas .finance-control-shell {
+    padding: 12px;
+  }
+  #tab-finanzas .finance-edit-kpi-grid,
+  #tab-finanzas .finance-loan-summary-grid,
+  #tab-finanzas .finance-unit-grid,
+  #tab-finanzas .finance-unit-fields {
+    grid-template-columns: 1fr;
+  }
+  #tab-finanzas .finance-loan-line-head {
+    grid-template-columns: 1fr;
+  }
+  #tab-finanzas .finance-inline-actions {
+    justify-content: flex-start;
+  }
+  #tab-finanzas .finance-unit-card summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  #tab-finanzas .finance-unit-money {
+    text-align: left;
+  }
+  #tab-finanzas .finance-loan-chart-box {
+    height: 260px;
+    min-height: 240px;
+  }
+  #tab-finanzas .finance-panel,
+  #tab-finanzas .finance-loan-line-card,
+  #tab-finanzas .finance-unit-card {
+    border-radius: 12px;
+  }
+  #tab-finanzas .finance-table-wrap {
+    margin-left: -4px;
+    margin-right: -4px;
+    padding-bottom: 4px;
+  }
+  #tab-finanzas .finance-loan-table {
+    min-width: 720px;
+  }
+  #tab-finanzas .finance-readonly-table {
+    min-width: 660px;
+  }
+  #tab-finanzas .finance-loan-table th,
+  #tab-finanzas .finance-loan-table td {
+    padding: 6px;
+  }
+  #tab-finanzas .finance-loan-table input,
+  #tab-finanzas .finance-unit-fields input,
+  #tab-finanzas .finance-unit-fields select {
+    min-height: 34px;
+    padding: 7px;
+    font-size: 14px;
+  }
+  #tab-finanzas .finance-unit-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 #tab-resumen .summary-chart-summary {
   margin-top: 14px;
   border-top: 1px solid rgba(255,255,255,.08);

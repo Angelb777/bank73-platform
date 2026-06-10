@@ -49,6 +49,51 @@ const DisbursementSchema = new Schema({
   appraisalPct: { type: Number, default: null },         // 0..100
 }, { _id: true });
 
+const LoanLineItemSchema = new Schema({
+  disbursementDate: { type: Date, default: null },
+  loanNumber: { type: String, default: '' },
+  disbursementAmount: { type: Number, default: 0 },
+  maturityDate: { type: Date, default: null },
+  amortizedAmount: { type: Number, default: 0 },
+  notes: { type: String, default: '' },
+}, { _id: true, timestamps: true });
+
+const LoanLineSchema = new Schema({
+  name: { type: String, default: 'Linea 1' },
+  entries: { type: [LoanLineItemSchema], default: [] },
+  // Compatibilidad con la primera versión: si existen datos antiguos aquí,
+  // el backend los expone como una partida dentro de entries.
+  disbursementDate: { type: Date, default: null },
+  loanNumber: { type: String, default: '' },
+  disbursementAmount: { type: Number, default: 0 },
+  maturityDate: { type: Date, default: null },
+  amortizedAmount: { type: Number, default: 0 },
+  notes: { type: String, default: '' },
+}, { _id: true, timestamps: true });
+
+const UnitAmortizationSchema = new Schema({
+  unitId: { type: Schema.Types.ObjectId, ref: 'Unit', default: null, index: true },
+  clientName: { type: String, default: '' },
+  lot: { type: String, default: '' },
+  buyerBank: { type: String, default: '' },
+  checkNumber: { type: String, default: '' },
+  checkDate: { type: Date, default: null },
+  checkAmount: { type: Number, default: 0 },
+  checkAmountSource: { type: String, default: 'cpp' },
+  amortizationLine1: { type: Number, default: 0 },
+  amortizationLine2: { type: Number, default: 0 },
+  allocations: {
+    type: [{
+      loanLineId: { type: Schema.Types.ObjectId, default: null },
+      loanLineName: { type: String, default: '' },
+      amount: { type: Number, default: 0 },
+    }],
+    default: []
+  },
+  promoterAmount: { type: Number, default: 0 },
+  notes: { type: String, default: '' },
+}, { _id: true, timestamps: true });
+
 const ProjectFinanceSchema = new Schema({
   project: { type: Schema.Types.ObjectId, ref: 'Project', index: true, unique: true, required: true },
 
@@ -67,6 +112,9 @@ const ProjectFinanceSchema = new Schema({
     planned: { type: [DisbursementSchema], default: [] },
     actual:  { type: [DisbursementSchema], default: [] },
   },
+
+  loanLines: { type: [LoanLineSchema], default: [] },
+  unitAmortizations: { type: [UnitAmortizationSchema], default: [] },
 
 }, { timestamps: true });
 

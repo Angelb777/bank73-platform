@@ -5,6 +5,8 @@ const mongoose = require('mongoose');
 
 const ProjectFinance = require('../models/ProjectFinance');
 const Project = require('../models/Project');
+const Unit = require('../models/Unit');
+const Venta = require('../models/Venta');
 
 const fs   = require('fs');
 const path = require('path');
@@ -44,6 +46,289 @@ const fmtDate = (d) => {
 };
 
 const moneyES = (n) => Number(n || 0).toLocaleString('es-ES');
+
+const cleanDate = (v) => {
+  if (!v) return null;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+function loanLineStatus(line, today = new Date()) {
+  const entries = Array.isArray(line?.entries) && line.entries.length ? line.entries : [line];
+  if (entries.some(entry => loanEntryStatus(entry, today) === 'Vencido')) return 'Vencido';
+  if (entries.some(entry => loanEntryStatus(entry, today) === 'Proximo a vencer')) return 'Proximo a vencer';
+  if (entries.some(entry => loanEntryStatus(entry, today) === 'Sin vencimiento')) return 'Sin vencimiento';
+  const balance = entries.reduce((acc, entry) => acc + Math.max(0, toNum(entry?.disbursementAmount) - toNum(entry?.amortizedAmount)), 0);
+  if (balance <= 0) return 'Amortizado';
+  return 'OK';
+}
+
+function loanEntryStatus(entry, today = new Date()) {
+  const balance = Math.max(0, toNum(entry?.disbursementAmount) - toNum(entry?.amortizedAmount));
+  if (balance <= 0) return 'Amortizado';
+  if (!entry?.maturityDate) return 'Sin vencimiento';
+  const maturity = new Date(entry.maturityDate);
+  maturity.setHours(0, 0, 0, 0);
+  const base = new Date(today);
+  base.setHours(0, 0, 0, 0);
+  const daysLeft = Math.ceil((maturity.getTime() - base.getTime()) / (1000 * 60 * 60 * 24));
+  if (daysLeft < 0) return 'Vencido';
+  if (daysLeft <= 120) return 'Proximo a vencer';
+  return 'OK';
+}
+
+function normalizeLoanEntry(raw = {}) {
+  return {
+    _id: raw._id,
+    disbursementDate: cleanDate(raw.disbursementDate),
+    loanNumber: String(raw.loanNumber || '').trim(),
+    disbursementAmount: toNum(raw.disbursementAmount),
+    maturityDate: cleanDate(raw.maturityDate),
+    amortizedAmount: toNum(raw.amortizedAmount),
+    notes: String(raw.notes || '').trim(),
+  };
+}
+
+function normalizeLoanLine(raw = {}, idx = 0) {
+  const entries = Array.isArray(raw.entries) && raw.entries.length
+    ? raw.entries.map(normalizeLoanEntry)
+    : [normalizeLoanEntry(raw)].filter(e =>
+        e.disbursementDate || e.loanNumber || e.disbursementAmount || e.maturityDate || e.amortizedAmount || e.notes
+      );
+  return {
+    _id: raw._id,
+    name: String(raw.name || `Linea ${idx + 1}`).trim(),
+    entries,
+    notes: String(raw.notes || '').trim(),
+  };
+}
+
+function normalizeUnitAmortization(raw = {}) {
+  const unitId = mongoose.isValidObjectId(raw.unitId) ? raw.unitId : null;
+  const allocations = Array.isArray(raw.allocations) ? raw.allocations.map(a => ({
+    loanLineId: mongoose.isValidObjectId(a.loanLineId) ? a.loanLineId : null,
+    loanLineName: String(a.loanLineName || '').trim(),
+    amount: toNum(a.amount),
+  })).filter(a => a.loanLineId || a.loanLineName || a.amount) : [];
+  return {
+    _id: raw._id,
+    unitId,
+    clientName: String(raw.clientName || '').trim(),
+    lot: String(raw.lot || '').trim(),
+    buyerBank: String(raw.buyerBank || '').trim(),
+    checkNumber: String(raw.checkNumber || '').trim(),
+    checkDate: cleanDate(raw.checkDate),
+    checkAmount: toNum(raw.checkAmount),
+    checkAmountSource: String(raw.checkAmountSource || 'cpp').trim(),
+    amortizationLine1: toNum(raw.amortizationLine1),
+    amortizationLine2: toNum(raw.amortizationLine2),
+    allocations,
+    promoterAmount: toNum(raw.promoterAmount),
+    notes: String(raw.notes || '').trim(),
+  };
+}
+
+function commercialClientName(v = {}) {
+  const full = [
+    v.primerNombre,
+    v.segundoNombre,
+    v.primerApellido,
+    v.segundoApellido,
+    v.apellidoCasada
+  ].filter(Boolean).join(' ').trim();
+  return full || v.clienteNombre || '';
+}
+
+async function getFinanceCommercialUnits(projectId, tenantKey) {
+  const unitFilter = { projectId, deletedAt: null };
+  const ventaFilter = { projectId };
+  if (tenantKey) {
+    unitFilter.tenantKey = tenantKey;
+    ventaFilter.tenantKey = tenantKey;
+  }
+
+  const [units, ventas] = await Promise.all([
+    Unit.find(unitFilter).select('_id manzana lote estado precioLista modelo').sort({ manzana: 1, lote: 1 }).lean(),
+    Venta.find(ventaFilter).select('unitId clienteNombre primerNombre segundoNombre primerApellido segundoApellido apellidoCasada banco valor montoFinanciamientoCPP precioVenta abonoInicial abonoCliente numCPP estatusCPP statusBanco').lean()
+  ]);
+
+  const ventasByUnit = new Map((ventas || []).map(v => [String(v.unitId), v]));
+  return (units || []).map(u => {
+    const venta = ventasByUnit.get(String(u._id)) || {};
+    return {
+      unitId: String(u._id),
+      lot: [u.manzana, u.lote].filter(Boolean).join('-') || u.lote || u.manzana || '',
+      unitLabel: [u.manzana, u.lote].filter(Boolean).join('-') || u.modelo || 'Unidad',
+      commercialStatus: u.estado || '',
+      clientName: commercialClientName(venta),
+      buyerBank: venta.banco || '',
+      cppAmount: toNum(venta.montoFinanciamientoCPP || venta.valor),
+      initialPayment: toNum(venta.abonoInicial || venta.abonoCliente),
+      salePrice: toNum(venta.precioVenta || u.precioLista),
+      financeBaseAmount: toNum(venta.montoFinanciamientoCPP || venta.valor),
+      financeBaseAmountWithInitial: toNum(venta.montoFinanciamientoCPP || venta.valor) + toNum(venta.abonoInicial || venta.abonoCliente),
+      cppNumber: venta.numCPP || '',
+      cppStatus: venta.estatusCPP || venta.statusBanco || '',
+    };
+  });
+}
+
+function buildFinanceControlSummary(doc, project = {}) {
+  const loanLines = (doc.loanLines || []).map((line, idx) => {
+    const plain = line.toObject ? line.toObject() : line;
+    const entriesSource = Array.isArray(plain.entries) && plain.entries.length ? plain.entries : [plain];
+    const entries = entriesSource.map(entry => {
+      const item = normalizeLoanEntry(entry);
+      const balance = Math.max(0, toNum(item.disbursementAmount) - toNum(item.amortizedAmount));
+      return {
+        ...item,
+        balance,
+        status: loanEntryStatus(item),
+      };
+    });
+    const disbursementAmount = entries.reduce((a, e) => a + toNum(e.disbursementAmount), 0);
+    const amortizedAmount = entries.reduce((a, e) => a + toNum(e.amortizedAmount), 0);
+    const balance = Math.max(0, disbursementAmount - amortizedAmount);
+    return {
+      ...plain,
+      name: plain.name || `Linea ${idx + 1}`,
+      entries,
+      disbursementAmount,
+      amortizedAmount,
+      balance,
+      status: loanLineStatus({ entries }),
+    };
+  });
+
+  const unitAmortizations = (doc.unitAmortizations || []).map(item => {
+    const plain = item.toObject ? item.toObject() : item;
+    const allocations = Array.isArray(plain.allocations) ? plain.allocations : [];
+    const allocationsTotal = allocations.reduce((acc, a) => acc + toNum(a.amount), 0);
+    const legacyTotal = toNum(plain.amortizationLine1) + toNum(plain.amortizationLine2);
+    const totalDistributed = (allocations.length ? allocationsTotal : legacyTotal) + toNum(plain.promoterAmount);
+    const difference = toNum(plain.checkAmount) - totalDistributed;
+    return { ...plain, allocations, allocationsTotal, totalDistributed, difference };
+  });
+
+  const allocationsByLine = new Map();
+  for (const unit of unitAmortizations) {
+    let allocations = unit.allocations || [];
+    if (!allocations.length && (unit.amortizationLine1 || unit.amortizationLine2)) {
+      allocations = [
+        loanLines[0] ? { loanLineId: loanLines[0]._id, loanLineName: loanLines[0].name, amount: unit.amortizationLine1 } : null,
+        loanLines[1] ? { loanLineId: loanLines[1]._id, loanLineName: loanLines[1].name, amount: unit.amortizationLine2 } : null,
+      ].filter(Boolean);
+    }
+    for (const allocation of allocations) {
+      const key = String(allocation.loanLineId || allocation.loanLineName || '');
+      if (!key) continue;
+      allocationsByLine.set(key, toNum(allocationsByLine.get(key)) + toNum(allocation.amount));
+    }
+  }
+  loanLines.forEach((line, idx) => {
+    const keys = [String(line._id || ''), line.name || `Linea ${idx + 1}`];
+    const allocatedAmortized = keys.reduce((acc, key) => acc + toNum(allocationsByLine.get(key)), 0);
+    line.allocatedAmortized = allocatedAmortized;
+    line.totalRecovered = toNum(line.amortizedAmount) + allocatedAmortized;
+    line.balanceAfterSales = Math.max(0, toNum(line.disbursementAmount) - line.totalRecovered);
+    if (line.balanceAfterSales <= 0) line.status = 'Amortizado';
+  });
+
+  const totalDisbursed = loanLines.reduce((a, l) => a + toNum(l.disbursementAmount), 0);
+  const totalManualAmortized = loanLines.reduce((a, l) => a + toNum(l.amortizedAmount), 0);
+  const totalAllocatedAmortized = loanLines.reduce((a, l) => a + toNum(l.allocatedAmortized), 0);
+  const totalAmortized = totalManualAmortized + totalAllocatedAmortized;
+  const checkAmountTotal = unitAmortizations.reduce((a, u) => a + toNum(u.checkAmount), 0);
+  const amortizationLine1Total = unitAmortizations.reduce((a, u) => a + toNum(u.amortizationLine1), 0);
+  const amortizationLine2Total = unitAmortizations.reduce((a, u) => a + toNum(u.amortizationLine2), 0);
+  const promoterTotal = unitAmortizations.reduce((a, u) => a + toNum(u.promoterAmount), 0);
+  const loanApproved = toNum(project.loanApproved);
+  const planByPhases = doc.phasesPlanAccumTotals ? doc.phasesPlanAccumTotals() : { uses: 0 };
+  const real = doc.phasesAccumTotals ? doc.phasesAccumTotals() : { uses: 0 };
+
+  return {
+    loanLines,
+    unitAmortizations,
+    totals: {
+      budgetApproved: toNum(project.budgetApproved),
+      loanApproved,
+      totalDisbursed,
+      availableToDisburse: loanApproved - totalDisbursed,
+      totalAmortized,
+      totalManualAmortized,
+      totalAllocatedAmortized,
+      currentDebtBalance: totalDisbursed - totalAmortized,
+      amortizationPct: totalDisbursed > 0 ? totalAmortized / totalDisbursed : 0,
+      upcomingMaturities: loanLines.filter(l => l.status === 'Proximo a vencer').length,
+      overdueMaturities: loanLines.filter(l => l.status === 'Vencido').length,
+      checkAmountTotal,
+      promoterTotal,
+      amortizationLine1Total,
+      amortizationLine2Total,
+      allocationsByLine: Object.fromEntries(allocationsByLine),
+      planVsRealDifference: toNum(real.uses) - toNum(planByPhases.uses),
+    }
+  };
+}
+
+function buildFinanceControlAlerts(control, commercialUnits = []) {
+  const alerts = [];
+  for (const line of control.loanLines || []) {
+    for (const entry of (line.entries || [])) {
+      if (!entry.maturityDate && toNum(entry.disbursementAmount) > 0) {
+        alerts.push({ type: 'missing_maturity', message: `${line.name}: desembolso sin fecha de vencimiento.` });
+      }
+      if (entry.status === 'Proximo a vencer') {
+        const due = new Date(entry.maturityDate);
+        const base = new Date();
+        due.setHours(0, 0, 0, 0);
+        base.setHours(0, 0, 0, 0);
+        const daysLeft = Math.ceil((due.getTime() - base.getTime()) / (1000 * 60 * 60 * 24));
+        alerts.push({
+          type: 'upcoming_maturity',
+          message: `${line.name}: desembolso ${entry.loanNumber || ''} vence en ${daysLeft} dias.`,
+          daysLeft,
+          due: entry.maturityDate,
+          lineName: line.name,
+          loanNumber: entry.loanNumber || '',
+        });
+      }
+      if (entry.status === 'Vencido') {
+        alerts.push({
+          type: 'overdue_maturity',
+          message: `${line.name}: saldo pendiente vencido${entry.loanNumber ? ` (${entry.loanNumber})` : ''}.`,
+          due: entry.maturityDate,
+          lineName: line.name,
+          loanNumber: entry.loanNumber || '',
+        });
+      }
+    }
+  }
+
+  for (const unit of control.unitAmortizations || []) {
+    if (Math.abs(toNum(unit.difference)) > 0.01) {
+      alerts.push({ type: 'unit_unbalanced', message: `Unidad ${unit.lot || unit.clientName || ''}: descuadre entre cheque y distribucion.` });
+    }
+  }
+
+  const financeByUnit = new Set((control.unitAmortizations || []).map(u => String(u.unitId || '')).filter(Boolean));
+  for (const unit of commercialUnits || []) {
+    if (!String(unit.clientName || '').trim()) continue;
+    const soldLike = ['con_cpp', 'tramite_legal_activado', 'escriturado_traspasado', 'vivienda_entregada'].includes(String(unit.commercialStatus || '').toLowerCase());
+    if (soldLike && !financeByUnit.has(String(unit.unitId))) {
+      alerts.push({ type: 'sold_without_finance', message: `Unidad ${unit.unitLabel}: vendida o con CPP sin informacion financiera.` });
+    }
+  }
+
+  if (toNum(control.totals.totalAmortized) > toNum(control.totals.totalDisbursed)) {
+    alerts.push({ type: 'over_amortized', message: 'La amortizacion total supera el monto desembolsado.' });
+  }
+  if (toNum(control.totals.loanApproved) < toNum(control.totals.totalDisbursed)) {
+    alerts.push({ type: 'loan_exceeded', message: 'El loan aprobado es menor que el desembolsado total.' });
+  }
+
+  return alerts;
+}
 
 function resolveLogoPath() {
   const candidates = [
@@ -164,13 +449,69 @@ router.get('/projects/:projectId/finance', async (req, res) => {
       }
     }
 
-    const kpis = doc.kpis();
     const project = await Project.findById(projectId).lean();
+    const kpis = doc.kpis();
+    const commercialUnits = await getFinanceCommercialUnits(projectId, req.tenantKey);
+    const financeControl = buildFinanceControlSummary(doc, project || {});
+    const financeControlAlerts = buildFinanceControlAlerts(financeControl, commercialUnits);
 
-    res.json({ finance: doc, kpis, alerts, project });
+    res.json({
+      finance: doc,
+      kpis,
+      alerts: [...alerts, ...financeControlAlerts],
+      project,
+      commercialUnits,
+      financeControl
+    });
   } catch (err) {
     console.error('GET finance error', err);
     res.status(500).json({ error: 'Error al obtener finanzas' });
+  }
+});
+
+router.put('/projects/:projectId/finance/loan-lines', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!mongoose.isValidObjectId(projectId)) {
+      return res.status(400).json({ error: 'projectId invalido' });
+    }
+
+    const doc = await getOrCreate(projectId);
+    const lines = Array.isArray(req.body?.loanLines) ? req.body.loanLines : [];
+    doc.loanLines = lines.map(normalizeLoanLine);
+    await doc.save();
+
+    const project = await Project.findById(projectId).lean();
+    const control = buildFinanceControlSummary(doc, project || {});
+    const commercialUnits = await getFinanceCommercialUnits(projectId, req.tenantKey);
+    console.log('[FINANCE] loan lines saved', { projectId, count: doc.loanLines.length });
+    res.json({ ok: true, financeControl: control, alerts: buildFinanceControlAlerts(control, commercialUnits) });
+  } catch (err) {
+    console.error('PUT finance loan-lines error', err);
+    res.status(500).json({ error: 'Error al guardar lineas de prestamo' });
+  }
+});
+
+router.put('/projects/:projectId/finance/unit-amortizations', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!mongoose.isValidObjectId(projectId)) {
+      return res.status(400).json({ error: 'projectId invalido' });
+    }
+
+    const doc = await getOrCreate(projectId);
+    const items = Array.isArray(req.body?.unitAmortizations) ? req.body.unitAmortizations : [];
+    doc.unitAmortizations = items.map(normalizeUnitAmortization);
+    await doc.save();
+
+    const project = await Project.findById(projectId).lean();
+    const control = buildFinanceControlSummary(doc, project || {});
+    const commercialUnits = await getFinanceCommercialUnits(projectId, req.tenantKey);
+    console.log('[FINANCE] unit amortizations saved', { projectId, count: doc.unitAmortizations.length });
+    res.json({ ok: true, financeControl: control, alerts: buildFinanceControlAlerts(control, commercialUnits) });
+  } catch (err) {
+    console.error('PUT finance unit-amortizations error', err);
+    res.status(500).json({ error: 'Error al guardar amortizaciones por unidad' });
   }
 });
 

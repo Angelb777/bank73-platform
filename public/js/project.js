@@ -3255,18 +3255,26 @@ renderChartSummary(
   }
 
   // Alertas / conclusiones
-  const isActiveDoc = (a) => String(a?.status || '').toUpperCase() === 'ACTIVE';
+  const isActiveDoc = (a) => !a?.status || String(a?.status || '').toUpperCase() === 'ACTIVE';
   const alertsDiv = document.getElementById('summaryAlerts');
   if (alertsDiv) {
     alertsDiv.innerHTML = (alerts?.expiries || []).filter(isActiveDoc)
       .sort((a, b) => new Date(a.due || 0) - new Date(b.due || 0))
       .slice(0, 10)
-      .map(a =>
-        `<div class="row space-between small" style="padding:6px 8px;border:1px solid #eee;border-radius:8px;margin-bottom:6px;">
-          <div>${a.type} — <b>${a.name || a.bank || a.institution || ''}</b></div>
-          <div>${a.due ? new Date(a.due).toISOString().slice(0, 10) : '—'}</div>
-        </div>`
-      )
+      .map(a => {
+        const due = a.due ? new Date(a.due).toISOString().slice(0, 10) : '—';
+        const days = Number(a.daysLeft);
+        const daysText = Number.isFinite(days)
+          ? days < 0
+            ? `Vencido hace ${Math.abs(days)} dias`
+            : `Vence en ${days} dias`
+          : due;
+        const extra = a.balance ? ` · Saldo ${formatMoney(a.balance)}` : '';
+        return `<div class="row space-between small" style="padding:8px 10px;border:1px solid rgba(148,163,184,.25);border-radius:10px;margin-bottom:7px;">
+          <div>${a.type} — <b>${a.name || a.bank || a.institution || ''}</b><span class="muted">${extra}</span></div>
+          <div>${daysText}</div>
+        </div>`;
+      })
       .join('') || '<div class="small muted">Sin vencimientos próximos</div>';
   }
 
@@ -4616,6 +4624,8 @@ await API.put(`/api/checklists/${clId}`, payload);
 // ==========================
 let FINANCE = null;
 let FINANCE_KPIS = null;
+let FINANCE_CONTROL = null;
+let FINANCE_COMMERCIAL_UNITS = [];
 
 const fmt = (n) => (Number(n || 0)).toLocaleString('es-ES');
 const sumItems = (arr = []) => (arr || []).reduce((a, it) => a + (Number(it?.amount) || 0), 0);
@@ -4659,12 +4669,699 @@ function renderFinanceAlerts(alerts) {
   const box = document.getElementById('financeAlerts');
   if (!box) return;
   box.innerHTML = '';
-  (alerts || []).forEach(a => {
-    const div = document.createElement('div');
-    div.className = 'alert warn';
-    div.textContent = a.message;
-    box.appendChild(div);
+  const section = document.getElementById('financeAlertsSection');
+  if (section) section.hidden = true;
+}
+
+function financeMoney(n) {
+  return `$${fmt(Math.round(Number(n || 0)))}`;
+}
+
+function financeDateInput(v) {
+  if (!v) return '';
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+}
+
+function financeLineStatus(line) {
+  const entries = Array.isArray(line?.entries) && line.entries.length ? line.entries : [line];
+  const statuses = entries.map(financeEntryStatus).map(s => s.key);
+  if (statuses.includes('overdue')) return { key: 'overdue', label: 'Vencido' };
+  if (statuses.includes('upcoming')) return { key: 'upcoming', label: 'Proximo a vencer' };
+  if (statuses.includes('missing')) return { key: 'missing', label: 'Sin vencimiento' };
+  const balance = entries.reduce((acc, entry) => acc + Math.max(0, numOr0(entry?.disbursementAmount) - numOr0(entry?.amortizedAmount)), 0);
+  if (balance <= 0) return { key: 'amortized', label: 'Amortizado' };
+  return { key: 'ok', label: 'OK' };
+}
+
+function financeEntryStatus(line) {
+  const balance = Math.max(0, numOr0(line?.disbursementAmount) - numOr0(line?.amortizedAmount));
+  if (balance <= 0) return { key: 'amortized', label: 'Amortizado' };
+  if (!line?.maturityDate) return { key: 'missing', label: 'Sin vencimiento' };
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const maturity = new Date(line.maturityDate);
+  maturity.setHours(0, 0, 0, 0);
+  const daysLeft = Math.ceil((maturity.getTime() - today.getTime()) / 86400000);
+  if (daysLeft < 0) return { key: 'overdue', label: `Vencido hace ${Math.abs(daysLeft)} dias` };
+  if (daysLeft <= 120) return { key: 'upcoming', label: `Vence en ${daysLeft} dias` };
+  return { key: 'ok', label: 'OK' };
+}
+
+function collectFinanceLoanLines() {
+  return Array.from(document.querySelectorAll('.finance-loan-line-card[data-line-card]')).map((card, idx) => ({
+    _id: card.dataset.id && !card.dataset.id.startsWith('new-') ? card.dataset.id : undefined,
+    name: card.querySelector('[data-line-field="name"]')?.value || `Linea ${idx + 1}`,
+    notes: card.querySelector('[data-line-field="notes"]')?.value || '',
+    entries: Array.from(card.querySelectorAll('[data-entry-row]')).map(row => ({
+      _id: row.dataset.entryId && !row.dataset.entryId.startsWith('new-') ? row.dataset.entryId : undefined,
+      disbursementDate: row.querySelector('[data-field="disbursementDate"]')?.value || null,
+      loanNumber: row.querySelector('[data-field="loanNumber"]')?.value || '',
+      disbursementAmount: numOr0(row.querySelector('[data-field="disbursementAmount"]')?.value),
+      maturityDate: row.querySelector('[data-field="maturityDate"]')?.value || null,
+      amortizedAmount: numOr0(row.querySelector('[data-field="amortizedAmount"]')?.value),
+      notes: row.querySelector('[data-field="notes"]')?.value || '',
+    })).filter(entry =>
+      entry.disbursementDate || entry.loanNumber || entry.disbursementAmount ||
+      entry.maturityDate || entry.amortizedAmount || entry.notes
+    ),
+  }));
+}
+
+function readFinanceUnitCards() {
+  return Array.from(document.querySelectorAll('.finance-unit-card[data-unit-card]')).map(card => ({
+    _id: card.dataset.financeId && !card.dataset.financeId.startsWith('new-') ? card.dataset.financeId : undefined,
+    unitId: card.dataset.unitId || undefined,
+    clientName: card.querySelector('[data-field="clientName"]')?.value || '',
+    lot: card.querySelector('[data-field="lot"]')?.value || '',
+    buyerBank: card.querySelector('[data-field="buyerBank"]')?.value || '',
+    checkNumber: card.querySelector('[data-field="checkNumber"]')?.value || '',
+    checkDate: card.querySelector('[data-field="checkDate"]')?.value || null,
+    checkAmount: numOr0(card.querySelector('[data-field="checkAmount"]')?.value),
+    checkAmountSource: card.querySelector('[data-field="checkAmountSource"]')?.value || 'cpp',
+    amortizationLine1: numOr0(card.querySelector('[data-field="amortizationLine1"]')?.value),
+    amortizationLine2: numOr0(card.querySelector('[data-field="amortizationLine2"]')?.value),
+    allocations: Array.from(card.querySelectorAll('[data-allocation-line]')).map(row => ({
+      loanLineId: row.dataset.loanLineId || '',
+      loanLineName: row.dataset.loanLineName || '',
+      amount: numOr0(row.querySelector('[data-field="allocationAmount"]')?.value),
+    })).filter(a => a.loanLineId || a.loanLineName || a.amount),
+    promoterAmount: numOr0(card.querySelector('[data-field="promoterAmount"]')?.value),
+    notes: card.querySelector('[data-field="notes"]')?.value || '',
+  }));
+}
+
+function collectFinanceUnitAmortizations() {
+  const commercialByUnit = new Map((FINANCE_COMMERCIAL_UNITS || []).map(u => [String(u.unitId || ''), u]));
+  return readFinanceUnitCards().map(item => {
+    const base = commercialByUnit.get(String(item.unitId || '')) || {};
+    const hasExistingFinance = !!item._id;
+    const allocationTotal = (item.allocations || []).reduce((acc, a) => acc + numOr0(a.amount), 0);
+    const hasDistribution = item.checkNumber || item.checkDate || allocationTotal || item.amortizationLine1 || item.amortizationLine2 || item.promoterAmount || item.notes;
+    const hasOverrides =
+      String(item.clientName || '') !== String(base.clientName || '') ||
+      String(item.lot || '') !== String(base.lot || base.unitLabel || '') ||
+      String(item.buyerBank || '') !== String(base.buyerBank || '') ||
+      Math.abs(numOr0(item.checkAmount) - numOr0(base.cppAmount)) > 0.01;
+    return (hasExistingFinance || hasDistribution || hasOverrides) ? item : null;
+  }).filter(Boolean);
+}
+
+function computeFinanceControlTotals() {
+  const loanLines = collectFinanceLoanLines().length ? collectFinanceLoanLines() : (FINANCE_CONTROL?.loanLines || []);
+  const unitAmortizations = currentFinanceUnitAmortizations();
+  const totalDisbursed = loanLines.reduce((a, l) => a + financeLoanLineTotals(l).disbursed, 0);
+  const totalManualAmortized = loanLines.reduce((a, l) => a + financeLoanLineTotals(l).amortized, 0);
+  const totalAllocatedAmortized = unitAmortizations.reduce((a, u) =>
+    a + (u.allocations || []).reduce((acc, allocation) => acc + numOr0(allocation.amount), 0), 0);
+  const totalAmortized = totalManualAmortized + totalAllocatedAmortized;
+  const loanApproved = numOr0(document.getElementById('finLoanApproved')?.value || FINANCE_CONTROL?.totals?.loanApproved);
+  const budgetApproved = numOr0(document.getElementById('finBudgetApproved')?.value || FINANCE_CONTROL?.totals?.budgetApproved);
+  const planUses = (FINANCE?.phases || []).reduce((a, ph) => a + sumItems(ph.planUses), 0);
+  const realUses = (FINANCE?.phases || []).reduce((a, ph) => a + sumItems(ph.uses), 0);
+
+  return {
+    budgetApproved,
+    loanApproved,
+    totalDisbursed,
+    availableToDisburse: loanApproved - totalDisbursed,
+    totalAmortized,
+    currentDebtBalance: totalDisbursed - totalAmortized,
+    amortizationPct: totalDisbursed > 0 ? totalAmortized / totalDisbursed : 0,
+    upcomingMaturities: loanLines.filter(l => financeLineStatus(l).key === 'upcoming').length,
+    overdueMaturities: loanLines.filter(l => financeLineStatus(l).key === 'overdue').length,
+    checkAmountTotal: unitAmortizations.reduce((a, u) => a + numOr0(u.checkAmount), 0),
+    promoterTotal: unitAmortizations.reduce((a, u) => a + numOr0(u.promoterAmount), 0),
+    totalManualAmortized,
+    totalAllocatedAmortized,
+    planVsRealDifference: realUses - planUses,
+  };
+}
+
+function financeLoanLineTotals(line = {}) {
+  const entries = Array.isArray(line.entries) && line.entries.length ? line.entries : [line];
+  const disbursed = entries.reduce((a, entry) => a + numOr0(entry.disbursementAmount), 0);
+  const amortized = entries.reduce((a, entry) => a + numOr0(entry.amortizedAmount), 0);
+  const allocated = financeAllocatedToLine(line);
+  const recovered = amortized + allocated;
+  return {
+    disbursed,
+    amortized,
+    allocated,
+    recovered,
+    balance: Math.max(0, disbursed - recovered),
+  };
+}
+
+function financeAllocatedToLine(line = {}) {
+  const lineId = String(line._id || '');
+  const lineName = String(line.name || '');
+  return currentFinanceUnitAmortizations().reduce((acc, unit) => {
+    return acc + (unit.allocations || []).reduce((sum, allocation) => {
+      const sameId = lineId && String(allocation.loanLineId || '') === lineId;
+      const sameName = !lineId && lineName && String(allocation.loanLineName || '') === lineName;
+      return sum + (sameId || sameName ? numOr0(allocation.amount) : 0);
+    }, 0);
+  }, 0);
+}
+
+function financeSalesAllocationsForLine(line = {}) {
+  const lineId = String(line._id || '');
+  const lineName = String(line.name || '');
+  return currentFinanceUnitAmortizations().flatMap(unit => {
+    return (unit.allocations || []).map(allocation => {
+      const sameId = lineId && String(allocation.loanLineId || '') === lineId;
+      const sameName = !lineId && lineName && String(allocation.loanLineName || '') === lineName;
+      if (!sameId && !sameName) return null;
+      if (numOr0(allocation.amount) <= 0) return null;
+      return {
+        unitId: unit.unitId || '',
+        financeId: unit._id || '',
+        lot: unit.lot || '',
+        clientName: unit.clientName || '',
+        checkNumber: unit.checkNumber || '',
+        checkDate: unit.checkDate || '',
+        amount: numOr0(allocation.amount),
+      };
+    }).filter(Boolean);
   });
+}
+
+function financeSortDateValue(value) {
+  if (!value) return Number.MAX_SAFE_INTEGER;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? Number.MAX_SAFE_INTEGER : d.getTime();
+}
+
+function financeIdTimeValue(id) {
+  const raw = String(id || '');
+  if (/^[a-f\d]{24}$/i.test(raw)) return parseInt(raw.slice(0, 8), 16) * 1000;
+  const generated = raw.match(/(?:new|new-entry)-(\d+)/);
+  if (generated) return Number(generated[1]);
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function financeMovementSortValue(row) {
+  const dateValue = row.type === 'manual'
+    ? financeSortDateValue(row.entry?.disbursementDate)
+    : financeSortDateValue(row.sale?.checkDate);
+  if (dateValue !== Number.MAX_SAFE_INTEGER) return dateValue;
+  const idValue = row.type === 'manual'
+    ? financeIdTimeValue(row.entry?._id)
+    : financeIdTimeValue(row.sale?.financeId || row.sale?.unitId);
+  if (idValue !== Number.MAX_SAFE_INTEGER) return idValue;
+  return Number.MAX_SAFE_INTEGER - 100000 + (row.sourceOrder || 0);
+}
+
+function currentFinanceUnitAmortizations() {
+  const cards = document.querySelectorAll('#financeUnitAmortizations .finance-unit-card');
+  return cards.length ? readFinanceUnitCards() : mergedFinanceUnitAmortizations();
+}
+
+function setFinanceButtonState(btn, label, isLoading = false) {
+  if (!btn) return;
+  btn.textContent = label;
+  btn.disabled = !!isLoading;
+  btn.classList.toggle('is-saving', !!isLoading);
+}
+
+function waitFinanceFeedback(ms = 350) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function renderFinanceLoanGlobalSummary(lines = collectFinanceLoanLines()) {
+  const box = document.getElementById('financeLoanGlobalSummary');
+  if (!box) return;
+  const totals = lines.reduce((acc, line) => {
+    const t = financeLoanLineTotals(line);
+    acc.disbursed += t.disbursed;
+    acc.amortized += t.amortized;
+    acc.balance += t.balance;
+    return acc;
+  }, { disbursed: 0, amortized: 0, balance: 0 });
+  const allocated = lines.reduce((a, l) => a + financeLoanLineTotals(l).allocated, 0);
+  const totalAmortized = totals.amortized + allocated;
+  box.innerHTML = [
+    ['Total desembolsado', financeMoney(totals.disbursed)],
+    ['Amortizado manual', financeMoney(totals.amortized)],
+    ['Amortizado por ventas', financeMoney(allocated)],
+    ['Amortización total', financeMoney(totalAmortized)],
+    ['Saldo por pagar', financeMoney(totals.balance)],
+  ].map(([label, value]) => `
+    <article class="finance-loan-summary-card">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </article>
+  `).join('');
+}
+
+function renderFinanceControlKpis(totals = computeFinanceControlTotals()) {
+  const box = document.getElementById('financeControlKpis');
+  if (!box) return;
+  console.log('[Finance] calculo KPIs', totals);
+  const cards = [
+    ['Budget aprobado', financeMoney(totals.budgetApproved), 'budget'],
+    ['Loan aprobado', financeMoney(totals.loanApproved), 'loan'],
+    ['Desembolsado total', financeMoney(totals.totalDisbursed), 'disbursed'],
+    ['Disponible por desembolsar', financeMoney(totals.availableToDisburse), totals.availableToDisburse < 0 ? 'danger' : 'ok'],
+    ['Amortización total', financeMoney(totals.totalAmortized), 'ok'],
+    ['Saldo por pagar', financeMoney(totals.currentDebtBalance), 'debt'],
+    ['% amortizacion', `${((totals.amortizationPct || 0) * 100).toFixed(1)}%`, 'ok'],
+    ['Vencimientos proximos', fmt(totals.upcomingMaturities), totals.upcomingMaturities ? 'warn' : 'ok'],
+    ['Vencimientos vencidos', fmt(totals.overdueMaturities), totals.overdueMaturities ? 'danger' : 'ok'],
+    ['Total valor base / cheques', financeMoney(totals.checkAmountTotal), 'cpp'],
+    ['Total destinado a promotor', financeMoney(totals.promoterTotal), 'promoter'],
+    ['Amortizacion manual', financeMoney(totals.totalManualAmortized), 'line1'],
+    ['Amortizacion por ventas', financeMoney(totals.totalAllocatedAmortized), 'line2'],
+    ['Diferencia Plan vs Real', financeMoney(totals.planVsRealDifference), Math.abs(totals.planVsRealDifference) > 0 ? 'warn' : 'ok'],
+  ];
+  box.innerHTML = cards.map(([label, value, tone]) => `
+    <article class="finance-kpi-card is-${tone}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </article>
+  `).join('');
+}
+
+function renderFinanceLoanLinesChart(lines = collectFinanceLoanLines()) {
+  const el = document.getElementById('financeLoanLinesChart');
+  if (!el || typeof Chart === 'undefined') return;
+  const safeLines = lines || [];
+  const labels = safeLines.map((line, idx) => line.name || `Linea ${idx + 1}`);
+  const totals = safeLines.map(line => financeLoanLineTotals(line));
+  const existingChart = Chart.getChart?.(el) || el._chart;
+  if (existingChart && typeof existingChart.destroy === 'function') existingChart.destroy();
+  if (!labels.length) {
+    const ctx = el.getContext('2d');
+    ctx.clearRect(0, 0, el.width, el.height);
+    return;
+  }
+  const chart = new Chart(el.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Amortizado total',
+          data: totals.map(t => t.recovered),
+          backgroundColor: 'rgba(34,197,94,.78)',
+          borderColor: 'rgba(34,197,94,1)',
+          borderWidth: 1,
+          borderRadius: 6,
+        },
+        {
+          label: 'Saldo por pagar',
+          data: totals.map(t => t.balance),
+          backgroundColor: 'rgba(59,130,246,.72)',
+          borderColor: 'rgba(59,130,246,1)',
+          borderWidth: 1,
+          borderRadius: 6,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#94a3b8' } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: ${financeMoney(ctx.raw)}`,
+            footer: (items) => {
+              const idx = items?.[0]?.dataIndex ?? 0;
+              return `Desembolsado: ${financeMoney(totals[idx]?.disbursed || 0)}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { stacked: false, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,.10)' } },
+        y: { stacked: false, beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,.12)' } },
+      },
+    },
+  });
+  el._chart = chart;
+}
+
+function renderFinanceLoanLines(lines = []) {
+  const body = document.getElementById('financeLoanLinesBody');
+  if (!body) return;
+  const safeLines = (lines || []).map((line, idx) => ({
+    ...line,
+    entries: Array.isArray(line.entries) && line.entries.length ? line.entries : [{
+      _id: line._id ? `legacy-${line._id}` : `new-entry-${Date.now()}-${idx}`,
+      disbursementDate: line.disbursementDate || '',
+      loanNumber: line.loanNumber || '',
+      disbursementAmount: numOr0(line.disbursementAmount),
+      maturityDate: line.maturityDate || '',
+      amortizedAmount: numOr0(line.amortizedAmount),
+      notes: line.notes || '',
+    }]
+  }));
+  body.innerHTML = safeLines.map((line, idx) => {
+    const totals = financeLoanLineTotals(line);
+    const status = totals.balance <= 0 ? { key: 'amortized', label: 'Amortizado' } : financeLineStatus(line);
+    const salesAllocations = financeSalesAllocationsForLine(line);
+    const combinedRows = [
+      ...line.entries.map((entry, entryIdx) => ({ type: 'manual', entry, entryIdx, sourceOrder: entryIdx })),
+      ...salesAllocations.map((sale, saleIdx) => ({ type: 'sale', sale, saleIdx, sourceOrder: line.entries.length + saleIdx }))
+    ].sort((a, b) => {
+      const ad = financeMovementSortValue(a);
+      const bd = financeMovementSortValue(b);
+      if (ad !== bd) return ad - bd;
+      return (a.sourceOrder || 0) - (b.sourceOrder || 0);
+    });
+    const rowId = line._id || `new-${Date.now()}-${idx}`;
+    return `
+      <article class="finance-loan-line-card" data-line-card data-id="${escapeHtml(rowId)}">
+        <div class="finance-loan-line-head">
+          <label>
+            <span>Nombre de línea</span>
+            <input data-line-field="name" value="${escapeHtml(line.name || `Linea ${idx + 1}`)}">
+          </label>
+          <div class="finance-loan-line-metrics">
+            <span>Desembolsado <b>${financeMoney(totals.disbursed)}</b></span>
+            <span>Manual <b>${financeMoney(totals.amortized)}</b></span>
+            <span>Ventas <b>${financeMoney(totals.allocated)}</b></span>
+            <span>Total amort. <b>${financeMoney(totals.recovered)}</b></span>
+            <span>Saldo por pagar <b>${financeMoney(totals.balance)}</b></span>
+            <span class="finance-status is-${status.key}">${status.label}</span>
+          </div>
+          <div class="finance-inline-actions">
+            <button class="btn btn-xs" type="button" data-finance-add-entry>+ Partida</button>
+            <button class="btn btn-xs" type="button" data-finance-save-line>Guardar</button>
+            <button class="btn btn-danger btn-xs" type="button" data-finance-remove-line>Eliminar</button>
+          </div>
+        </div>
+        <div class="finance-loan-line-notes">
+          <input data-line-field="notes" value="${escapeHtml(line.notes || '')}" placeholder="Notas de la línea">
+        </div>
+        <div class="finance-table-wrap">
+          <table class="finance-loan-table">
+            <thead>
+              <tr>
+                <th>Fecha desembolso</th>
+                <th>No. préstamo</th>
+                <th>Monto desembolso</th>
+                <th>Fecha vencimiento</th>
+                <th>Monto amortizado</th>
+                <th>Saldo</th>
+                <th>Estado</th>
+                <th>Notas</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${combinedRows.map(row => {
+                if (row.type === 'sale') {
+                  const sale = row.sale;
+                  return `
+                    <tr class="finance-sale-entry-row">
+                      <td><input value="${escapeHtml(financeDateInput(sale.checkDate) || '-')}" disabled></td>
+                      <td><input value="${escapeHtml(sale.checkNumber ? `Cheque ${sale.checkNumber}` : sale.lot || 'Venta')}" disabled></td>
+                      <td><input value="0" disabled></td>
+                      <td><input value="-" disabled></td>
+                      <td><input value="${numOr0(sale.amount)}" disabled></td>
+                      <td class="finance-balance">-</td>
+                      <td><span class="finance-status is-ok">Venta</span></td>
+                      <td><input value="${escapeHtml(`${sale.lot || 'Unidad'} · ${sale.clientName || 'Cliente'}`)}" disabled></td>
+                      <td><span class="small muted">Desde unidad</span></td>
+                    </tr>
+                  `;
+                }
+                const entry = row.entry;
+                const entryIdx = row.entryIdx;
+                const entryBalance = Math.max(0, numOr0(entry.disbursementAmount) - numOr0(entry.amortizedAmount));
+                const entryStatus = financeEntryStatus(entry);
+                return `
+                  <tr data-entry-row data-entry-id="${escapeHtml(entry._id || `new-entry-${Date.now()}-${entryIdx}`)}">
+                    <td><input data-field="disbursementDate" type="date" value="${financeDateInput(entry.disbursementDate)}"></td>
+                    <td><input data-field="loanNumber" value="${escapeHtml(entry.loanNumber || '')}"></td>
+                    <td><input data-field="disbursementAmount" type="number" min="0" value="${numOr0(entry.disbursementAmount)}"></td>
+                    <td><input data-field="maturityDate" type="date" value="${financeDateInput(entry.maturityDate)}"></td>
+                    <td><input data-field="amortizedAmount" type="number" min="0" value="${numOr0(entry.amortizedAmount)}"></td>
+                    <td class="finance-balance">${financeMoney(entryBalance)}</td>
+                    <td><span class="finance-status is-${entryStatus.key}">${entryStatus.label}</span></td>
+                    <td><input data-field="notes" value="${escapeHtml(entry.notes || '')}"></td>
+                    <td><button class="btn btn-danger btn-xs" type="button" data-finance-remove-entry>Quitar</button></td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </article>
+    `;
+  }).join('') || `<div class="small muted">Sin lineas registradas.</div>`;
+  document.getElementById('financeLoanLinesSummary').textContent =
+    `${safeLines.length} linea(s) - saldo ${financeMoney(safeLines.reduce((a, l) => a + financeLoanLineTotals(l).balance, 0))}`;
+  renderFinanceLoanGlobalSummary(safeLines);
+  renderFinanceLoanLinesChart(safeLines);
+  renderFinanceControlKpis();
+}
+
+function mergedFinanceUnitAmortizations() {
+  const saved = FINANCE_CONTROL?.unitAmortizations || [];
+  const savedByUnit = new Map(saved.filter(x => x.unitId).map(x => [String(x.unitId), x]));
+  const out = (FINANCE_COMMERCIAL_UNITS || []).map((unit, idx) => {
+    const savedItem = savedByUnit.get(String(unit.unitId)) || {};
+    if (!savedItem._id && !String(unit.clientName || '').trim()) return null;
+    const savedSource = savedItem.checkAmountSource || 'cpp';
+    const baseCheckAmount = savedSource === 'cpp_initial'
+      ? numOr0(unit.financeBaseAmountWithInitial)
+      : savedSource === 'sale_price'
+        ? numOr0(unit.salePrice)
+        : numOr0(unit.cppAmount || unit.financeBaseAmount);
+    const lines = financeLoanLineOptions();
+    const legacyAllocations = [];
+    if ((!savedItem.allocations || !savedItem.allocations.length) && (savedItem.amortizationLine1 || savedItem.amortizationLine2)) {
+      if (lines[0] && savedItem.amortizationLine1) legacyAllocations.push({ loanLineId: lines[0].id, loanLineName: lines[0].name, amount: savedItem.amortizationLine1 });
+      if (lines[1] && savedItem.amortizationLine2) legacyAllocations.push({ loanLineId: lines[1].id, loanLineName: lines[1].name, amount: savedItem.amortizationLine2 });
+    }
+    return {
+      _id: savedItem._id || `new-${idx}`,
+      unitId: unit.unitId,
+      clientName: savedItem.clientName || unit.clientName || '',
+      lot: savedItem.lot || unit.lot || unit.unitLabel || '',
+      buyerBank: savedItem.buyerBank || unit.buyerBank || '',
+      checkNumber: savedItem.checkNumber || '',
+      checkDate: savedItem.checkDate || '',
+      checkAmount: savedItem.checkAmount || baseCheckAmount || 0,
+      checkAmountSource: savedSource,
+      cppAmount: unit.cppAmount || 0,
+      initialPayment: unit.initialPayment || 0,
+      salePrice: unit.salePrice || 0,
+      amortizationLine1: savedItem.amortizationLine1 || 0,
+      amortizationLine2: savedItem.amortizationLine2 || 0,
+      allocations: (savedItem.allocations && savedItem.allocations.length) ? savedItem.allocations : legacyAllocations,
+      promoterAmount: savedItem.promoterAmount || 0,
+      notes: savedItem.notes || '',
+      commercialStatus: unit.commercialStatus || '',
+      cppStatus: unit.cppStatus || '',
+    };
+  }).filter(Boolean);
+  saved.filter(x => !x.unitId).forEach((item, idx) => out.push({ ...item, _id: item._id || `manual-${idx}` }));
+  return out;
+}
+
+function financeUnitState(item) {
+  const hasCore = item.clientName || item.lot || item.buyerBank || item.checkAmount;
+  const allocationTotal = (item.allocations || []).reduce((acc, a) => acc + numOr0(a.amount), 0);
+  const legacyTotal = numOr0(item.amortizationLine1) + numOr0(item.amortizationLine2);
+  const distributed = (item.allocations?.length ? allocationTotal : legacyTotal) + numOr0(item.promoterAmount);
+  const diff = numOr0(item.checkAmount) - distributed;
+  if (!hasCore || !numOr0(item.checkAmount)) return { key: 'pending', label: 'Pendiente', diff, distributed };
+  if (Math.abs(diff) > 0.01) return { key: 'warn', label: 'Descuadre', diff, distributed };
+  return { key: 'ok', label: 'OK', diff, distributed };
+}
+
+function financeLoanLineOptions() {
+  const domLines = collectFinanceLoanLines();
+  const lines = domLines.length ? domLines : (FINANCE_CONTROL?.loanLines || []);
+  return lines
+    .filter(line => String(line.name || '').trim())
+    .map((line, idx) => ({
+      id: line._id || '',
+      name: line.name || `Linea ${idx + 1}`,
+    }));
+}
+
+function renderFinanceAllocationInputs(item) {
+  const lines = financeLoanLineOptions();
+  if (!lines.length) {
+    return '<div class="finance-field-wide small muted">Crea primero una linea de prestamo para asignar amortizaciones.</div>';
+  }
+  const allocationByKey = new Map((item.allocations || []).map(a => [String(a.loanLineId || a.loanLineName || ''), a]));
+  return lines.map(line => {
+    const key = line.id || line.name;
+    const saved = allocationByKey.get(String(key)) || allocationByKey.get(String(line.name)) || {};
+    return `
+      <label data-allocation-line data-loan-line-id="${escapeHtml(line.id)}" data-loan-line-name="${escapeHtml(line.name)}">
+        Amortizacion ${escapeHtml(line.name)}
+        <input data-field="allocationAmount" type="number" min="0" value="${numOr0(saved.amount)}">
+      </label>
+    `;
+  }).join('');
+}
+
+function financeCheckAmountForSource(item, source) {
+  if (source === 'cpp_initial') return numOr0(item.cppAmount) + numOr0(item.initialPayment);
+  if (source === 'sale_price') return numOr0(item.salePrice);
+  return numOr0(item.cppAmount);
+}
+
+function renderFinanceUnitAmortizations() {
+  const box = document.getElementById('financeUnitAmortizations');
+  if (!box) return;
+  const items = mergedFinanceUnitAmortizations();
+  console.log('[Finance] carga unidades comerciales', { count: items.length });
+  renderFinanceUnitGlobalSummary(items);
+  box.innerHTML = items.map(item => {
+    const state = financeUnitState(item);
+    const commercialStateClass = normalizeUnitEstadoFrontend(item.commercialStatus || '');
+    return `
+      <details class="finance-unit-card estado-${escapeHtml(commercialStateClass)}" data-unit-card data-finance-id="${escapeHtml(item._id || '')}" data-unit-id="${escapeHtml(item.unitId || '')}" data-cpp-amount="${numOr0(item.cppAmount)}" data-initial-payment="${numOr0(item.initialPayment)}" data-sale-price="${numOr0(item.salePrice)}">
+        <summary>
+          <div>
+            <strong>${escapeHtml(item.lot || 'Unidad')}</strong>
+            <span>${escapeHtml(item.clientName || 'Sin cliente')}</span>
+          </div>
+          <div class="finance-unit-money">
+            <b>${financeMoney(item.checkAmount)}</b>
+            <span class="finance-status is-${state.key}">${state.label}</span>
+          </div>
+        </summary>
+        <div class="finance-unit-fields">
+          <label>Nombre del cliente<input data-field="clientName" value="${escapeHtml(item.clientName || '')}"></label>
+          <label>Lote / unidad<input data-field="lot" value="${escapeHtml(item.lot || '')}"></label>
+          <label>Banco comprador<input data-field="buyerBank" value="${escapeHtml(item.buyerBank || '')}"></label>
+          <label>No. cheque<input data-field="checkNumber" value="${escapeHtml(item.checkNumber || '')}"></label>
+          <label>Base valor
+            <select data-field="checkAmountSource">
+              <option value="cpp" ${item.checkAmountSource === 'cpp' ? 'selected' : ''}>CPP</option>
+              <option value="cpp_initial" ${item.checkAmountSource === 'cpp_initial' ? 'selected' : ''}>CPP + abono inicial</option>
+              <option value="sale_price" ${item.checkAmountSource === 'sale_price' ? 'selected' : ''}>Precio venta</option>
+            </select>
+          </label>
+          <label>Valor cheque / base<input data-field="checkAmount" type="number" min="0" value="${numOr0(item.checkAmount)}"></label>
+          <label>Fecha cheque<input data-field="checkDate" type="date" value="${financeDateInput(item.checkDate)}"></label>
+          <div class="finance-field-wide finance-commercial-base">
+            CPP: <b>${financeMoney(item.cppAmount)}</b> · Abono inicial: <b>${financeMoney(item.initialPayment)}</b> · Precio venta: <b>${financeMoney(item.salePrice)}</b>
+          </div>
+          ${renderFinanceAllocationInputs(item)}
+          <label>Promotor<input data-field="promoterAmount" type="number" min="0" value="${numOr0(item.promoterAmount)}"></label>
+          <label class="finance-field-wide">Notas<input data-field="notes" value="${escapeHtml(item.notes || '')}"></label>
+        </div>
+        <div class="finance-unit-footer">
+          <span>Total distribuido: <b data-unit-distributed>${financeMoney(state.distributed)}</b></span>
+          <span>Diferencia: <b data-unit-difference>${financeMoney(state.diff)}</b></span>
+          <button class="btn btn-xs" type="button" data-finance-save-unit>Guardar</button>
+          <button class="btn btn-ghost btn-xs" type="button" data-finance-reset-unit>Limpiar</button>
+        </div>
+      </details>
+    `;
+  }).join('') || '<div class="small muted">No hay unidades comerciales cargadas.</div>';
+  renderFinanceLoanLines(collectFinanceLoanLines());
+  renderFinanceControlKpis();
+}
+
+function renderFinanceUnitGlobalSummary(items = mergedFinanceUnitAmortizations()) {
+  const box = document.getElementById('financeUnitGlobalSummary');
+  if (!box) return;
+  const totals = items.reduce((acc, item) => {
+    acc.checkAmount += numOr0(item.checkAmount);
+    acc.allocated += (item.allocations || []).reduce((sum, allocation) => sum + numOr0(allocation.amount), 0);
+    acc.promoter += numOr0(item.promoterAmount);
+    return acc;
+  }, { checkAmount: 0, allocated: 0, promoter: 0 });
+  box.innerHTML = [
+    ['Valor base / cheques', financeMoney(totals.checkAmount)],
+    ['Amortizado a líneas', financeMoney(totals.allocated)],
+    ['Total promotor', financeMoney(totals.promoter)],
+  ].map(([label, value]) => `
+    <article class="finance-loan-summary-card">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </article>
+  `).join('');
+}
+
+function refreshFinanceDerivedUI() {
+  renderFinanceLoanLines(collectFinanceLoanLines());
+  document.querySelectorAll('.finance-unit-card[data-unit-card]').forEach(card => {
+    const item = readFinanceUnitCards().find(x => String(x.unitId || '') === String(card.dataset.unitId || '')) || {};
+    const state = financeUnitState(item);
+    card.querySelector('[data-unit-distributed]').textContent = financeMoney(state.distributed);
+    card.querySelector('[data-unit-difference]').textContent = financeMoney(state.diff);
+    const badge = card.querySelector('.finance-status');
+    if (badge) {
+      badge.className = `finance-status is-${state.key}`;
+      badge.textContent = state.label;
+    }
+  });
+  renderFinanceControlKpis();
+}
+
+async function saveFinanceLoanLines(btn = null) {
+  const originalLabel = btn?.textContent || 'Guardar';
+  try {
+    setFinanceButtonState(btn, 'Guardando...', true);
+    const loanLines = collectFinanceLoanLines();
+    console.log('[Finance] guardado lineas', loanLines);
+    await API.put(`/api/projects/${id}/finance/loan-lines`, { loanLines });
+    setFinanceButtonState(btn, 'Guardado', true);
+    if (btn) await waitFinanceFeedback();
+    await loadFinance();
+    await markProjectDataChanged();
+  } catch (e) {
+    setFinanceButtonState(btn, originalLabel, false);
+    console.error('[Finance] error guardando lineas', e);
+    alert('No se pudieron guardar las lineas de prestamo');
+  }
+}
+
+async function saveFinanceUnitAmortizations() {
+  try {
+    const unitAmortizations = collectFinanceUnitAmortizations();
+    console.log('[Finance] guardado amortizaciones', unitAmortizations);
+    await API.put(`/api/projects/${id}/finance/unit-amortizations`, { unitAmortizations });
+    await loadFinance();
+    await markProjectDataChanged();
+  } catch (e) {
+    console.error('[Finance] error guardando amortizaciones', e);
+    alert('No se pudieron guardar las amortizaciones');
+  }
+}
+
+async function saveFinanceSingleUnit(card, btn = null) {
+  if (!card) return saveFinanceUnitAmortizations();
+  const originalLabel = btn?.textContent || 'Guardar';
+  const targetUnitId = String(card.dataset.unitId || '');
+  const targetFinanceId = String(card.dataset.financeId || '');
+  const current = collectFinanceUnitAmortizations();
+  const incoming = readFinanceUnitCards().find(item =>
+    String(item.unitId || '') === targetUnitId ||
+    (targetFinanceId && String(item._id || '') === targetFinanceId)
+  );
+  if (!incoming) return saveFinanceUnitAmortizations();
+  const next = current.filter(item => {
+    if (targetUnitId) return String(item.unitId || '') !== targetUnitId;
+    return String(item._id || '') !== targetFinanceId;
+  });
+  next.push(incoming);
+  try {
+    setFinanceButtonState(btn, 'Guardando...', true);
+    console.log('[Finance] guardado amortizacion unidad', incoming);
+    await API.put(`/api/projects/${id}/finance/unit-amortizations`, { unitAmortizations: next });
+    setFinanceButtonState(btn, 'Guardado', true);
+    if (btn) await waitFinanceFeedback();
+    await loadFinance();
+    await markProjectDataChanged();
+  } catch (e) {
+    setFinanceButtonState(btn, originalLabel, false);
+    console.error('[Finance] error guardando unidad', e);
+    alert('No se pudo guardar esta unidad');
+  }
 }
 
 // -------------------------
@@ -4706,9 +5403,12 @@ function getPhaseStatus(ph, { deviationPct = 0.10 } = {}) {
 // -------------------------
 async function loadFinance() {
   try {
+    console.log('[Finance] carga de finanzas', { projectId: id });
     const res = await API.get(`/api/projects/${id}/finance`);
     FINANCE = res.finance;
     FINANCE_KPIS = res.kpis;
+    FINANCE_CONTROL = res.financeControl || null;
+    FINANCE_COMMERCIAL_UNITS = res.commercialUnits || [];
     window.FINANCE_KPIS = FINANCE_KPIS;
 
     // ✅ Guardamos FINANCE en window para el modal "Iniciar REAL" (dropdown de fases)
@@ -4760,6 +5460,10 @@ async function loadFinance() {
     // Alertas (por fechas de fin, como ya tienes)
     renderFinanceAlerts(res.alerts || []);
 
+    renderFinanceControlKpis(FINANCE_CONTROL?.totals || {});
+    renderFinanceLoanLines(FINANCE_CONTROL?.loanLines || []);
+    renderFinanceUnitAmortizations();
+
     // Fases: cards
     renderPhases(FINANCE?.phases || []);
 
@@ -4786,6 +5490,109 @@ function bindFinanceOnce() {
 
   document.getElementById('addPhaseBtn')?.addEventListener('click', () => openPhaseEditor(null));
   document.getElementById('saveFinanceKpisBtn')?.addEventListener('click', saveFinanceProjectKpis);
+  document.getElementById('financeAddLoanLineBtn')?.addEventListener('click', () => {
+    const lines = collectFinanceLoanLines();
+    lines.push({
+      _id: `new-${Date.now()}`,
+      name: `Linea ${lines.length + 1}`,
+      notes: '',
+      entries: [{
+        _id: `new-entry-${Date.now()}`,
+        disbursementDate: '',
+        loanNumber: '',
+        disbursementAmount: 0,
+        maturityDate: '',
+        amortizedAmount: 0,
+        notes: '',
+      }],
+    });
+    renderFinanceLoanLines(lines);
+  });
+
+  document.getElementById('financeLoanLinesBody')?.addEventListener('input', () => {
+    renderFinanceControlKpis();
+  });
+  document.getElementById('financeLoanLinesBody')?.addEventListener('change', () => {
+    renderFinanceLoanLines(collectFinanceLoanLines());
+  });
+  document.getElementById('financeLoanLinesBody')?.addEventListener('click', async (ev) => {
+    const saveBtn = ev.target.closest('[data-finance-save-line]');
+    if (saveBtn) {
+      await saveFinanceLoanLines(saveBtn);
+      return;
+    }
+
+    const addEntryBtn = ev.target.closest('[data-finance-add-entry]');
+    if (addEntryBtn) {
+      const card = addEntryBtn.closest('.finance-loan-line-card');
+      const lines = collectFinanceLoanLines();
+      const target = lines.find(line => String(line._id || '') === String(card?.dataset.id || ''));
+      const fallback = lines[Array.from(document.querySelectorAll('.finance-loan-line-card')).indexOf(card)];
+      const line = target || fallback;
+      if (line) {
+        line.entries = line.entries || [];
+        line.entries.push({
+          _id: `new-entry-${Date.now()}`,
+          disbursementDate: '',
+          loanNumber: '',
+          disbursementAmount: 0,
+          maturityDate: '',
+          amortizedAmount: 0,
+          notes: '',
+        });
+      }
+      renderFinanceLoanLines(lines);
+      return;
+    }
+
+    const removeEntryBtn = ev.target.closest('[data-finance-remove-entry]');
+    if (removeEntryBtn) {
+      const row = removeEntryBtn.closest('[data-entry-row]');
+      row?.remove();
+      renderFinanceLoanLines(collectFinanceLoanLines());
+      return;
+    }
+
+    const removeLineBtn = ev.target.closest('[data-finance-remove-line]');
+    if (removeLineBtn) {
+      removeLineBtn.closest('.finance-loan-line-card')?.remove();
+      renderFinanceLoanLines(collectFinanceLoanLines());
+    }
+  });
+
+  document.getElementById('financeUnitAmortizations')?.addEventListener('input', () => {
+    renderFinanceControlKpis();
+  });
+  document.getElementById('financeUnitAmortizations')?.addEventListener('change', (ev) => {
+    const source = ev.target.closest('[data-field="checkAmountSource"]');
+    if (source) {
+      const card = source.closest('.finance-unit-card');
+      const checkInput = card?.querySelector('[data-field="checkAmount"]');
+      const cpp = numOr0(card?.dataset.cppAmount);
+      const initial = numOr0(card?.dataset.initialPayment);
+      const sale = numOr0(card?.dataset.salePrice);
+      if (checkInput) {
+        checkInput.value = source.value === 'cpp_initial' ? cpp + initial : source.value === 'sale_price' ? sale : cpp;
+      }
+    }
+    refreshFinanceDerivedUI();
+  });
+  document.getElementById('financeUnitAmortizations')?.addEventListener('click', (ev) => {
+    const saveUnitBtn = ev.target.closest('[data-finance-save-unit]');
+    if (saveUnitBtn) {
+      saveFinanceSingleUnit(saveUnitBtn.closest('.finance-unit-card'), saveUnitBtn);
+      return;
+    }
+
+    const btn = ev.target.closest('[data-finance-reset-unit]');
+    if (!btn) return;
+    const card = btn.closest('.finance-unit-card');
+    card?.querySelectorAll('input').forEach(input => {
+      if (['clientName', 'lot', 'buyerBank', 'checkAmount'].includes(input.dataset.field)) return;
+      input.value = '';
+    });
+    refreshFinanceDerivedUI();
+  });
 
   document.getElementById('exportXlsx')?.addEventListener('click', async (e) => {
     e.preventDefault();
@@ -6237,6 +7044,7 @@ function getCppExpiryAlert(u, venta) {
   if (days === null || days < 0 || days > 60) return null;
 
   return {
+    kind: 'cpp',
     unit: unitLabel(u),
     days,
     due: String(venta.fechaVencimientoCPP).slice(0, 10),
@@ -6245,10 +7053,37 @@ function getCppExpiryAlert(u, venta) {
   };
 }
 
+async function getCreditLineExpiryAlerts() {
+  try {
+    const res = await API.get(`/api/projects/${id}/finance`);
+    const lines = res?.financeControl?.loanLines || [];
+    return lines.flatMap(line => {
+      const entries = Array.isArray(line.entries) && line.entries.length ? line.entries : [line];
+      const lineBalance = numOr0(line.balanceAfterSales ?? line.balance ?? line.disbursementAmount);
+      if (lineBalance <= 0) return [];
+      return entries.map(entry => {
+        const days = daysUntil(entry?.maturityDate);
+        if (days === null || days > 120) return null;
+        return {
+          kind: 'credit_line',
+          line: line.name || 'Linea de credito',
+          loanNumber: entry?.loanNumber || '',
+          days,
+          due: String(entry.maturityDate).slice(0, 10),
+          balance: lineBalance,
+        };
+      }).filter(Boolean);
+    });
+  } catch (e) {
+    console.warn('[Finance] no se pudieron cargar alertas de vencimiento de lineas', e);
+    return [];
+  }
+}
+
 function showCppExpiryPopup(alerts = []) {
   if (!alerts.length) return;
 
-  const storageKey = `cpp-expiry-alerts-shown-${id}-${new Date().toISOString().slice(0,10)}`;
+  const storageKey = `finance-expiry-alerts-shown-${id}-${new Date().toISOString().slice(0,10)}`;
   if (sessionStorage.getItem(storageKey) === '1') return;
   sessionStorage.setItem(storageKey, '1');
 
@@ -6272,7 +7107,7 @@ function showCppExpiryPopup(alerts = []) {
   `).join('');
 
   openModal(
-  '⚠️ Vencimiento de CPP próximo',
+  'Vencimientos financieros próximos',
   `
     <div style="
       border:1px solid rgba(220,38,38,.28);
@@ -6299,7 +7134,7 @@ function showCppExpiryPopup(alerts = []) {
             color:#991b1b;
             margin-bottom:6px;
           ">
-            Control de riesgo · CPP
+            Control de riesgo financiero
           </div>
 
           <div style="
@@ -6308,7 +7143,7 @@ function showCppExpiryPopup(alerts = []) {
             font-weight:900;
             color:#0f172a;
           ">
-            Cartas próximas a vencer
+            Vencimientos próximos
           </div>
 
           <div style="
@@ -6316,7 +7151,7 @@ function showCppExpiryPopup(alerts = []) {
             color:#64748b;
             font-size:14px;
           ">
-            Revisa estas unidades antes de que expire la vigencia de la CPP.
+            Revisa CPP y líneas de crédito antes de que venza su vigencia.
           </div>
         </div>
 
@@ -6353,7 +7188,9 @@ function showCppExpiryPopup(alerts = []) {
                 font-weight:900;
                 color:#991b1b;
               ">
-                Unidad ${a.unit}
+                ${a.kind === 'credit_line'
+                  ? `${a.line}${a.loanNumber ? ` · ${a.loanNumber}` : ''}`
+                  : `Unidad ${a.unit}`}
               </div>
 
               <div style="
@@ -6364,6 +7201,7 @@ function showCppExpiryPopup(alerts = []) {
                 Vencimiento: <b>${a.due}</b>
                 ${a.banco ? ` · Banco: <b>${a.banco}</b>` : ''}
                 ${a.cpp ? ` · CPP: <b>${a.cpp}</b>` : ''}
+                ${a.balance ? ` · Saldo: <b>${financeMoney(a.balance)}</b>` : ''}
               </div>
             </div>
 
@@ -6377,10 +7215,10 @@ function showCppExpiryPopup(alerts = []) {
               box-shadow:0 10px 25px rgba(15,23,42,.18);
             ">
               <div style="font-size:25px;font-weight:950;line-height:1;">
-                ${a.days}
+                ${Math.abs(a.days)}
               </div>
               <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-top:4px;">
-                días restantes
+                ${a.days < 0 ? 'dias vencido' : 'dias restantes'}
               </div>
             </div>
           </div>
@@ -6558,7 +7396,8 @@ const cppAlerts = units
   .map(u => getCppExpiryAlert(u, ventasMap.get(String(u._id))))
   .filter(Boolean);
 
-showCppExpiryPopup(cppAlerts);
+const creditLineAlerts = await getCreditLineExpiryAlerts();
+showCppExpiryPopup([...cppAlerts, ...creditLineAlerts].sort((a, b) => (a.days ?? 9999) - (b.days ?? 9999)));
 
 wireUnitCards();
 wireCommercialFolders();

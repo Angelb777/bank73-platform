@@ -1346,6 +1346,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     const d30 = 30 * 24 * 3600 * 1000;
     const d60 = 60 * 24 * 3600 * 1000;
     const d90 = 90 * 24 * 3600 * 1000;
+    const d120 = 120 * 24 * 3600 * 1000;
 
     const salesMap = new Map();
     const salesYearMap = new Map();
@@ -1844,6 +1845,41 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
           status: st,
           docId: d._id
         });
+      }
+    }
+
+    const financeAllocationsByLine = new Map();
+    for (const unitFinance of (financeDoc?.unitAmortizations || [])) {
+      for (const allocation of (unitFinance.allocations || [])) {
+        const key = String(allocation.loanLineId || allocation.loanLineName || '');
+        if (!key) continue;
+        financeAllocationsByLine.set(key, toNum(financeAllocationsByLine.get(key)) + toNum(allocation.amount));
+      }
+    }
+
+    for (const line of (financeDoc?.loanLines || [])) {
+      const entries = Array.isArray(line.entries) && line.entries.length ? line.entries : [line];
+      const disbursed = entries.reduce((acc, entry) => acc + toNum(entry?.disbursementAmount), 0);
+      const manualAmortized = entries.reduce((acc, entry) => acc + toNum(entry?.amortizedAmount), 0);
+      const allocatedAmortized = [String(line._id || ''), String(line.name || '')]
+        .reduce((acc, key) => acc + toNum(financeAllocationsByLine.get(key)), 0);
+      const lineBalance = Math.max(0, disbursed - manualAmortized - allocatedAmortized);
+      if (lineBalance <= 0) continue;
+
+      for (const entry of entries) {
+        if (!entry?.maturityDate || toNum(entry?.disbursementAmount) <= 0) continue;
+        const dueTime = new Date(entry.maturityDate).getTime();
+        if (!Number.isFinite(dueTime)) continue;
+        const diff = dueTime - now;
+        if (diff <= d120) {
+          expiries.push({
+            type: 'Linea credito',
+            name: `${line.name || 'Linea'}${entry.loanNumber ? ` — ${entry.loanNumber}` : ''}`,
+            due: entry.maturityDate,
+            balance: lineBalance,
+            daysLeft: Math.ceil(diff / (24 * 3600 * 1000))
+          });
+        }
       }
     }
 
@@ -2525,7 +2561,7 @@ if (isSoldLikeStatus(st)) U.sold++;
         { label: 'Progreso global', value: `${summary.progressPct || 0}%` },
         { label: 'Unidades totales', value: `${summary.units?.total || 0}` },
         { label: 'Vendidas / Reservadas', value: `${summary.units?.sold || 0} / ${summary.units?.reserved || 0}` },
-        { label: 'Vencimientos ≤90 días', value: `${(summary.alerts || []).length}` },
+        { label: 'Vencimientos ≤120 días', value: `${(summary.alerts || []).length}` },
       ];
 
       const drawCard = (x, y, { label, value }) => {
@@ -2658,7 +2694,7 @@ if (isSoldLikeStatus(st)) U.sold++;
             { label: 'Progreso', value: `${summary.progressPct || 0}%` },
             { label: 'Unidades', value: `${summary.units?.total || 0}` },
             { label: 'Vendidas', value: `${summary.units?.sold || 0}` },
-            { label: 'Alertas <=90d', value: `${(summary.alerts || []).length}` }
+            { label: 'Alertas <=120d', value: `${(summary.alerts || []).length}` }
           ];
       coverKpis.forEach((item, idx) => {
         const x = margin + (kpiW * idx);
@@ -3441,7 +3477,7 @@ if (isSoldLikeStatus(st)) U.sold++;
         ws.addRow(['Vendidas / no disponibles', summary.units.sold]);
         ws.addRow(['Canceladas', summary.units.canceladas]);
         ws.addRow([]);
-        ws.addRow(['Vencimientos críticos (≤90d)']);
+        ws.addRow(['Vencimientos críticos (≤120d)']);
         ws.addRow(['Tipo', 'Nombre', 'Vence']);
         (summary.alerts || []).forEach(a => ws.addRow([a.type, a.name, a.due ? new Date(a.due).toISOString().slice(0, 10) : '—']));
       }
@@ -3681,7 +3717,7 @@ if (isSoldLikeStatus(st)) U.sold++;
     drawDataTable(doc, {
       columns: ['Vencimiento próximo', 'Fecha'],
       rows: riskRows.length ? riskRows : [{ label: 'Sin vencimientos criticos', value: '-' }],
-      total: riskRows.length ? { label: 'Total alertas <=90 dias', value: fmtNum(riskRows.length) } : null
+      total: riskRows.length ? { label: 'Total alertas <=120 dias', value: fmtNum(riskRows.length) } : null
     });
 
     const noteRows = (datasets.alerts?.notes || []).map(n => ({ label: n, value: '' }));

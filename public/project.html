@@ -1653,7 +1653,7 @@
   <!-- Alertas + Conclusiones -->
   <section class="grid-2 summary-global-only" style="margin-top:16px;">
     <div class="card">
-      <h3>Vencimientos críticos (CPP / Permisos)</h3>
+      <h3>Vencimientos críticos (CPP / líneas de crédito / permisos)</h3>
       <div id="summaryAlerts"></div>
     </div>
     <div class="card">
@@ -1741,35 +1741,78 @@
   <!-- =========================================================
        KPIs (ARRIBA DEL TODO)
        ========================================================= -->
-  <div style="margin-top:20px;">
-    <h3>KPIs del banco</h3>
+  <section class="finance-bank-kpis" aria-label="KPIs editables del banco">
+    <div class="finance-section-head">
+      <div>
+        <h3>KPIs del banco</h3>
+      </div>
+      <button class="btn btn-xs" id="saveFinanceKpisBtn" type="button">Guardar KPIs</button>
+    </div>
 
-    <div class="grid-2" id="financeProjectKpis">
-      <div class="card">
-        <div class="label">Loan aprobado</div>
+    <div id="financeProjectKpis" class="finance-edit-kpi-grid">
+      <label class="finance-edit-kpi">
+        <span>Loan aprobado</span>
         <input id="finLoanApproved" class="input" type="number" min="0" step="1" placeholder="0" />
-        <div class="small muted">Monto total aprobado por el banco.</div>
-      </div>
+      </label>
 
-      <div class="card">
-        <div class="label">Desembolsado</div>
+      <label class="finance-edit-kpi">
+        <span>Desembolsado manual</span>
         <input id="finLoanDisbursed" class="input" type="number" min="0" step="1" placeholder="0" />
-        <div class="small muted">Monto ya desembolsado.</div>
-      </div>
+      </label>
 
-      <div class="card">
-        <div class="label">Budget aprobado</div>
+      <label class="finance-edit-kpi">
+        <span>Budget aprobado</span>
         <input id="finBudgetApproved" class="input" type="number" min="0" step="1" placeholder="0" />
-        <div class="small muted">Presupuesto total aprobado.</div>
+      </label>
+    </div>
+  </section>
+  <section class="finance-control-shell" aria-label="Control financiero del proyecto">
+    <div class="finance-section-head">
+      <div>
+        <h3>Control financiero integral</h3>
+        <p>Prestamo promotor, vencimientos, ventas por unidad y amortizacion.</p>
       </div>
     </div>
 
-    <div class="row end" style="margin:10px 0 22px;">
-      <button class="btn primary" id="saveFinanceKpisBtn" type="button">
-        Guardar KPIs
-      </button>
+    <div id="financeControlKpis" class="finance-control-kpis"></div>
+
+    <div class="finance-control-grid">
+      <section class="finance-panel finance-panel-wide">
+        <div class="finance-panel-head">
+          <div>
+            <h4>Lineas de prestamo / desembolsos</h4>
+            <span id="financeLoanLinesSummary" class="small muted"></span>
+          </div>
+          <button class="btn btn-xs" id="financeAddLoanLineBtn" type="button">Nueva linea</button>
+        </div>
+        <div id="financeLoanGlobalSummary" class="finance-loan-summary-grid"></div>
+        <div id="financeLoanLinesBody" class="finance-loan-lines"></div>
+      </section>
+
+      <section class="finance-panel finance-panel-wide">
+        <div class="finance-panel-head">
+          <div>
+            <h4>Amortizaciones por unidad comercial</h4>
+            <span class="small muted">Precarga CPP, cliente y banco desde Comercial cuando existen.</span>
+          </div>
+        </div>
+        <div id="financeUnitGlobalSummary" class="finance-loan-summary-grid"></div>
+        <div id="financeUnitAmortizations" class="finance-unit-grid"></div>
+      </section>
     </div>
-  </div>
+  </section>
+
+  <section class="finance-panel finance-loan-chart-panel" aria-label="Resumen grafico de lineas de prestamo">
+    <div class="finance-panel-head">
+      <div>
+        <h4>Resumen por lineas</h4>
+        <span class="small muted">Desembolsado, amortizado total y saldo vivo por linea.</span>
+      </div>
+    </div>
+    <div class="finance-chart-box finance-loan-chart-box">
+      <canvas id="financeLoanLinesChart"></canvas>
+    </div>
+  </section>
   
   <!-- =========================================================
        1) FASES PLAN (Estimación)
@@ -1807,7 +1850,7 @@
   <!-- =========================================================
        3) ALERTAS + KPIs (resumen rápido)
        ========================================================= -->
-  <div style="margin-top:26px;">
+  <div id="financeAlertsSection" style="margin-top:26px;" hidden>
     <h3>Alertas</h3>
     <div id="financeAlerts" class="alert-list"></div>
   </div>
