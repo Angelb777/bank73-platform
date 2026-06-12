@@ -32,6 +32,7 @@ const FULL_ACCESS_ROLES = [
 
 const STATUSES = ['pending', 'active', 'blocked'];
 const PROMOTER_CATEGORIES = ['No definido', 'Emergente', 'En desarrollo', 'Consolidado', 'Institucional'];
+const PROMOTER_TYPES = ['No definido', 'Promotor constructor', 'Llave en mano', 'Subcontratación', 'Gestión fragmentada'];
 
 /**
  * Subdocumento opcional para rol por proyecto (granularidad).
@@ -48,6 +49,7 @@ const ProjectRoleSchema = new mongoose.Schema(
 const PromoterProfileSchema = new mongoose.Schema(
   {
     companyName: { type: String, trim: true, default: '' },
+    promoterType: { type: String, enum: PROMOTER_TYPES, default: 'No definido' },
     yearsExperience: { type: Number, min: 0, default: null },
     deliveredProjects: { type: Number, min: 0, default: null },
     activeProjects: { type: Number, min: 0, default: null },
@@ -143,4 +145,5 @@ module.exports.ROLES = ROLES;
 module.exports.FULL_ACCESS_ROLES = FULL_ACCESS_ROLES;
 module.exports.STATUSES = STATUSES;
 module.exports.PROMOTER_CATEGORIES = PROMOTER_CATEGORIES;
+module.exports.PROMOTER_TYPES = PROMOTER_TYPES;
 module.exports.calculatePromoterCategory = calculatePromoterCategory;

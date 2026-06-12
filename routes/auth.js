@@ -3,6 +3,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { ROLES } = User;
+const { PROMOTER_TYPES = [] } = User;
 const auth = require('../middleware/auth');
 const { hashPassword, isHashedPassword, verifyPassword } = require('../utils/passwords');
 const audit = require('../utils/audit');
@@ -26,9 +27,19 @@ function sanitizePromoterProfile(input = {}) {
   const countriesRaw = Array.isArray(input.countries)
     ? input.countries
     : String(input.countries || input.paisesOperacion || '').split(/\r?\n|,/);
+  const normalizePromoterType = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return 'No definido';
+    const normalized = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const found = PROMOTER_TYPES.find(type =>
+      type.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() === normalized
+    );
+    return found || 'No definido';
+  };
 
   return {
     companyName: String(input.companyName ?? input.sociedad ?? input.nombreSociedad ?? '').trim().slice(0, 180),
+    promoterType: normalizePromoterType(input.promoterType ?? input.tipoPromotor ?? input.modeloPromotor),
     yearsExperience: toNum(input.yearsExperience ?? input.aniosExperiencia),
     deliveredProjects: toNum(input.deliveredProjects ?? input.proyectosEntregados),
     activeProjects: toNum(input.activeProjects ?? input.proyectosActivos),

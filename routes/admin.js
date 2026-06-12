@@ -8,6 +8,7 @@ const audit = require('../utils/audit');
 const router = express.Router();
 
 const { ROLES: VALID_ROLES } = require('../models/User'); // usa la misma fuente que el modelo
+const { PROMOTER_TYPES = [] } = require('../models/User');
 const VALID_PUBLISH = ['draft','pending','approved','rejected']; // ROLE-SEP
 
 function sanitizePromoterProfile(input = {}) {
@@ -24,9 +25,19 @@ function sanitizePromoterProfile(input = {}) {
   const countriesRaw = Array.isArray(input.countries)
     ? input.countries
     : String(input.countries || input.paisesOperacion || '').split(/\r?\n|,/);
+  const normalizePromoterType = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return 'No definido';
+    const normalized = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const found = PROMOTER_TYPES.find(type =>
+      type.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() === normalized
+    );
+    return found || 'No definido';
+  };
 
   return {
     companyName: String(input.companyName ?? input.sociedad ?? input.nombreSociedad ?? '').trim().slice(0, 180),
+    promoterType: normalizePromoterType(input.promoterType ?? input.tipoPromotor ?? input.modeloPromotor),
     yearsExperience: toNum(input.yearsExperience ?? input.aniosExperiencia),
     deliveredProjects: toNum(input.deliveredProjects ?? input.proyectosEntregados),
     activeProjects: toNum(input.activeProjects ?? input.proyectosActivos),

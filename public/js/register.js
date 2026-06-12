@@ -96,6 +96,7 @@
     if (getRequestedRole() !== 'promoter') return undefined;
     return {
       companyName: document.getElementById('ppCompanyName')?.value.trim() || '',
+      promoterType: document.getElementById('ppPromoterType')?.value || 'No definido',
       yearsExperience: document.getElementById('ppYearsExperience')?.value || '',
       deliveredProjects: document.getElementById('ppDeliveredProjects')?.value || '',
       activeProjects: document.getElementById('ppActiveProjects')?.value || '',

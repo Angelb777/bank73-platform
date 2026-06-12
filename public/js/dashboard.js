@@ -63,6 +63,22 @@ const PROJECT_TYPES = [
   'Otro'
 ];
 
+const PROMOTER_TYPES = [
+  'No definido',
+  'Promotor constructor',
+  'Llave en mano',
+  'Subcontratación',
+  'Gestión fragmentada'
+];
+
+function renderPromoterTypeOptions(selected = '') {
+  const sel = String(selected || 'No definido');
+  return PROMOTER_TYPES.map(type => {
+    const s = sel === type ? ' selected' : '';
+    return `<option value="${type}"${s}>${type}</option>`;
+  }).join('');
+}
+
 const ROLE_LABEL = (r) => ({
   admin: 'Admin',
   bank: 'Bank',
@@ -357,12 +373,15 @@ function promoterProfileCell(u = {}) {
   if (!isPromoterLikeUser(u)) return '<span class="muted">No definido</span>';
   const category = u.promoterCategory || 'Emergente';
   const companyName = u.promoterProfile?.companyName || '';
+  const promoterType = u.promoterProfile?.promoterType || 'No definido';
+  const lines = [
+    companyName ? `<strong class="promoter-profile-company">${escapeHtml(companyName)}</strong>` : '',
+    promoterType && promoterType !== 'No definido' ? `<span class="promoter-profile-category">${escapeHtml(promoterType)}</span>` : '',
+    category && category !== 'No definido' ? `<span class="promoter-profile-category">${escapeHtml(category)}</span>` : ''
+  ].filter(Boolean).join('');
   return `
     <div class="promoter-profile-cell">
-      <div>
-        <strong class="promoter-profile-company">${escapeHtml(companyName || 'Sociedad no definida')}</strong>
-        <span class="promoter-profile-category">${escapeHtml(category)}</span>
-      </div>
+      ${lines ? `<div>${lines}</div>` : ''}
       <button class="btn small promoter-profile-action" data-user-promoter-profile="${u._id}">Editar perfil</button>
     </div>
   `;
@@ -1019,6 +1038,12 @@ function applyProjectsFilters(list) {
           <input id="pp-companyName" class="input" type="text" placeholder="Ej: Promotora Vista Azul, S.A." />
         </label>
 
+        <label class="small muted" style="display:block;margin-bottom:10px;">Tipo de promotor
+          <select id="pp-promoterType" class="input">
+            ${renderPromoterTypeOptions()}
+          </select>
+        </label>
+
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <label class="small muted">Años de experiencia
             <input id="pp-yearsExperience" class="input" type="number" min="0" step="1" />
@@ -1062,6 +1087,7 @@ function applyProjectsFilters(list) {
       };
       const profile = {
         companyName: document.getElementById('pp-companyName')?.value || '',
+        promoterType: document.getElementById('pp-promoterType')?.value || 'No definido',
         yearsExperience: numOrBlank('pp-yearsExperience'),
         deliveredProjects: numOrBlank('pp-deliveredProjects'),
         activeProjects: numOrBlank('pp-activeProjects'),
@@ -1088,6 +1114,7 @@ function applyProjectsFilters(list) {
     wrap.dataset.userId = user._id;
     document.getElementById('promoterProfileUser').textContent = `${user.name || '-'} · ${user.email || '-'}`;
     document.getElementById('pp-companyName').value = profile.companyName || '';
+    document.getElementById('pp-promoterType').innerHTML = renderPromoterTypeOptions(profile.promoterType || 'No definido');
     document.getElementById('pp-yearsExperience').value = profile.yearsExperience ?? '';
     document.getElementById('pp-deliveredProjects').value = profile.deliveredProjects ?? '';
     document.getElementById('pp-activeProjects').value = profile.activeProjects ?? '';

@@ -2641,13 +2641,20 @@ if (!isPeriodView) try {
       : '') ||
     'Sociedad no definida';
   const promoterCategoryLabel = project.promoterCategory || 'No definido';
+  const promoterTypeLabel =
+    project.promoterType ||
+    project.promoterProfile?.promoterType ||
+    (Array.isArray(project.promoters)
+      ? project.promoters.map(p => p?.promoterType || p?.promoterProfile?.promoterType).find(Boolean)
+      : '') ||
+    'No definido';
 
   // Resumen general extra
   renderMiniKpiBox('summaryResumeBox', [
     {
       title: 'Perfil del proyecto',
       value: `Tipo de proyecto: ${projectTypeLabel}`,
-      sub: `Sociedad: ${promoterCompanyLabel} · Promotor: ${promoterLabel} · Perfil del promotor: ${promoterCategoryLabel}`,
+      sub: `Sociedad: ${promoterCompanyLabel} · Promotor: ${promoterLabel} · Tipo promotor: ${promoterTypeLabel} · Perfil del promotor: ${promoterCategoryLabel}`,
       className: 'project-profile-kpi'
     },
     {

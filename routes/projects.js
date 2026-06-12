@@ -144,7 +144,8 @@ function promoterPublicShape(user) {
     name: user.name || user.email || 'Promotor',
     email: user.email || '',
     promoterProfile: user.promoterProfile || null,
-    promoterCategory: user.promoterCategory || 'No definido'
+    promoterCategory: user.promoterCategory || 'No definido',
+    promoterType: user.promoterProfile?.promoterType || 'No definido'
   };
 }
 
@@ -2063,6 +2064,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       promoterName: primaryPromoter?.name || primaryPromoter?.email || '',
       promoterCompanyName: primaryPromoter?.promoterProfile?.companyName || '',
       promoterCategory: primaryPromoter?.promoterCategory || 'No definido',
+      promoterType: primaryPromoter?.promoterProfile?.promoterType || 'No definido',
       promoterProfile: primaryPromoter?.promoterProfile || null,
       updatedAt: project.updatedAt,
       loanApproved: project.loanApproved || 0,
@@ -2427,6 +2429,7 @@ if (isSoldLikeStatus(st)) U.sold++;
       promoterName: exportPrimaryPromoter?.name || exportPrimaryPromoter?.email || '',
       promoterCompanyName: exportPrimaryPromoter?.promoterProfile?.companyName || '',
       promoterCategory: exportPrimaryPromoter?.promoterCategory || 'No definido',
+      promoterType: exportPrimaryPromoter?.promoterProfile?.promoterType || 'No definido',
       updatedAt: project.updatedAt,
       progressPct: progressByPhase.length
         ? Math.round(progressByPhase.reduce((a, b) => a + b.pct, 0) / progressByPhase.length)
@@ -2759,7 +2762,7 @@ if (isSoldLikeStatus(st)) U.sold++;
         .text(`Actualizado: ${fmtDateTime(updatedAt)}`, margin, 254, { width: contentW, align: 'center' });
       doc.fontSize(9).fillColor('#EAF2FB')
         .text(
-          `Tipo de proyecto: ${summary.projectType || 'No definido'} | Sociedad: ${summary.promoterCompanyName || 'No definido'} | Promotor: ${summary.promoterName || 'No definido'} | Perfil: ${summary.promoterCategory || 'No definido'}`,
+          `Tipo de proyecto: ${summary.projectType || 'No definido'} | Sociedad: ${summary.promoterCompanyName || 'No definido'} | Promotor: ${summary.promoterName || 'No definido'} | Tipo promotor: ${summary.promoterType || 'No definido'} | Perfil: ${summary.promoterCategory || 'No definido'}`,
           margin,
           272,
           { width: contentW, align: 'center' }
@@ -3338,6 +3341,7 @@ if (isSoldLikeStatus(st)) U.sold++;
         { label: 'Periodo', value: summary.periodLabel },
         { label: 'Tipo de proyecto', value: summary.projectType || 'No definido' },
         { label: 'Sociedad promotora', value: summary.promoterCompanyName || 'No definido' },
+        { label: 'Tipo promotor', value: summary.promoterType || 'No definido' },
         { label: 'Perfil promotor', value: summary.promoterCategory || 'No definido' },
         { label: 'Unidades con actividad', value: fmtNum(summary.units?.total ?? units.total) },
         { label: 'Vendidas con actividad', value: fmtNum(summary.units?.sold ?? units.sold) },
@@ -3347,6 +3351,7 @@ if (isSoldLikeStatus(st)) U.sold++;
       ] : [
         { label: 'Tipo de proyecto', value: summary.projectType || 'No definido' },
         { label: 'Sociedad promotora', value: summary.promoterCompanyName || 'No definido' },
+        { label: 'Tipo promotor', value: summary.promoterType || 'No definido' },
         { label: 'Perfil promotor', value: summary.promoterCategory || 'No definido' },
         { label: 'Loan aprobado', value: fmtMoneyShort(project?.loanApproved ?? loan.approved) },
         { label: 'Desembolsado', value: fmtMoneyShort(project?.loanDisbursed ?? loan.disbursed) },
@@ -3652,6 +3657,7 @@ if (isSoldLikeStatus(st)) U.sold++;
       ws.addRow(['Tipo de proyecto', summary.projectType || 'No definido']);
       ws.addRow(['Sociedad promotora', summary.promoterCompanyName || 'No definido']);
       ws.addRow(['Promotor', summary.promoterName || 'No definido']);
+      ws.addRow(['Tipo promotor', summary.promoterType || 'No definido']);
       ws.addRow(['Perfil del promotor', summary.promoterCategory || 'No definido']);
       if (summary.periodLabel) ws.addRow(['Periodo analizado', summary.periodLabel]);
       ws.addRow(['Actualizado', summary.updatedAt ? new Date(summary.updatedAt).toLocaleString() : '—']);
