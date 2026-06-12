@@ -26,6 +26,7 @@ function sanitizePromoterProfile(input = {}) {
     : String(input.countries || input.paisesOperacion || '').split(/\r?\n|,/);
 
   return {
+    companyName: String(input.companyName ?? input.sociedad ?? input.nombreSociedad ?? '').trim().slice(0, 180),
     yearsExperience: toNum(input.yearsExperience ?? input.aniosExperiencia),
     deliveredProjects: toNum(input.deliveredProjects ?? input.proyectosEntregados),
     activeProjects: toNum(input.activeProjects ?? input.proyectosActivos),

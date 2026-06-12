@@ -1620,6 +1620,25 @@
     <div class="summary-block-title">Resumen Financiero</div>
 
     <section id="summaryFinancialKpis" class="kpis-grid" style="margin-top:12px;"></section>
+    <section id="summaryFinanceControlCards" class="summary-resume-wrap" style="margin-top:12px;"></section>
+
+    <section class="grid-2" style="margin-top:12px;">
+      <div class="card summary-chart-card">
+        <h3>Resumen por lineas de credito</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumCreditLines"></canvas>
+        </div>
+        <div id="sumCreditLinesSummary" class="summary-chart-summary"></div>
+      </div>
+
+      <div class="card summary-chart-card">
+        <h3>Cobertura CPP vs prestamo</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumCppCoverage"></canvas>
+        </div>
+        <div id="sumCppCoverageSummary" class="summary-chart-summary"></div>
+      </div>
+    </section>
 
     <section class="grid-2" style="margin-top:12px;">
       <div class="card summary-chart-card chart-phase-lg">
@@ -1639,13 +1658,13 @@
       </div>
     </section>
 
-    <section class="grid-1" style="margin-top:12px;">
+    <section class="grid-1 summary-legacy-cpp-coverage" style="margin-top:12px;display:none;">
       <div class="card summary-chart-card">
         <h3>Cobertura CPP vs préstamo</h3>
         <div class="summary-chart-box">
-          <canvas id="sumCppCoverage"></canvas>
+          <canvas id="sumCppCoverageLegacy"></canvas>
         </div>
-        <div id="sumCppCoverageSummary" class="summary-chart-summary"></div>
+        <div id="sumCppCoverageSummaryLegacy" class="summary-chart-summary"></div>
       </div>
     </section>
   </section>
@@ -1806,7 +1825,7 @@
     <div class="finance-panel-head">
       <div>
         <h4>Resumen por lineas</h4>
-        <span class="small muted">Desembolsado, amortizado total y saldo vivo por linea.</span>
+        <span class="small muted">Desembolsado frente a amortizado total por linea.</span>
       </div>
     </div>
     <div class="finance-chart-box finance-loan-chart-box">

@@ -1710,7 +1710,98 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       };
     });
 
-    const totalDebt = normalizedCreditLines.reduce((a, x) => a + toNum(x.debt), 0);
+    const summaryFinanceLoanLines = Array.isArray(financeDoc?.loanLines)
+      ? financeDoc.loanLines.map((line, idx) => {
+          const entriesSource = Array.isArray(line.entries) && line.entries.length ? line.entries : [line];
+          const entries = entriesSource.map((entry, entryIdx) => {
+            const disbursementAmount = toNum(entry.disbursementAmount);
+            const amortizedAmount = toNum(entry.amortizedAmount);
+            return {
+              id: String(entry._id || `${line._id || idx}-${entryIdx}`),
+              disbursementDate: entry.disbursementDate || null,
+              loanNumber: clean(entry.loanNumber) || '',
+              disbursementAmount,
+              maturityDate: entry.maturityDate || null,
+              amortizedAmount,
+              balance: Math.max(0, disbursementAmount - amortizedAmount),
+              notes: clean(entry.notes) || ''
+            };
+          });
+          const disbursementAmount = entries.reduce((a, e) => a + toNum(e.disbursementAmount), 0);
+          const manualAmortized = entries.reduce((a, e) => a + toNum(e.amortizedAmount), 0);
+          return {
+            id: String(line._id || idx),
+            name: clean(line.name) || `Linea ${idx + 1}`,
+            entries,
+            disbursementAmount,
+            manualAmortized,
+            allocatedAmortized: 0,
+            amortizedAmount: manualAmortized,
+            totalRecovered: manualAmortized,
+            debt: Math.max(0, disbursementAmount - manualAmortized),
+            balanceAfterSales: Math.max(0, disbursementAmount - manualAmortized)
+          };
+        })
+      : [];
+
+    const summaryAllocationsByLine = new Map();
+    const summaryUnitAmortizations = Array.isArray(financeDoc?.unitAmortizations)
+      ? financeDoc.unitAmortizations
+      : [];
+
+    for (const unit of summaryUnitAmortizations) {
+      let allocations = Array.isArray(unit.allocations) ? unit.allocations : [];
+      if (!allocations.length && (toNum(unit.amortizationLine1) || toNum(unit.amortizationLine2))) {
+        allocations = [
+          summaryFinanceLoanLines[0] ? { loanLineId: summaryFinanceLoanLines[0].id, loanLineName: summaryFinanceLoanLines[0].name, amount: unit.amortizationLine1 } : null,
+          summaryFinanceLoanLines[1] ? { loanLineId: summaryFinanceLoanLines[1].id, loanLineName: summaryFinanceLoanLines[1].name, amount: unit.amortizationLine2 } : null
+        ].filter(Boolean);
+      }
+
+      for (const allocation of allocations) {
+        const amount = toNum(allocation.amount);
+        if (!amount) continue;
+        const key = String(allocation.loanLineId || '') || clean(allocation.loanLineName) || '';
+        if (!key) continue;
+        summaryAllocationsByLine.set(key, toNum(summaryAllocationsByLine.get(key)) + amount);
+      }
+    }
+
+    for (const [idx, line] of summaryFinanceLoanLines.entries()) {
+      const allocatedAmortized = [
+        line.id,
+        line.name,
+        `Linea ${idx + 1}`
+      ].reduce((acc, key) => acc + toNum(summaryAllocationsByLine.get(String(key))), 0);
+
+      line.allocatedAmortized = allocatedAmortized;
+      line.totalRecovered = toNum(line.manualAmortized) + allocatedAmortized;
+      line.amortizedAmount = line.totalRecovered;
+      line.debt = Math.max(0, toNum(line.disbursementAmount) - line.totalRecovered);
+      line.balanceAfterSales = line.debt;
+    }
+
+    const activeCreditLines = summaryFinanceLoanLines.length ? summaryFinanceLoanLines : normalizedCreditLines;
+    const totalDebt = activeCreditLines.reduce((a, x) => a + toNum(x.debt), 0);
+    const financeTotals = summaryFinanceLoanLines.length
+      ? {
+          disbursed: summaryFinanceLoanLines.reduce((a, x) => a + toNum(x.disbursementAmount), 0),
+          manualAmortized: summaryFinanceLoanLines.reduce((a, x) => a + toNum(x.manualAmortized), 0),
+          allocatedAmortized: summaryFinanceLoanLines.reduce((a, x) => a + toNum(x.allocatedAmortized), 0),
+          amortized: summaryFinanceLoanLines.reduce((a, x) => a + toNum(x.totalRecovered), 0),
+          debt: totalDebt,
+          checkAmountTotal: summaryUnitAmortizations.reduce((a, x) => a + toNum(x.checkAmount), 0),
+          promoterTotal: summaryUnitAmortizations.reduce((a, x) => a + toNum(x.promoterAmount), 0)
+        }
+      : {
+          disbursed: normalizedCreditLines.reduce((a, x) => a + toNum(x.disbursedAmount), 0),
+          manualAmortized: normalizedCreditLines.reduce((a, x) => a + toNum(x.amortizedAmount), 0),
+          allocatedAmortized: 0,
+          amortized: normalizedCreditLines.reduce((a, x) => a + toNum(x.amortizedAmount), 0),
+          debt: totalDebt,
+          checkAmountTotal: 0,
+          promoterTotal: 0
+        };
 
     const cppVigenteAmount = soldVentas
       .filter(v => hasCppSignal(v))
@@ -1731,12 +1822,13 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       .reduce((a, v) => a + getMortgageAmount(v, v.__unit), 0);
 
     const financial = {
-      creditLines: normalizedCreditLines,
-      totals: {
-        disbursed: normalizedCreditLines.reduce((a, x) => a + toNum(x.disbursedAmount), 0),
-        amortized: normalizedCreditLines.reduce((a, x) => a + toNum(x.amortizedAmount), 0),
-        debt: totalDebt
+      creditLines: activeCreditLines,
+      financeControl: {
+        loanLines: summaryFinanceLoanLines,
+        unitAmortizations: summaryUnitAmortizations,
+        totals: financeTotals
       },
+      totals: financeTotals,
       cppCoverage: {
         cppVigenteAmount,
         cppTramiteAmount,
@@ -1969,6 +2061,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       tipoProyecto: project.projectType || '',
       promoters: projectPromoters.map(promoterPublicShape).filter(Boolean),
       promoterName: primaryPromoter?.name || primaryPromoter?.email || '',
+      promoterCompanyName: primaryPromoter?.promoterProfile?.companyName || '',
       promoterCategory: primaryPromoter?.promoterCategory || 'No definido',
       promoterProfile: primaryPromoter?.promoterProfile || null,
       updatedAt: project.updatedAt,
@@ -2332,6 +2425,7 @@ if (isSoldLikeStatus(st)) U.sold++;
       projectName: project.name || 'Proyecto',
       projectType: project.projectType || '',
       promoterName: exportPrimaryPromoter?.name || exportPrimaryPromoter?.email || '',
+      promoterCompanyName: exportPrimaryPromoter?.promoterProfile?.companyName || '',
       promoterCategory: exportPrimaryPromoter?.promoterCategory || 'No definido',
       updatedAt: project.updatedAt,
       progressPct: progressByPhase.length
@@ -2665,7 +2759,7 @@ if (isSoldLikeStatus(st)) U.sold++;
         .text(`Actualizado: ${fmtDateTime(updatedAt)}`, margin, 254, { width: contentW, align: 'center' });
       doc.fontSize(9).fillColor('#EAF2FB')
         .text(
-          `Tipo de proyecto: ${summary.projectType || 'No definido'} | Promotor: ${summary.promoterName || 'No definido'} | Perfil: ${summary.promoterCategory || 'No definido'}`,
+          `Tipo de proyecto: ${summary.projectType || 'No definido'} | Sociedad: ${summary.promoterCompanyName || 'No definido'} | Promotor: ${summary.promoterName || 'No definido'} | Perfil: ${summary.promoterCategory || 'No definido'}`,
           margin,
           272,
           { width: contentW, align: 'center' }
@@ -2939,9 +3033,24 @@ if (isSoldLikeStatus(st)) U.sold++;
         return { columns: ['Banco', 'Firmas'], rows, total: { label: 'Total firmas protocolo', value: fmtNum(total) } };
       }
 
-      if (title === 'Líneas de crédito') {
-        const rows = (financialData.creditLines || []).map(x => ({ label: x.name || 'Linea financiera', value: `${fmtMoneyShort(x.debt)} deuda · ${fmtMoneyShort(x.amortizedAmount)} amort.` }));
-        return { columns: ['Línea', 'Detalle'], rows, total: { label: 'Total deuda', value: fmtMoneyShort(financialData.totals?.debt) } };
+      if (title === 'Lineas de credito' || title === 'Líneas de crédito') {
+        const rows = (financialData.creditLines || []).map(x => {
+          const disbursed = toNumber(x.disbursementAmount ?? x.disbursedAmount);
+          const amortized = toNumber(x.totalRecovered ?? x.amortizedAmount);
+          const balance = toNumber(x.balanceAfterSales ?? x.debt);
+          return {
+            label: x.name || 'Linea financiera',
+            value: `${fmtMoneyShort(disbursed)} desemb. - ${fmtMoneyShort(amortized)} amort. - ${fmtMoneyShort(balance)} saldo`
+          };
+        });
+        return {
+          columns: ['Linea', 'Detalle'],
+          rows,
+          total: {
+            label: 'Totales',
+            value: `${fmtMoneyShort(financialData.totals?.disbursed)} desemb. - ${fmtMoneyShort(financialData.totals?.amortized)} amort. - ${fmtMoneyShort(financialData.totals?.debt)} saldo`
+          }
+        };
       }
 
       if (title === 'Cobertura CPP vs préstamo') {
@@ -3003,10 +3112,10 @@ if (isSoldLikeStatus(st)) U.sold++;
       const margin = doc.page.margins.left;
       const contentW = doc.page.width - margin * 2;
       const bottom = doc.page.height - doc.page.margins.bottom - 26;
-      const rowH = 16;
-      const headerH = 18;
-      const totalH = table.total ? 18 : 0;
-      const maxRows = Number.isFinite(table.maxRows) ? Math.max(0, table.maxRows) : 12;
+      const baseRowH = 13;
+      const headerH = 16;
+      const totalH = table.total ? 15 : 0;
+      const maxRows = Number.isFinite(table.maxRows) ? Math.max(0, table.maxRows) : 24;
       const rows = table.rows.slice(0, maxRows);
       const hidden = table.rows.length - rows.length;
       const extraH = hidden > 0 ? 14 : 0;
@@ -3022,8 +3131,8 @@ if (isSoldLikeStatus(st)) U.sold++;
         doc.restore();
 
         doc.fontSize(8).fillColor(BRAND_BLUE);
-        doc.text(table.columns?.[0] || 'Concepto', x + 8, y + 5, { width: leftW - 12 });
-        doc.text(table.columns?.[1] || 'Valor', x + leftW, y + 5, { width: rightW - 8, align: 'right' });
+        doc.text(table.columns?.[0] || 'Concepto', x + 8, y + 4, { width: leftW - 12 });
+        doc.text(table.columns?.[1] || 'Valor', x + leftW, y + 4, { width: rightW - 8, align: 'right' });
         doc.y = y + headerH;
       };
 
@@ -3037,17 +3146,24 @@ if (isSoldLikeStatus(st)) U.sold++;
 
       drawHeader();
       rows.forEach((r, idx) => {
+        doc.fontSize(8);
+        const labelText = String(r.label ?? 'N/D');
+        const valueText = String(r.value ?? '0');
+        const labelH = doc.heightOfString(labelText, { width: leftW - 12 });
+        const valueH = doc.heightOfString(valueText, { width: rightW - 8 });
+        const rowH = Math.max(baseRowH, Math.ceil(Math.max(labelH, valueH)) + 6);
         ensureRoom(rowH);
+        const y = doc.y;
         if (idx % 2 === 1) {
           doc.save();
-          doc.rect(x, doc.y, contentW, rowH).fill('#F8FAFC');
+          doc.rect(x, y, contentW, rowH).fill('#F8FAFC');
           doc.restore();
         }
         doc.fontSize(8).fillColor('#334155');
-        doc.text(String(r.label ?? 'N/D'), x + 8, doc.y + 4, { width: leftW - 12, ellipsis: true });
+        doc.text(labelText, x + 8, y + 3, { width: leftW - 12 });
         doc.fontSize(8).fillColor(TEXT_DARK);
-        doc.text(String(r.value ?? '0'), x + leftW, doc.y + 4, { width: rightW - 8, align: 'right', ellipsis: true });
-        doc.y += rowH;
+        doc.text(valueText, x + leftW, y + 3, { width: rightW - 8, align: 'right' });
+        doc.y = y + rowH;
       });
 
       if (hidden > 0) {
@@ -3059,16 +3175,17 @@ if (isSoldLikeStatus(st)) U.sold++;
 
       if (table.total) {
         ensureRoom(totalH);
+        const y = doc.y;
         doc.save();
-        doc.lineWidth(0.5).moveTo(x, doc.y).lineTo(x + contentW, doc.y).stroke('#DDE7F2');
+        doc.lineWidth(0.5).moveTo(x, y).lineTo(x + contentW, y).stroke('#DDE7F2');
         doc.restore();
         doc.fontSize(8).fillColor(BRAND_BLUE);
-        doc.text(String(table.total.label || 'Total'), x + 8, doc.y + 5, { width: leftW - 12 });
-        doc.text(String(table.total.value || '0'), x + leftW, doc.y + 5, { width: rightW - 8, align: 'right' });
-        doc.y += totalH;
+        doc.text(String(table.total.label || 'Total'), x + 8, y + 4, { width: leftW - 12 });
+        doc.text(String(table.total.value || '0'), x + leftW, y + 4, { width: rightW - 8, align: 'right' });
+        doc.y = y + totalH;
       }
 
-      doc.y += 10;
+      doc.y += 6;
     }
 
     function drawFinancePhaseDetails(doc, phases, meta) {
@@ -3144,6 +3261,70 @@ if (isSoldLikeStatus(st)) U.sold++;
       });
     }
 
+    function drawCreditLineDetails(doc, financialData = {}, meta) {
+      const lines = Array.isArray(financialData.creditLines) ? financialData.creditLines : [];
+      if (!lines.length) return;
+
+      const margin = doc.page.margins.left;
+      const contentW = doc.page.width - margin * 2;
+      const bottom = doc.page.height - doc.page.margins.bottom - 26;
+      const ensureRoom = (height) => {
+        if (doc.y + height > bottom) {
+          doc.addPage();
+          header(doc, meta);
+          sectionTitle(doc, 'Detalle de lineas de credito');
+        }
+      };
+
+      ensureRoom(28);
+      doc.fontSize(10).fillColor(BRAND_BLUE).text('Detalle de lineas y partidas', margin);
+      doc.moveDown(0.45);
+
+      lines.forEach((line, idx) => {
+        const name = line.name || `Linea ${idx + 1}`;
+        const disbursed = toNumber(line.disbursementAmount ?? line.disbursedAmount);
+        const amortized = toNumber(line.totalRecovered ?? line.amortizedAmount);
+        const balance = toNumber(line.balanceAfterSales ?? line.debt);
+        const entries = Array.isArray(line.entries) && line.entries.length ? line.entries : [];
+
+        ensureRoom(34);
+        const lineY = doc.y;
+        doc.fontSize(9).fillColor(TEXT_DARK).text(name, margin, lineY, { width: contentW * 0.45 });
+        doc.fontSize(8).fillColor(TEXT_MUTED).text(
+          `${fmtMoneyShort(disbursed)} desemb. - ${fmtMoneyShort(amortized)} amort. - ${fmtMoneyShort(balance)} saldo`,
+          margin + contentW * 0.45,
+          lineY,
+          { width: contentW * 0.55, align: 'right' }
+        );
+        doc.y = lineY + 15;
+
+        const rows = entries.length
+          ? entries.map((entry) => {
+              const loanNumber = clean(entry.loanNumber) || 'Partida';
+              const due = entry.maturityDate ? new Date(entry.maturityDate).toISOString().slice(0, 10) : 'sin venc.';
+              return {
+                label: `${loanNumber} - vence ${due}`,
+                value: `${fmtMoneyShort(entry.disbursementAmount)} desemb. - ${fmtMoneyShort(entry.amortizedAmount)} amort.`
+              };
+            })
+          : [{ label: 'Sin partidas manuales registradas', value: '-' }];
+
+        if (toNumber(line.allocatedAmortized) > 0) {
+          rows.push({
+            label: 'Amortizaciones por ventas',
+            value: fmtMoneyShort(line.allocatedAmortized)
+          });
+        }
+
+        drawDataTable(doc, {
+          columns: ['Partida', 'Detalle'],
+          rows,
+          total: null,
+          maxRows: 12
+        });
+      });
+    }
+
     function buildExecutiveKpis({ project, summary, datasets }) {
       const kpis = datasets?.kpis || {};
       const units = kpis.units || summary.units || {};
@@ -3156,6 +3337,7 @@ if (isSoldLikeStatus(st)) U.sold++;
       const top = summary.periodLabel ? [
         { label: 'Periodo', value: summary.periodLabel },
         { label: 'Tipo de proyecto', value: summary.projectType || 'No definido' },
+        { label: 'Sociedad promotora', value: summary.promoterCompanyName || 'No definido' },
         { label: 'Perfil promotor', value: summary.promoterCategory || 'No definido' },
         { label: 'Unidades con actividad', value: fmtNum(summary.units?.total ?? units.total) },
         { label: 'Vendidas con actividad', value: fmtNum(summary.units?.sold ?? units.sold) },
@@ -3164,6 +3346,7 @@ if (isSoldLikeStatus(st)) U.sold++;
         { label: 'Finanzas historicas', value: 'No disponibles' },
       ] : [
         { label: 'Tipo de proyecto', value: summary.projectType || 'No definido' },
+        { label: 'Sociedad promotora', value: summary.promoterCompanyName || 'No definido' },
         { label: 'Perfil promotor', value: summary.promoterCategory || 'No definido' },
         { label: 'Loan aprobado', value: fmtMoneyShort(project?.loanApproved ?? loan.approved) },
         { label: 'Desembolsado', value: fmtMoneyShort(project?.loanDisbursed ?? loan.disbursed) },
@@ -3277,6 +3460,14 @@ if (isSoldLikeStatus(st)) U.sold++;
 
     function drawChart(doc, { title, dataUrl, datasets, meta }) {
       const margin = doc.page.margins.left;
+      const bottom = doc.page.height - doc.page.margins.bottom - 26;
+      const ensureRoom = (height) => {
+        if (doc.y + height > bottom) {
+          doc.addPage();
+          header(doc, meta);
+          sectionTitle(doc, title);
+        }
+      };
 
       doc.fontSize(13).fillColor(TEXT_DARK).text(title, margin);
       doc.moveDown(0.4);
@@ -3284,7 +3475,7 @@ if (isSoldLikeStatus(st)) U.sold++;
       const buf = dataUrlToBuffer(dataUrl);
       if (buf) {
         const imgTop = doc.y;
-        const imgH = 230;
+        const imgH = 205;
 
         doc.image(buf, margin, imgTop, { fit: [doc.page.width - margin * 2, imgH], align: 'center' });
         doc.y = imgTop + imgH + 12;
@@ -3296,8 +3487,26 @@ if (isSoldLikeStatus(st)) U.sold++;
         doc.moveDown(0.6);
       }
 
-      if (title === 'Comparación por fase') {
+      const normalizedChartTitle = String(title || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+      const looseChartTitle = normalizedChartTitle.replace(/[^a-z]/g, '');
+
+      if (
+        normalizedChartTitle === 'comparacion por fase' ||
+        normalizedChartTitle === 'comparacion por fase (fuentes)' ||
+        normalizedChartTitle.includes('comparacion por fase (fuentes') ||
+        (looseChartTitle.includes('comparaci') && looseChartTitle.includes('fuentes'))
+      ) {
         drawFinancePhaseDetails(doc, exportedFinancePhases, meta);
+      } else if (
+        normalizedChartTitle === 'lineas de credito' ||
+        normalizedChartTitle.includes('lineas de credito') ||
+        (looseChartTitle.includes('line') && looseChartTitle.includes('credito'))
+      ) {
+        drawDataTable(doc, chartRows(title, datasets));
+        drawCreditLineDetails(doc, datasets.financial || {}, meta);
       } else {
         if (title === 'Avances registrados en el periodo') {
           const periodActivity = datasets.periodActivity || {};
@@ -3325,6 +3534,7 @@ if (isSoldLikeStatus(st)) U.sold++;
 
       const insights = buildInsights(title, datasets);
       if (insights.length) {
+        ensureRoom(42 + insights.length * 12);
         doc.fontSize(10).fillColor(BRAND_BLUE).text('Notas:', margin);
         doc.moveDown(0.2);
         doc.fontSize(8).fillColor('#475569');
@@ -3395,8 +3605,6 @@ if (isSoldLikeStatus(st)) U.sold++;
           'Ventas mensuales',
           'Ventas vs ventas caídas',
           'Ventas por modelo de vivienda',
-          'Perfil cliente',
-          'Tipo de empresa',
           'Estatus en banco',
           'CPP por banco',
           'Montos CPP por banco',
@@ -3419,23 +3627,16 @@ if (isSoldLikeStatus(st)) U.sold++;
           'Estatus construcción',
           'Fase de construcción',
           'Modelos en construcción',
-          'Avance de construcción',
           'Permisos por institución'
         ]
       },
       {
         section: 'Resumen Financiero',
         items: [
-          'Comparación por fase',
+          'Comparación por fase (Usos)',
+          'Comparación por fase (Fuentes)',
           'Líneas de crédito',
           'Cobertura CPP vs préstamo'
-        ]
-      },
-      {
-        section: 'Riesgos y alertas',
-        items: [
-          'Alertas por severidad',
-          'Expedientes atrasados por etapa'
         ]
       }
     ];
@@ -3449,6 +3650,7 @@ if (isSoldLikeStatus(st)) U.sold++;
 
       ws.addRow(['Proyecto', summary.projectName]);
       ws.addRow(['Tipo de proyecto', summary.projectType || 'No definido']);
+      ws.addRow(['Sociedad promotora', summary.promoterCompanyName || 'No definido']);
       ws.addRow(['Promotor', summary.promoterName || 'No definido']);
       ws.addRow(['Perfil del promotor', summary.promoterCategory || 'No definido']);
       if (summary.periodLabel) ws.addRow(['Periodo analizado', summary.periodLabel]);
@@ -3755,6 +3957,16 @@ if (isSoldLikeStatus(st)) U.sold++;
 
     const chartsSafe = charts || {};
     const usedKeys = new Set();
+    const hasUsefulTable = (title) => {
+      const table = chartRows(title, datasets);
+      if (!table || !Array.isArray(table.rows) || !table.rows.length) return false;
+      if (table.rows.length === 1 && !table.total) {
+        const label = String(table.rows[0]?.label || '').trim().toLowerCase();
+        const value = String(table.rows[0]?.value || '').trim();
+        if (!value || value === '0' || label === 'promedio') return false;
+      }
+      return true;
+    };
 
     for (const sec of CHART_ORDER) {
       const resolved = [];
@@ -3763,7 +3975,7 @@ if (isSoldLikeStatus(st)) U.sold++;
         const realKey = findChartKey(chartsSafe, expectedTitle);
         if (realKey && chartsSafe[realKey]) {
           resolved.push({ expectedTitle, realKey });
-        } else if (reportPeriod) {
+        } else if (reportPeriod || hasUsefulTable(expectedTitle)) {
           resolved.push({ expectedTitle, realKey: null });
         }
       }
@@ -3785,7 +3997,18 @@ if (isSoldLikeStatus(st)) U.sold++;
       }
     }
 
-    const leftovers = Object.keys(chartsSafe).filter(k => chartsSafe[k] && !usedKeys.has(k));
+    const excludedChartTitles = new Set([
+      'perfil cliente',
+      'tipo de empresa',
+      'avance de construccion',
+      'alertas por severidad',
+      'expedientes atrasados por etapa'
+    ]);
+    const leftovers = Object.keys(chartsSafe).filter(k =>
+      chartsSafe[k] &&
+      !usedKeys.has(k) &&
+      !excludedChartTitles.has(normKey(k))
+    );
 
     if (leftovers.length) {
       for (const k of leftovers) {

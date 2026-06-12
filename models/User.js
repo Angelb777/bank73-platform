@@ -47,6 +47,7 @@ const ProjectRoleSchema = new mongoose.Schema(
 
 const PromoterProfileSchema = new mongoose.Schema(
   {
+    companyName: { type: String, trim: true, default: '' },
     yearsExperience: { type: Number, min: 0, default: null },
     deliveredProjects: { type: Number, min: 0, default: null },
     activeProjects: { type: Number, min: 0, default: null },

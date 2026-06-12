@@ -356,10 +356,14 @@ function isPromoterLikeUser(u = {}) {
 function promoterProfileCell(u = {}) {
   if (!isPromoterLikeUser(u)) return '<span class="muted">No definido</span>';
   const category = u.promoterCategory || 'Emergente';
+  const companyName = u.promoterProfile?.companyName || '';
   return `
-    <div>
-      <span>${escapeHtml(category)}</span>
-      <div><button class="btn small" data-user-promoter-profile="${u._id}">Editar perfil</button></div>
+    <div class="promoter-profile-cell">
+      <div>
+        <strong class="promoter-profile-company">${escapeHtml(companyName || 'Sociedad no definida')}</strong>
+        <span class="promoter-profile-category">${escapeHtml(category)}</span>
+      </div>
+      <button class="btn small promoter-profile-action" data-user-promoter-profile="${u._id}">Editar perfil</button>
     </div>
   `;
 }
@@ -1011,6 +1015,10 @@ function applyProjectsFilters(list) {
           <button id="promoterProfileClose" class="btn small" style="background:#2a323d;">Cerrar</button>
         </div>
 
+        <label class="small muted" style="display:block;margin-bottom:10px;">Nombre de la sociedad
+          <input id="pp-companyName" class="input" type="text" placeholder="Ej: Promotora Vista Azul, S.A." />
+        </label>
+
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <label class="small muted">Años de experiencia
             <input id="pp-yearsExperience" class="input" type="number" min="0" step="1" />
@@ -1053,6 +1061,7 @@ function applyProjectsFilters(list) {
         return value === '' || value === null || value === undefined ? '' : Number(value);
       };
       const profile = {
+        companyName: document.getElementById('pp-companyName')?.value || '',
         yearsExperience: numOrBlank('pp-yearsExperience'),
         deliveredProjects: numOrBlank('pp-deliveredProjects'),
         activeProjects: numOrBlank('pp-activeProjects'),
@@ -1078,6 +1087,7 @@ function applyProjectsFilters(list) {
     const profile = user?.promoterProfile || {};
     wrap.dataset.userId = user._id;
     document.getElementById('promoterProfileUser').textContent = `${user.name || '-'} · ${user.email || '-'}`;
+    document.getElementById('pp-companyName').value = profile.companyName || '';
     document.getElementById('pp-yearsExperience').value = profile.yearsExperience ?? '';
     document.getElementById('pp-deliveredProjects').value = profile.deliveredProjects ?? '';
     document.getElementById('pp-activeProjects').value = profile.activeProjects ?? '';

@@ -28,6 +28,7 @@ function sanitizePromoterProfile(input = {}) {
     : String(input.countries || input.paisesOperacion || '').split(/\r?\n|,/);
 
   return {
+    companyName: String(input.companyName ?? input.sociedad ?? input.nombreSociedad ?? '').trim().slice(0, 180),
     yearsExperience: toNum(input.yearsExperience ?? input.aniosExperiencia),
     deliveredProjects: toNum(input.deliveredProjects ?? input.proyectosEntregados),
     activeProjects: toNum(input.activeProjects ?? input.proyectosActivos),
@@ -193,8 +194,21 @@ if (!allowedRequested.includes(requested)) {
     };
 
     if (requested === 'promoter') {
-      const promoterProfile = sanitizePromoterProfile(req.body?.promoterProfile || req.body?.perfilPromotor || {});
-      if (promoterProfile) userPayload.promoterProfile = promoterProfile;
+      const profileInput = req.body?.promoterProfile || req.body?.perfilPromotor || {};
+      const companyName = String(
+        req.body?.promoterCompanyName ??
+        req.body?.sociedad ??
+        profileInput.companyName ??
+        profileInput.sociedad ??
+        profileInput.nombreSociedad ??
+        ''
+      ).trim();
+
+      if (!companyName) {
+        return res.status(400).json({ error: 'El nombre de la sociedad es obligatorio para promotores.' });
+      }
+
+      userPayload.promoterProfile = sanitizePromoterProfile({ ...profileInput, companyName });
     }
 
     const user = await User.create(userPayload);

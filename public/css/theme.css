@@ -3355,6 +3355,10 @@ body.light-theme #cards .card.status-FINALIZADO .badge {
   margin-top: 10px;
 }
 
+#tab-finanzas .finance-table-wrap.is-collapsed {
+  display: none;
+}
+
 #tab-finanzas .finance-loan-table {
   width: 100%;
   min-width: 980px;
@@ -5046,4 +5050,31 @@ body {
 .unit-title-input:focus {
   outline: 2px solid #3b82f6;
   background: #fff;
+}
+
+.promoter-profile-cell {
+  display: grid;
+  gap: 8px;
+  align-items: start;
+  min-width: 180px;
+}
+
+.promoter-profile-company {
+  display: block;
+  color: var(--text);
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.promoter-profile-category {
+  display: block;
+  color: var(--muted);
+  font-size: .92rem;
+  line-height: 1.2;
+  margin-top: 3px;
+}
+
+.promoter-profile-action {
+  justify-self: start;
+  width: max-content;
 }

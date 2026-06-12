@@ -2631,6 +2631,14 @@ if (!isPeriodView) try {
   const promoterLabel = promoterNames.length
     ? promoterNames.join(', ')
     : (project.promoterName || 'No definido');
+  const promoterCompanyLabel =
+    project.promoterCompanyName ||
+    project.promoterSocietyName ||
+    project.promoterProfile?.companyName ||
+    (Array.isArray(project.promoters)
+      ? project.promoters.map(p => p?.promoterProfile?.companyName).find(Boolean)
+      : '') ||
+    'Sociedad no definida';
   const promoterCategoryLabel = project.promoterCategory || 'No definido';
 
   // Resumen general extra
@@ -2638,7 +2646,7 @@ if (!isPeriodView) try {
     {
       title: 'Perfil del proyecto',
       value: `Tipo de proyecto: ${projectTypeLabel}`,
-      sub: `Promotor: ${promoterLabel} · Perfil del promotor: ${promoterCategoryLabel}`,
+      sub: `Sociedad: ${promoterCompanyLabel} · Promotor: ${promoterLabel} · Perfil del promotor: ${promoterCategoryLabel}`,
       className: 'project-profile-kpi'
     },
     {
@@ -3078,8 +3086,9 @@ renderChartSummary(
   renderPieLike('p23', 'sumModelsInConstruction', technical.modelsInConstruction || [], 'model', 'count', 'sumModelsInConstructionSummary', 'Total modelos', 'pie');
   renderBarSimple('p24', 'sumConstructionProgressRanges', technical.constructionProgressRanges || [], 'range', 'count', 'sumConstructionProgressRangesSummary', 'Total unidades');
 
-    // ---------- Financiero: KPIs ----------
+  // ---------- Financiero: KPIs ----------
   const fc = financial.cppCoverage || {};
+  const financeTotals = financial.totals || {};
 
   const loanApprovedSummary =
     project.loanApproved ??
@@ -3088,6 +3097,7 @@ renderChartSummary(
     0;
 
   const loanDisbursedSummary =
+    financeTotals.disbursed ??
     project.loanDisbursed ??
     headerKpis.loanDisbursed ??
     kpis.loan?.disbursed ??
@@ -3124,8 +3134,25 @@ renderChartSummary(
       value: formatMoney(loanDisbursedSummary)
     },
     {
+      title: 'Amortización total',
+      value: formatMoney(financeTotals.amortized || 0),
+      sub: `${formatMoney(financeTotals.manualAmortized || 0)} manual · ${formatMoney(financeTotals.allocatedAmortized || 0)} ventas`
+    },
+    {
+      title: 'Saldo por pagar',
+      value: formatMoney(financeTotals.debt || 0)
+    },
+    {
       title: 'Budget aprobado',
       value: formatMoney(budgetApprovedSummary)
+    },
+    {
+      title: 'Valor base / cheques',
+      value: formatMoney(financeTotals.checkAmountTotal || 0)
+    },
+    {
+      title: 'Total promotor',
+      value: formatMoney(financeTotals.promoterTotal || 0)
     },
     {
       title: 'CPP vigente',
@@ -3140,6 +3167,24 @@ renderChartSummary(
   ]);
 
   // ---------- Financiero: líneas crédito ----------
+  renderMiniKpiBox('summaryFinanceControlCards', [
+    {
+      title: 'Prestamo promotor',
+      value: `Desembolsado: ${formatMoney(financeTotals.disbursed || 0)}`,
+      sub: `Saldo por pagar: ${formatMoney(financeTotals.debt || 0)}`
+    },
+    {
+      title: 'Recuperacion del banco',
+      value: formatMoney(financeTotals.amortized || 0),
+      sub: `Manual: ${formatMoney(financeTotals.manualAmortized || 0)} · Ventas: ${formatMoney(financeTotals.allocatedAmortized || 0)}`
+    },
+    {
+      title: 'Ventas / cheques',
+      value: formatMoney(financeTotals.checkAmountTotal || 0),
+      sub: `Destinado a promotor: ${formatMoney(financeTotals.promoterTotal || 0)}`
+    }
+  ]);
+
   sumDestroy('p25');
   const creditLines = financial.creditLines || [];
   if (ctx('sumCreditLines')) {
@@ -3148,24 +3193,30 @@ renderChartSummary(
       data: {
         labels: creditLines.map(x => x.name),
         datasets: [
-          { label: 'Amortizado', data: creditLines.map(x => toNum(x.amortizedAmount)), stack: 's' },
-          { label: 'Deuda actual', data: creditLines.map(x => toNum(x.debt)), stack: 's' }
+          { label: 'Desembolsado', data: creditLines.map(x => toNum(x.disbursementAmount ?? x.disbursedAmount)) },
+          { label: 'Amortizado total', data: creditLines.map(x => toNum(x.totalRecovered ?? x.amortizedAmount)) }
         ]
       },
       options: summaryChartOpts({
         scales: {
-          x: { stacked: true },
-          y: { stacked: true, beginAtZero: true }
+          x: { stacked: false },
+          y: { stacked: false, beginAtZero: true }
         }
       })
     });
   }
   renderChartSummary(
     'sumCreditLinesSummary',
-    creditLines.map(x => ({ label: x.name, value: toNum(x.debt), amortized: toNum(x.amortizedAmount) })),
+    creditLines.map(x => ({
+      label: x.name,
+      value: toNum(x.totalRecovered ?? x.amortizedAmount),
+      balance: toNum(x.balanceAfterSales ?? x.debt),
+      disbursed: toNum(x.disbursementAmount ?? x.disbursedAmount),
+      amortized: toNum(x.totalRecovered ?? x.amortizedAmount)
+    })),
     {
-      totalLabel: 'Total deuda',
-      formatter: (v, item) => `${formatMoneyCompact(toNum(v))} deuda · ${formatMoneyCompact(toNum(item?.amortized))} amort.`
+      totalLabel: 'Total amortizado',
+      formatter: (v, item) => `${formatMoneyCompact(toNum(item?.disbursed))} desemb. - ${formatMoneyCompact(toNum(v))} amort. - ${formatMoneyCompact(toNum(item?.balance))} saldo`
     }
   );
 
@@ -3530,8 +3581,6 @@ if (btn) {
         'Ventas mensuales': captureCanvas('sumSalesMonthly'),
         'Ventas vs ventas caídas': captureCanvas('sumSalesVsFallen'),
         'Ventas por modelo de vivienda': captureCanvas('sumSalesByModel'),
-        'Perfil cliente': captureCanvas('sumClientProfile'),
-        'Tipo de empresa': captureCanvas('sumCompanyType'),
         'Estatus en banco': captureCanvas('sumBankStatus'),
         'CPP por banco': captureCanvas('sumCppPie'),
         'Montos CPP por banco': captureCanvas('sumCppAmountByBank'),
@@ -3546,7 +3595,6 @@ if (btn) {
         'Estatus construcción': captureCanvas('sumConstructionStatus'),
         'Fase de construcción': captureCanvas('sumConstructionPhase'),
         'Modelos en construcción': captureCanvas('sumModelsInConstruction'),
-        'Avance de construcción': captureCanvas('sumConstructionProgressRanges'),
         'Permisos por institución': captureCanvas('sumPermitsByInstitution'),
 
         'Comparación por fase (Usos)': captureCanvas('sumPhaseChart'),
@@ -3554,8 +3602,6 @@ if (btn) {
         'Líneas de crédito': captureCanvas('sumCreditLines'),
         'Cobertura CPP vs préstamo': captureCanvas('sumCppCoverage'),
 
-        'Alertas por severidad': captureCanvas('sumAlertsSeverity'),
-        'Expedientes atrasados por etapa': captureCanvas('sumDelaysByStage'),
       };
 
       // Limpia nulls
@@ -3771,7 +3817,7 @@ function addInfoBadges(){
     sumConstructionPhase: 'Fase constructiva actual de las unidades.',
     sumModelsInConstruction: 'Modelos de vivienda actualmente en construcción.',
     sumConstructionProgressRanges: 'Avance de construcción agrupado por rangos porcentuales.',
-    sumCreditLines: 'Líneas de crédito: amortizado frente a deuda actual.',
+    sumCreditLines: 'Líneas de crédito: desembolsado frente a amortizado total.',
     sumCppCoverage: 'Cobertura de CPP vigente y en trámite frente a deuda actual.',
   };
   for (const [id, tip] of Object.entries(tips)) {
@@ -4628,6 +4674,8 @@ let FINANCE_CONTROL = null;
 let FINANCE_COMMERCIAL_UNITS = [];
 let FINANCE_LOAN_LINES_SAVE_IN_PROGRESS = false;
 let FINANCE_LOAN_LINES_RENDER_TIMER = null;
+let FINANCE_LOAN_LINE_EXPANDED = new Set();
+let FINANCE_LOAN_LINE_COLLAPSED = new Set();
 
 const fmt = (n) => (Number(n || 0)).toLocaleString('es-ES');
 const sumItems = (arr = []) => (arr || []).reduce((a, it) => a + (Number(it?.amount) || 0), 0);
@@ -4965,16 +5013,16 @@ function renderFinanceLoanLinesChart(lines = collectFinanceLoanLines()) {
       labels,
       datasets: [
         {
-          label: 'Amortizado total',
-          data: totals.map(t => t.recovered),
+          label: 'Desembolsado',
+          data: totals.map(t => t.disbursed),
           backgroundColor: 'rgba(34,197,94,.78)',
           borderColor: 'rgba(34,197,94,1)',
           borderWidth: 1,
           borderRadius: 6,
         },
         {
-          label: 'Saldo por pagar',
-          data: totals.map(t => t.balance),
+          label: 'Amortizado total',
+          data: totals.map(t => t.recovered),
           backgroundColor: 'rgba(59,130,246,.72)',
           borderColor: 'rgba(59,130,246,1)',
           borderWidth: 1,
@@ -4992,7 +5040,7 @@ function renderFinanceLoanLinesChart(lines = collectFinanceLoanLines()) {
             label: (ctx) => `${ctx.dataset.label}: ${financeMoney(ctx.raw)}`,
             footer: (items) => {
               const idx = items?.[0]?.dataIndex ?? 0;
-              return `Desembolsado: ${financeMoney(totals[idx]?.disbursed || 0)}`;
+              return `Saldo por pagar: ${financeMoney(totals[idx]?.balance || 0)}`;
             },
           },
         },
@@ -5035,6 +5083,10 @@ function renderFinanceLoanLines(lines = []) {
       return (a.sourceOrder || 0) - (b.sourceOrder || 0);
     });
     const rowId = line._id || `new-${Date.now()}-${idx}`;
+    const rowKey = String(rowId);
+    const rowsCount = combinedRows.length;
+    const isCollapsed = FINANCE_LOAN_LINE_COLLAPSED.has(rowKey)
+      || (rowsCount > 5 && !FINANCE_LOAN_LINE_EXPANDED.has(rowKey));
     return `
       <article class="finance-loan-line-card" data-line-card data-id="${escapeHtml(rowId)}">
         <div class="finance-loan-line-head">
@@ -5051,6 +5103,7 @@ function renderFinanceLoanLines(lines = []) {
             <span class="finance-status is-${status.key}">${status.label}</span>
           </div>
           <div class="finance-inline-actions">
+            <button class="btn btn-ghost btn-xs" type="button" data-finance-toggle-entries data-count="${rowsCount}" aria-expanded="${isCollapsed ? 'false' : 'true'}">${isCollapsed ? 'Mostrar' : 'Ocultar'} partidas (${rowsCount})</button>
             <button class="btn btn-xs" type="button" data-finance-add-entry>+ Partida</button>
             <button class="btn btn-xs" type="button" data-finance-save-line>Guardar</button>
             <button class="btn btn-danger btn-xs" type="button" data-finance-remove-line>Eliminar</button>
@@ -5059,7 +5112,7 @@ function renderFinanceLoanLines(lines = []) {
         <div class="finance-loan-line-notes">
           <input data-line-field="notes" value="${escapeHtml(line.notes || '')}" placeholder="Notas de la línea">
         </div>
-        <div class="finance-table-wrap">
+        <div class="finance-table-wrap ${isCollapsed ? 'is-collapsed' : ''}" data-finance-entries-wrap>
           <table class="finance-loan-table">
             <thead>
               <tr>
@@ -5531,6 +5584,28 @@ function bindFinanceOnce() {
     }, 120);
   });
   document.getElementById('financeLoanLinesBody')?.addEventListener('click', async (ev) => {
+    const toggleEntriesBtn = ev.target.closest('[data-finance-toggle-entries]');
+    if (toggleEntriesBtn) {
+      const card = toggleEntriesBtn.closest('.finance-loan-line-card');
+      const key = String(card?.dataset.id || '');
+      const wrap = card?.querySelector('[data-finance-entries-wrap]');
+      const nextCollapsed = !wrap?.classList.contains('is-collapsed');
+      wrap?.classList.toggle('is-collapsed', nextCollapsed);
+      if (key) {
+        if (nextCollapsed) {
+          FINANCE_LOAN_LINE_COLLAPSED.add(key);
+          FINANCE_LOAN_LINE_EXPANDED.delete(key);
+        } else {
+          FINANCE_LOAN_LINE_EXPANDED.add(key);
+          FINANCE_LOAN_LINE_COLLAPSED.delete(key);
+        }
+      }
+      const count = toggleEntriesBtn.dataset.count || '';
+      toggleEntriesBtn.textContent = `${nextCollapsed ? 'Mostrar' : 'Ocultar'} partidas${count ? ` (${count})` : ''}`;
+      toggleEntriesBtn.setAttribute('aria-expanded', nextCollapsed ? 'false' : 'true');
+      return;
+    }
+
     const saveBtn = ev.target.closest('[data-finance-save-line]');
     if (saveBtn) {
       await saveFinanceLoanLines(saveBtn);

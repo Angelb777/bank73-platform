@@ -86,12 +86,16 @@
 
   function syncPromoterProfileFields() {
     if (!promoterProfileFields) return;
-    promoterProfileFields.style.display = getRequestedRole() === 'promoter' ? '' : 'none';
+    const isPromoter = getRequestedRole() === 'promoter';
+    promoterProfileFields.style.display = isPromoter ? '' : 'none';
+    const companyInput = document.getElementById('ppCompanyName');
+    if (companyInput) companyInput.required = isPromoter;
   }
 
   function collectPromoterProfile() {
     if (getRequestedRole() !== 'promoter') return undefined;
     return {
+      companyName: document.getElementById('ppCompanyName')?.value.trim() || '',
       yearsExperience: document.getElementById('ppYearsExperience')?.value || '',
       deliveredProjects: document.getElementById('ppDeliveredProjects')?.value || '',
       activeProjects: document.getElementById('ppActiveProjects')?.value || '',
@@ -128,6 +132,13 @@
     // Validación mínima de rol (evita valores raros si tocan el DOM)
     if (!REQUESTABLE_ROLES.includes(roleReq)) {
       if (msg) { msg.textContent = 'Selecciona un rol válido.'; msg.style.color = 'salmon'; }
+      btn && btn.classList.remove('loading');
+      return;
+    }
+
+    if (roleReq === 'promoter' && !promoterProfile?.companyName) {
+      if (msg) { msg.textContent = 'El nombre de la sociedad es obligatorio para promotores.'; msg.style.color = 'salmon'; }
+      document.getElementById('ppCompanyName')?.focus();
       btn && btn.classList.remove('loading');
       return;
     }
