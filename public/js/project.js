@@ -22,6 +22,7 @@
   const projectTypeText = document.getElementById('projectTypeText');
   const saveBtn     = document.getElementById('saveStatusBtn');
   const startBtn    = document.getElementById('startBtn');
+  const projectAlertsBtn = document.getElementById('projectAlertsBtn');
 
   const disbRow     = document.getElementById('disbRow');
   const disbBtn     = document.getElementById('disbBtn');
@@ -6967,6 +6968,7 @@ function estadoLabel(v) {
   let unitDocFolderId = '';
   let unitDocFoldersCache = [];
   let unitDocInsideDepartment = false;
+  let latestFinanceExpiryAlerts = [];
 
   function pill(txt){ return `<span class="tag">${txt||'-'}</span>`; }
 
@@ -7170,12 +7172,51 @@ async function getCreditLineExpiryAlerts() {
   }
 }
 
-function showCppExpiryPopup(alerts = []) {
+function updateProjectAlertsButton(alerts = []) {
+  if (!projectAlertsBtn) return;
+  const count = alerts.length;
+  projectAlertsBtn.classList.toggle('has-alerts', count > 0);
+  projectAlertsBtn.dataset.alertCount = count > 99 ? '99+' : String(count);
+  projectAlertsBtn.title = count ? `Ver ${count} alertas` : 'Ver alertas';
+  projectAlertsBtn.setAttribute('aria-label', count ? `Ver ${count} alertas` : 'Ver alertas');
+}
+
+function openNoFinanceAlertsPopup() {
+  openModal(
+    'Alertas',
+    `
+      <div style="
+        border:1px solid rgba(148,163,184,.35);
+        border-radius:20px;
+        padding:24px;
+        background:linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        color:#0f172a;
+        box-shadow:0 18px 45px rgba(15,23,42,.10);
+      ">
+        <div style="font-size:24px;font-weight:900;margin-bottom:8px;">No hay alertas actualmente</div>
+        <div style="color:#64748b;font-size:14px;">No se encontraron vencimientos financieros próximos para este proyecto.</div>
+      </div>
+    `,
+    'Cerrar',
+    () => { modalBackdrop.style.display = 'none'; }
+  );
+}
+
+function showCppExpiryPopup(alerts = [], { force = false } = {}) {
+  latestFinanceExpiryAlerts = Array.isArray(alerts) ? alerts : [];
+  updateProjectAlertsButton(latestFinanceExpiryAlerts);
+  if (!latestFinanceExpiryAlerts.length) {
+    if (force) openNoFinanceAlertsPopup();
+    return;
+  }
+  alerts = latestFinanceExpiryAlerts;
   if (!alerts.length) return;
 
   const storageKey = `finance-expiry-alerts-shown-${id}-${new Date().toISOString().slice(0,10)}`;
-  if (sessionStorage.getItem(storageKey) === '1') return;
-  sessionStorage.setItem(storageKey, '1');
+  if (!force) {
+    if (sessionStorage.getItem(storageKey) === '1') return;
+    sessionStorage.setItem(storageKey, '1');
+  }
 
   const rows = alerts.map(a => `
     <div style="
@@ -7319,6 +7360,12 @@ function showCppExpiryPopup(alerts = []) {
   'Entendido',
   () => { modalBackdrop.style.display = 'none'; }
 );
+}
+
+if (projectAlertsBtn) {
+  projectAlertsBtn.addEventListener('click', () => {
+    showCppExpiryPopup(latestFinanceExpiryAlerts, { force: true });
+  });
 }
     // Grid
     // ----- Render grid mejorado -----
