@@ -2387,6 +2387,41 @@ body.ba-viewer-open {
   color: var(--fin-text);
 }
 
+.finance-percent-note{
+  margin-top: 5px;
+  color: var(--muted, #94a3b8);
+  font-size: .75rem;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.finance-phase-ratio{
+  margin-top: 9px;
+  color: var(--muted, #94a3b8);
+  font-size: .78rem;
+  line-height: 1.35;
+}
+
+.finance-phase-ratio b{
+  color: var(--fin-text, var(--text, #e7e9f0));
+}
+
+.finance-phase-progress,
+#tab-finanzas .finance-line-progress{
+  height: 6px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148,163,184,.16);
+}
+
+.finance-phase-progress > div,
+#tab-finanzas .finance-line-progress > div{
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #38bdf8, #22c55e);
+}
+
 .fin-line .label{
   font-weight: 900;
   margin-bottom: 6px;
@@ -3309,6 +3344,14 @@ body.light-theme #cards .card.status-FINALIZADO .badge {
   font-size: 18px;
 }
 
+#tab-finanzas .finance-loan-summary-card small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted, #94a3b8);
+  font-size: 11px;
+  font-weight: 750;
+}
+
 #tab-finanzas .finance-loan-lines {
   display: grid;
   gap: 12px;
@@ -3332,6 +3375,12 @@ body.light-theme #cards .card.status-FINALIZADO .badge {
   align-items: end;
   gap: 12px;
   min-width: 0;
+}
+
+#tab-finanzas .finance-line-progress {
+  flex: 1 0 100%;
+  width: 100%;
+  margin-top: 0;
 }
 
 #tab-finanzas .finance-loan-line-head label,

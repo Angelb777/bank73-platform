@@ -2985,6 +2985,28 @@ renderChartSummary(
   // =========================================================
 
   // ---------- Comercial: ventas vs caídas ----------
+  const commercialFallenSales = (commercial.salesVsFallenByYear || [])
+    .reduce((sum, item) => sum + toNum(item.fallen), 0);
+  const commercialCppAmount = calcTotal(commercial.cppAmountByBank || [], 'amount');
+
+  renderTargetKpis('summaryCommercialKpis', [
+    { title: 'Unidades totales', value: u.total || 0 },
+    {
+      title: 'Unidades vendidas',
+      value: u.sold || 0,
+      sub: `${pct}% del inventario`
+    },
+    { title: 'Unidades disponibles', value: u.available || 0 },
+    { title: 'Absorción 3m', value: `${kpis.absorption3m || 0} u/mes` },
+    { title: 'Ticket promedio', value: formatMoney(kpis.avgTicket || 0) },
+    { title: 'Ventas caídas', value: commercialFallenSales },
+    {
+      title: 'CPP activos',
+      value: cpp.active || 0,
+      sub: formatMoney(commercialCppAmount)
+    }
+  ]);
+
   sumDestroy('p11');
   const salesVsFallen = commercial.salesVsFallenByYear || [];
   if (ctx('sumSalesVsFallen')) {
@@ -4736,6 +4758,19 @@ function financeMoney(n) {
   return `$${fmt(Math.round(Number(n || 0)))}`;
 }
 
+function financePct(value, base, decimals = 1) {
+  const numerator = numOr0(value);
+  const denominator = numOr0(base);
+  if (denominator <= 0) return '0%';
+  return `${((numerator / denominator) * 100).toFixed(decimals)}%`;
+}
+
+function financeProgressWidth(value, base) {
+  const denominator = numOr0(base);
+  if (denominator <= 0) return 0;
+  return Math.max(0, Math.min(100, (numOr0(value) / denominator) * 100));
+}
+
 function financeDateInput(v) {
   if (!v) return '';
   const d = new Date(v);
@@ -4961,15 +4996,16 @@ function renderFinanceLoanGlobalSummary(lines = collectFinanceLoanLines()) {
   const allocated = lines.reduce((a, l) => a + financeLoanLineTotals(l).allocated, 0);
   const totalAmortized = totals.amortized + allocated;
   box.innerHTML = [
-    ['Total desembolsado', financeMoney(totals.disbursed)],
-    ['Amortizado manual', financeMoney(totals.amortized)],
-    ['Amortizado por ventas', financeMoney(allocated)],
-    ['Amortización total', financeMoney(totalAmortized)],
-    ['Saldo por pagar', financeMoney(totals.balance)],
-  ].map(([label, value]) => `
+    ['Total desembolsado', financeMoney(totals.disbursed), '100% base'],
+    ['Amortizado manual', financeMoney(totals.amortized), `${financePct(totals.amortized, totals.disbursed)} del desembolsado`],
+    ['Amortizado por ventas', financeMoney(allocated), `${financePct(allocated, totals.disbursed)} del desembolsado`],
+    ['Amortización total', financeMoney(totalAmortized), `${financePct(totalAmortized, totals.disbursed)} del desembolsado`],
+    ['Saldo por pagar', financeMoney(totals.balance), `${financePct(totals.balance, totals.disbursed)} pendiente`],
+  ].map(([label, value, percent]) => `
     <article class="finance-loan-summary-card">
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(percent)}</small>
     </article>
   `).join('');
 }
@@ -5048,7 +5084,11 @@ function renderFinanceLoanLinesChart(lines = collectFinanceLoanLines()) {
             label: (ctx) => `${ctx.dataset.label}: ${financeMoney(ctx.raw)}`,
             footer: (items) => {
               const idx = items?.[0]?.dataIndex ?? 0;
-              return `Saldo por pagar: ${financeMoney(totals[idx]?.balance || 0)}`;
+              const lineTotals = totals[idx] || {};
+              return [
+                `Amortizado: ${financePct(lineTotals.recovered, lineTotals.disbursed)}`,
+                `Saldo por pagar: ${financeMoney(lineTotals.balance || 0)} (${financePct(lineTotals.balance, lineTotals.disbursed)})`
+              ];
             },
           },
         },
@@ -5079,6 +5119,8 @@ function renderFinanceLoanLines(lines = []) {
   }));
   body.innerHTML = safeLines.map((line, idx) => {
     const totals = financeLoanLineTotals(line);
+    const recoveredPct = financePct(totals.recovered, totals.disbursed);
+    const balancePct = financePct(totals.balance, totals.disbursed);
     const status = totals.balance <= 0 ? { key: 'amortized', label: 'Amortizado' } : financeLineStatus(line);
     const salesAllocations = financeSalesAllocationsForLine(line);
     const combinedRows = [
@@ -5106,9 +5148,12 @@ function renderFinanceLoanLines(lines = []) {
             <span>Desembolsado <b>${financeMoney(totals.disbursed)}</b></span>
             <span>Manual <b>${financeMoney(totals.amortized)}</b></span>
             <span>Ventas <b>${financeMoney(totals.allocated)}</b></span>
-            <span>Total amort. <b>${financeMoney(totals.recovered)}</b></span>
-            <span>Saldo por pagar <b>${financeMoney(totals.balance)}</b></span>
+            <span>Total amort. <b>${financeMoney(totals.recovered)} · ${recoveredPct}</b></span>
+            <span>Saldo por pagar <b>${financeMoney(totals.balance)} · ${balancePct}</b></span>
             <span class="finance-status is-${status.key}">${status.label}</span>
+            <div class="finance-line-progress" title="${recoveredPct} amortizado">
+              <div style="width:${financeProgressWidth(totals.recovered, totals.disbursed)}%"></div>
+            </div>
           </div>
           <div class="finance-inline-actions">
             <button class="btn btn-ghost btn-xs" type="button" data-finance-toggle-entries data-count="${rowsCount}" aria-expanded="${isCollapsed ? 'false' : 'true'}">${isCollapsed ? 'Mostrar' : 'Ocultar'} partidas (${rowsCount})</button>
@@ -5782,10 +5827,18 @@ function renderAccumSummary(phases) {
   const elPS = document.getElementById('accPlanSources');
   const elRU = document.getElementById('accRealUses');
   const elRS = document.getElementById('accRealSources');
+  const elPUPct = document.getElementById('accPlanUsesPct');
+  const elPSPct = document.getElementById('accPlanSourcesPct');
+  const elRUPct = document.getElementById('accRealUsesPct');
+  const elRSPct = document.getElementById('accRealSourcesPct');
   if (elPU) elPU.textContent = fmt(planUses);
   if (elPS) elPS.textContent = fmt(planSources);
   if (elRU) elRU.textContent = fmt(realUses);
   if (elRS) elRS.textContent = fmt(realSources);
+  if (elPUPct) elPUPct.textContent = '100% del plan de usos';
+  if (elPSPct) elPSPct.textContent = `${financePct(planSources, planUses)} de cobertura del plan`;
+  if (elRUPct) elRUPct.textContent = `${financePct(realUses, planUses)} ejecutado vs plan`;
+  if (elRSPct) elRSPct.textContent = `${financePct(realSources, planSources)} ejecutado vs plan`;
 }
 
 function renderRealAccumFromPhases(phases) {
@@ -5897,7 +5950,13 @@ function renderPhaseChart(phases, canvasId = 'phaseChart') {
           intersect: true,
           callbacks: {
             title: (items) => items?.[0]?.label || '',
-            label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.parsed.y || 0)}`
+            label: (ctx) => {
+              const value = numOr0(ctx.parsed.y);
+              const stackTotal = (ctx.chart?.data?.datasets || [])
+                .filter(ds => ds.stack === ctx.dataset.stack)
+                .reduce((sum, ds) => sum + numOr0(ds.data?.[ctx.dataIndex]), 0);
+              return `${ctx.dataset.label}: ${fmt(value)} (${financePct(value, stackTotal)})`;
+            }
           }
         }
       },
@@ -5983,7 +6042,13 @@ function renderPhaseSourceChart(phases, canvasId = 'phaseSourceChart') {
           intersect: true,
           callbacks: {
             title: (items) => items?.[0]?.label || '',
-            label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.parsed.y || 0)}`
+            label: (ctx) => {
+              const value = numOr0(ctx.parsed.y);
+              const stackTotal = (ctx.chart?.data?.datasets || [])
+                .filter(ds => ds.stack === ctx.dataset.stack)
+                .reduce((sum, ds) => sum + numOr0(ds.data?.[ctx.dataIndex]), 0);
+              return `${ctx.dataset.label}: ${fmt(value)} (${financePct(value, stackTotal)})`;
+            }
           }
         }
       },
@@ -6016,6 +6081,11 @@ function renderPhases(phases = []) {
 
   wrapPlan.innerHTML = '';
   wrapReal.innerHTML = '';
+
+  const allPlanUses = (phases || []).reduce((a, ph) => a + sumItems(ph?.planUses), 0);
+  const allPlanSources = (phases || []).reduce((a, ph) => a + sumItems(ph?.planSources), 0);
+  const allRealUses = (phases || []).reduce((a, ph) => a + sumItems(ph?.uses), 0);
+  const allRealSources = (phases || []).reduce((a, ph) => a + sumItems(ph?.sources), 0);
 
   const dateFmt = (d) => {
     if (!d) return '—';
@@ -6077,6 +6147,11 @@ function renderPhases(phases = []) {
 
     const disbExpected = Number(ph?.disbExpected || 0);
     const disbActual   = Number(ph?.disbActual || 0);
+    const planUsesShare = financePct(planUsesTotal, allPlanUses);
+    const planSourcesShare = financePct(planSrcsTotal, allPlanSources);
+    const realUsesExecution = financePct(realUsesTotal, planUsesTotal);
+    const realSourcesExecution = financePct(realSrcsTotal, planSrcsTotal);
+    const disbursementExecution = financePct(disbActual, disbExpected);
 
     // -------------------------
     // CARD PLAN (estimación)
@@ -6086,11 +6161,16 @@ function renderPhases(phases = []) {
         <div class="fin-kpi">
           <div class="label">Usos plan</div>
           <div class="value">${fmt(planUsesTotal)}</div>
+          <div class="finance-percent-note">${planUsesShare} del plan total</div>
         </div>
         <div class="fin-kpi">
           <div class="label">Fuentes plan</div>
           <div class="value">${fmt(planSrcsTotal)}</div>
+          <div class="finance-percent-note">${planSourcesShare} de las fuentes totales</div>
         </div>
+      </div>
+      <div class="finance-phase-ratio">
+        Cobertura fuentes / usos: <b>${financePct(planSrcsTotal, planUsesTotal)}</b>
       </div>
       <div class="small muted" style="margin-top:8px;">
         Edita el plan de esta fase (usos/fuentes estimados).
@@ -6140,24 +6220,33 @@ if (!hasRealData && !startedByDate) {
         <div class="fin-kpi">
           <div class="label">Usos real</div>
           <div class="value">${fmt(realUsesTotal)}</div>
+          <div class="finance-percent-note">${realUsesExecution} ejecutado vs plan</div>
+          <div class="finance-phase-progress"><div style="width:${financeProgressWidth(realUsesTotal, planUsesTotal)}%"></div></div>
         </div>
         <div class="fin-kpi">
           <div class="label">Fuentes real</div>
           <div class="value">${fmt(realSrcsTotal)}</div>
+          <div class="finance-percent-note">${realSourcesExecution} ejecutado vs plan</div>
+          <div class="finance-phase-progress"><div style="width:${financeProgressWidth(realSrcsTotal, planSrcsTotal)}%"></div></div>
         </div>
+      </div>
+
+      <div class="finance-phase-ratio">
+        Peso en la ejecución total: usos <b>${financePct(realUsesTotal, allRealUses)}</b> · fuentes <b>${financePct(realSrcsTotal, allRealSources)}</b>
       </div>
 
       <div class="fin-line" style="margin-top:10px;">
         <div class="label">Desembolso (banco)</div>
         <div class="row between" style="align-items:center;">
           <div class="small">
-            Esperado: <b>${fmt(disbExpected)}</b> · Real: <b>${fmt(disbActual)}</b>
+            Esperado: <b>${fmt(disbExpected)}</b> · Real: <b>${fmt(disbActual)}</b> · Ejecutado: <b>${disbursementExecution}</b>
           </div>
           <div class="row gap">
             <button class="btn btn-warning btn-xs" data-act="request">Solicitar</button>
             <button class="btn btn-ghost btn-xs" data-act="clearRequest">Resuelto</button>
           </div>
         </div>
+        <div class="finance-phase-progress"><div style="width:${financeProgressWidth(disbActual, disbExpected)}%"></div></div>
       </div>
     `;
 

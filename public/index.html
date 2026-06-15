@@ -19,7 +19,7 @@
   <meta property="og:type" content="website" />
 
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/landing.css?v=1004" />
+  <link rel="stylesheet" href="css/landing.css?v=1005" />
 </head>
 
 <body>
@@ -682,6 +682,29 @@
 </div>
 </section>
 
+    <!-- Vídeo secreto -->
+    <section id="videoBank73" class="section secret-video-section" hidden aria-hidden="true">
+      <div class="container">
+        <div class="secret-video-heading">
+          <h2 class="section-title center">Resumen Bank73</h2>
+          <p class="lead">
+            Una demostración rápida de cómo las entidades financieras pueden obtener una visión clara y actualizada del estado real de sus proyectos financiados, mejorando el control operativo y la gestión del riesgo.
+          </p>
+        </div>
+
+        <div class="secret-video-frame glass">
+          <iframe
+            data-src="https://www.youtube-nocookie.com/embed/IaQh2HnFiaw?rel=0"
+            title="Presentación de Bank73"
+            loading="lazy"
+            referrerpolicy="strict-origin-when-cross-origin"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen
+          ></iframe>
+        </div>
+      </div>
+    </section>
+
     <!-- CTA Final -->
     <section class="section cta-final">
       <div class="container">
@@ -751,6 +774,7 @@
 
   // Toggle secreto para demos comerciales: Ctrl + 2580 o escribir 2580
   const methodologySection = document.getElementById('metodologia');
+  const secretVideoSection = document.getElementById('videoBank73');
   const methodologyNavLink = document.querySelector('.methodology-nav-link');
   const methodologyStorageKey = 'bank73:methodology-visible';
   const methodologyCode = '2580';
@@ -762,6 +786,18 @@
 
     methodologySection.hidden = !visible;
     methodologySection.setAttribute('aria-hidden', String(!visible));
+    if (secretVideoSection) {
+      secretVideoSection.hidden = !visible;
+      secretVideoSection.setAttribute('aria-hidden', String(!visible));
+      const secretVideoFrame = secretVideoSection.querySelector('iframe[data-src]');
+      if (secretVideoFrame) {
+        if (visible && !secretVideoFrame.src) {
+          secretVideoFrame.src = secretVideoFrame.dataset.src;
+        } else if (!visible) {
+          secretVideoFrame.removeAttribute('src');
+        }
+      }
+    }
     if (methodologyNavLink) methodologyNavLink.hidden = !visible;
 
     localStorage.setItem(methodologyStorageKey, visible ? '1' : '0');
