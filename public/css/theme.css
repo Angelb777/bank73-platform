@@ -548,6 +548,13 @@ body.light-theme .project-status-picker {
   box-shadow: 0 10px 24px rgba(31, 45, 74, .08);
 }
 
+body.light-theme .currency-picker {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(31, 45, 74, .12);
+}
+
 body.light-theme .status-label {
   background: #dcecff;
   color: #1d4ed8;
@@ -1874,6 +1881,55 @@ body.ba-viewer-open {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
 }
 
+.currency-picker {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  border: 1px solid rgba(148, 163, 184, .28);
+  border-radius: 999px;
+  background: rgba(79, 70, 229, .92);
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(79,70,229,.28), inset 0 1px 0 rgba(255,255,255,.12);
+  overflow: hidden;
+  transition: transform .08s ease, filter .15s ease, border-color .18s ease;
+}
+
+.currency-picker:hover,
+.currency-picker:focus-within {
+  filter: brightness(1.04);
+  border-color: rgba(255,255,255,.55);
+}
+
+.currency-picker:active {
+  transform: translateY(1px);
+}
+
+.currency-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+  text-align-last: center;
+  outline: none;
+}
+
+.currency-select option {
+  color: #111827;
+  background: #fff;
+  font-weight: 800;
+}
+
 .status-label{
   align-self: stretch;
   display: inline-flex;
@@ -1932,7 +1988,7 @@ body.ba-viewer-open {
 .btn-primary:hover{ filter: brightness(1.03); }
 .btn-primary:active{ transform: translateY(1px); }
 
-/* Responsive: mantener Estado + Guardar en una sola fila */
+/* Responsive: mantener los controles en una fila compacta */
 @media (max-width: 640px){
   .status-controls{
     width:100%;
@@ -1944,6 +2000,12 @@ body.ba-viewer-open {
   .project-status-picker{
     flex:1 1 180px;
     min-width:0;
+  }
+
+  .currency-picker{
+    width:48px;
+    height:48px;
+    flex-basis:48px;
   }
 
   .status-label{
@@ -1960,12 +2022,6 @@ body.ba-viewer-open {
     min-width:0;
     padding-left:12px;
     padding-right:34px;
-  }
-
-  #saveStatusBtn{
-    flex:0 0 auto;
-    padding-left:12px;
-    padding-right:12px;
   }
 }
 

@@ -14,6 +14,7 @@ const axios = require('axios');
 
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
+const { formatProjectMoney } = require('../utils/currency');
 
 /* =========================================================================
    Helpers base
@@ -45,7 +46,7 @@ const fmtDate = (d) => {
   }
 };
 
-const moneyES = (n) => Number(n || 0).toLocaleString('es-ES');
+const moneyES = (n, currency = 'PAB') => formatProjectMoney(n, currency);
 
 const cleanDate = (v) => {
   if (!v) return null;
@@ -978,7 +979,7 @@ function financePdfSection(doc, title) {
   doc.moveDown(0.6);
 }
 
-function financePdfKpiCards(doc, snap) {
+function financePdfKpiCards(doc, snap, projectCurrency = 'PAB') {
   const margin = doc.page.margins.left;
   const pageW = doc.page.width;
   const contentW = pageW - margin*2;
@@ -988,9 +989,9 @@ function financePdfKpiCards(doc, snap) {
 
   const kpis = [
     { label: 'Ejecución (Real/Plan usos)', value: `${(snap.percentExecution * 100).toFixed(1)}%` },
-    { label: 'Intereses acumulados', value: moneyES(snap.totals.intereses) },
-    { label: 'Preventas acumuladas', value: moneyES(snap.totals.preventas) },
-    { label: 'Desembolso real (total)', value: moneyES(snap.totals.disbActual) },
+    { label: 'Intereses acumulados', value: moneyES(snap.totals.intereses, projectCurrency) },
+    { label: 'Preventas acumuladas', value: moneyES(snap.totals.preventas, projectCurrency) },
+    { label: 'Desembolso real (total)', value: moneyES(snap.totals.disbActual, projectCurrency) },
   ];
 
   const drawCard = (x, y, { label, value }) => {
@@ -1108,8 +1109,9 @@ function financePdfTable(doc, rows, cols) {
   doc.moveDown(0.8);
 }
 
-async function exportFinancePdf({ req, res, projectId, projectName, updatedAt, doc, chartsPayload }) {
+async function exportFinancePdf({ req, res, projectId, projectName, projectCurrency = 'PAB', updatedAt, doc, chartsPayload }) {
   const snap = buildFinanceSnapshot(doc);
+  const money = (n) => moneyES(n, projectCurrency);
 
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="finanzas_${projectId}.pdf"`);
@@ -1124,7 +1126,7 @@ async function exportFinancePdf({ req, res, projectId, projectName, updatedAt, d
   pdf.__updatedAt = updatedAt;
 
   // KPI cards
-  financePdfKpiCards(pdf, snap);
+  financePdfKpiCards(pdf, snap, projectCurrency);
 
   // Charts opcionales (si llegan)
   const charts = chartsPayload || {};
@@ -1152,16 +1154,16 @@ async function exportFinancePdf({ req, res, projectId, projectName, updatedAt, d
   // Resumen financiero
   financePdfSection(pdf, 'Resumen financiero (plan vs real)');
   financePdfTable(pdf, [
-    { c:'Plan usos', v: moneyES(snap.totals.planUses) },
-    { c:'Plan fuentes', v: moneyES(snap.totals.planSources) },
-    { c:'Real usos', v: moneyES(snap.totals.realUses) },
-    { c:'Real fuentes', v: moneyES(snap.totals.realSources) },
+    { c:'Plan usos', v: money(snap.totals.planUses) },
+    { c:'Plan fuentes', v: money(snap.totals.planSources) },
+    { c:'Real usos', v: money(snap.totals.realUses) },
+    { c:'Real fuentes', v: money(snap.totals.realSources) },
     { c:'Ejecución', v: `${(snap.percentExecution * 100).toFixed(1)}%` },
-    { c:'Intereses', v: moneyES(snap.totals.intereses) },
-    { c:'Preventas', v: moneyES(snap.totals.preventas) },
-    { c:'Aportes propios', v: moneyES(snap.totals.aportes) },
-    { c:'Desembolso esperado', v: moneyES(snap.totals.disbExpected) },
-    { c:'Desembolso real', v: moneyES(snap.totals.disbActual) },
+    { c:'Intereses', v: money(snap.totals.intereses) },
+    { c:'Preventas', v: money(snap.totals.preventas) },
+    { c:'Aportes propios', v: money(snap.totals.aportes) },
+    { c:'Desembolso esperado', v: money(snap.totals.disbExpected) },
+    { c:'Desembolso real', v: money(snap.totals.disbActual) },
     { c:'Fases solicitadas', v: String(snap.totals.disbRequestedCount) },
   ], [
     { key:'c', label:'Concepto', wPct:0.66, align:'left' },
@@ -1173,9 +1175,9 @@ async function exportFinancePdf({ req, res, projectId, projectName, updatedAt, d
   const rows = snap.phases.map(p => ({
     phase: p.name,
     dates: `${fmtDate(p.startDate)} → ${fmtDate(p.endDate)}`,
-    plan: moneyES(p.planUses),
-    real: moneyES(p.realUses),
-    disb: `${moneyES(p.disbActual)}${p.disbRequested ? ' (SOL)' : ''}`,
+    plan: money(p.planUses),
+    real: money(p.realUses),
+    disb: `${money(p.disbActual)}${p.disbRequested ? ' (SOL)' : ''}`,
   }));
   financePdfTable(pdf, rows, [
     { key:'phase', label:'Fase', wPct:0.34, align:'left' },
@@ -1197,15 +1199,15 @@ async function exportFinancePdf({ req, res, projectId, projectName, updatedAt, d
     pdf.moveDown(0.4);
 
     financePdfTable(pdf, [
-      { c:'Plan usos', v: moneyES(p.planUses) },
-      { c:'Plan fuentes', v: moneyES(p.planSources) },
-      { c:'Real usos', v: moneyES(p.realUses) },
-      { c:'Real fuentes', v: moneyES(p.realSources) },
-      { c:'Intereses', v: moneyES(p.intereses) },
-      { c:'Preventas', v: moneyES(p.preventas) },
-      { c:'Aportes', v: moneyES(p.aportes) },
-      { c:'Desembolso esperado', v: moneyES(p.disbExpected) },
-      { c:'Desembolso real', v: moneyES(p.disbActual) },
+      { c:'Plan usos', v: money(p.planUses) },
+      { c:'Plan fuentes', v: money(p.planSources) },
+      { c:'Real usos', v: money(p.realUses) },
+      { c:'Real fuentes', v: money(p.realSources) },
+      { c:'Intereses', v: money(p.intereses) },
+      { c:'Preventas', v: money(p.preventas) },
+      { c:'Aportes', v: money(p.aportes) },
+      { c:'Desembolso esperado', v: money(p.disbExpected) },
+      { c:'Desembolso real', v: money(p.disbActual) },
       { c:'Solicitado', v: p.disbRequested ? 'SI' : 'NO' },
     ], [
       { key:'c', label:'Concepto', wPct:0.66, align:'left' },
@@ -1214,7 +1216,7 @@ async function exportFinancePdf({ req, res, projectId, projectName, updatedAt, d
 
     const mkRows = (items) => (items || []).map(it => ({
       n: String(it?.name || '—'),
-      a: moneyES(it?.amount || 0)
+      a: money(it?.amount || 0)
     }));
 
     financePdfSection(pdf, 'PLAN — Usos');
@@ -1270,6 +1272,7 @@ async function handleFinanceExport(req, res) {
 
     const project = await Project.findById(projectId).lean().catch(() => null);
     const projectName = project?.name || 'Proyecto';
+    const projectCurrency = project?.currency || 'PAB';
     const updatedAt = project?.updatedAt || doc?.updatedAt || new Date();
 
     // chartsPayload: compat (chart único => lo metemos como "Plan vs Real")
@@ -1282,13 +1285,13 @@ async function handleFinanceExport(req, res) {
 
     if (format === 'xlsx') {
       return exportFinanceXlsx({
-        req, res, projectId, projectName, updatedAt, doc, kpis, chartsPayload
+        req, res, projectId, projectName, projectCurrency, updatedAt, doc, kpis, chartsPayload
       });
     }
 
     // pdf
     return exportFinancePdf({
-      req, res, projectId, projectName, updatedAt, doc, chartsPayload
+      req, res, projectId, projectName, projectCurrency, updatedAt, doc, chartsPayload
     });
 
   } catch (err) {

@@ -12,6 +12,7 @@ const Unit              = require('../models/Unit');
 const User              = require('../models/User');
 const ProjectFinance    = require('../models/ProjectFinance');
 const audit             = require('../utils/audit');
+const { normalizeProjectCurrency, parsePanamaNumber, formatProjectMoney, currencySymbol } = require('../utils/currency');
 
 const router = express.Router();
 
@@ -147,6 +148,10 @@ function promoterPublicShape(user) {
     promoterCategory: user.promoterCategory || 'No definido',
     promoterType: user.promoterProfile?.promoterType || 'No definido'
   };
+}
+
+function sanitizeProjectCurrency(value) {
+  return normalizeProjectCurrency(value);
 }
 
 function parseReportPeriod(source = {}) {
@@ -504,6 +509,7 @@ console.log('[DEBUG PORTFOLIO ESTADOS]', JSON.stringify(debugEstados, null, 2));
         description: p.description,
         projectType: p.projectType || '',
         tipoProyecto: p.projectType || '',
+        currency: p.currency || 'PAB',
         status: p.status,
         assignedPromoters: Array.isArray(p.assignedPromoters) ? p.assignedPromoters : [],
         createdAt: p.createdAt,
@@ -553,6 +559,7 @@ router.post('/', requireRole('admin','bank'), async (req, res) => {
     body.createdBy = toObjectId(req.user.userId);
     body.teamSuggestion = sanitizeTeamSuggestion(body.teamSuggestion || {});
     body.projectType = sanitizeProjectType(firstDefined(body.projectType, body.tipoProyecto));
+    body.currency = sanitizeProjectCurrency(body.currency);
     delete body.tipoProyecto;
 
     // Crear proyecto ya no requiere exponer/asignar usuarios en el alta.
@@ -693,6 +700,9 @@ router.put('/:id', requireRole('admin','bank'), async (req, res) => {
       if (firstDefined(req.body.projectType, req.body.tipoProyecto) !== undefined) {
         payload.projectType = sanitizeProjectType(firstDefined(req.body.projectType, req.body.tipoProyecto));
       }
+      if (req.body.currency !== undefined) {
+        payload.currency = sanitizeProjectCurrency(req.body.currency);
+      }
 
       if (typeof req.body.status === 'string') {
         const st = req.body.status.trim().toUpperCase();
@@ -703,7 +713,7 @@ router.put('/:id', requireRole('admin','bank'), async (req, res) => {
       }
 
       // KPIs numéricos: convertimos y validamos
-      const asNum = (v) => (v === '' || v === null || v === undefined) ? undefined : Number(v);
+      const asNum = parsePanamaNumber;
       const kpis = {
         loanApproved:   asNum(req.body.loanApproved),
         loanDisbursed:  asNum(req.body.loanDisbursed),
@@ -720,7 +730,7 @@ router.put('/:id', requireRole('admin','bank'), async (req, res) => {
   // === BANK ===
   // Permitimos cambiar status (opcional) + KPIs financieros básicos (opcionales)
 
-  const asNum = (v) => (v === '' || v === null || v === undefined) ? undefined : Number(v);
+  const asNum = parsePanamaNumber;
 
   // ✅ status (opcional, no obligatorio)
   if (typeof req.body.status === 'string' && req.body.status.trim()) {
@@ -729,6 +739,10 @@ router.put('/:id', requireRole('admin','bank'), async (req, res) => {
       return res.status(400).json({ error: `status inválido. Usa: ${VALID_STATUS.join(', ')}` });
     }
     payload.status = st;
+  }
+
+  if (req.body.currency !== undefined) {
+    payload.currency = sanitizeProjectCurrency(req.body.currency);
   }
 
   // ✅ KPIs (opcionales)
@@ -2525,13 +2539,15 @@ if (isSoldLikeStatus(st)) U.sold++;
       return Number.isFinite(n) ? n : 0;
     };
 
-    const fmtNum = (v) => toNumber(v).toLocaleString('es-ES');
+    const projectCurrency = summary?.project?.currency || summary?.currency || 'PAB';
+    const fmtNum = (v) => toNumber(v).toLocaleString('en-US');
     const fmtMoneyShort = (v) => {
       const n = toNumber(v);
       const abs = Math.abs(n);
-      if (abs >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
-      if (abs >= 1000) return `$${(n / 1000).toFixed(0)}k`;
-      return `$${fmtNum(n)}`;
+      const symbol = currencySymbol(projectCurrency);
+      if (abs >= 1000000) return `${symbol} ${(n / 1000000).toFixed(1)}M`;
+      if (abs >= 1000) return `${symbol} ${(n / 1000).toFixed(0)}k`;
+      return formatProjectMoney(n, projectCurrency);
     };
 
     const resolveLogoPath = () => {

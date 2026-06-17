@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const PUBLISH_STATUSES = ['draft', 'pending', 'approved', 'rejected'];
+const PROJECT_CURRENCIES = ['PAB', 'USD', 'EUR'];
 const PROJECT_TYPES = [
   'Residencial vertical PH',
   'Residencial horizontal',
@@ -19,6 +20,7 @@ const projectSchema = new Schema({
   name: String,
   description: String,
   projectType: { type: String, enum: ['', ...PROJECT_TYPES], default: '' },
+  currency: { type: String, enum: PROJECT_CURRENCIES, default: 'PAB' },
 
   status: { type: String, default: 'EN_CURSO' },
 
@@ -79,3 +81,4 @@ const projectSchema = new Schema({
 module.exports = mongoose.model('Project', projectSchema);
 module.exports.PUBLISH_STATUSES = PUBLISH_STATUSES;
 module.exports.PROJECT_TYPES = PROJECT_TYPES;
+module.exports.PROJECT_CURRENCIES = PROJECT_CURRENCIES;

@@ -1328,7 +1328,13 @@
           </div>
         </div>
 
-        <button id="saveStatusBtn" class="btn-primary">Guardar</button>
+        <div class="currency-picker" title="Moneda del proyecto">
+          <select id="projectCurrencySel" class="currency-select" aria-label="Moneda del proyecto">
+            <option value="PAB">B/.</option>
+            <option value="USD">$</option>
+            <!-- <option value="EUR">€</option> -->
+          </select>
+        </div>
       </div>
 
     </div>
@@ -1774,17 +1780,17 @@
     <div id="financeProjectKpis" class="finance-edit-kpi-grid">
       <label class="finance-edit-kpi">
         <span>Loan aprobado</span>
-        <input id="finLoanApproved" class="input" type="number" min="0" step="1" placeholder="0" />
+        <input id="finLoanApproved" class="input money-input" type="text" inputmode="decimal" placeholder="0.00" />
       </label>
 
       <label class="finance-edit-kpi">
         <span>Desembolsado manual</span>
-        <input id="finLoanDisbursed" class="input" type="number" min="0" step="1" placeholder="0" />
+        <input id="finLoanDisbursed" class="input money-input" type="text" inputmode="decimal" placeholder="0.00" />
       </label>
 
       <label class="finance-edit-kpi">
         <span>Budget aprobado</span>
-        <input id="finBudgetApproved" class="input" type="number" min="0" step="1" placeholder="0" />
+        <input id="finBudgetApproved" class="input money-input" type="text" inputmode="decimal" placeholder="0.00" />
       </label>
     </div>
   </section>
@@ -2032,7 +2038,7 @@
         <label>m²</label>
         <input id="cl-m2" type="number" min="0" value="60" />
         <label>Precio lista</label>
-        <input id="cl-precio" type="number" min="0" value="100000" />
+        <input id="cl-precio" type="text" inputmode="decimal" value="100,000.00" />
         <label>Estado inicial</label>
         <select id="cl-estado">
   <option value="disponible">Disponible</option>
@@ -2094,7 +2100,7 @@
 </select>
             <label>Modelo</label><input id="b-modelo" />
             <label>m²</label><input id="b-m2" type="number" />
-            <label>Precio lista</label><input id="b-precio" type="number" />
+            <label>Precio lista</label><input id="b-precio" type="text" inputmode="decimal" />
             <h4>Datos del inmueble</h4>
             <label>Numero de finca</label><input id="b-numeroFinca" />
             <label>Codigo ubicacion</label><input id="b-codigoUbicacion" />
@@ -2106,14 +2112,14 @@
               <option value="NO">No</option>
             </select>
             <label>Metros extra</label><input id="b-metrosExtra" type="number" />
-            <label>Precio lote esquinero</label><input id="b-precioLoteEsquina" type="number" />
-            <label>Precio metro extra</label><input id="b-precioM2Extra" type="number" />
+            <label>Precio lote esquinero</label><input id="b-precioLoteEsquina" type="text" inputmode="decimal" />
+            <label>Precio metro extra</label><input id="b-precioM2Extra" type="text" inputmode="decimal" />
             <label>Area abierta vivienda</label><input id="b-areaAbierta" type="number" />
             <label>Area cerrada vivienda</label><input id="b-areaCerrada" type="number" />
             <label>Recamaras</label><input id="b-recamaras" type="number" />
             <label>Banos</label><input id="b-banos" type="number" />
-            <label>Valor mejoras</label><input id="b-valorMejoras" type="number" />
-            <label>Valor terreno</label><input id="b-valorTerreno" type="number" />
+            <label>Valor mejoras</label><input id="b-valorMejoras" type="text" inputmode="decimal" />
+            <label>Valor terreno</label><input id="b-valorTerreno" type="text" inputmode="decimal" />
 
             <h4>Cliente / comprador</h4>
             <label>Nickname cliente</label><input id="b-clienteNombre" />
@@ -2162,7 +2168,7 @@
             </select>
             <label>Empresa</label><input id="b-empresa" />
             <label>Lugar de trabajo</label><input id="b-lugarTrabajo" />
-            <label>Ingreso mensual</label><input id="b-ingresoMensual" type="number" />
+            <label>Ingreso mensual</label><input id="b-ingresoMensual" type="text" inputmode="decimal" />
             <label>Cargo</label><input id="b-cargo" />
             <label>Antiguedad laboral</label><input id="b-antiguedadLaboral" />
 
@@ -2192,7 +2198,7 @@
             <label>Celular</label><input id="b-cliente2Celular" />
             <label>Correo</label><input id="b-cliente2Correo" />
             <label>Lugar de trabajo</label><input id="b-cliente2LugarTrabajo" />
-            <label>Ingreso mensual</label><input id="b-cliente2IngresoMensual" type="number" />
+            <label>Ingreso mensual</label><input id="b-cliente2IngresoMensual" type="text" inputmode="decimal" />
             <label>Cargo</label><input id="b-cliente2Cargo" />
             <label>Antiguedad laboral</label><input id="b-cliente2AntiguedadLaboral" />
           </div>
@@ -2207,7 +2213,7 @@
   <input id="b-statusBancoOther" placeholder="Especificar (OTRO)..." />
 </div>
             <label>N° CPP</label><input id="b-numCPP" />
-            <label>Valor</label><input id="b-valor" type="number" />
+            <label>Valor</label><input id="b-valor" type="text" inputmode="decimal" />
             <label>Estatus CPP</label>
             <select id="b-estatusCPP">
               <option value="">(no cambiar)</option>
@@ -2216,8 +2222,8 @@
               <option value="Aprobado">Aprobado</option>
               <option value="CPP recibida">CPP recibida</option>
             </select>
-            <label>Precio de venta</label><input id="b-precioVenta" type="number" />
-            <label>Monto financiamiento CPP / hipoteca</label><input id="b-montoFinanciamientoCPP" type="number" />
+            <label>Precio de venta</label><input id="b-precioVenta" type="text" inputmode="decimal" />
+            <label>Monto financiamiento CPP / hipoteca</label><input id="b-montoFinanciamientoCPP" type="text" inputmode="decimal" />
             <label>% financiamiento</label><input id="b-porcentajeFinanciamiento" type="number" />
             <label>Cesion a favor de</label><input id="b-cesionAFavorDe" />
             <label>Fecha probable entrega</label><input id="b-fechaProbableEntrega" type="date" />
@@ -2226,7 +2232,7 @@
 
             <h4>Contrato / protocolo</h4>
             <label>Fecha contrato firmado por cliente</label><input id="b-fechaContratoCliente" type="date" />
-            <label>Monto contrato</label><input id="b-montoContrato" type="number" />
+            <label>Monto contrato</label><input id="b-montoContrato" type="text" inputmode="decimal" />
             <label>Contrato firmado</label>
             <select id="b-contratoFirmado"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
             <label>Fecha activacion tramite legal</label><input id="b-fechaActivacionTramite" type="date" />

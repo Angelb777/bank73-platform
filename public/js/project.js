@@ -19,8 +19,8 @@
 
   const statusWrap  = document.getElementById('statusControls');
   const statusSel   = document.getElementById('pstatusSel');
+  const projectCurrencySel = document.getElementById('projectCurrencySel');
   const projectTypeText = document.getElementById('projectTypeText');
-  const saveBtn     = document.getElementById('saveStatusBtn');
   const startBtn    = document.getElementById('startBtn');
   const projectAlertsBtn = document.getElementById('projectAlertsBtn');
 
@@ -48,6 +48,52 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
     chat:      document.getElementById('tab-chat'),
   };
   let __summaryDirty = false;
+  const PROJECT_CURRENCIES = {
+    PAB: { code: 'PAB', label: 'B/. Balboa', symbol: 'B/.' },
+    USD: { code: 'USD', label: '$ Dolar estadounidense', symbol: '$' },
+    EUR: { code: 'EUR', label: '€ Euro', symbol: '€' }
+  };
+  let currentProjectCurrency = 'PAB';
+  let isProjectSettingsSaving = false;
+
+  function normalizeProjectCurrency(value) {
+    const code = String(value || '').trim().toUpperCase();
+    return PROJECT_CURRENCIES[code] ? code : 'PAB';
+  }
+
+  function projectCurrencySymbol(currency = currentProjectCurrency) {
+    return PROJECT_CURRENCIES[normalizeProjectCurrency(currency)].symbol;
+  }
+
+  function parsePanamaNumber(value) {
+    if (value === null || value === undefined || value === '') return 0;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    const cleaned = String(value)
+      .trim()
+      .replace(/B\/\.|\$|€/gi, '')
+      .replace(/\s/g, '')
+      .replace(/,/g, '');
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function formatPanamaNumber(value, decimals = 2) {
+    return Number(value || 0).toLocaleString('en-US', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    });
+  }
+
+  function formatProjectMoney(value, decimals = 2) {
+    return `${projectCurrencySymbol()} ${formatPanamaNumber(value, decimals)}`;
+  }
+
+  function updateCurrencyControlMeta() {
+    if (!projectCurrencySel) return;
+    const meta = PROJECT_CURRENCIES[normalizeProjectCurrency(projectCurrencySel.value)];
+    projectCurrencySel.title = meta.label;
+    projectCurrencySel.closest('.currency-picker')?.setAttribute('title', meta.label);
+  }
 
   async function refreshSummaryFromServer() {
     if (typeof loadSummary === 'function') {
@@ -1614,17 +1660,16 @@ function kpiCard(label, value, sub=''){
 
 // cerca de tus helpers en public/js/project.js
 function renderHeaderKpis(project, hs = {}, kpis = {}) {
-  const fmt = (n) => (Number(n||0)).toLocaleString();
   const loanApproved   = project.loanApproved   ?? kpis.loan?.approved   ?? 0;
   const loanDisbursed  = project.loanDisbursed  ?? kpis.loan?.disbursed  ?? 0;
   const budgetApproved = project.budgetApproved ?? 0;            // si no lo llevas en kpis, quedará 0
   const budgetSpent    = project.budgetSpent    ?? project.expense ?? 0;
 
   const tiles = [
-    { key:'loan-approved',   label:'Loan aprobado',     value: fmt(loanApproved) },
-    { key:'disbursed',       label:'Desembolsado',      value: fmt(loanDisbursed) },
-    { key:'budget-approved', label:'Budget aprobado',   value: fmt(budgetApproved) },
-    { key:'expense', label:'Gasto', value: fmt(window.FINANCE_KPIS?.real?.uses ?? budgetSpent ?? 0) },
+    { key:'loan-approved',   label:'Loan aprobado',     value: formatProjectMoney(loanApproved) },
+    { key:'disbursed',       label:'Desembolsado',      value: formatProjectMoney(loanDisbursed) },
+    { key:'budget-approved', label:'Budget aprobado',   value: formatProjectMoney(budgetApproved) },
+    { key:'expense', label:'Gasto', value: formatProjectMoney(window.FINANCE_KPIS?.real?.uses ?? budgetSpent ?? 0) },
     { key:'units-total',     label:'Unidades totales',  value: (hs.unitsTotal ?? project.unitsTotal ?? 0) },
     { key:'units-sold',      label:'Unidades vendidas', value: (hs.unitsSold  ?? project.unitsSold  ?? 0) },
   ];
@@ -1990,24 +2035,15 @@ function wireBAUploads(){
 
 function formatNum(v) {
   const n = Number(v || 0);
-  return n.toLocaleString('es-PA');
+  return n.toLocaleString('en-US');
 }
 
 function formatMoney(v) {
-  const n = Number(v || 0);
-  return n.toLocaleString('es-PA', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  });
+  return formatProjectMoney(v);
 }
 
 function formatMoneyCompact(v) {
-  const n = Number(v || 0);
-
-  return n.toLocaleString('es-PA', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  });
+  return formatProjectMoney(v);
 }
 
 function isSummarySoldUnit(u) {
@@ -2088,12 +2124,12 @@ function renderFinancePhaseSummary(phases = []) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
-  const sum = (items) => (items || []).reduce((acc, item) => acc + Number(item?.amount || 0), 0);
-  const money = (amount) => `$${formatMoney(amount)}`;
+  const sum = (items) => (items || []).reduce((acc, item) => acc + parsePanamaNumber(item?.amount || 0), 0);
+  const money = (amount) => formatMoney(amount);
 
   const rows = (items) => {
     const data = Array.isArray(items) ? items : [];
-    if (!data.length) return '<div class="summary-phase-line"><span>Sin partidas</span><strong>$0</strong></div>';
+    if (!data.length) return `<div class="summary-phase-line"><span>Sin partidas</span><strong>${money(0)}</strong></div>`;
     return data.map(item => `
       <div class="summary-phase-line">
         <span>${escapeHtml(item?.name || 'Partida')}</span>
@@ -2156,6 +2192,11 @@ function renderMiniKpiBox(containerId, rows = []) {
 async function renderSummaryUI(payload) {
   // 1) Datos base
   const project = payload.project || {};
+  currentProjectCurrency = normalizeProjectCurrency(project.currency || currentProjectCurrency);
+  if (projectCurrencySel) {
+    projectCurrencySel.value = currentProjectCurrency;
+    updateCurrencyControlMeta();
+  }
   const headerKpis = payload.headerKpis || {};
   const reportPeriod = payload.reportPeriod || null;
   const isPeriodView = !!reportPeriod;
@@ -2189,10 +2230,7 @@ async function renderSummaryUI(payload) {
 
   // Helpers locales
   const toNum = (v) => {
-    if (v === null || v === undefined || v === '') return 0;
-    if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
-    const s = String(v).trim().replace(/\./g, '').replace(',', '.');
-    const n = Number(s);
+    const n = parsePanamaNumber(v);
     return Number.isFinite(n) ? n : 0;
   };
 
@@ -4055,13 +4093,20 @@ function semaphoreForRole(roleKey) {
 
 
   function kpi(label, v) {
-    return `<div class="kpi"><div class="label">${label}</div><div class="value">${(v||0).toLocaleString()}</div></div>`;
+    const isMoney = /loan|desembols|budget|gasto/i.test(label);
+    const value = isMoney ? formatProjectMoney(v) : formatNum(v);
+    return `<div class="kpi"><div class="label">${label}</div><div class="value">${value}</div></div>`;
   }
 
   // ====== Carga de datos ======
   async function loadProject() {
     const p = await API.get('/api/projects/' + id);
     state.project = p;
+    currentProjectCurrency = normalizeProjectCurrency(p.currency);
+    if (projectCurrencySel) {
+      projectCurrencySel.value = currentProjectCurrency;
+      updateCurrencyControlMeta();
+    }
     if (pname)  pname.textContent  = p.name || 'Proyecto';
     if (pdesc)  pdesc.textContent  = p.description || '';
     if (pdesc2) pdesc2.textContent = p.description || '';
@@ -4093,25 +4138,40 @@ function semaphoreForRole(roleKey) {
   }
   }
 
-  if (saveBtn) {
-    saveBtn.addEventListener('click', async () => {
-      const oldText = saveBtn.textContent;
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Guardando...';
-      try {
-        await API.put(`/api/projects/${id}`, {
-          status: statusSel?.value || 'EN_CURSO'
-        });
-        await loadProject();
-        if (typeof loadSummary === 'function') await loadSummary();
-      } catch (e) {
-        alert(e.message || 'No se pudo guardar el proyecto');
-      } finally {
-        saveBtn.disabled = false;
-        saveBtn.textContent = oldText;
-      }
-    });
+  async function saveProjectSettingsAuto() {
+    if (isProjectSettingsSaving) return;
+    isProjectSettingsSaving = true;
+    const previousCurrency = currentProjectCurrency;
+    const nextCurrency = normalizeProjectCurrency(projectCurrencySel?.value || currentProjectCurrency);
+    currentProjectCurrency = nextCurrency;
+    updateCurrencyControlMeta();
+
+    try {
+      if (statusSel) statusSel.disabled = true;
+      if (projectCurrencySel) projectCurrencySel.disabled = true;
+
+      await API.put(`/api/projects/${id}`, {
+        status: statusSel?.value || 'EN_CURSO',
+        currency: nextCurrency
+      });
+
+      await loadProject();
+      if (typeof loadSummary === 'function') await loadSummary();
+      if (previousCurrency !== nextCurrency && typeof loadFinance === 'function') await loadFinance();
+    } catch (e) {
+      currentProjectCurrency = previousCurrency;
+      if (projectCurrencySel) projectCurrencySel.value = previousCurrency;
+      updateCurrencyControlMeta();
+      alert(e.message || 'No se pudo guardar el proyecto');
+    } finally {
+      if (statusSel) statusSel.disabled = false;
+      if (projectCurrencySel) projectCurrencySel.disabled = false;
+      isProjectSettingsSaving = false;
+    }
   }
+
+  statusSel?.addEventListener('change', saveProjectSettingsAuto);
+  projectCurrencySel?.addEventListener('change', saveProjectSettingsAuto);
 
   async function loadProyectoData() {
     try {
@@ -4707,12 +4767,12 @@ let FINANCE_LOAN_LINES_RENDER_TIMER = null;
 let FINANCE_LOAN_LINE_EXPANDED = new Set();
 let FINANCE_LOAN_LINE_COLLAPSED = new Set();
 
-const fmt = (n) => (Number(n || 0)).toLocaleString('es-ES');
-const sumItems = (arr = []) => (arr || []).reduce((a, it) => a + (Number(it?.amount) || 0), 0);
+const fmt = (n) => formatPanamaNumber(n);
+const sumItems = (arr = []) => (arr || []).reduce((a, it) => a + parsePanamaNumber(it?.amount || 0), 0);
 const isMongoIdLike = (v) => /^[a-f\d]{24}$/i.test(String(v || ''));
 
 function numOr0(v) {
-  const n = Number(v);
+  const n = parsePanamaNumber(v);
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -4722,9 +4782,9 @@ function fillFinanceKpiInputsFromProject(project) {
   const b = document.getElementById('finBudgetApproved');
   if (!a || !d || !b) return;
 
-  a.value = numOr0(project?.loanApproved);
-  d.value = numOr0(project?.loanDisbursed);
-  b.value = numOr0(project?.budgetApproved);
+  a.value = formatPanamaNumber(project?.loanApproved);
+  d.value = formatPanamaNumber(project?.loanDisbursed);
+  b.value = formatPanamaNumber(project?.budgetApproved);
 }
 
 async function saveFinanceProjectKpis() {
@@ -4755,7 +4815,7 @@ function renderFinanceAlerts(alerts) {
 }
 
 function financeMoney(n) {
-  return `$${fmt(Math.round(Number(n || 0)))}`;
+  return formatProjectMoney(n);
 }
 
 function financePct(value, base, decimals = 1) {
@@ -5188,9 +5248,9 @@ function renderFinanceLoanLines(lines = []) {
                     <tr class="finance-sale-entry-row">
                       <td><input value="${escapeHtml(financeDateInput(sale.checkDate) || '-')}" disabled></td>
                       <td><input value="${escapeHtml(sale.checkNumber ? `Cheque ${sale.checkNumber}` : sale.lot || 'Venta')}" disabled></td>
-                      <td><input value="0" disabled></td>
+                      <td><input value="${formatPanamaNumber(0)}" disabled></td>
                       <td><input value="-" disabled></td>
-                      <td><input value="${numOr0(sale.amount)}" disabled></td>
+                      <td><input value="${formatPanamaNumber(sale.amount)}" disabled></td>
                       <td class="finance-balance">-</td>
                       <td><span class="finance-status is-ok">Venta</span></td>
                       <td><input value="${escapeHtml(`${sale.lot || 'Unidad'} · ${sale.clientName || 'Cliente'}`)}" disabled></td>
@@ -5206,9 +5266,9 @@ function renderFinanceLoanLines(lines = []) {
                   <tr data-entry-row data-entry-id="${escapeHtml(entry._id || `new-entry-${Date.now()}-${entryIdx}`)}">
                     <td><input data-field="disbursementDate" type="date" value="${financeDateInput(entry.disbursementDate)}"></td>
                     <td><input data-field="loanNumber" value="${escapeHtml(entry.loanNumber || '')}"></td>
-                    <td><input data-field="disbursementAmount" type="number" min="0" value="${numOr0(entry.disbursementAmount)}"></td>
+                    <td><input data-field="disbursementAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.disbursementAmount)}"></td>
                     <td><input data-field="maturityDate" type="date" value="${financeDateInput(entry.maturityDate)}"></td>
-                    <td><input data-field="amortizedAmount" type="number" min="0" value="${numOr0(entry.amortizedAmount)}"></td>
+                    <td><input data-field="amortizedAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.amortizedAmount)}"></td>
                     <td class="finance-balance">${financeMoney(entryBalance)}</td>
                     <td><span class="finance-status is-${entryStatus.key}">${entryStatus.label}</span></td>
                     <td><input data-field="notes" value="${escapeHtml(entry.notes || '')}"></td>
@@ -5307,7 +5367,7 @@ function renderFinanceAllocationInputs(item) {
     return `
       <label data-allocation-line data-loan-line-id="${escapeHtml(line.id)}" data-loan-line-name="${escapeHtml(line.name)}">
         Amortizacion ${escapeHtml(line.name)}
-        <input data-field="allocationAmount" type="number" min="0" value="${numOr0(saved.amount)}">
+        <input data-field="allocationAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(saved.amount)}">
       </label>
     `;
   }).join('');
@@ -5352,13 +5412,13 @@ function renderFinanceUnitAmortizations() {
               <option value="sale_price" ${item.checkAmountSource === 'sale_price' ? 'selected' : ''}>Precio venta</option>
             </select>
           </label>
-          <label>Valor cheque / base<input data-field="checkAmount" type="number" min="0" value="${numOr0(item.checkAmount)}"></label>
+          <label>Valor cheque / base<input data-field="checkAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(item.checkAmount)}"></label>
           <label>Fecha cheque<input data-field="checkDate" type="date" value="${financeDateInput(item.checkDate)}"></label>
           <div class="finance-field-wide finance-commercial-base">
             CPP: <b>${financeMoney(item.cppAmount)}</b> · Abono inicial: <b>${financeMoney(item.initialPayment)}</b> · Precio venta: <b>${financeMoney(item.salePrice)}</b>
           </div>
           ${renderFinanceAllocationInputs(item)}
-          <label>Promotor<input data-field="promoterAmount" type="number" min="0" value="${numOr0(item.promoterAmount)}"></label>
+          <label>Promotor<input data-field="promoterAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(item.promoterAmount)}"></label>
           <label class="finance-field-wide">Notas<input data-field="notes" value="${escapeHtml(item.notes || '')}"></label>
         </div>
         <div class="finance-unit-footer">
@@ -5603,6 +5663,20 @@ async function loadFinance() {
 function bindFinanceOnce() {
   if (bindFinanceOnce.bound) return;
   bindFinanceOnce.bound = true;
+
+  const formatFinanceMoneyInput = (el) => {
+    if (!el || el.disabled || el.readOnly) return;
+    const raw = String(el.value || '').trim();
+    if (!raw) return;
+    el.value = formatPanamaNumber(parsePanamaNumber(raw));
+  };
+
+  document.addEventListener('focusout', (ev) => {
+    const input = ev.target.closest?.(
+      '.amount, [data-field="disbursementAmount"], [data-field="amortizedAmount"], [data-field="allocationAmount"], [data-field="checkAmount"], [data-field="promoterAmount"], #finLoanApproved, #finLoanDisbursed, #finBudgetApproved'
+    );
+    if (input) formatFinanceMoneyInput(input);
+  });
 
   document.getElementById('addPhaseBtn')?.addEventListener('click', () => openPhaseEditor(null));
   document.getElementById('saveFinanceKpisBtn')?.addEventListener('click', saveFinanceProjectKpis);
@@ -5910,7 +5984,7 @@ function renderPhaseChart(phases, canvasId = 'phaseChart') {
   useTypes.forEach((useName, idx) => {
     const planData = (phases || []).map(p => {
       const item = (p.planUses || []).find(u => (u.name || u.id || 'Sin nombre') === useName);
-      return Number(item?.amount || 0);
+      return parsePanamaNumber(item?.amount || 0);
     });
     datasets.push({
       label: `${useName} (Plan)`,
@@ -5925,7 +5999,7 @@ function renderPhaseChart(phases, canvasId = 'phaseChart') {
   useTypes.forEach((useName, idx) => {
     const realData = (phases || []).map(p => {
       const item = (p.uses || []).find(u => (u.name || u.id || 'Sin nombre') === useName);
-      return Number(item?.amount || 0);
+      return parsePanamaNumber(item?.amount || 0);
     });
     datasets.push({
       label: `${useName} (Real)`,
@@ -6002,7 +6076,7 @@ function renderPhaseSourceChart(phases, canvasId = 'phaseSourceChart') {
   sourceTypes.forEach((sourceName, idx) => {
     const planData = (phases || []).map(p => {
       const item = (p.planSources || []).find(s => (s.name || s.id || 'Sin nombre') === sourceName);
-      return Number(item?.amount || 0);
+      return parsePanamaNumber(item?.amount || 0);
     });
     datasets.push({
       label: `${sourceName} (Plan)`,
@@ -6017,7 +6091,7 @@ function renderPhaseSourceChart(phases, canvasId = 'phaseSourceChart') {
   sourceTypes.forEach((sourceName, idx) => {
     const realData = (phases || []).map(p => {
       const item = (p.sources || []).find(s => (s.name || s.id || 'Sin nombre') === sourceName);
-      return Number(item?.amount || 0);
+      return parsePanamaNumber(item?.amount || 0);
     });
     datasets.push({
       label: `${sourceName} (Real)`,
@@ -6333,7 +6407,7 @@ function openPhaseEditor(ph = null, focus = 'plan') {
         ${(rows || []).map(r => `
           <tr>
             <td><input class="input" type="text" value="${(r.name||'').replace(/"/g,'&quot;')}" placeholder="Partida"/></td>
-            <td class="right"><input class="input amount" type="number" value="${Number(r.amount||0)}"/></td>
+            <td class="right"><input class="input amount" type="text" inputmode="decimal" value="${formatPanamaNumber(r.amount)}"/></td>
             <td class="right"><button class="btn btn-ghost btn-xs js-del-row">✕</button></td>
           </tr>
         `).join('')}
@@ -6439,7 +6513,7 @@ function openPhaseEditor(ph = null, focus = 'plan') {
       const rows = [];
       tbody?.querySelectorAll('tr')?.forEach(tr => {
         const name = tr.querySelector('input[type="text"]')?.value?.trim();
-        const amt  = Number(tr.querySelector('input.amount')?.value || 0);
+        const amt  = parsePanamaNumber(tr.querySelector('input.amount')?.value || 0);
         if (name) rows.push({ name, amount: amt });
       });
       return rows;
@@ -6510,9 +6584,9 @@ function openPhaseEditor(ph = null, focus = 'plan') {
   const recalcTotal = (tableId) => {
     const tbody = document.querySelector(`#${tableId} tbody`);
     if (!tbody) return;
-    const total = [...tbody.querySelectorAll('input.amount')].reduce((a, inp) => a + Number(inp.value || 0), 0);
+    const total = [...tbody.querySelectorAll('input.amount')].reduce((a, inp) => a + parsePanamaNumber(inp.value || 0), 0);
     const cell = document.getElementById(`${tableId}-total`);
-    if (cell) cell.textContent = total.toLocaleString('es-ES');
+    if (cell) cell.textContent = formatProjectMoney(total);
   };
 
   const hookTable = (tableId) => {
@@ -6528,7 +6602,7 @@ function openPhaseEditor(ph = null, focus = 'plan') {
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td><input class="input" type="text" placeholder="Partida"/></td>
-          <td class="right"><input class="input amount" type="number" value="0"/></td>
+          <td class="right"><input class="input amount" type="text" inputmode="decimal" value="${formatPanamaNumber(0)}"/></td>
           <td class="right"><button class="btn btn-ghost btn-xs js-del-row">✕</button></td>
         `;
         tbody.appendChild(tr);
@@ -6754,8 +6828,10 @@ const input = (id, label, value='', type='text') =>
 const inputDate = (id, label, iso) =>
   `<div class="label">${label}</div><input id="${id}" type="date" value="${iso?String(iso).slice(0,10):''}">`;
 
-const inputNum = (id, label, value = 0, opts = {}) =>
-  `<div class="label">${label}</div><input id="${id}" type="number" value="${Number(value)||0}" ${opts.readonly ? 'readonly' : ''}>`;
+const inputNum = (id, label, value = 0, opts = {}) => {
+  const decimals = opts.decimals ?? (/precio|valor|monto|ingreso|abono|financiamiento|contrato|mejoras|terreno|porcentaje/i.test(id) ? 2 : 0);
+  return `<div class="label">${label}</div><input id="${id}" type="text" inputmode="decimal" data-number-input value="${formatPanamaNumber(value, decimals)}" ${opts.readonly ? 'readonly' : ''}>`;
+};
 
 const inputChk = (id, label, on=false) =>
   `<div class="label">${label}</div><input id="${id}" class="chk-box" type="checkbox" ${on?'checked':''}>`;
@@ -6768,7 +6844,7 @@ const selectRow = (id, label, optionsHtml='') =>
 
 // Lectores seguros para guardar
 function vVal(id){ const el = document.getElementById(id); return el ? el.value : null; }
-function vNum(id){ const v = Number(vVal(id)); return Number.isFinite(v) ? v : null; }
+function vNum(id){ const v = parsePanamaNumber(vVal(id)); return Number.isFinite(v) ? v : null; }
 function vDate(id){ const s = vVal(id); return s ? new Date(s).toISOString() : null; }
 function vChk(id){ const el = document.getElementById(id); return !!(el && el.checked); }
 
@@ -6805,21 +6881,21 @@ function refreshFinanciamientoAuto(changedField = '') {
 
   if (!precioEl || !montoEl || !pctEl) return;
 
-  const precio = Number(precioEl.value || 0);
-  let monto = Number(montoEl.value || 0);
-  let pct = Number(pctEl.value || 0);
+  const precio = parsePanamaNumber(precioEl.value);
+  let monto = parsePanamaNumber(montoEl.value);
+  let pct = parsePanamaNumber(pctEl.value);
 
   if (precio > 0) {
     if (changedField === 'pct') {
       monto = precio * (pct / 100);
-      montoEl.value = monto.toFixed(2);
+      montoEl.value = formatPanamaNumber(monto);
     } else {
       pct = (monto / precio) * 100;
-      pctEl.value = pct.toFixed(2);
+      pctEl.value = formatPanamaNumber(pct);
     }
 
     if (abonoEl) {
-      abonoEl.value = Math.max(precio - monto, 0).toFixed(2);
+      abonoEl.value = formatPanamaNumber(Math.max(precio - monto, 0));
     }
   }
 }
@@ -7198,7 +7274,7 @@ kpisDiv.innerHTML = [
   { key: 'legal', label: 'Trámite legal', value: resumen.tramite_legal_activado || 0, sub: 'En proceso' },
   { key: 'escriturado', label: 'Escriturado / Traspasado', value: resumen.escriturado_traspasado || 0, sub: 'Cerradas' },
   { key: 'entregada', label: 'Vivienda entregada', value: resumen.vivienda_entregada || 0, sub: 'Entregas' },
-  { key: 'valor', label: 'Valor total', value: `$${(resumen.valor || 0).toLocaleString()}`, sub: 'Precio lista acumulado' }
+  { key: 'valor', label: 'Valor total', value: formatProjectMoney(resumen.valor || 0), sub: 'Precio lista acumulado' }
 ].map(item => `
   <div class="commercial-kpi-card commercial-kpi-${item.key}">
     <span class="commercial-kpi-label">${item.label}</span>
@@ -7517,7 +7593,7 @@ ${cppAlert ? `
       </div>
 
       <div class="meta">${u.modelo || '—'} — ${u.m2 || 0} m²</div>
-      <div class="price">$${((u.precioLista || 0)).toLocaleString()}</div>
+      <div class="price">${formatProjectMoney(u.precioLista || 0)}</div>
 
       <div class="badges">
         ${cliente ? `<span class="chip">${cliente}</span>` : `<span class="chip ghost">Sin cliente</span>`}
@@ -9075,8 +9151,8 @@ const uBody = {
   lote,
   estado: document.getElementById('fu-estado').value,
   modelo: document.getElementById('fu-modelo').value,
-  m2: Number(document.getElementById('fu-m2').value || 0),
-  precioLista: Number(document.getElementById('fu-precio').value || 0),
+  m2: parsePanamaNumber(document.getElementById('fu-m2').value),
+  precioLista: parsePanamaNumber(document.getElementById('fu-precio').value),
 };
 
     await apiPatch(`/api/units/${fichaUnitId}`, uBody);
@@ -9173,7 +9249,7 @@ const uBody = {
 
       areaAbierta: vNum('fv-areaAbierta'),
       areaCerrada: vNum('fv-areaCerrada'),
-      areaTotalConstruccion: Number(vVal('fv-areaAbierta') || 0) + Number(vVal('fv-areaCerrada') || 0),
+      areaTotalConstruccion: parsePanamaNumber(vVal('fv-areaAbierta')) + parsePanamaNumber(vVal('fv-areaCerrada')),
       recamaras: vNum('fv-recamaras'),
       banos: vNum('fv-banos'),
 
@@ -9197,7 +9273,7 @@ const uBody = {
       valor: vNum('fv-montoFinanciamientoCPP'),
 
       abonoCliente: vNum('fv-abonoCliente'),
-      abonoInicial: Math.max(Number(vVal('fv-precioVenta') || 0) - Number(vVal('fv-montoFinanciamientoCPP') || 0), 0),
+      abonoInicial: Math.max(parsePanamaNumber(vVal('fv-precioVenta')) - parsePanamaNumber(vVal('fv-montoFinanciamientoCPP')), 0),
       porcentajeFinanciamiento: vNum('fv-porcentajeFinanciamiento'),
       cesionAFavorDe: vVal('fv-cesionAFavorDe'),
 
@@ -9369,7 +9445,7 @@ const uBody = {
     if (!raw) return;
 
     if (type === 'number') {
-      const num = Number(raw);
+      const num = parsePanamaNumber(raw);
       if (Number.isFinite(num)) update[field] = num;
       return;
     }
@@ -9538,8 +9614,8 @@ const uBody = {
     const updUnit = {};
     const e = document.getElementById('b-estado').value; if (e) updUnit.estado = e;
     const mo = document.getElementById('b-modelo').value; if (mo) updUnit.modelo = mo;
-    const m2 = document.getElementById('b-m2').value; if (m2) updUnit.m2 = Number(m2);
-    const pr = document.getElementById('b-precio').value; if (pr) updUnit.precioLista = Number(pr);
+    const m2 = document.getElementById('b-m2').value; if (m2) updUnit.m2 = parsePanamaNumber(m2);
+    const pr = document.getElementById('b-precio').value; if (pr) updUnit.precioLista = parsePanamaNumber(pr);
     if (Object.keys(updUnit).length) await apiPatch('/api/units/batch', { ids, update: updUnit, projectId: id });
 
     // Venta updates
@@ -9640,7 +9716,7 @@ if (btnExportarExcel) {
         cantidad: Number(document.getElementById('cl-cantidad').value || 0),
         modelo: document.getElementById('cl-modelo').value || '',
         m2: Number(document.getElementById('cl-m2').value || 0),
-        precioLista: Number(document.getElementById('cl-precio').value || 0),
+        precioLista: parsePanamaNumber(document.getElementById('cl-precio').value || 0),
         estado: document.getElementById('cl-estado').value || 'disponible'
       };
       try {

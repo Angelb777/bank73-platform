@@ -5,6 +5,8 @@ const router = express.Router();
 
 const Venta = require('../models/Venta');
 const Unit = require('../models/Unit');
+const Project = require('../models/Project');
+const { formatProjectMoney } = require('../utils/currency');
 
 const BRAND = {
   dark: '#0B1020',
@@ -25,10 +27,9 @@ function dash(v) {
   return x || '—';
 }
 
-function money(v) {
+function money(v, currency = 'PAB') {
   if (v === null || v === undefined || v === '') return '';
-  const n = Number(v || 0);
-  return `$${n.toLocaleString('es-ES')}`;
+  return formatProjectMoney(v, currency);
 }
 
 function dateVal(v) {
@@ -49,7 +50,9 @@ async function getUnitVenta(unitId) {
   const venta = await Venta.findOne({ unitId: unit._id }).lean();
   if (!venta) return { error: 'Venta no encontrada' };
 
-  return { unit, venta };
+  const project = unit.projectId ? await Project.findById(unit.projectId).select('currency').lean() : null;
+
+  return { unit, venta, currency: project?.currency || 'PAB' };
 }
 
 function pageHeader(doc, title, subtitle = '') {
@@ -211,7 +214,8 @@ router.get('/ficha-cliente/:unitId', async (req, res) => {
     const result = await getUnitVenta(req.params.unitId);
     if (result.error) return res.status(404).json({ error: result.error });
 
-    const { unit, venta } = result;
+    const { unit, venta, currency } = result;
+    const projectMoney = (value) => money(value, currency);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="ficha_cliente_${unit.manzana || ''}_${unit.lote || ''}.pdf"`);
@@ -230,7 +234,7 @@ router.get('/ficha-cliente/:unitId', async (req, res) => {
       ['Lote', `${unit.manzana || ''}-${unit.lote || ''}`],
       ['Modelo', unit.modelo],
       ['M² unidad', unit.m2],
-      ['Precio lista', money(unit.precioLista)],
+      ['Precio lista', projectMoney(unit.precioLista)],
       ['Estado', unit.estado],
       ['Número de finca', venta.numeroFinca],
       ['Código ubicación', venta.codigoUbicacion],
@@ -239,8 +243,8 @@ router.get('/ficha-cliente/:unitId', async (req, res) => {
       ['Metraje lote', venta.metrajeLote],
       ['Lote esquina', venta.loteEsquina],
       ['M² extra', venta.metrosExtra],
-      ['Precio lote esquinero', money(venta.precioLoteEsquina)],
-      ['Precio m² extra', money(venta.precioM2Extra)],
+      ['Precio lote esquinero', projectMoney(venta.precioLoteEsquina)],
+      ['Precio m² extra', projectMoney(venta.precioM2Extra)],
       ['Área abierta', venta.areaAbierta],
       ['Área cerrada', venta.areaCerrada],
       ['Área total construcción', venta.areaTotalConstruccion],
@@ -267,7 +271,7 @@ router.get('/ficha-cliente/:unitId', async (req, res) => {
       ['Teléfono oficina', venta.telefonoOficina],
       ['Celular', venta.celular],
       ['Lugar de trabajo', venta.lugarTrabajo],
-      ['Ingreso mensual ($)', money(venta.ingresoMensual)],
+      ['Ingreso mensual', projectMoney(venta.ingresoMensual)],
       ['Cargo que desempeña', venta.cargo],
       ['Antigüedad laboral', venta.antiguedadLaboral],
       ['Empresa', venta.empresa],
@@ -290,7 +294,7 @@ router.get('/ficha-cliente/:unitId', async (req, res) => {
       ['Teléfono oficina', venta.cliente2TelefonoOficina],
       ['Celular', venta.cliente2Celular],
       ['Lugar de trabajo', venta.cliente2LugarTrabajo],
-      ['Ingreso mensual ($)', money(venta.cliente2IngresoMensual)],
+      ['Ingreso mensual', projectMoney(venta.cliente2IngresoMensual)],
       ['Cargo que desempeña', venta.cliente2Cargo],
       ['Antigüedad laboral', venta.cliente2AntiguedadLaboral],
     ]);
@@ -321,24 +325,24 @@ router.get('/ficha-cliente/:unitId', async (req, res) => {
 
     sectionTitle(doc, 'Precio de vivienda / promotora');
     grid(doc, [
-      ['Precio de venta', money(venta.precioVenta || unit.precioLista)],
-      ['Monto hipoteca', money(venta.montoFinanciamientoCPP || venta.valor)],
-      ['Precio m² extra', money(venta.precioM2Extra)],
-      ['Abono del financiamiento', money(venta.abonoCliente)],
+      ['Precio de venta', projectMoney(venta.precioVenta || unit.precioLista)],
+      ['Monto hipoteca', projectMoney(venta.montoFinanciamientoCPP || venta.valor)],
+      ['Precio m² extra', projectMoney(venta.precioM2Extra)],
+      ['Abono del financiamiento', projectMoney(venta.abonoCliente)],
       ['Póliza de vida', venta.polizaVida],
-      ['Abono ALTE', money(venta.abonoAlte)],
-      ['Valor mejoras', money(venta.valorMejoras)],
-      ['Valor terreno', money(venta.valorTerreno)],
+      ['Abono ALTE', projectMoney(venta.abonoAlte)],
+      ['Valor mejoras', projectMoney(venta.valorMejoras)],
+      ['Valor terreno', projectMoney(venta.valorTerreno)],
     ]);
 
     sectionTitle(doc, 'Precio de vivienda / entidad bancaria');
     grid(doc, [
-      ['Precio de venta', money(venta.precioVenta || unit.precioLista)],
+      ['Precio de venta', projectMoney(venta.precioVenta || unit.precioLista)],
       ['Banco', venta.banco],
-      ['Monto hipoteca / CPP', money(venta.montoFinanciamientoCPP || venta.valor)],
+      ['Monto hipoteca / CPP', projectMoney(venta.montoFinanciamientoCPP || venta.valor)],
       ['Oficial de crédito', venta.oficialBanco],
-      ['Abono cliente', money(venta.abonoCliente)],
-      ['Abono inicial', money(venta.abonoInicial)],
+      ['Abono cliente', projectMoney(venta.abonoCliente)],
+      ['Abono inicial', projectMoney(venta.abonoInicial)],
       ['% financiamiento', venta.porcentajeFinanciamiento],
       ['Cesión a favor de', venta.cesionAFavorDe],
     ]);
@@ -390,7 +394,8 @@ router.get('/proforma/:unitId', async (req, res) => {
     const result = await getUnitVenta(req.params.unitId);
     if (result.error) return res.status(404).json({ error: result.error });
 
-    const { unit, venta } = result;
+    const { unit, venta, currency } = result;
+    const projectMoney = (value) => money(value, currency);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="proforma_${unit.manzana || ''}_${unit.lote || ''}.pdf"`);
@@ -455,19 +460,19 @@ router.get('/proforma/:unitId', async (req, res) => {
       ['Área total construcción', venta.areaTotalConstruccion],
       ['Área cerrada', venta.areaCerrada],
       ['Área abierta', venta.areaAbierta],
-      ['Precio total de venta US$', money(venta.precioVenta || unit.precioLista)],
-      ['Valor de mejoras', money(venta.valorMejoras)],
-      ['Valor de terreno', money(venta.valorTerreno)],
+      ['Precio total de venta', projectMoney(venta.precioVenta || unit.precioLista)],
+      ['Valor de mejoras', projectMoney(venta.valorMejoras)],
+      ['Valor de terreno', projectMoney(venta.valorTerreno)],
       ['Finca', venta.numeroFinca],
       ['Fecha probable de entrega', dateVal(venta.fechaProbableEntrega)],
     ], 2, 36);
 
     sectionTitle(doc, 'Financiamiento');
     grid(doc, [
-      ['Monto del financiamiento US$', money(venta.montoFinanciamientoCPP || venta.valor)],
+      ['Monto del financiamiento', projectMoney(venta.montoFinanciamientoCPP || venta.valor)],
       ['Cesión a favor de', venta.cesionAFavorDe],
       ['Porcentaje del financiamiento', venta.porcentajeFinanciamiento],
-      ['Abono inicial US$', money(venta.abonoInicial)],
+      ['Abono inicial', projectMoney(venta.abonoInicial)],
     ], 2, 38);
 
     ensure(doc, 110);
