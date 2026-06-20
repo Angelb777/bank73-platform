@@ -6828,9 +6828,50 @@ const input = (id, label, value='', type='text') =>
 const inputDate = (id, label, iso) =>
   `<div class="label">${label}</div><input id="${id}" type="date" value="${iso?String(iso).slice(0,10):''}">`;
 
+const MONEY_FIELD_RE = /precio|valor|monto|ingreso|abono|financiamiento|contrato|mejoras|terreno/i;
+const DECIMAL_MEASURE_FIELD_RE = /m2|metros|metraje|area|porcentaje/i;
+
+function parseDecimalMeasureNumber(value) {
+  if (value === null || value === undefined || value === '') return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+
+  let cleaned = String(value).trim().replace(/\s/g, '');
+  if (!cleaned) return 0;
+
+  if (cleaned.includes(',') && !cleaned.includes('.')) {
+    cleaned = cleaned.replace(',', '.');
+  } else {
+    cleaned = cleaned.replace(/,/g, '');
+  }
+
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function numberModeForId(id = '') {
+  if (MONEY_FIELD_RE.test(id)) return 'money';
+  if (DECIMAL_MEASURE_FIELD_RE.test(id)) return 'decimal';
+  return 'integer';
+}
+
+function parseInputNumber(id, value) {
+  return numberModeForId(id) === 'money'
+    ? parsePanamaNumber(value)
+    : parseDecimalMeasureNumber(value);
+}
+
+function formatInputNumber(id, value) {
+  const mode = numberModeForId(id);
+  if (mode === 'money') return formatPanamaNumber(value, 2);
+  const n = parseDecimalMeasureNumber(value);
+  return mode === 'integer' ? String(Math.round(n)) : n.toFixed(2);
+}
+
 const inputNum = (id, label, value = 0, opts = {}) => {
-  const decimals = opts.decimals ?? (/precio|valor|monto|ingreso|abono|financiamiento|contrato|mejoras|terreno|porcentaje/i.test(id) ? 2 : 0);
-  return `<div class="label">${label}</div><input id="${id}" type="text" inputmode="decimal" data-number-input value="${formatPanamaNumber(value, decimals)}" ${opts.readonly ? 'readonly' : ''}>`;
+  const formatted = opts.decimals !== undefined
+    ? formatPanamaNumber(value, opts.decimals)
+    : formatInputNumber(id, value);
+  return `<div class="label">${label}</div><input id="${id}" type="text" inputmode="decimal" data-number-input value="${formatted}" ${opts.readonly ? 'readonly' : ''}>`;
 };
 
 const inputChk = (id, label, on=false) =>
@@ -6844,9 +6885,18 @@ const selectRow = (id, label, optionsHtml='') =>
 
 // Lectores seguros para guardar
 function vVal(id){ const el = document.getElementById(id); return el ? el.value : null; }
-function vNum(id){ const v = parsePanamaNumber(vVal(id)); return Number.isFinite(v) ? v : null; }
+function vNum(id){ const v = parseInputNumber(id, vVal(id)); return Number.isFinite(v) ? v : null; }
 function vDate(id){ const s = vVal(id); return s ? new Date(s).toISOString() : null; }
 function vChk(id){ const el = document.getElementById(id); return !!(el && el.checked); }
+
+if (!window.__PROJECT_NUMBER_INPUT_FORMAT_BOUND__) {
+  window.__PROJECT_NUMBER_INPUT_FORMAT_BOUND__ = true;
+  document.addEventListener('focusout', (ev) => {
+    const input = ev.target.closest?.('[data-number-input]');
+    if (!input || input.readOnly || input.disabled) return;
+    input.value = formatInputNumber(input.id, input.value);
+  });
+}
 
 function calcDiffDays(startValue, endValue) {
   if (!startValue || !endValue) return 0;
@@ -6898,6 +6948,18 @@ function refreshFinanciamientoAuto(changedField = '') {
       abonoEl.value = formatPanamaNumber(Math.max(precio - monto, 0));
     }
   }
+}
+
+function refreshAreaTotalConstruccion() {
+  const abiertaEl = document.getElementById('fv-areaAbierta');
+  const cerradaEl = document.getElementById('fv-areaCerrada');
+  const totalEl = document.getElementById('fv-areaTotalConstruccion');
+  if (!abiertaEl || !cerradaEl || !totalEl) return;
+
+  const total =
+    parseInputNumber('fv-areaAbierta', abiertaEl.value) +
+    parseInputNumber('fv-areaCerrada', cerradaEl.value);
+  totalEl.value = formatInputNumber('fv-areaTotalConstruccion', total);
 }
 
 // ==============================
@@ -8669,7 +8731,7 @@ ${inputNum('fv-precioM2Extra', `Precio m² extra ${info('Precio aplicado por cad
 
 ${inputNum('fv-areaAbierta', `Área abierta vivienda (m²) ${info('Área abierta de la vivienda. Según el modelo, debería completarse automáticamente al seleccionar el modelo definido por administración.')}`, v.areaAbierta || 0)}
 ${inputNum('fv-areaCerrada', `Área cerrada vivienda (m²) ${info('Área cerrada de la vivienda. Según el modelo, debería venir asociada al modelo de vivienda seleccionado.')}`, v.areaCerrada || 0)}
-${inputNum('fv-areaTotalConstruccion', `Área total construcción (m²) ${info('Se calcula automáticamente como área abierta + área cerrada.')}`, (Number(v.areaAbierta || 0) + Number(v.areaCerrada || 0)), { readonly: true })}
+${inputNum('fv-areaTotalConstruccion', `Área total construcción (m²) ${info('Se calcula automáticamente como área abierta + área cerrada.')}`, (parseDecimalMeasureNumber(v.areaAbierta || 0) + parseDecimalMeasureNumber(v.areaCerrada || 0)), { readonly: true })}
 ${inputNum('fv-recamaras', `Recámaras ${info('Cantidad de recámaras. Según el modelo, debería completarse automáticamente según la tipología de vivienda.')}`, v.recamaras || 0)}
 ${inputNum('fv-banos', `Baños ${info('Cantidad de baños. Según el modelo, debería completarse automáticamente según la tipología de vivienda.')}`, v.banos || 0)}
 
@@ -9039,8 +9101,11 @@ const viewExports = document.createElement('div');
   document.getElementById('fv-precioVenta')?.addEventListener('input', () => refreshFinanciamientoAuto('precio'));
 document.getElementById('fv-montoFinanciamientoCPP')?.addEventListener('input', () => refreshFinanciamientoAuto('monto'));
 document.getElementById('fv-porcentajeFinanciamiento')?.addEventListener('input', () => refreshFinanciamientoAuto('pct'));
+document.getElementById('fv-areaAbierta')?.addEventListener('input', refreshAreaTotalConstruccion);
+document.getElementById('fv-areaCerrada')?.addEventListener('input', refreshAreaTotalConstruccion);
 
 refreshFinanciamientoAuto('monto');
+refreshAreaTotalConstruccion();
   installSectionToggles();
 
   const btnPdfFichaCliente = document.getElementById('btnPdfFichaCliente');
@@ -9151,7 +9216,7 @@ const uBody = {
   lote,
   estado: document.getElementById('fu-estado').value,
   modelo: document.getElementById('fu-modelo').value,
-  m2: parsePanamaNumber(document.getElementById('fu-m2').value),
+  m2: parseInputNumber('fu-m2', document.getElementById('fu-m2').value),
   precioLista: parsePanamaNumber(document.getElementById('fu-precio').value),
 };
 
@@ -9249,7 +9314,7 @@ const uBody = {
 
       areaAbierta: vNum('fv-areaAbierta'),
       areaCerrada: vNum('fv-areaCerrada'),
-      areaTotalConstruccion: parsePanamaNumber(vVal('fv-areaAbierta')) + parsePanamaNumber(vVal('fv-areaCerrada')),
+      areaTotalConstruccion: parseInputNumber('fv-areaAbierta', vVal('fv-areaAbierta')) + parseInputNumber('fv-areaCerrada', vVal('fv-areaCerrada')),
       recamaras: vNum('fv-recamaras'),
       banos: vNum('fv-banos'),
 
@@ -9445,7 +9510,7 @@ const uBody = {
     if (!raw) return;
 
     if (type === 'number') {
-      const num = parsePanamaNumber(raw);
+      const num = parseInputNumber(`b-${field}`, raw);
       if (Number.isFinite(num)) update[field] = num;
       return;
     }
@@ -9614,7 +9679,7 @@ const uBody = {
     const updUnit = {};
     const e = document.getElementById('b-estado').value; if (e) updUnit.estado = e;
     const mo = document.getElementById('b-modelo').value; if (mo) updUnit.modelo = mo;
-    const m2 = document.getElementById('b-m2').value; if (m2) updUnit.m2 = parsePanamaNumber(m2);
+    const m2 = document.getElementById('b-m2').value; if (m2) updUnit.m2 = parseInputNumber('b-m2', m2);
     const pr = document.getElementById('b-precio').value; if (pr) updUnit.precioLista = parsePanamaNumber(pr);
     if (Object.keys(updUnit).length) await apiPatch('/api/units/batch', { ids, update: updUnit, projectId: id });
 
@@ -9715,7 +9780,7 @@ if (btnExportarExcel) {
         modo: 'A',
         cantidad: Number(document.getElementById('cl-cantidad').value || 0),
         modelo: document.getElementById('cl-modelo').value || '',
-        m2: Number(document.getElementById('cl-m2').value || 0),
+        m2: parseInputNumber('cl-m2', document.getElementById('cl-m2').value || 0),
         precioLista: parsePanamaNumber(document.getElementById('cl-precio').value || 0),
         estado: document.getElementById('cl-estado').value || 'disponible'
       };
