@@ -4762,6 +4762,7 @@ await API.put(`/api/checklists/${clId}`, payload);
 let FINANCE = null;
 let FINANCE_KPIS = null;
 let FINANCE_CONTROL = null;
+let FINANCE_PROJECT = null;
 let FINANCE_COMMERCIAL_UNITS = [];
 let FINANCE_LOAN_LINES_SAVE_IN_PROGRESS = false;
 let FINANCE_LOAN_LINES_RENDER_TIMER = null;
@@ -4812,6 +4813,79 @@ function financeLinesForPhase(phaseId) {
     // hasta que se guarden y reciban su asociación explícita.
     return target && target === firstPhaseId;
   });
+}
+
+function financeProjectBasis() {
+  const project = FINANCE_PROJECT || state.project || {};
+  const conditions = project.financialConditions || {};
+  const projectTotal = numOr0(conditions.projectTotal || project.budgetApproved || FINANCE_CONTROL?.totals?.budgetApproved);
+  const explicitBankApproved = numOr0(conditions.bankFinancedAmount || project.loanApproved || FINANCE_CONTROL?.totals?.loanApproved);
+  const bankPct = numOr0(conditions.bankFinancedPct) || (projectTotal > 0 ? explicitBankApproved / projectTotal * 100 : 0);
+  const bankApproved = explicitBankApproved || (projectTotal * bankPct / 100);
+  const promoterApproved = numOr0(conditions.promoterContribution) || Math.max(0, projectTotal - bankApproved);
+  const promoterPct = numOr0(conditions.promoterContributionPct) || (projectTotal > 0 ? promoterApproved / projectTotal * 100 : Math.max(0, 100 - bankPct));
+  return { projectTotal, bankApproved, promoterApproved, bankPct, promoterPct };
+}
+
+function financePhaseFunding(ph = {}) {
+  const basis = financeProjectBasis();
+  const planBudget = sumItems(ph.planUses);
+  const recommendedBank = planBudget * basis.bankPct / 100;
+  const recommendedPromoter = Math.max(0, planBudget - recommendedBank);
+  const lines = financeLinesForPhase(ph._id);
+  const actual = lines.reduce((acc, line) => {
+    const entries = Array.isArray(line.entries) && line.entries.length ? line.entries : [line];
+    const disbursed = entries.reduce((sum, entry) => sum + numOr0(entry.disbursementAmount), 0);
+    const manual = entries.reduce((sum, entry) => sum + numOr0(entry.amortizedAmount), 0);
+    const amortized = manual + numOr0(line.allocatedAmortized);
+    acc.disbursed += disbursed;
+    acc.amortized += amortized;
+    acc.debt += Math.max(0, disbursed - amortized);
+    return acc;
+  }, { disbursed: 0, amortized: 0, debt: 0 });
+  return {
+    ...basis,
+    planBudget,
+    recommendedBank,
+    recommendedPromoter,
+    linesCount: lines.length,
+    ...actual,
+    pendingRecommendedDisbursement: Math.max(0, recommendedBank - actual.disbursed),
+  };
+}
+
+function renderFinanceCoherence(phases = FINANCE?.phases || []) {
+  const box = document.getElementById('financeCoherenceSummary');
+  const alertsBox = document.getElementById('financeCoherenceAlerts');
+  if (!box || !alertsBox) return;
+  const basis = financeProjectBasis();
+  const planAllocated = phases.reduce((sum, ph) => sum + sumItems(ph.planUses), 0);
+  const bankRecommended = phases.reduce((sum, ph) => sum + financePhaseFunding(ph).recommendedBank, 0);
+  const promoterRecommended = phases.reduce((sum, ph) => sum + financePhaseFunding(ph).recommendedPromoter, 0);
+  const totalDisbursed = numOr0(FINANCE_CONTROL?.totals?.totalDisbursed);
+  const totalAmortized = numOr0(FINANCE_CONTROL?.totals?.totalAmortized);
+  const debt = Math.max(0, totalDisbursed - totalAmortized);
+  const rows = [
+    ['Proyecto', basis.projectTotal, planAllocated, basis.projectTotal - planAllocated, 'Presupuesto aprobado', 'Distribuido en fases', 'Por distribuir'],
+    ['Banco', basis.bankApproved, bankRecommended, basis.bankApproved - bankRecommended, 'Financiación aprobada', 'Recomendada en fases', 'Por asignar'],
+    ['Promotor', basis.promoterApproved, promoterRecommended, basis.promoterApproved - promoterRecommended, 'Aporte previsto', 'Recomendado en fases', 'Por asignar'],
+    ['Deuda bancaria', totalDisbursed, totalAmortized, debt, 'Desembolsado real', 'Amortizado real', 'Saldo por devolver'],
+  ];
+  box.innerHTML = rows.map(([name, approved, distributed, pending, approvedLabel, distributedLabel, pendingLabel]) => `
+    <article class="finance-coherence-row">
+      <h4>${escapeHtml(name)}</h4>
+      <div><span>${escapeHtml(approvedLabel)}</span><strong>${financeMoney(approved)}</strong></div>
+      <div><span>${escapeHtml(distributedLabel)}</span><strong>${financeMoney(distributed)}</strong></div>
+      <div class="${pending < -0.01 ? 'is-danger' : ''}"><span>${escapeHtml(pendingLabel)}</span><strong>${financeMoney(pending)}</strong></div>
+    </article>`).join('');
+
+  const notices = [];
+  if (!basis.projectTotal || !basis.bankApproved) notices.push(['info', 'Completa el total del proyecto y la financiación bancaria para activar todas las recomendaciones.']);
+  if (planAllocated > basis.projectTotal + 0.01 && basis.projectTotal > 0) notices.push(['danger', `El PLAN de fases supera el total del proyecto en ${financeMoney(planAllocated - basis.projectTotal)}.`]);
+  if (bankRecommended > basis.bankApproved + 0.01 && basis.bankApproved > 0) notices.push(['danger', `La financiación recomendada en fases supera el préstamo aprobado en ${financeMoney(bankRecommended - basis.bankApproved)}.`]);
+  if (totalDisbursed > basis.bankApproved + 0.01 && basis.bankApproved > 0) notices.push(['danger', `Los desembolsos reales superan el préstamo aprobado en ${financeMoney(totalDisbursed - basis.bankApproved)}.`]);
+  if (!notices.length) notices.push(['ok', 'Las fases y las líneas están dentro de los límites financieros del proyecto.']);
+  alertsBox.innerHTML = notices.map(([tone, message]) => `<div class="finance-coherence-notice is-${tone}">${escapeHtml(message)}</div>`).join('');
 }
 
 function closeFinancePhaseModal() {
@@ -5803,6 +5877,7 @@ async function loadFinance() {
     FINANCE = res.finance;
     FINANCE_KPIS = res.kpis;
     FINANCE_CONTROL = res.financeControl || null;
+    FINANCE_PROJECT = res.project || state.project || null;
     FINANCE_ALL_LOAN_LINES = (FINANCE_CONTROL?.loanLines || []).map(line => ({ ...line }));
     FINANCE_COMMERCIAL_UNITS = res.commercialUnits || [];
     window.FINANCE_KPIS = FINANCE_KPIS;
@@ -5860,6 +5935,7 @@ async function loadFinance() {
     renderFinanceAlerts(res.alerts || []);
 
     renderFinanceControlKpis(FINANCE_CONTROL?.totals || {});
+    renderFinanceCoherence(FINANCE?.phases || []);
     const phaseLines = FINANCE_SELECTED_PHASE_ID
       ? financeLinesForPhase(FINANCE_SELECTED_PHASE_ID)
       : FINANCE_ALL_LOAN_LINES;
@@ -6494,6 +6570,15 @@ function openFinancePhaseLines(phase) {
   if (expand) { expand.textContent = '⛶'; expand.title = 'Pantalla completa'; }
   document.getElementById('financePhaseModalTitle').textContent = `Líneas — ${FINANCE_SELECTED_PHASE_NAME}`;
   const lines = financeLinesForPhase(FINANCE_SELECTED_PHASE_ID);
+  const funding = financePhaseFunding(phase);
+  const fundingSummary = document.getElementById('financePhaseFundingSummary');
+  if (fundingSummary) fundingSummary.innerHTML = [
+    ['Banco recomendado', funding.recommendedBank],
+    ['Desembolsado', funding.disbursed],
+    ['Amortizado', funding.amortized],
+    ['Saldo por devolver', funding.debt],
+    ['Pendiente por desembolsar', funding.pendingRecommendedDisbursement],
+  ].map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${financeMoney(value)}</strong></div>`).join('');
   renderFinanceLoanLines(lines);
   renderFinanceUnitAmortizations();
   modal.hidden = false;
@@ -6709,6 +6794,7 @@ function renderPhases(phases = []) {
     const realUsesExecution = financePct(realUsesTotal, planUsesTotal);
     const realSourcesExecution = financePct(realSrcsTotal, planSrcsTotal);
     const disbursementExecution = financePct(disbActual, disbExpected);
+    const funding = financePhaseFunding(ph);
 
     // -------------------------
     // CARD PLAN (estimación)
@@ -6729,8 +6815,13 @@ function renderPhases(phases = []) {
       <div class="finance-phase-ratio">
         Cobertura fuentes / usos: <b>${financePct(planSrcsTotal, planUsesTotal)}</b>
       </div>
+      <div class="finance-phase-funding is-plan">
+        <div class="finance-phase-funding-title">Distribución recomendada por las condiciones</div>
+        <div><span>Banco (${funding.bankPct.toFixed(1)}%)</span><b>${financeMoney(funding.recommendedBank)}</b></div>
+        <div><span>Promotor (${funding.promoterPct.toFixed(1)}%)</span><b>${financeMoney(funding.recommendedPromoter)}</b></div>
+      </div>
       <div class="small muted" style="margin-top:8px;">
-        Edita el plan de esta fase (usos/fuentes estimados).
+        Recomendación informativa: no modifica tus fuentes guardadas.
       </div>
       <div class="finance-phase-card-actions"><button class="btn btn-xs" data-act="lines">Líneas de la fase</button></div>
     `;
@@ -6803,6 +6894,13 @@ const hasRealData =
         </div>
         <div class="finance-phase-progress"><div style="width:${financeProgressWidth(disbActual, disbExpected)}%"></div></div>
       </div>
+      <div class="finance-phase-funding is-real">
+        <div class="finance-phase-funding-title">Banco en esta fase · ${funding.linesCount} línea(s)</div>
+        <div><span>Desembolsado por líneas</span><b>${financeMoney(funding.disbursed)}</b></div>
+        <div><span>Amortizado</span><b>${financeMoney(funding.amortized)}</b></div>
+        <div class="is-debt"><span>Saldo por devolver</span><b>${financeMoney(funding.debt)}</b></div>
+        <div><span>Pendiente vs recomendación</span><b>${financeMoney(funding.pendingRecommendedDisbursement)}</b></div>
+      </div>
       <div class="finance-phase-card-actions">
         <button class="btn btn-xs" data-act="lines">Líneas de la fase</button>
         <button class="btn btn-xs ${ph?.isCompleted ? 'btn-ghost' : 'btn-success'}" data-act="complete">${ph?.isCompleted ? 'Reabrir fase' : 'Marcar finalizada'}</button>
@@ -6835,7 +6933,7 @@ const hasRealData =
       let expected = current;
 
       if (!expected) {
-        const suggested = Math.max(0, planUsesTotal);
+        const suggested = Math.max(0, funding.recommendedBank);
         const inp = prompt('Monto de desembolso esperado (banco) para esta fase:', String(suggested || 0));
         if (inp == null) return;
         expected = Number(String(inp).replace(/[, ]/g, '')) || 0;
@@ -6884,6 +6982,7 @@ const hasRealData =
 function openPhaseEditor(ph = null, focus = 'plan') {
   const isEdit = !!ph;
   const hasExistingReal = !!ph?.actualStartDate || !!ph?.actualEndDate || sumItems(ph?.uses) > 0 || sumItems(ph?.sources) > 0 || numOr0(ph?.disbActual) > 0;
+  const fundingBasis = financeProjectBasis();
 
   // Necesario para "Iniciar REAL" sin crear fase nueva:
   const allPhases = (window.FINANCE?.phases || []);
@@ -6962,6 +7061,14 @@ function openPhaseEditor(ph = null, focus = 'plan') {
     </div>
 
     <h4 style="margin-top:14px;">PLAN (estimación) — Usos</h4>
+    <div class="finance-phase-editor-recommendation">
+      <div>
+        <strong>Recomendación según las condiciones del proyecto</strong>
+        <span>Se calcula sobre los usos de esta fase y no cambia tus datos automáticamente.</span>
+      </div>
+      <div><span>Banco (${fundingBasis.bankPct.toFixed(1)}%)</span><b id="ph-recommended-bank">${financeMoney(sumItems(phaseData.planUses) * fundingBasis.bankPct / 100)}</b></div>
+      <div><span>Promotor (${fundingBasis.promoterPct.toFixed(1)}%)</span><b id="ph-recommended-promoter">${financeMoney(sumItems(phaseData.planUses) * fundingBasis.promoterPct / 100)}</b></div>
+    </div>
     ${tbl('ph-plan-uses', phaseData.planUses)}
 
     <h4 style="margin-top:12px;">PLAN (estimación) — Fuentes</h4>
@@ -7090,6 +7197,12 @@ const payload = {
     const total = [...tbody.querySelectorAll('input.amount')].reduce((a, inp) => a + parsePanamaNumber(inp.value || 0), 0);
     const cell = document.getElementById(`${tableId}-total`);
     if (cell) cell.textContent = formatProjectMoney(total);
+    if (tableId === 'ph-plan-uses') {
+      const bank = document.getElementById('ph-recommended-bank');
+      const promoter = document.getElementById('ph-recommended-promoter');
+      if (bank) bank.textContent = financeMoney(total * fundingBasis.bankPct / 100);
+      if (promoter) promoter.textContent = financeMoney(total * fundingBasis.promoterPct / 100);
+    }
   };
 
   const hookTable = (tableId) => {

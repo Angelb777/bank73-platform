@@ -5,7 +5,7 @@
   <title>Proyecto — Bank73</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link href="/css/base.css" rel="stylesheet" />
-  <link href="/css/theme.css?v=finance-ui-v8" rel="stylesheet" />
+  <link href="/css/theme.css?v=finance-ui-v9" rel="stylesheet" />
   <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
 
   <style>
@@ -1790,6 +1790,17 @@
       <div class="card kpi"><div class="label">Preventas acumuladas</div><div class="value" id="kpiPreventas">—</div></div>
     </div>
   </section>
+  <section class="finance-bank-kpis finance-coherence-section" aria-label="Control de financiacion del proyecto">
+    <div class="finance-section-head">
+      <div>
+        <h3>Control de financiación</h3>
+        <p>Conecta las condiciones aprobadas con el PLAN de fases y la deuda real de sus líneas.</p>
+      </div>
+      <span class="finance-derived-badge">Cálculo automático</span>
+    </div>
+    <div id="financeCoherenceSummary" class="finance-coherence-summary"></div>
+    <div id="financeCoherenceAlerts" class="finance-coherence-alerts"></div>
+  </section>
   <section class="finance-bank-kpis" aria-label="Fases del proyecto" style="display:none;">
     <div class="finance-section-head">
       <div><h3>Fases del proyecto</h3><p>Cada fase conserva su Estimación y su Ejecución real, con comparación económica y de fechas.</p></div>
@@ -1812,6 +1823,7 @@
         </div>
       </header>
       <div class="finance-phase-modal-body">
+  <div id="financePhaseFundingSummary" class="finance-modal-funding-summary"></div>
   <section class="finance-control-shell" id="financePhaseLinesPanel" aria-label="Control financiero del proyecto">
     <div class="finance-section-head">
       <div>
@@ -2410,7 +2422,7 @@
   <script src="/js/api.js"></script>
   <script src="/lib/chart.umd.min.js"></script>
   <script src="/js/theme-toggle.js"></script>
-  <script src="/js/project.js?v=finance-ui-v8"><!-- ROLE-SEP: bump --></script>
+  <script src="/js/project.js?v=finance-ui-v9"><!-- ROLE-SEP: bump --></script>
 
 </body>
 </html>
