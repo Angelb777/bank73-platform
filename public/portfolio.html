@@ -88,6 +88,17 @@
       padding:0;
       }
     .modal-close:hover { background:#e5e7eb; }
+    .modal-expand {
+      position:absolute; top:14px; right:56px; width:34px; height:34px;
+      border-radius:999px; border:1px solid #d1d5db; background:#f8fafc;
+      color:#0f172a; cursor:pointer; z-index:4; padding:0;
+      display:flex; align-items:center; justify-content:center;
+      font-size:20px; line-height:1;
+    }
+    .modal-backdrop.is-fullscreen { padding:0; }
+    .modal-backdrop.is-fullscreen .modal.create-modal {
+      width:100vw; height:100vh; max-width:none; max-height:none; border-radius:0;
+    }
     #cancelCreate {
       color:#1f2937;
       background:#e5e7eb;
@@ -95,6 +106,12 @@
       box-shadow:none;
     }
     #cancelCreate:hover { background:#d1d5db; }
+    .create-finance-section { grid-column:1/-1; padding-top:10px; border-top:1px solid #dbe2ea; }
+    .create-finance-section h4 { margin:0 0 8px; }
+    .create-facility-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:10px; margin-bottom:8px; border:1px solid #dbe2ea; border-radius:10px; }
+    .create-precedent-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+    .create-precedent-grid label { display:flex; align-items:center; gap:7px; }
+    @media (max-width:700px) { .create-facility-row,.create-precedent-grid { grid-template-columns:1fr; } }
 
     .muted { opacity:.7; font-size:.9rem; }
     #noProjectsBanner { margin:20px 0; text-align:center; display:none; }
@@ -489,6 +506,7 @@
   <!-- MODAL -->
   <div class="modal-backdrop" id="modalBackdrop">
     <div class="modal create-modal">
+      <button id="expandCreateModal" class="modal-expand" type="button" aria-label="Pantalla completa" title="Pantalla completa">⛶</button>
       <button id="closeCreateModal" class="modal-close" type="button" aria-label="Cerrar">×</button>
       <div class="create-modal-body">
       <h3>Crear nuevo proyecto</h3>
@@ -513,6 +531,50 @@
         </select>
         <textarea id="pDesc" rows="3" placeholder="Descripción" style="width:100%;"></textarea>
       </div>
+      <details class="card" style="margin-top:12px;padding:12px;">
+        <summary><strong>Condiciones financieras</strong> <span class="muted">(opcional)</span></summary>
+        <div class="financial-conditions-form" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px;">
+          <label>Total del proyecto<input id="fc-projectTotal" type="number" step="any"></label>
+          <label>Monto financiado por el banco<input id="fc-bankFinancedAmount" type="number" step="any"></label>
+          <label>% financiado por el banco<input id="fc-bankFinancedPct" type="number" step="any"></label>
+          <label>Aporte del promotor<input id="fc-promoterContribution" type="number" step="any"></label>
+          <label>% aportado por el promotor<input id="fc-promoterContributionPct" type="number" step="any"></label>
+          <label>Tasa de interés<input id="fc-interestRate" type="number" step="any"></label>
+          <label>Plazo<input id="fc-term"></label><label>Forma de pago<input id="fc-paymentMethod"></label>
+          <label>Comisión<input id="fc-commission"></label><label>Forma de desembolso<input id="fc-disbursementMethod"></label>
+          <label style="grid-column:1/-1">Condiciones de desembolso<textarea id="fc-disbursementConditions" rows="2"></textarea></label>
+          <label style="grid-column:1/-1">Condiciones de amortización<textarea id="fc-amortizationConditions" rows="2"></textarea></label>
+          <label>Preventa requerida<input id="fc-requiredPresales"></label><label>Garantías<input id="fc-guarantees"></label>
+          <label style="grid-column:1/-1">Seguros<input id="fc-insurance"></label>
+          <section class="create-finance-section">
+            <h4>Facilidades o líneas aprobadas</h4>
+            <datalist id="createFacilityTypes"><option value="Préstamo a término"><option value="Línea de crédito interina"><option value="Línea revolutiva"><option value="Infraestructura"><option value="Costos directos"><option value="Costos indirectos"></datalist>
+            <div id="createFacilities"></div>
+            <button id="addCreateFacility" class="btn ghost" type="button">+ Añadir facilidad</button>
+          </section>
+          <section class="create-finance-section">
+            <h4>Condiciones precedentes</h4>
+            <div class="create-precedent-grid">
+              <label><input type="checkbox" data-create-precedent="presalesMet"> Preventa cumplida</label>
+              <label><input type="checkbox" data-create-precedent="constructionPermitsApproved"> Permisos de construcción aprobados</label>
+              <label><input type="checkbox" data-create-precedent="plansApproved"> Planos aprobados</label>
+              <label><input type="checkbox" data-create-precedent="insuranceDelivered"> Seguros entregados</label>
+              <label><input type="checkbox" data-create-precedent="guaranteesConstituted"> Garantías constituidas</label>
+              <label><input type="checkbox" data-create-precedent="environmentalStudyApproved"> Estudio ambiental aprobado</label>
+              <label><input type="checkbox" data-create-precedent="trustConstituted"> Fideicomiso constituido</label>
+              <label><input type="checkbox" data-create-precedent="otherRequirementsMet"> Otros requisitos cumplidos</label>
+            </div>
+            <label>Detalle de otros requisitos<textarea id="fc-otherRequirements" rows="2"></textarea></label>
+          </section>
+          <section class="create-finance-section">
+            <h4>Estructura de la operación</h4>
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
+              <label>Fiduciaria<input id="fc-trustee"></label><label>Tipo de fideicomiso<input id="fc-trustType"></label>
+              <label>Inspector técnico<input id="fc-technicalInspector"></label><label>Inspector financiero<input id="fc-financialInspector"></label>
+            </div>
+          </section>
+        </div>
+      </details>
 
       <div id="createAssigneesSection" style="display:none; margin-top:12px;">
         <div class="small muted">
@@ -566,6 +628,6 @@
 
   <script src="/js/api.js"></script>
   <script src="/js/theme-toggle.js"></script>
-  <script src="/js/portfolio.js?v=privacy-create"></script>
+  <script src="/js/portfolio.js?v=finance-conditions-v4"></script>
 </body>
 </html>

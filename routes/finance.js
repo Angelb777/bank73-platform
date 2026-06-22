@@ -98,6 +98,8 @@ function normalizeLoanLine(raw = {}, idx = 0) {
       );
   return {
     _id: mongoose.isValidObjectId(raw._id) ? raw._id : undefined,
+    phaseId: mongoose.isValidObjectId(raw.phaseId) ? raw.phaseId : null,
+    phaseName: String(raw.phaseName || '').trim(),
     name: String(raw.name || `Linea ${idx + 1}`).trim(),
     entries,
     notes: String(raw.notes || '').trim(),
@@ -243,7 +245,9 @@ function buildFinanceControlSummary(doc, project = {}) {
   const amortizationLine1Total = unitAmortizations.reduce((a, u) => a + toNum(u.amortizationLine1), 0);
   const amortizationLine2Total = unitAmortizations.reduce((a, u) => a + toNum(u.amortizationLine2), 0);
   const promoterTotal = unitAmortizations.reduce((a, u) => a + toNum(u.promoterAmount), 0);
-  const loanApproved = toNum(project.loanApproved);
+  const conditions = project.financialConditions || {};
+  const loanApproved = toNum(conditions.bankFinancedAmount) || toNum(project.loanApproved);
+  const budgetApproved = toNum(conditions.projectTotal) || toNum(project.budgetApproved);
   const planByPhases = doc.phasesPlanAccumTotals ? doc.phasesPlanAccumTotals() : { uses: 0 };
   const real = doc.phasesAccumTotals ? doc.phasesAccumTotals() : { uses: 0 };
 
@@ -251,8 +255,9 @@ function buildFinanceControlSummary(doc, project = {}) {
     loanLines,
     unitAmortizations,
     totals: {
-      budgetApproved: toNum(project.budgetApproved),
+      budgetApproved,
       loanApproved,
+      promoterContribution: toNum(conditions.promoterContribution) || Math.max(0, budgetApproved - loanApproved),
       totalDisbursed,
       availableToDisburse: loanApproved - totalDisbursed,
       totalAmortized,
@@ -526,6 +531,10 @@ router.post('/projects/:projectId/finance/phases', async (req, res) => {
 
     const {
       name, startDate, endDate,
+      actualStartDate = null,
+      actualEndDate = null,
+      isCompleted = false,
+      completedAt = null,
       uses = [], sources = [],
       planUses = [], planSources = [],
       disbExpected = 0,
@@ -546,6 +555,7 @@ router.post('/projects/:projectId/finance/phases', async (req, res) => {
     const doc = await getOrCreate(projectId);
     doc.phases.push({
       name, startDate, endDate,
+      actualStartDate, actualEndDate, isCompleted, completedAt,
       uses, sources,
       planUses, planSources,
       disbExpected, disbActual, disbActualAt: disbActualAt || (toNum(disbActual) > 0 ? new Date() : null), disbRequested, disbRequestedAt,
@@ -571,6 +581,7 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
 
     const fields = [
       'name','startDate','endDate',
+      'actualStartDate','actualEndDate','isCompleted','completedAt',
       'uses','sources',
       'planUses','planSources',
       'disbExpected','disbActual','disbActualAt','disbRequested','disbRequestedAt',
@@ -580,6 +591,10 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
     for (const f of fields) if (f in req.body) ph[f] = req.body[f];
     if (!hadActualDisbursement && toNum(ph.disbActual) > 0 && !ph.disbActualAt) {
       ph.disbActualAt = new Date();
+    }
+    if ('isCompleted' in req.body) {
+      if (ph.isCompleted && !ph.completedAt) ph.completedAt = new Date();
+      if (!ph.isCompleted && !('completedAt' in req.body)) ph.completedAt = null;
     }
 
     await doc.save();

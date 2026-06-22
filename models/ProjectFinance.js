@@ -11,6 +11,10 @@ const PhaseSchema = new Schema({
   name: { type: String, required: true },                // "Fase 1"
   startDate: { type: Date, required: true },
   endDate:   { type: Date, required: true },
+  actualStartDate: { type: Date, default: null },
+  actualEndDate: { type: Date, default: null },
+  isCompleted: { type: Boolean, default: false },
+  completedAt: { type: Date, default: null },
 
   // =========================
   // REAL (lo que ya funcionaba)
@@ -59,6 +63,8 @@ const LoanLineItemSchema = new Schema({
 }, { _id: true, timestamps: true });
 
 const LoanLineSchema = new Schema({
+  phaseId: { type: Schema.Types.ObjectId, default: null, index: true },
+  phaseName: { type: String, default: '' },
   name: { type: String, default: 'Linea 1' },
   entries: { type: [LoanLineItemSchema], default: [] },
   // Compatibilidad con la primera versión: si existen datos antiguos aquí,

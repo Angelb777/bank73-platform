@@ -26,6 +26,61 @@ const axios = require('axios');
    ========================================================================= */
 function toObjectId(id) { return new mongoose.Types.ObjectId(id); }
 
+const FINANCIAL_CONDITION_NUMBER_FIELDS = [
+  'projectTotal', 'bankFinancedAmount', 'bankFinancedPct',
+  'promoterContribution', 'promoterContributionPct', 'interestRate'
+];
+const FINANCIAL_CONDITION_TEXT_FIELDS = [
+  'term', 'paymentMethod', 'commission', 'disbursementMethod',
+  'disbursementConditions', 'amortizationConditions', 'requiredPresales',
+  'guarantees', 'insurance'
+];
+
+function sanitizeFinancialConditions(raw = {}) {
+  const out = {};
+  for (const key of FINANCIAL_CONDITION_NUMBER_FIELDS) {
+    const value = parsePanamaNumber(raw?.[key]);
+    if (typeof value === 'number' && Number.isFinite(value)) out[key] = value;
+  }
+  for (const key of FINANCIAL_CONDITION_TEXT_FIELDS) {
+    if (raw?.[key] !== undefined) out[key] = String(raw[key] || '').trim();
+  }
+  out.facilities = (Array.isArray(raw.facilities) ? raw.facilities : []).slice(0, 20).map(item => ({
+    facilityType: String(item?.facilityType || '').trim(),
+    loanPurpose: String(item?.loanPurpose || '').trim(),
+    bankFinancedPct: parsePanamaNumber(item?.bankFinancedPct) || 0,
+    cppSalesAmortizationPct: parsePanamaNumber(item?.cppSalesAmortizationPct) || 0,
+    promoterRequiredContribution: parsePanamaNumber(item?.promoterRequiredContribution) || 0
+  })).filter(item => item.facilityType || item.loanPurpose || item.bankFinancedPct || item.cppSalesAmortizationPct || item.promoterRequiredContribution);
+
+  const precedent = raw.precedentConditions || {};
+  out.precedentConditions = {
+    presalesMet: !!precedent.presalesMet,
+    constructionPermitsApproved: !!precedent.constructionPermitsApproved,
+    plansApproved: !!precedent.plansApproved,
+    insuranceDelivered: !!precedent.insuranceDelivered,
+    guaranteesConstituted: !!precedent.guaranteesConstituted,
+    environmentalStudyApproved: !!precedent.environmentalStudyApproved,
+    trustConstituted: !!precedent.trustConstituted,
+    otherRequirementsMet: !!precedent.otherRequirementsMet,
+    otherRequirements: String(precedent.otherRequirements || '').trim()
+  };
+
+  const operation = raw.operationStructure || {};
+  out.operationStructure = {
+    trustee: String(operation.trustee || '').trim(),
+    trustType: String(operation.trustType || '').trim(),
+    technicalInspector: String(operation.technicalInspector || '').trim(),
+    financialInspector: String(operation.financialInspector || '').trim()
+  };
+  return out;
+}
+
+function syncFinancialConditionKpis(target, conditions = {}) {
+  if (conditions.projectTotal !== undefined) target.budgetApproved = conditions.projectTotal;
+  if (conditions.bankFinancedAmount !== undefined) target.loanApproved = conditions.bankFinancedAmount;
+}
+
 function anyAssignedFilter(userId) {
   const uid = toObjectId(userId);
   return {
@@ -560,6 +615,8 @@ router.post('/', requireRole('admin','bank'), async (req, res) => {
     body.teamSuggestion = sanitizeTeamSuggestion(body.teamSuggestion || {});
     body.projectType = sanitizeProjectType(firstDefined(body.projectType, body.tipoProyecto));
     body.currency = sanitizeProjectCurrency(body.currency);
+    body.financialConditions = sanitizeFinancialConditions(body.financialConditions || {});
+    syncFinancialConditionKpis(body, body.financialConditions);
     delete body.tipoProyecto;
 
     // Crear proyecto ya no requiere exponer/asignar usuarios en el alta.
@@ -692,6 +749,11 @@ router.put('/:id', requireRole('admin','bank'), async (req, res) => {
 
     // ---- WHITELIST ----
     const payload = {};
+
+    if (req.body.financialConditions && typeof req.body.financialConditions === 'object') {
+      payload.financialConditions = sanitizeFinancialConditions(req.body.financialConditions);
+      syncFinancialConditionKpis(payload, payload.financialConditions);
+    }
 
     if (myRole === 'admin') {
       // Admin conserva la edición completa
@@ -1725,6 +1787,9 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       };
     });
 
+    const summaryPhases = Array.isArray(financeDoc?.phases) ? financeDoc.phases : [];
+    const summaryPhaseNames = new Map(summaryPhases.map(phase => [String(phase._id), clean(phase.name) || 'Fase']));
+    const legacyPhaseName = clean(summaryPhases[0]?.name) || '';
     const summaryFinanceLoanLines = Array.isArray(financeDoc?.loanLines)
       ? financeDoc.loanLines.map((line, idx) => {
           const entriesSource = Array.isArray(line.entries) && line.entries.length ? line.entries : [line];
@@ -1747,6 +1812,8 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
           return {
             id: String(line._id || idx),
             name: clean(line.name) || `Linea ${idx + 1}`,
+            phaseId: line.phaseId ? String(line.phaseId) : '',
+            phaseName: clean(line.phaseName) || summaryPhaseNames.get(String(line.phaseId || '')) || legacyPhaseName,
             entries,
             disbursementAmount,
             manualAmortized,

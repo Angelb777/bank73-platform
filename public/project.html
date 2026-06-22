@@ -5,7 +5,7 @@
   <title>Proyecto — Bank73</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link href="/css/base.css" rel="stylesheet" />
-  <link href="/css/theme.css" rel="stylesheet" />
+  <link href="/css/theme.css?v=finance-ui-v8" rel="stylesheet" />
   <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
 
   <style>
@@ -1766,43 +1766,59 @@
     </div>
   </div>
 
-  <!-- =========================================================
-       KPIs (ARRIBA DEL TODO)
-       ========================================================= -->
-  <section class="finance-bank-kpis" aria-label="KPIs editables del banco">
+  <section class="finance-bank-kpis finance-conditions-card" aria-label="Condiciones financieras del proyecto">
     <div class="finance-section-head">
-      <div>
-        <h3>KPIs del banco</h3>
-      </div>
-      <button class="btn btn-xs" id="saveFinanceKpisBtn" type="button">Guardar KPIs</button>
+      <div><h3>Condiciones financieras del proyecto</h3><p>Condiciones contractuales y estructura de financiación.</p></div>
+      <button class="btn btn-xs" id="editFinanceConditionsBtn" type="button">Editar condiciones</button>
     </div>
-
-    <div id="financeProjectKpis" class="finance-edit-kpi-grid">
-      <label class="finance-edit-kpi">
-        <span>Loan aprobado</span>
-        <input id="finLoanApproved" class="input money-input" type="text" inputmode="decimal" placeholder="0.00" />
-      </label>
-
-      <label class="finance-edit-kpi">
-        <span>Desembolsado manual</span>
-        <input id="finLoanDisbursed" class="input money-input" type="text" inputmode="decimal" placeholder="0.00" />
-      </label>
-
-      <label class="finance-edit-kpi">
-        <span>Budget aprobado</span>
-        <input id="finBudgetApproved" class="input money-input" type="text" inputmode="decimal" placeholder="0.00" />
-      </label>
+    <div id="financeProjectFinancialSummary" class="finance-project-financial-summary"></div>
+    <div id="financeConditionsView" class="finance-conditions-grid"></div>
+    <div id="financeConditionsForm" class="finance-conditions-form" hidden></div>
+    <div id="financeConditionsActions" class="row gap end" hidden>
+      <button class="btn btn-ghost btn-xs" id="cancelFinanceConditionsBtn" type="button">Cancelar</button>
+      <button class="btn btn-xs" id="saveFinanceConditionsBtn" type="button">Guardar condiciones</button>
     </div>
   </section>
-  <section class="finance-control-shell" aria-label="Control financiero del proyecto">
+  <section class="finance-bank-kpis finance-main-kpis" aria-label="KPIs financieros">
+    <div class="finance-section-head">
+      <div><h3>KPIs financieros</h3><p>Resumen general del proyecto.</p></div>
+    </div>
+    <div id="financeControlKpis" class="finance-control-kpis"></div>
+    <div class="row gap finance-secondary-kpis">
+      <div class="card kpi"><div class="label">% Ejecución (real vs plan)</div><div class="value" id="kpiExec">—</div></div>
+      <div class="card kpi"><div class="label">Intereses acumulados</div><div class="value" id="kpiIntereses">—</div></div>
+      <div class="card kpi"><div class="label">Preventas acumuladas</div><div class="value" id="kpiPreventas">—</div></div>
+    </div>
+  </section>
+  <section class="finance-bank-kpis" aria-label="Fases del proyecto" style="display:none;">
+    <div class="finance-section-head">
+      <div><h3>Fases del proyecto</h3><p>Cada fase conserva su Estimación y su Ejecución real, con comparación económica y de fechas.</p></div>
+      <button class="btn" id="addPhaseUnifiedBtn" type="button">+ Nueva fase</button>
+    </div>
+    <div id="phasesUnifiedList" class="grid-2"></div>
+  </section>
+
+  <div class="finance-phase-modal" id="financePhaseLinesModal" hidden>
+    <button class="finance-phase-modal-backdrop" type="button" data-close-finance-phase aria-label="Cerrar"></button>
+    <div class="finance-phase-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="financePhaseModalTitle">
+      <header class="finance-phase-modal-header">
+        <div>
+          <span class="small muted">Detalle financiero de la fase</span>
+          <h3 id="financePhaseModalTitle">Líneas de la fase</h3>
+        </div>
+        <div class="row gap">
+          <button class="btn btn-ghost" id="financePhaseFullscreenBtn" type="button" aria-label="Pantalla completa" title="Pantalla completa">⛶</button>
+          <button class="btn btn-ghost" type="button" data-close-finance-phase>✕ Cerrar</button>
+        </div>
+      </header>
+      <div class="finance-phase-modal-body">
+  <section class="finance-control-shell" id="financePhaseLinesPanel" aria-label="Control financiero del proyecto">
     <div class="finance-section-head">
       <div>
         <h3>Control financiero integral</h3>
         <p>Prestamo promotor, vencimientos, ventas por unidad y amortizacion.</p>
       </div>
     </div>
-
-    <div id="financeControlKpis" class="finance-control-kpis"></div>
 
     <div class="finance-control-grid">
       <section class="finance-panel finance-panel-wide">
@@ -1830,7 +1846,7 @@
     </div>
   </section>
 
-  <section class="finance-panel finance-loan-chart-panel" aria-label="Resumen grafico de lineas de prestamo">
+  <section class="finance-panel finance-loan-chart-panel" id="financePhaseLinesChartPanel" aria-label="Resumen grafico de lineas de prestamo">
     <div class="finance-panel-head">
       <div>
         <h4>Resumen por lineas</h4>
@@ -1841,11 +1857,14 @@
       <canvas id="financeLoanLinesChart"></canvas>
     </div>
   </section>
+      </div>
+    </div>
+  </div>
   
   <!-- =========================================================
        1) FASES PLAN (Estimación)
        ========================================================= -->
-  <div class="row between" style="margin-top:14px; align-items:center;">
+  <div class="row between finance-phase-section-title is-plan" style="margin-top:22px; align-items:center;">
     <h3 style="margin:0;">Fases del PLAN (estimación)</h3>
     <button class="btn" id="addPhasePlanBtn" type="button">+ Nueva fase (PLAN)</button>
   </div>
@@ -1860,7 +1879,7 @@
   <!-- =========================================================
        2) FASES REAL (Ejecución)
        ========================================================= -->
-  <div class="row between" style="margin-top:22px; align-items:center;">
+  <div class="row between finance-phase-section-title is-real" style="margin-top:28px; align-items:center;">
     <h3 style="margin:0;">Fases REAL (ejecución)</h3>
     <button class="btn" id="addPhaseRealBtn" type="button">+ Iniciar fase (REAL)</button>
   </div>
@@ -1883,26 +1902,12 @@
     <div id="financeAlerts" class="alert-list"></div>
   </div>
 
-    <div class="row gap">
-      <div class="card kpi">
-        <div class="label">% Ejecución (real vs plan)</div>
-        <div class="value" id="kpiExec">—</div>
-      </div>
-      <div class="card kpi">
-        <div class="label">Intereses acumulados</div>
-        <div class="value" id="kpiIntereses">—</div>
-      </div>
-      <div class="card kpi">
-        <div class="label">Preventas acumuladas</div>
-        <div class="value" id="kpiPreventas">—</div>
-      </div>
-    </div>
-
   <!-- =========================================================
        4) GRÁFICO (Plan vs Real por fase)
        ========================================================= -->
-  <div style="margin-top:22px;">
-    <h3>Plan vs Real por fase</h3>
+  <section class="finance-deviation-section is-economic" style="margin-top:28px;">
+    <h3>Desviación económica</h3>
+    <p class="small muted">Comparación del PLAN frente a la ejecución REAL en usos y fuentes.</p>
     <div class="grid-2 finance-charts-grid">
       <div class="card finance-chart-card">
         <div class="label">Comparacion por fase - Usos (no acumulado)</div>
@@ -1917,7 +1922,25 @@
         </div>
       </div>
     </div>
-  </div>
+  </section>
+
+  <section class="finance-deviation-section is-temporal" style="margin-top:28px;">
+    <h3>Desviación temporal</h3>
+    <p class="small muted">Comparación de la duración prevista, la duración real y el adelanto o retraso de cada fase.</p>
+    <div class="grid-2 finance-charts-grid">
+      <div class="card finance-chart-card">
+        <div class="label">Duración estimada vs real (días)</div>
+        <div class="small muted">Compara cuántos días se planificaron para cada fase frente a los días realmente transcurridos.</div>
+        <div class="finance-chart-box"><canvas id="phaseTimeDurationChart"></canvas></div>
+      </div>
+      <div class="card finance-chart-card">
+        <div class="label">Desviación de la fecha final (días)</div>
+        <div class="small muted">Rojo (+): retraso · Verde (−): adelanto · Azul sobre 0: fase activa y dentro de plazo · Gris sobre 0: sin iniciar.</div>
+        <div class="finance-chart-box"><canvas id="phaseTimeDelayChart"></canvas></div>
+        <div id="phaseTimeDelaySummary" class="finance-time-status-grid"></div>
+      </div>
+    </div>
+  </section>
 
   <!-- =========================================================
        5) ACUMULADOS (REAL) + RESUMEN ACUMULADO
@@ -2387,7 +2410,7 @@
   <script src="/js/api.js"></script>
   <script src="/lib/chart.umd.min.js"></script>
   <script src="/js/theme-toggle.js"></script>
-  <script src="/js/project.js?v=proceso-general-v6"><!-- ROLE-SEP: bump --></script>
+  <script src="/js/project.js?v=finance-ui-v8"><!-- ROLE-SEP: bump --></script>
 
 </body>
 </html>

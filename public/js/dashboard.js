@@ -895,6 +895,17 @@ function applyProjectsFilters(list) {
   return wrap;
 }
 
+  function dashboardFacilityRow(item = {}) {
+    return `<div data-ep-facility-row style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px;border:1px solid #334155;border-radius:8px;margin-bottom:8px;">
+      <label class="small muted">Tipo de facilidad<input class="input" data-ep-facility="facilityType" value="${escapeHtml(item.facilityType || '')}"></label>
+      <label class="small muted">Destino<input class="input" data-ep-facility="loanPurpose" value="${escapeHtml(item.loanPurpose || '')}"></label>
+      <label class="small muted">% banco<input class="input" data-ep-facility="bankFinancedPct" type="number" step="any" value="${item.bankFinancedPct ?? ''}"></label>
+      <label class="small muted">% CPP/ventas a amortización<input class="input" data-ep-facility="cppSalesAmortizationPct" type="number" step="any" value="${item.cppSalesAmortizationPct ?? ''}"></label>
+      <label class="small muted">Aporte requerido promotor<input class="input" data-ep-facility="promoterRequiredContribution" type="number" step="any" value="${item.promoterRequiredContribution ?? ''}"></label>
+      <button class="btn small" type="button" data-remove-ep-facility>Quitar</button>
+    </div>`;
+  }
+
   // ---- Modal de edición (inyectado si no existe) ----
   function ensureEditModal() {
     if (document.getElementById('editProjectModal')) return;
@@ -903,7 +914,7 @@ function applyProjectsFilters(list) {
     wrap.id = 'editProjectModal';
     wrap.style.cssText = 'display:none;position:fixed;inset:0;background:#0009;z-index:9999;align-items:center;justify-content:center;';
     wrap.innerHTML = `
-  <div style="background:#12181f;color:#e6edf3;width:min(720px,92vw);border-radius:12px;padding:16px 18px;box-shadow:0 10px 30px rgba(0,0,0,.4);">
+  <div style="background:#12181f;color:#e6edf3;width:min(820px,94vw);max-height:90vh;overflow:auto;border-radius:12px;padding:16px 18px;box-shadow:0 10px 30px rgba(0,0,0,.4);">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;">
       <h3 style="margin:0;font-size:1.1rem;">Editar proyecto</h3>
       <button id="editProjClose" class="btn small" style="background:#2a323d;">Cerrar</button>
@@ -956,6 +967,32 @@ function applyProjectsFilters(list) {
       </div>
     </div>
 
+    <details style="margin-top:14px;">
+      <summary class="small muted">Condiciones financieras</summary>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;max-height:260px;overflow:auto;">
+        ${[
+          ['projectTotal','Total del proyecto','number'],['bankFinancedAmount','Monto banco','number'],['bankFinancedPct','% banco','number'],
+          ['promoterContribution','Aporte promotor','number'],['promoterContributionPct','% promotor','number'],['interestRate','Tasa de interés','number'],
+          ['term','Plazo','text'],['paymentMethod','Forma de pago','text'],['commission','Comisión','text'],
+          ['disbursementMethod','Forma de desembolso','text'],['disbursementConditions','Condiciones desembolso','text'],
+          ['amortizationConditions','Condiciones amortización','text'],['requiredPresales','Preventa requerida','text'],
+          ['guarantees','Garantías','text'],['insurance','Seguros','text']
+        ].map(([key,label,type]) => `<label class="small muted">${label}<input id="ep-fc-${key}" class="input" type="${type}" ${type === 'number' ? 'step="any"' : ''}></label>`).join('')}
+      </div>
+      <h4 style="margin:12px 0 8px;">Facilidades o líneas aprobadas</h4>
+      <div id="ep-facilities"></div>
+      <button id="ep-add-facility" class="btn small" type="button">+ Añadir facilidad</button>
+      <h4 style="margin:12px 0 8px;">Condiciones precedentes</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;">
+        ${[['presalesMet','Preventa cumplida'],['constructionPermitsApproved','Permisos construcción'],['plansApproved','Planos aprobados'],['insuranceDelivered','Seguros entregados'],['guaranteesConstituted','Garantías constituidas'],['environmentalStudyApproved','Estudio ambiental'],['trustConstituted','Fideicomiso constituido'],['otherRequirementsMet','Otros requisitos']].map(([key,label]) => `<label class="small muted"><input type="checkbox" data-ep-precedent="${key}"> ${label}</label>`).join('')}
+      </div>
+      <label class="small muted">Detalle otros requisitos<textarea id="ep-fc-otherRequirements" class="input" rows="2"></textarea></label>
+      <h4 style="margin:12px 0 8px;">Estructura de la operación</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        ${[['trustee','Fiduciaria'],['trustType','Tipo de fideicomiso'],['technicalInspector','Inspector técnico'],['financialInspector','Inspector financiero']].map(([key,label]) => `<label class="small muted">${label}<input id="ep-op-${key}" class="input"></label>`).join('')}
+      </div>
+    </details>
+
     <div style="margin-top:14px;display:flex;gap:10px;justify-content:flex-end;">
       <button id="editProjCancel" class="btn">Cancelar</button>
       <button id="editProjSave" class="btn small">Guardar</button>
@@ -968,6 +1005,10 @@ function applyProjectsFilters(list) {
     // Handlers básicos
     document.getElementById('editProjClose').addEventListener('click', () => { wrap.style.display = 'none'; });
     document.getElementById('editProjCancel').addEventListener('click', () => { wrap.style.display = 'none'; });
+    document.getElementById('ep-add-facility')?.addEventListener('click', () => document.getElementById('ep-facilities')?.insertAdjacentHTML('beforeend', dashboardFacilityRow()));
+    document.getElementById('ep-facilities')?.addEventListener('click', event => {
+      event.target.closest('[data-remove-ep-facility]')?.closest('[data-ep-facility-row]')?.remove();
+    });
 
     // Guardar
     document.getElementById('editProjSave').addEventListener('click', async () => {
@@ -1005,6 +1046,31 @@ function applyProjectsFilters(list) {
   add('budgetSpent',     'ep-budgetSpent');
   add('unitsTotal',      'ep-unitsTotal');
   add('unitsSold',       'ep-unitsSold');
+
+  const conditionNumbers = ['projectTotal','bankFinancedAmount','bankFinancedPct','promoterContribution','promoterContributionPct','interestRate'];
+  const conditionTexts = ['term','paymentMethod','commission','disbursementMethod','disbursementConditions','amortizationConditions','requiredPresales','guarantees','insurance'];
+  payload.financialConditions = {};
+  conditionNumbers.forEach(key => {
+    const value = num(`ep-fc-${key}`);
+    if (value !== null && !Number.isNaN(value)) payload.financialConditions[key] = value;
+  });
+  conditionTexts.forEach(key => { payload.financialConditions[key] = document.getElementById(`ep-fc-${key}`)?.value?.trim() || ''; });
+  payload.financialConditions.facilities = Array.from(document.querySelectorAll('[data-ep-facility-row]')).map(row => ({
+    facilityType: row.querySelector('[data-ep-facility="facilityType"]')?.value.trim() || '',
+    loanPurpose: row.querySelector('[data-ep-facility="loanPurpose"]')?.value.trim() || '',
+    bankFinancedPct: Number(row.querySelector('[data-ep-facility="bankFinancedPct"]')?.value || 0),
+    cppSalesAmortizationPct: Number(row.querySelector('[data-ep-facility="cppSalesAmortizationPct"]')?.value || 0),
+    promoterRequiredContribution: Number(row.querySelector('[data-ep-facility="promoterRequiredContribution"]')?.value || 0)
+  }));
+  payload.financialConditions.precedentConditions = {};
+  document.querySelectorAll('[data-ep-precedent]').forEach(input => { payload.financialConditions.precedentConditions[input.dataset.epPrecedent] = input.checked; });
+  payload.financialConditions.precedentConditions.otherRequirements = document.getElementById('ep-fc-otherRequirements')?.value?.trim() || '';
+  payload.financialConditions.operationStructure = {
+    trustee: document.getElementById('ep-op-trustee')?.value?.trim() || '',
+    trustType: document.getElementById('ep-op-trustType')?.value?.trim() || '',
+    technicalInspector: document.getElementById('ep-op-technicalInspector')?.value?.trim() || '',
+    financialInspector: document.getElementById('ep-op-financialInspector')?.value?.trim() || ''
+  };
 
   await apiUpdateProject(id, payload);
   wrap.style.display = 'none';
@@ -1351,6 +1417,20 @@ document.getElementById('ep-budgetApproved').value = proj.budgetApproved ?? '';
 document.getElementById('ep-budgetSpent').value    = proj.budgetSpent ?? '';
 document.getElementById('ep-unitsTotal').value     = proj.unitsTotal ?? '';
 document.getElementById('ep-unitsSold').value      = proj.unitsSold ?? '';
+    const conditions = proj.financialConditions || {};
+    ['projectTotal','bankFinancedAmount','bankFinancedPct','promoterContribution','promoterContributionPct','interestRate','term','paymentMethod','commission','disbursementMethod','disbursementConditions','amortizationConditions','requiredPresales','guarantees','insurance'].forEach(key => {
+      const input = document.getElementById(`ep-fc-${key}`);
+      if (input) input.value = conditions[key] ?? '';
+    });
+    const facilitiesBox = document.getElementById('ep-facilities');
+    if (facilitiesBox) facilitiesBox.innerHTML = (conditions.facilities || []).map(dashboardFacilityRow).join('');
+    const precedent = conditions.precedentConditions || {};
+    document.querySelectorAll('[data-ep-precedent]').forEach(input => { input.checked = !!precedent[input.dataset.epPrecedent]; });
+    document.getElementById('ep-fc-otherRequirements').value = precedent.otherRequirements || '';
+    const operation = conditions.operationStructure || {};
+    ['trustee','trustType','technicalInspector','financialInspector'].forEach(key => {
+      const input = document.getElementById(`ep-op-${key}`); if (input) input.value = operation[key] || '';
+    });
 
     modal.style.display = 'flex';
   } catch (err) {

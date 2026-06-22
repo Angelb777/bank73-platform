@@ -3255,11 +3255,12 @@ renderChartSummary(
 
   sumDestroy('p25');
   const creditLines = financial.creditLines || [];
+  const creditLineLabel = line => line.phaseName ? `${line.phaseName} · ${line.name}` : `Sin fase · ${line.name}`;
   if (ctx('sumCreditLines')) {
     __sumCharts.p25 = new Chart(ctx('sumCreditLines'), {
       type: 'bar',
       data: {
-        labels: creditLines.map(x => x.name),
+        labels: creditLines.map(creditLineLabel),
         datasets: [
           { label: 'Desembolsado', data: creditLines.map(x => toNum(x.disbursementAmount ?? x.disbursedAmount)) },
           { label: 'Amortizado total', data: creditLines.map(x => toNum(x.totalRecovered ?? x.amortizedAmount)) }
@@ -3276,7 +3277,7 @@ renderChartSummary(
   renderChartSummary(
     'sumCreditLinesSummary',
     creditLines.map(x => ({
-      label: x.name,
+      label: creditLineLabel(x),
       value: toNum(x.totalRecovered ?? x.amortizedAmount),
       balance: toNum(x.balanceAfterSales ?? x.debt),
       disbursed: toNum(x.disbursementAmount ?? x.disbursedAmount),
@@ -4766,6 +4767,11 @@ let FINANCE_LOAN_LINES_SAVE_IN_PROGRESS = false;
 let FINANCE_LOAN_LINES_RENDER_TIMER = null;
 let FINANCE_LOAN_LINE_EXPANDED = new Set();
 let FINANCE_LOAN_LINE_COLLAPSED = new Set();
+let FINANCE_ALL_LOAN_LINES = [];
+let FINANCE_SELECTED_PHASE_ID = '';
+let FINANCE_SELECTED_PHASE_NAME = '';
+let FINANCE_MODAL_HOME = null;
+let FINANCE_MODAL_NEXT = null;
 
 const fmt = (n) => formatPanamaNumber(n);
 const sumItems = (arr = []) => (arr || []).reduce((a, it) => a + parsePanamaNumber(it?.amount || 0), 0);
@@ -4780,11 +4786,203 @@ function fillFinanceKpiInputsFromProject(project) {
   const a = document.getElementById('finLoanApproved');
   const d = document.getElementById('finLoanDisbursed');
   const b = document.getElementById('finBudgetApproved');
+  const promoter = document.getElementById('finPromoterContribution');
   if (!a || !d || !b) return;
 
-  a.value = formatPanamaNumber(project?.loanApproved);
+  const conditions = project?.financialConditions || {};
+  a.value = formatPanamaNumber(conditions.bankFinancedAmount || project?.loanApproved);
   d.value = formatPanamaNumber(project?.loanDisbursed);
-  b.value = formatPanamaNumber(project?.budgetApproved);
+  b.value = formatPanamaNumber(conditions.projectTotal || project?.budgetApproved);
+  a.readOnly = numOr0(conditions.bankFinancedAmount) > 0;
+  b.readOnly = numOr0(conditions.projectTotal) > 0;
+  a.title = a.readOnly ? 'Se edita desde Condiciones financieras' : '';
+  b.title = b.readOnly ? 'Se edita desde Condiciones financieras' : '';
+  if (promoter) promoter.value = formatPanamaNumber(
+    conditions.promoterContribution || Math.max(0, numOr0(conditions.projectTotal || project?.budgetApproved) - numOr0(conditions.bankFinancedAmount || project?.loanApproved))
+  );
+}
+
+function financeLinesForPhase(phaseId) {
+  const target = String(phaseId || '');
+  const firstPhaseId = String(FINANCE?.phases?.[0]?._id || '');
+  return FINANCE_ALL_LOAN_LINES.filter(line => {
+    const assigned = String(line.phaseId || '');
+    if (assigned) return assigned === target;
+    // Compatibilidad: las líneas históricas sin fase quedan en la primera fase
+    // hasta que se guarden y reciban su asociación explícita.
+    return target && target === firstPhaseId;
+  });
+}
+
+function closeFinancePhaseModal() {
+  const modal = document.getElementById('financePhaseLinesModal');
+  if (modal) {
+    modal.hidden = true;
+    modal.classList.remove('is-fullscreen');
+    modal.style.zoom = '';
+  }
+  const expand = document.getElementById('financePhaseFullscreenBtn');
+  if (expand) { expand.textContent = '⛶'; expand.title = 'Pantalla completa'; }
+  document.body.classList.remove('finance-modal-open');
+  const page = document.getElementById('tab-finanzas-page');
+  const portal = document.querySelector('.finance-modal-portal');
+  if (modal && FINANCE_MODAL_HOME) {
+    FINANCE_MODAL_HOME.insertBefore(modal, FINANCE_MODAL_NEXT?.parentNode === FINANCE_MODAL_HOME ? FINANCE_MODAL_NEXT : null);
+  }
+  if (page) page.id = 'tab-finanzas';
+  portal?.remove();
+}
+
+function mountFinancePhaseModal() {
+  const modal = document.getElementById('financePhaseLinesModal');
+  const page = document.getElementById('tab-finanzas');
+  if (!modal || !page || page.classList.contains('finance-modal-portal')) return modal;
+  FINANCE_MODAL_HOME = modal.parentNode;
+  FINANCE_MODAL_NEXT = modal.nextSibling;
+  page.id = 'tab-finanzas-page';
+  const portal = document.createElement('div');
+  portal.id = 'tab-finanzas';
+  portal.className = 'finance-modal-portal';
+  document.body.appendChild(portal);
+  portal.appendChild(modal);
+  return modal;
+}
+
+function toggleFinancePhaseFullscreen() {
+  const modal = document.getElementById('financePhaseLinesModal');
+  const btn = document.getElementById('financePhaseFullscreenBtn');
+  if (!modal) return;
+  modal.classList.toggle('is-fullscreen');
+  const full = modal.classList.contains('is-fullscreen');
+  const bodyZoom = Number.parseFloat(getComputedStyle(document.body).zoom) || 1;
+  modal.style.zoom = full && bodyZoom < 1 ? String(1 / bodyZoom) : '';
+  if (btn) { btn.textContent = full ? '□' : '⛶'; btn.title = full ? 'Restaurar tamaño' : 'Pantalla completa'; }
+  setTimeout(() => window.Chart?.getChart?.(document.getElementById('financeLoanLinesChart'))?.resize(), 30);
+}
+
+const FINANCE_CONDITION_FIELDS = [
+  ['projectTotal','Total del proyecto','money'], ['bankFinancedAmount','Banco financia','money'],
+  ['bankFinancedPct','% banco','pct'], ['promoterContribution','Promotor aporta','money'],
+  ['promoterContributionPct','% promotor','pct'], ['interestRate','Tasa','pct'],
+  ['term','Plazo'], ['paymentMethod','Forma de pago'], ['commission','Comisión'],
+  ['disbursementMethod','Forma de desembolso'], ['disbursementConditions','Condiciones de desembolso'],
+  ['amortizationConditions','Condiciones de amortización'], ['requiredPresales','Preventa requerida'],
+  ['guarantees','Garantías'], ['insurance','Seguros']
+];
+const FINANCE_PRECEDENT_FIELDS = [
+  ['presalesMet','Preventa cumplida'], ['constructionPermitsApproved','Permisos de construcción aprobados'],
+  ['plansApproved','Planos aprobados'], ['insuranceDelivered','Seguros entregados'],
+  ['guaranteesConstituted','Garantías constituidas'], ['environmentalStudyApproved','Estudio ambiental aprobado'],
+  ['trustConstituted','Fideicomiso constituido'], ['otherRequirementsMet','Otros requisitos']
+];
+const FINANCE_OPERATION_FIELDS = [
+  ['trustee','Fiduciaria'], ['trustType','Tipo de fideicomiso'],
+  ['technicalInspector','Inspector técnico'], ['financialInspector','Inspector financiero']
+];
+
+function financeFacilityFormRow(item = {}) {
+  return `<div class="finance-facility-form-row" data-facility-row>
+    <label><span>Tipo de facilidad</span><input class="input" data-facility="facilityType" list="financeFacilityTypes" value="${escapeHtml(item.facilityType || '')}"></label>
+    <label><span>Destino del préstamo</span><input class="input" data-facility="loanPurpose" value="${escapeHtml(item.loanPurpose || '')}"></label>
+    <label><span>% financiado por banco</span><input class="input" data-facility="bankFinancedPct" type="number" step="any" value="${item.bankFinancedPct ?? ''}"></label>
+    <label><span>% CPP/ventas a amortización</span><input class="input" data-facility="cppSalesAmortizationPct" type="number" step="any" value="${item.cppSalesAmortizationPct ?? ''}"></label>
+    <label><span>Aporte requerido promotor</span><input class="input" data-facility="promoterRequiredContribution" type="number" step="any" value="${item.promoterRequiredContribution ?? ''}"></label>
+    <button class="btn btn-danger btn-xs" type="button" data-remove-facility>Quitar</button>
+  </div>`;
+}
+
+function renderFinanceConditions(project = state.project || {}) {
+  const conditions = project.financialConditions || {};
+  const effective = { ...conditions };
+  if (!numOr0(effective.projectTotal)) effective.projectTotal = numOr0(project.budgetApproved);
+  if (!numOr0(effective.bankFinancedAmount)) effective.bankFinancedAmount = numOr0(project.loanApproved);
+  if (!numOr0(effective.promoterContribution)) effective.promoterContribution = Math.max(0, numOr0(effective.projectTotal) - numOr0(effective.bankFinancedAmount));
+  if (!numOr0(effective.bankFinancedPct) && numOr0(effective.projectTotal)) effective.bankFinancedPct = numOr0(effective.bankFinancedAmount) / numOr0(effective.projectTotal) * 100;
+  if (!numOr0(effective.promoterContributionPct) && numOr0(effective.projectTotal)) effective.promoterContributionPct = numOr0(effective.promoterContribution) / numOr0(effective.projectTotal) * 100;
+  const view = document.getElementById('financeConditionsView');
+  const form = document.getElementById('financeConditionsForm');
+  const summary = document.getElementById('financeProjectFinancialSummary');
+  if (!view || !form) return;
+  if (summary) summary.innerHTML = `<h4>Datos financieros del proyecto</h4>` + [
+    ['Total del proyecto', financeMoney(effective.projectTotal)],
+    ['Financiación bancaria', financeMoney(effective.bankFinancedAmount)],
+    ['Desembolsado', financeMoney(project.loanDisbursed)],
+    ['Aporte promotor', financeMoney(effective.promoterContribution)],
+    ['% banco', `${numOr0(effective.bankFinancedPct).toFixed(1)}%`],
+    ['% promotor', `${numOr0(effective.promoterContributionPct).toFixed(1)}%`]
+  ].map(([label,value]) => `<div class="finance-project-summary-item"><span>${label}</span><strong>${value}</strong></div>`).join('');
+
+  const baseView = FINANCE_CONDITION_FIELDS.slice(5).map(([key,label,type]) => {
+    const raw = effective[key];
+    const value = type === 'money' ? financeMoney(raw) : type === 'pct' ? `${numOr0(raw)}%` : (raw || '—');
+    return `<div class="finance-condition-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+  }).join('');
+  const facilities = Array.isArray(conditions.facilities) ? conditions.facilities : [];
+  const precedent = conditions.precedentConditions || {};
+  const operation = conditions.operationStructure || {};
+  view.innerHTML = `
+    <details class="finance-condition-collapsible"><summary>Condiciones bancarias generales</summary><div class="finance-conditions-subgrid">${baseView}</div></details>
+    <details class="finance-condition-collapsible"><summary>Facilidades o líneas aprobadas <span>${facilities.length}</span></summary><div class="finance-facilities-view">${facilities.map((item, idx) => `
+      <article class="finance-facility-card"><strong>${escapeHtml(item.facilityType || `Facilidad ${idx + 1}`)}</strong><span>${escapeHtml(item.loanPurpose || 'Sin destino indicado')}</span>
+      <div><b>${numOr0(item.bankFinancedPct)}%</b> banco · <b>${numOr0(item.cppSalesAmortizationPct)}%</b> CPP/ventas · Promotor <b>${financeMoney(item.promoterRequiredContribution)}</b></div></article>
+    `).join('') || '<div class="small muted">Sin facilidades registradas.</div>'}</div></details>
+    <details class="finance-condition-collapsible"><summary>Condiciones precedentes <span>${FINANCE_PRECEDENT_FIELDS.filter(([key]) => precedent[key]).length}/${FINANCE_PRECEDENT_FIELDS.length}</span></summary><div class="finance-precedent-view">${FINANCE_PRECEDENT_FIELDS.map(([key,label]) => `<span class="finance-check-state ${precedent[key] ? 'is-done' : ''}">${precedent[key] ? '✓' : '○'} ${escapeHtml(label)}</span>`).join('')}</div>${precedent.otherRequirements ? `<p class="small muted">Otros: ${escapeHtml(precedent.otherRequirements)}</p>` : ''}</details>
+    <details class="finance-condition-collapsible"><summary>Estructura de la operación</summary><div class="finance-conditions-subgrid">${FINANCE_OPERATION_FIELDS.map(([key,label]) => `<div class="finance-condition-item"><span>${label}</span><strong>${escapeHtml(operation[key] || '—')}</strong></div>`).join('')}</div></details>`;
+
+  const formField = ([key,label,type]) => `
+    <label><span>${escapeHtml(label)}</span>${['money','pct'].includes(type)
+      ? `<input class="input" data-finance-condition="${key}" type="number" step="any" value="${effective[key] ?? ''}">`
+      : ['disbursementConditions','amortizationConditions','guarantees','insurance'].includes(key)
+        ? `<textarea class="input" data-finance-condition="${key}" rows="2">${escapeHtml(effective[key] || '')}</textarea>`
+        : `<input class="input" data-finance-condition="${key}" value="${escapeHtml(effective[key] || '')}">`}</label>`;
+  const financialForm = FINANCE_CONDITION_FIELDS.slice(0, 6).map(formField).join('');
+  const generalForm = FINANCE_CONDITION_FIELDS.slice(6).map(formField).join('');
+  form.innerHTML = `
+    <datalist id="financeFacilityTypes"><option value="Préstamo a término"><option value="Línea de crédito interina"><option value="Línea revolutiva"><option value="Infraestructura"><option value="Costos directos"><option value="Costos indirectos"></datalist>
+    <details class="finance-condition-form-section" open><summary>Datos financieros del proyecto</summary><div class="finance-conditions-subgrid">${financialForm}<label><span>Desembolsado manual</span><input class="input" data-project-finance-kpi="loanDisbursed" type="number" step="any" value="${numOr0(project.loanDisbursed)}"></label></div></details>
+    <details class="finance-condition-form-section"><summary>Condiciones bancarias generales</summary><div class="finance-conditions-subgrid">${generalForm}</div></details>
+    <details class="finance-condition-form-section"><summary>Facilidades o líneas aprobadas <span>${facilities.length}</span></summary><div id="financeFacilitiesForm">${facilities.map(financeFacilityFormRow).join('')}</div><button class="btn btn-ghost btn-xs" type="button" data-add-facility>+ Añadir facilidad</button></details>
+    <details class="finance-condition-form-section"><summary>Condiciones precedentes</summary><div class="finance-precedent-form">${FINANCE_PRECEDENT_FIELDS.map(([key,label]) => `<label><input type="checkbox" data-precedent="${key}" ${precedent[key] ? 'checked' : ''}> <span>${label}</span></label>`).join('')}</div><label class="finance-wide-field"><span>Detalle de otros requisitos</span><textarea class="input" data-precedent-notes rows="2">${escapeHtml(precedent.otherRequirements || '')}</textarea></label></details>
+    <details class="finance-condition-form-section"><summary>Estructura de la operación</summary><div class="finance-conditions-subgrid">${FINANCE_OPERATION_FIELDS.map(([key,label]) => `<label><span>${label}</span><input class="input" data-operation="${key}" value="${escapeHtml(operation[key] || '')}"></label>`).join('')}</div></details>`;
+  form.onclick = event => {
+    if (event.target.closest('[data-add-facility]')) document.getElementById('financeFacilitiesForm')?.insertAdjacentHTML('beforeend', financeFacilityFormRow());
+    if (event.target.closest('[data-remove-facility]')) event.target.closest('[data-facility-row]')?.remove();
+  };
+}
+
+function setFinanceConditionsEditing(editing) {
+  document.getElementById('financeProjectFinancialSummary').hidden = editing;
+  document.getElementById('financeConditionsView').hidden = editing;
+  document.getElementById('financeConditionsForm').hidden = !editing;
+  document.getElementById('financeConditionsActions').hidden = !editing;
+  document.getElementById('editFinanceConditionsBtn').hidden = editing;
+}
+
+async function saveFinanceConditions() {
+  const numeric = new Set(['projectTotal','bankFinancedAmount','bankFinancedPct','promoterContribution','promoterContributionPct','interestRate']);
+  const financialConditions = {};
+  const form = document.getElementById('financeConditionsForm');
+  form.querySelectorAll('[data-finance-condition]').forEach(input => {
+    financialConditions[input.dataset.financeCondition] = numeric.has(input.dataset.financeCondition) ? numOr0(input.value) : input.value.trim();
+  });
+  financialConditions.facilities = Array.from(form.querySelectorAll('[data-facility-row]')).map(row => ({
+    facilityType: row.querySelector('[data-facility="facilityType"]')?.value.trim() || '',
+    loanPurpose: row.querySelector('[data-facility="loanPurpose"]')?.value.trim() || '',
+    bankFinancedPct: numOr0(row.querySelector('[data-facility="bankFinancedPct"]')?.value),
+    cppSalesAmortizationPct: numOr0(row.querySelector('[data-facility="cppSalesAmortizationPct"]')?.value),
+    promoterRequiredContribution: numOr0(row.querySelector('[data-facility="promoterRequiredContribution"]')?.value)
+  }));
+  financialConditions.precedentConditions = {};
+  form.querySelectorAll('[data-precedent]').forEach(input => { financialConditions.precedentConditions[input.dataset.precedent] = input.checked; });
+  financialConditions.precedentConditions.otherRequirements = form.querySelector('[data-precedent-notes]')?.value.trim() || '';
+  financialConditions.operationStructure = {};
+  form.querySelectorAll('[data-operation]').forEach(input => { financialConditions.operationStructure[input.dataset.operation] = input.value.trim(); });
+  const loanDisbursed = numOr0(form.querySelector('[data-project-finance-kpi="loanDisbursed"]')?.value);
+  await API.put(`/api/projects/${id}`, { financialConditions, loanDisbursed });
+  await loadProject();
+  await loadFinance();
+  setFinanceConditionsEditing(false);
+  await markProjectDataChanged();
 }
 
 async function saveFinanceProjectKpis() {
@@ -4865,6 +5063,8 @@ function financeEntryStatus(line) {
 function collectFinanceLoanLines() {
   return Array.from(document.querySelectorAll('.finance-loan-line-card[data-line-card]')).map((card, idx) => ({
     _id: isMongoIdLike(card.dataset.id) ? card.dataset.id : undefined,
+    phaseId: card.dataset.phaseId || FINANCE_SELECTED_PHASE_ID || null,
+    phaseName: card.dataset.phaseName || FINANCE_SELECTED_PHASE_NAME || '',
     name: card.querySelector('[data-line-field="name"]')?.value || `Linea ${idx + 1}`,
     notes: card.querySelector('[data-line-field="notes"]')?.value || '',
     entries: Array.from(card.querySelectorAll('[data-entry-row]')).map(row => ({
@@ -4907,8 +5107,17 @@ function readFinanceUnitCards() {
 
 function collectFinanceUnitAmortizations() {
   const commercialByUnit = new Map((FINANCE_COMMERCIAL_UNITS || []).map(u => [String(u.unitId || ''), u]));
+  const savedByUnit = new Map((FINANCE_CONTROL?.unitAmortizations || []).map(u => [String(u.unitId || ''), u]));
+  const visibleLineKeys = new Set(financeLoanLineOptions().flatMap(line => [String(line.id || ''), String(line.name || '')]).filter(Boolean));
   return readFinanceUnitCards().map(item => {
     const base = commercialByUnit.get(String(item.unitId || '')) || {};
+    const saved = savedByUnit.get(String(item.unitId || '')) || {};
+    const hiddenAllocations = (saved.allocations || []).filter(allocation => {
+      const idKey = String(allocation.loanLineId || '');
+      const nameKey = String(allocation.loanLineName || '');
+      return !visibleLineKeys.has(idKey) && !visibleLineKeys.has(nameKey);
+    });
+    item.allocations = [...hiddenAllocations, ...(item.allocations || [])];
     const hasExistingFinance = !!item._id;
     const allocationTotal = (item.allocations || []).reduce((acc, a) => acc + numOr0(a.amount), 0);
     const hasDistribution = item.checkNumber || item.checkDate || allocationTotal || item.amortizationLine1 || item.amortizationLine2 || item.promoterAmount || item.notes;
@@ -5070,13 +5279,15 @@ function renderFinanceLoanGlobalSummary(lines = collectFinanceLoanLines()) {
   `).join('');
 }
 
-function renderFinanceControlKpis(totals = computeFinanceControlTotals()) {
+function renderFinanceControlKpis(totals = null) {
   const box = document.getElementById('financeControlKpis');
   if (!box) return;
+  totals = totals || FINANCE_CONTROL?.totals || computeFinanceControlTotals();
   console.log('[Finance] calculo KPIs', totals);
   const cards = [
     ['Budget aprobado', financeMoney(totals.budgetApproved), 'budget'],
     ['Loan aprobado', financeMoney(totals.loanApproved), 'loan'],
+    ['Aporte promotor', financeMoney(totals.promoterContribution), 'promoter'],
     ['Desembolsado total', financeMoney(totals.totalDisbursed), 'disbursed'],
     ['Disponible por desembolsar', financeMoney(totals.availableToDisburse), totals.availableToDisburse < 0 ? 'danger' : 'ok'],
     ['Amortización total', financeMoney(totals.totalAmortized), 'ok'],
@@ -5198,7 +5409,7 @@ function renderFinanceLoanLines(lines = []) {
     const isCollapsed = FINANCE_LOAN_LINE_COLLAPSED.has(rowKey)
       || (rowsCount > 5 && !FINANCE_LOAN_LINE_EXPANDED.has(rowKey));
     return `
-      <article class="finance-loan-line-card" data-line-card data-id="${escapeHtml(rowId)}">
+      <article class="finance-loan-line-card" data-line-card data-id="${escapeHtml(rowId)}" data-phase-id="${escapeHtml(line.phaseId || FINANCE_SELECTED_PHASE_ID || '')}" data-phase-name="${escapeHtml(line.phaseName || FINANCE_SELECTED_PHASE_NAME || '')}">
         <div class="finance-loan-line-head">
           <label>
             <span>Nombre de línea</span>
@@ -5480,7 +5691,15 @@ async function saveFinanceLoanLines(btn = null) {
   }
   try {
     setFinanceButtonState(btn, 'Guardando...', true);
-    const loanLines = collectFinanceLoanLines();
+    const visibleLines = collectFinanceLoanLines();
+    const visibleIds = new Set(visibleLines.map(line => String(line._id || '')).filter(Boolean));
+    const loanLines = [
+      ...FINANCE_ALL_LOAN_LINES.filter(line => {
+        if (visibleIds.has(String(line._id || ''))) return false;
+        return String(line.phaseId || '') !== String(FINANCE_SELECTED_PHASE_ID || '');
+      }),
+      ...visibleLines
+    ];
     console.log('[Finance] guardado lineas', loanLines);
     await API.put(`/api/projects/${id}/finance/loan-lines`, { loanLines });
     setFinanceButtonState(btn, 'Guardado', true);
@@ -5584,6 +5803,7 @@ async function loadFinance() {
     FINANCE = res.finance;
     FINANCE_KPIS = res.kpis;
     FINANCE_CONTROL = res.financeControl || null;
+    FINANCE_ALL_LOAN_LINES = (FINANCE_CONTROL?.loanLines || []).map(line => ({ ...line }));
     FINANCE_COMMERCIAL_UNITS = res.commercialUnits || [];
     window.FINANCE_KPIS = FINANCE_KPIS;
 
@@ -5620,7 +5840,10 @@ async function loadFinance() {
     }
 
     // KPIs del proyecto (cabecera)
-    if (res.project) fillFinanceKpiInputsFromProject(res.project);
+    if (res.project) {
+      fillFinanceKpiInputsFromProject(res.project);
+      renderFinanceConditions(res.project);
+    }
     else {
       try {
         const pr = await API.get(`/api/projects/${id}`);
@@ -5637,15 +5860,20 @@ async function loadFinance() {
     renderFinanceAlerts(res.alerts || []);
 
     renderFinanceControlKpis(FINANCE_CONTROL?.totals || {});
-    renderFinanceLoanLines(FINANCE_CONTROL?.loanLines || []);
+    const phaseLines = FINANCE_SELECTED_PHASE_ID
+      ? financeLinesForPhase(FINANCE_SELECTED_PHASE_ID)
+      : FINANCE_ALL_LOAN_LINES;
+    renderFinanceLoanLines(phaseLines);
     renderFinanceUnitAmortizations();
 
     // Fases: cards
     renderPhases(FINANCE?.phases || []);
+    renderUnifiedFinancePhases(FINANCE?.phases || []);
 
     // Charts: Plan vs Real por fase (usos y fuentes)
     renderPhaseChart(FINANCE?.phases || []);
     renderPhaseSourceChart(FINANCE?.phases || []);
+    renderFinanceTimeCharts(FINANCE?.phases || []);
 
     // Resumen acumulado final
     renderAccumSummary(FINANCE?.phases || []);
@@ -5679,13 +5907,31 @@ function bindFinanceOnce() {
   });
 
   document.getElementById('addPhaseBtn')?.addEventListener('click', () => openPhaseEditor(null));
-  document.getElementById('saveFinanceKpisBtn')?.addEventListener('click', saveFinanceProjectKpis);
+  document.getElementById('editFinanceConditionsBtn')?.addEventListener('click', () => setFinanceConditionsEditing(true));
+  document.getElementById('cancelFinanceConditionsBtn')?.addEventListener('click', () => {
+    renderFinanceConditions(state.project || {});
+    setFinanceConditionsEditing(false);
+  });
+  document.getElementById('saveFinanceConditionsBtn')?.addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    btn.disabled = true;
+    try { await saveFinanceConditions(); } catch (e) { console.error(e); alert(e.message || 'No se pudieron guardar las condiciones'); }
+    finally { btn.disabled = false; }
+  });
+  document.getElementById('addPhaseUnifiedBtn')?.addEventListener('click', () => openPhaseEditor(null, 'plan'));
+  document.querySelectorAll('[data-close-finance-phase]').forEach(el => el.addEventListener('click', closeFinancePhaseModal));
+  document.getElementById('financePhaseFullscreenBtn')?.addEventListener('click', toggleFinancePhaseFullscreen);
+  document.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape' && !document.getElementById('financePhaseLinesModal')?.hidden) closeFinancePhaseModal();
+  });
   document.getElementById('financeAddLoanLineBtn')?.addEventListener('click', () => {
     const lines = collectFinanceLoanLines();
     lines.push({
       _id: `new-${Date.now()}`,
       name: `Linea ${lines.length + 1}`,
       notes: '',
+      phaseId: FINANCE_SELECTED_PHASE_ID || null,
+      phaseName: FINANCE_SELECTED_PHASE_NAME || '',
       entries: [{
         _id: `new-entry-${Date.now()}`,
         disbursementDate: '',
@@ -6139,6 +6385,240 @@ function renderPhaseSourceChart(phases, canvasId = 'phaseSourceChart') {
 // -------------------------
 // Render: fases (cards) con PLAN vs REAL + desembolso
 // -------------------------
+function renderFinanceTimeCharts(phases = []) {
+  if (typeof Chart === 'undefined') return;
+  const labels = phases.map((phase, index) => phase.name || `Fase ${index + 1}`);
+  const dayMs = 86400000;
+  const validDate = value => {
+    const date = value ? new Date(value) : null;
+    return date && !Number.isNaN(date.getTime()) ? date : null;
+  };
+  const today = new Date();
+  const plannedDuration = phases.map(phase => {
+    const start = validDate(phase.startDate);
+    const end = validDate(phase.endDate);
+    return start && end ? Math.max(0, Math.ceil((end - start) / dayMs)) : null;
+  });
+  const actualDuration = phases.map(phase => {
+    const hasLegacyReal = sumItems(phase.uses) > 0 || sumItems(phase.sources) > 0 || numOr0(phase.disbActual) > 0;
+    const start = validDate(phase.actualStartDate) || (hasLegacyReal ? validDate(phase.startDate) : null);
+    if (!start) return null;
+    const end = validDate(phase.actualEndDate || phase.completedAt) || today;
+    return Math.max(0, Math.ceil((end - start) / dayMs));
+  });
+  const timingStatus = phases.map(phase => {
+    const plannedEnd = validDate(phase.endDate);
+    const hasLegacyReal = sumItems(phase.uses) > 0 || sumItems(phase.sources) > 0 || numOr0(phase.disbActual) > 0;
+    const actualStart = validDate(phase.actualStartDate) || (hasLegacyReal ? validDate(phase.startDate) : null);
+    const finishedAt = validDate(phase.actualEndDate || phase.completedAt);
+    if (!plannedEnd) return { value: 0, tone: 'neutral', label: 'Sin fecha final estimada' };
+    const plannedLabel = plannedEnd.toLocaleDateString();
+    if (!actualStart) return { value: 0, tone: 'neutral', label: `Sin iniciar · fin previsto ${plannedLabel}` };
+    if (finishedAt) {
+      const value = Math.ceil((finishedAt - plannedEnd) / dayMs);
+      return value > 0
+        ? { value, tone: 'danger', label: `Finalizada con ${value} día(s) de retraso` }
+        : value < 0
+          ? { value, tone: 'ok', label: `Finalizada ${Math.abs(value)} día(s) antes` }
+          : { value: 0, tone: 'ok', label: 'Finalizada en fecha' };
+    }
+    const remaining = Math.ceil((plannedEnd - today) / dayMs);
+    return remaining < 0
+      ? { value: Math.abs(remaining), tone: 'danger', label: `En curso · ${Math.abs(remaining)} día(s) de retraso` }
+      : { value: 0, tone: 'active', label: `En plazo · faltan ${remaining} día(s)` };
+  });
+  const endDeviation = timingStatus.map(item => item.value);
+
+  const durationCanvas = document.getElementById('phaseTimeDurationChart');
+  if (durationCanvas) {
+    const existingDurationChart = Chart.getChart?.(durationCanvas) || durationCanvas._chart;
+    existingDurationChart?.destroy?.();
+    durationCanvas._chart = new Chart(durationCanvas.getContext('2d'), {
+      type: 'bar',
+      data: { labels, datasets: [
+        { label: 'Duración estimada', data: plannedDuration, backgroundColor: 'rgba(245,158,11,.72)', borderColor: '#f59e0b', borderWidth: 1, borderRadius: 6 },
+        { label: 'Duración real', data: actualDuration, backgroundColor: 'rgba(56,189,248,.72)', borderColor: '#38bdf8', borderWidth: 1, borderRadius: 6 }
+      ] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { tooltip: { callbacks: { label: context => `${context.dataset.label}: ${Number(context.raw || 0)} día(s)` } } },
+        scales: { y: { beginAtZero: true, title: { display: true, text: 'Días' } } }
+      }
+    });
+  }
+
+  const delayCanvas = document.getElementById('phaseTimeDelayChart');
+  if (delayCanvas) {
+    const existingDelayChart = Chart.getChart?.(delayCanvas) || delayCanvas._chart;
+    existingDelayChart?.destroy?.();
+    delayCanvas._chart = new Chart(delayCanvas.getContext('2d'), {
+      type: 'bar',
+      data: { labels, datasets: [{
+        label: 'Desviación temporal',
+        data: endDeviation,
+        backgroundColor: timingStatus.map(item => item.tone === 'danger' ? 'rgba(239,68,68,.75)' : item.tone === 'ok' ? 'rgba(34,197,94,.72)' : item.tone === 'active' ? 'rgba(56,189,248,.72)' : 'rgba(148,163,184,.45)'),
+        borderColor: timingStatus.map(item => item.tone === 'danger' ? '#ef4444' : item.tone === 'ok' ? '#22c55e' : item.tone === 'active' ? '#38bdf8' : '#94a3b8'),
+        borderWidth: 1,
+        borderRadius: 6,
+        borderSkipped: false,
+        minBarLength: 7
+      }] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { tooltip: { callbacks: { label: context => timingStatus[context.dataIndex]?.label || 'Sin datos' } } },
+        scales: { y: {
+          suggestedMin: -Math.max(1, ...endDeviation.map(value => Math.abs(value))) * 1.15,
+          suggestedMax: Math.max(1, ...endDeviation.map(value => Math.abs(value))) * 1.15,
+          ticks: { precision: 0 },
+          title: { display: true, text: '+ retraso / − adelanto' }
+        } }
+      }
+    });
+  }
+  const delaySummary = document.getElementById('phaseTimeDelaySummary');
+  if (delaySummary) delaySummary.innerHTML = timingStatus.map((item, index) => `
+    <div class="finance-time-status is-${item.tone}"><strong>${escapeHtml(labels[index])}</strong><span>${escapeHtml(item.label)}</span></div>
+  `).join('');
+}
+
+function openFinancePhaseLines(phase) {
+  FINANCE_SELECTED_PHASE_ID = String(phase?._id || '');
+  FINANCE_SELECTED_PHASE_NAME = phase?.name || '';
+  const modal = mountFinancePhaseModal();
+  if (!modal) return;
+  modal.classList.remove('is-fullscreen');
+  modal.style.zoom = '';
+  const expand = document.getElementById('financePhaseFullscreenBtn');
+  if (expand) { expand.textContent = '⛶'; expand.title = 'Pantalla completa'; }
+  document.getElementById('financePhaseModalTitle').textContent = `Líneas — ${FINANCE_SELECTED_PHASE_NAME}`;
+  const lines = financeLinesForPhase(FINANCE_SELECTED_PHASE_ID);
+  renderFinanceLoanLines(lines);
+  renderFinanceUnitAmortizations();
+  modal.hidden = false;
+  document.body.classList.add('finance-modal-open');
+  setTimeout(() => window.Chart?.getChart?.(document.getElementById('financeLoanLinesChart'))?.resize(), 30);
+}
+
+async function toggleFinancePhaseCompletion(phase) {
+  const reopening = !!phase?.isCompleted;
+  if (!confirm(reopening ? `¿Reabrir ${phase.name || 'esta fase'}?` : `¿Marcar ${phase.name || 'esta fase'} como finalizada?`)) return;
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    await API.put(`/api/projects/${id}/finance/phases/${phase._id}`, reopening ? {
+      isCompleted: false, completedAt: null, actualEndDate: null
+    } : {
+      isCompleted: true,
+      completedAt: new Date().toISOString(),
+      actualStartDate: phase.actualStartDate || today,
+      actualEndDate: phase.actualEndDate || today
+    });
+    await loadFinance();
+    await markProjectDataChanged();
+  } catch (e) {
+    console.error(e);
+    alert('No se pudo actualizar el estado de la fase');
+  }
+}
+
+function renderUnifiedFinancePhases(phases = []) {
+  const wrap = document.getElementById('phasesUnifiedList');
+  if (!wrap) return;
+  const dateFmt = value => {
+    const date = value ? new Date(value) : null;
+    return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString() : '—';
+  };
+  wrap.innerHTML = (phases || []).map(ph => {
+    const planUses = sumItems(ph.planUses);
+    const planSources = sumItems(ph.planSources);
+    const realUses = sumItems(ph.uses);
+    const realSources = sumItems(ph.sources);
+    const expected = numOr0(ph.disbExpected);
+    const actual = numOr0(ph.disbActual);
+    const execution = planUses > 0 ? (realUses / planUses) * 100 : 0;
+    const hasReal = !!ph.actualStartDate || !!ph.actualEndDate || realUses > 0 || realSources > 0 || actual > 0;
+    const isCompleted = !!ph.isCompleted;
+    const status = isCompleted
+      ? { label: 'Finalizada', tone: 'ok' }
+      : !hasReal
+        ? { label: 'Estimación', tone: 'neutral' }
+      : ph.disbRequested && actual < expected
+        ? { label: 'Bloqueado', tone: 'danger' }
+        : getPhaseStatus(ph).key === 'OK' ? { label: 'OK', tone: 'ok' } : { label: 'Desviación', tone: 'error' };
+    const planEnd = ph.endDate ? new Date(ph.endDate) : null;
+    const realEnd = ph.actualEndDate || ph.completedAt ? new Date(ph.actualEndDate || ph.completedAt) : null;
+    const compareDate = realEnd || new Date();
+    const dayDelta = planEnd && !Number.isNaN(planEnd.getTime()) ? Math.ceil((compareDate - planEnd) / 86400000) : 0;
+    const timingText = isCompleted
+      ? (dayDelta > 0 ? `Finalizada con ${dayDelta} día(s) de retraso` : dayDelta < 0 ? `Finalizada ${Math.abs(dayDelta)} día(s) antes` : 'Finalizada en la fecha prevista')
+      : !hasReal ? 'Pendiente de iniciar ejecución real'
+      : dayDelta > 0 ? `${dayDelta} día(s) de retraso sobre el plan` : `${Math.abs(dayDelta)} día(s) hasta el fin estimado`;
+    return `
+      <article class="card fin-phase-card finance-unified-phase" data-variant="unified" data-unified-phase="${escapeHtml(ph._id || '')}">
+        <div class="fin-phase-head">
+          <div class="fin-phase-left">
+            <div class="fin-phase-name">${escapeHtml(ph.name || 'Fase')}</div>
+            <div class="fin-phase-dates">${dateFmt(ph.startDate)} → ${dateFmt(ph.endDate)}</div>
+            <div class="fin-phase-badges"><span class="fin-tag ${status.tone}">${status.label}</span></div>
+          </div>
+          <div class="fin-phase-actions">
+            <button class="fin-btn fin-btn-edit" data-phase-edit-plan>Editar plan</button>
+            <button class="fin-btn fin-btn-edit" data-phase-edit-real>${hasReal ? 'Editar real' : 'Iniciar real'}</button>
+            <button class="fin-btn fin-btn-del" data-phase-delete>Eliminar</button>
+          </div>
+        </div>
+        <div class="fin-phase-body">
+        <div class="finance-phase-comparison">
+          <section class="finance-phase-side is-plan">
+            <div class="finance-phase-side-head"><span class="fin-tag neutral">Estimación</span><span>${dateFmt(ph.startDate)} → ${dateFmt(ph.endDate)}</span></div>
+            <div class="fin-kpi-grid">
+              <div class="fin-kpi"><div class="label">Usos plan</div><div class="value">${fmt(planUses)}</div></div>
+              <div class="fin-kpi"><div class="label">Fuentes plan</div><div class="value">${fmt(planSources)}</div></div>
+            </div>
+          </section>
+          <section class="finance-phase-side is-real">
+            <div class="finance-phase-side-head"><span class="fin-tag ${isCompleted ? 'ok' : 'neutral'}">Real</span><span>${hasReal ? `${dateFmt(ph.actualStartDate)} → ${isCompleted || ph.actualEndDate ? dateFmt(ph.actualEndDate || ph.completedAt) : 'En curso'}` : 'Sin iniciar'}</span></div>
+            <div class="fin-kpi-grid">
+              <div class="fin-kpi"><div class="label">Usos real</div><div class="value">${fmt(realUses)}</div></div>
+              <div class="fin-kpi"><div class="label">Fuentes real</div><div class="value">${fmt(realSources)}</div></div>
+            </div>
+          </section>
+        </div>
+        <div class="fin-line finance-unified-disbursement">
+          <div class="label">Desembolso banco</div>
+          <div class="small">Esperado: <b>${fmt(expected)}</b> · Real: <b>${fmt(actual)}</b> · Ejecutado: <b>${financePct(actual, expected)}</b></div>
+        </div>
+        <div class="finance-phase-ratio">Ejecución real vs plan: <b>${execution.toFixed(1)}%</b> · Calendario: <b>${timingText}</b></div>
+        <div class="finance-phase-progress"><div style="width:${Math.min(100, Math.max(0, execution))}%"></div></div>
+        <div class="finance-unified-actions">
+          <button class="btn" data-phase-lines>Líneas de la fase</button>
+          <button class="btn ${isCompleted ? 'btn-ghost' : 'btn-success'}" data-phase-complete>${isCompleted ? 'Reabrir fase' : 'Marcar finalizada'}</button>
+        </div>
+        </div>
+      </article>`;
+  }).join('') || '<div class="small muted">Todavía no hay fases financieras.</div>';
+
+  wrap.querySelectorAll('[data-unified-phase]').forEach(card => {
+    const phase = phases.find(item => String(item._id) === String(card.dataset.unifiedPhase));
+    card.querySelector('[data-phase-edit-plan]')?.addEventListener('click', () => openPhaseEditor(phase, 'plan'));
+    card.querySelector('[data-phase-edit-real]')?.addEventListener('click', () => openPhaseEditor(phase, 'real'));
+    card.querySelector('[data-phase-delete]')?.addEventListener('click', async () => {
+      if (!phase?._id || !confirm(`¿Eliminar ${phase.name || 'esta fase'}?`)) return;
+      try {
+        await API.del(`/api/projects/${id}/finance/phases/${phase._id}`);
+        await loadFinance();
+        await markProjectDataChanged();
+      } catch (e) {
+        console.error(e);
+        alert('No se pudo eliminar la fase');
+      }
+    });
+    card.querySelector('[data-phase-complete]')?.addEventListener('click', () => toggleFinancePhaseCompletion(phase));
+    card.querySelector('[data-phase-lines]')?.addEventListener('click', () => openFinancePhaseLines(phase));
+  });
+}
+
 function renderPhases(phases = []) {
   const wrapPlan = document.getElementById('phasesPlanList');
   const wrapReal = document.getElementById('phasesRealList');
@@ -6173,6 +6653,7 @@ function renderPhases(phases = []) {
     card.dataset.variant = variant; // plan | real
 
     const st = getPhaseStatus(ph);
+    const phaseHasReal = !!ph?.actualStartDate || !!ph?.actualEndDate || sumItems(ph?.uses) > 0 || sumItems(ph?.sources) > 0 || numOr0(ph?.disbActual) > 0;
 
     // Badge: para REAL, si está solicitado, lo marcamos claro
     const disbReq = !!ph?.disbRequested;
@@ -6182,7 +6663,9 @@ function renderPhases(phases = []) {
 
     // Tono status solo lo muestro en REAL (para no ensuciar PLAN)
     const statusBadge = (variant === 'real')
-      ? `<span class="fin-tag ${st.tone}">${st.label}</span>`
+      ? (ph?.isCompleted
+          ? `<span class="fin-tag ok">Finalizada</span>`
+          : phaseHasReal ? `<span class="fin-tag ${st.tone}">${st.label}</span>` : `<span class="fin-tag neutral">Pendiente de iniciar</span>`)
       : `<span class="fin-tag neutral">Estimación</span>`;
 
     card.innerHTML = `
@@ -6198,7 +6681,7 @@ function renderPhases(phases = []) {
 
         <div class="fin-phase-actions">
   <button class="fin-btn fin-btn-edit" data-act="edit">
-    ${variant === 'plan' ? 'Editar plan' : 'Editar real'}
+    ${variant === 'plan' ? 'Editar plan' : (phaseHasReal ? 'Editar real' : 'Iniciar real')}
   </button>
   <button class="fin-btn fin-btn-del" data-act="del">
     Eliminar
@@ -6249,12 +6732,14 @@ function renderPhases(phases = []) {
       <div class="small muted" style="margin-top:8px;">
         Edita el plan de esta fase (usos/fuentes estimados).
       </div>
+      <div class="finance-phase-card-actions"><button class="btn btn-xs" data-act="lines">Líneas de la fase</button></div>
     `;
 
     const planCard = makeCardShell({ variant: 'plan', ph, titleRight: planBody });
 
     // Actions PLAN
     planCard.querySelector('[data-act="edit"]')?.addEventListener('click', () => openPhaseEditor(ph, 'plan'));
+    planCard.querySelector('[data-act="lines"]')?.addEventListener('click', () => openFinancePhaseLines(ph));
 
     planCard.querySelector('[data-act="del"]')?.addEventListener('click', async () => {
       if (!ph?._id) return alert('Fase inválida');
@@ -6271,25 +6756,21 @@ function renderPhases(phases = []) {
 
     wrapPlan.appendChild(planCard);
 
-    // ✅ NO mostrar REAL si está vacío y aún no ha empezado
-const today = new Date();
-const startedByDate = ph?.startDate ? (new Date(ph.startDate) <= today) : false;
 const hasRealData =
+  !!ph?.actualStartDate ||
+  !!ph?.actualEndDate ||
   (realUsesTotal > 0) ||
   (realSrcsTotal > 0) ||
-  (disbExpected > 0) ||
-  (disbActual > 0) ||
-  !!ph?.disbRequested;
-
-if (!hasRealData && !startedByDate) {
-  // Solo mostramos PLAN, pero NO mostramos esta fase en la lista REAL
-  return;
-}
+  (disbActual > 0);
 
     // -------------------------
     // CARD REAL (ejecución)
     // -------------------------
     const realBody = `
+      <div class="finance-real-date-row">
+        <span>Fechas plan: <b>${dateFmt(ph?.startDate)} → ${dateFmt(ph?.endDate)}</b></span>
+        <span>Fechas real: <b>${ph?.actualStartDate ? dateFmt(ph.actualStartDate) : 'Sin iniciar'} → ${ph?.actualEndDate || ph?.completedAt ? dateFmt(ph.actualEndDate || ph.completedAt) : (hasRealData ? 'En curso' : '—')}</b></span>
+      </div>
       <div class="fin-kpi-grid">
         <div class="fin-kpi">
           <div class="label">Usos real</div>
@@ -6322,12 +6803,18 @@ if (!hasRealData && !startedByDate) {
         </div>
         <div class="finance-phase-progress"><div style="width:${financeProgressWidth(disbActual, disbExpected)}%"></div></div>
       </div>
+      <div class="finance-phase-card-actions">
+        <button class="btn btn-xs" data-act="lines">Líneas de la fase</button>
+        <button class="btn btn-xs ${ph?.isCompleted ? 'btn-ghost' : 'btn-success'}" data-act="complete">${ph?.isCompleted ? 'Reabrir fase' : 'Marcar finalizada'}</button>
+      </div>
     `;
 
     const realCard = makeCardShell({ variant: 'real', ph, titleRight: realBody });
 
     // Actions REAL
     realCard.querySelector('[data-act="edit"]')?.addEventListener('click', () => openPhaseEditor(ph, 'real'));
+    realCard.querySelector('[data-act="lines"]')?.addEventListener('click', () => openFinancePhaseLines(ph));
+    realCard.querySelector('[data-act="complete"]')?.addEventListener('click', () => toggleFinancePhaseCompletion(ph));
 
     realCard.querySelector('[data-act="del"]')?.addEventListener('click', async () => {
       if (!ph?._id) return alert('Fase inválida');
@@ -6396,6 +6883,7 @@ if (!hasRealData && !startedByDate) {
 // (SIMPLIFICADO: quitamos Intereses/Aportes/Preventas para evitar duplicidad)
 function openPhaseEditor(ph = null, focus = 'plan') {
   const isEdit = !!ph;
+  const hasExistingReal = !!ph?.actualStartDate || !!ph?.actualEndDate || sumItems(ph?.uses) > 0 || sumItems(ph?.sources) > 0 || numOr0(ph?.disbActual) > 0;
 
   // Necesario para "Iniciar REAL" sin crear fase nueva:
   const allPhases = (window.FINANCE?.phases || []);
@@ -6422,6 +6910,8 @@ function openPhaseEditor(ph = null, focus = 'plan') {
     name: ph?.name || '',
     startDate: ph ? new Date(ph.startDate).toISOString().slice(0,10) : '',
     endDate:   ph ? new Date(ph.endDate).toISOString().slice(0,10)   : '',
+    actualStartDate: ph?.actualStartDate ? new Date(ph.actualStartDate).toISOString().slice(0,10) : '',
+    actualEndDate: ph?.actualEndDate ? new Date(ph.actualEndDate).toISOString().slice(0,10) : '',
 
     planUses: Array.isArray(ph?.planUses) ? ph.planUses.slice() : [],
     planSources: Array.isArray(ph?.planSources) ? ph.planSources.slice() : [],
@@ -6441,7 +6931,7 @@ function openPhaseEditor(ph = null, focus = 'plan') {
   const title =
     focus === 'plan'
       ? (isEdit ? 'Editar fase (PLAN)' : 'Nueva fase (PLAN)')
-      : (isEdit ? 'Editar fase (REAL)' : 'Iniciar fase (REAL)');
+      : (hasExistingReal ? 'Editar fase (REAL)' : 'Iniciar fase (REAL)');
 
   const cta =
     isEdit ? 'Guardar' : (focus === 'plan' ? 'Crear' : 'Guardar');
@@ -6494,6 +6984,17 @@ function openPhaseEditor(ph = null, focus = 'plan') {
         </div>
       </div>
     ` : ''}
+
+    <div class="grid-2 finance-real-dates" style="margin-bottom:10px;">
+      <div>
+        <label>Inicio real</label>
+        <input id="ph-actual-start" type="date" class="input" value="${phaseData.actualStartDate}"/>
+      </div>
+      <div>
+        <label>Fin real</label>
+        <input id="ph-actual-end" type="date" class="input" value="${phaseData.actualEndDate}"/>
+      </div>
+    </div>
 
     <div style="margin-top:10px;">
       <label>Alertar X días antes del fin</label>
@@ -6558,8 +7059,10 @@ function openPhaseEditor(ph = null, focus = 'plan') {
           return;
         }
 
-        const payload = {
+const payload = {
   alertDaysBefore: Number(document.getElementById('ph-alert').value || 15),
+  actualStartDate: document.getElementById('ph-actual-start')?.value || phaseData.actualStartDate || new Date().toISOString().slice(0, 10),
+  actualEndDate: document.getElementById('ph-actual-end')?.value || null,
   uses: collect('ph-real-uses'),
   sources: collect('ph-real-sources'),
   // ✅ No tocamos desembolsos aquí (se gestionan desde la tarjeta con "Solicitar/Resuelto")

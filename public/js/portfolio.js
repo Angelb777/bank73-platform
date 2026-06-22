@@ -274,7 +274,25 @@
   const fab = document.getElementById('fabPlus');
   const btnCancel = document.getElementById('cancelCreate');
   const btnCloseCreate = document.getElementById('closeCreateModal');
+  const btnExpandCreate = document.getElementById('expandCreateModal');
   const btnCreate = document.getElementById('createProject');
+  const createFacilities = document.getElementById('createFacilities');
+
+  function createFacilityRow(item = {}) {
+    return `<div class="create-facility-row" data-create-facility-row>
+      <label>Tipo de facilidad<input data-create-facility="facilityType" list="createFacilityTypes" value="${escapeHtml(item.facilityType || '')}"></label>
+      <label>Destino del préstamo<input data-create-facility="loanPurpose" value="${escapeHtml(item.loanPurpose || '')}"></label>
+      <label>% financiado por banco<input data-create-facility="bankFinancedPct" type="number" step="any" value="${item.bankFinancedPct ?? ''}"></label>
+      <label>% CPP/ventas a amortización<input data-create-facility="cppSalesAmortizationPct" type="number" step="any" value="${item.cppSalesAmortizationPct ?? ''}"></label>
+      <label>Aporte requerido promotor<input data-create-facility="promoterRequiredContribution" type="number" step="any" value="${item.promoterRequiredContribution ?? ''}"></label>
+      <button class="btn ghost" type="button" data-remove-create-facility>Quitar</button>
+    </div>`;
+  }
+
+  document.getElementById('addCreateFacility')?.addEventListener('click', () => createFacilities?.insertAdjacentHTML('beforeend', createFacilityRow()));
+  createFacilities?.addEventListener('click', event => {
+    event.target.closest('[data-remove-create-facility]')?.closest('[data-create-facility-row]')?.remove();
+  });
 
   // Nuevo contenedor de roles (tu HTML final lo trae)
   const assigneesContainer = document.getElementById('assigneesContainer');
@@ -396,7 +414,10 @@
 
   const openModal = async () => {
     if (!modal) return;
+    modal.classList.remove('is-fullscreen');
+    if (btnExpandCreate) { btnExpandCreate.textContent = '⛶'; btnExpandCreate.title = 'Pantalla completa'; }
     modal.classList.add('show');
+    if (createFacilities && !createFacilities.children.length) createFacilities.insertAdjacentHTML('beforeend', createFacilityRow());
 
     // Modo nuevo (todos los roles)
     // Por privacidad, la creacion no carga ni muestra directorios de usuarios.
@@ -447,6 +468,7 @@
 
   const closeModal = () => {
     if (!modal) return;
+    modal.classList.remove('is-fullscreen');
     modal.classList.remove('show');
   };
 
@@ -455,6 +477,12 @@
     if (fab) fab.addEventListener('click', openModal);
     if (btnCancel) btnCancel.addEventListener('click', closeModal);
     if (btnCloseCreate) btnCloseCreate.addEventListener('click', closeModal);
+    if (btnExpandCreate) btnExpandCreate.addEventListener('click', () => {
+      modal.classList.toggle('is-fullscreen');
+      const full = modal.classList.contains('is-fullscreen');
+      btnExpandCreate.textContent = full ? '□' : '⛶';
+      btnExpandCreate.title = full ? 'Restaurar tamaño' : 'Pantalla completa';
+    });
 
     if (btnCreate) {
       btnCreate.addEventListener('click', async () => {
@@ -470,6 +498,33 @@
           const loanApproved = kLoan ? Number(kLoan.value || 0) : 0;
           const budgetApproved = kBudg ? Number(kBudg.value || 0) : 0;
 
+          const conditionNumbers = ['projectTotal','bankFinancedAmount','bankFinancedPct','promoterContribution','promoterContributionPct','interestRate'];
+          const conditionTexts = ['term','paymentMethod','commission','disbursementMethod','disbursementConditions','amortizationConditions','requiredPresales','guarantees','insurance'];
+          const financialConditions = {};
+          conditionNumbers.forEach(key => {
+            const raw = document.getElementById(`fc-${key}`)?.value;
+            if (raw !== '' && raw != null && Number.isFinite(Number(raw))) financialConditions[key] = Number(raw);
+          });
+          conditionTexts.forEach(key => {
+            financialConditions[key] = document.getElementById(`fc-${key}`)?.value?.trim() || '';
+          });
+          financialConditions.facilities = Array.from(document.querySelectorAll('[data-create-facility-row]')).map(row => ({
+            facilityType: row.querySelector('[data-create-facility="facilityType"]')?.value.trim() || '',
+            loanPurpose: row.querySelector('[data-create-facility="loanPurpose"]')?.value.trim() || '',
+            bankFinancedPct: Number(row.querySelector('[data-create-facility="bankFinancedPct"]')?.value || 0),
+            cppSalesAmortizationPct: Number(row.querySelector('[data-create-facility="cppSalesAmortizationPct"]')?.value || 0),
+            promoterRequiredContribution: Number(row.querySelector('[data-create-facility="promoterRequiredContribution"]')?.value || 0)
+          }));
+          financialConditions.precedentConditions = {};
+          document.querySelectorAll('[data-create-precedent]').forEach(input => { financialConditions.precedentConditions[input.dataset.createPrecedent] = input.checked; });
+          financialConditions.precedentConditions.otherRequirements = document.getElementById('fc-otherRequirements')?.value?.trim() || '';
+          financialConditions.operationStructure = {
+            trustee: document.getElementById('fc-trustee')?.value?.trim() || '',
+            trustType: document.getElementById('fc-trustType')?.value?.trim() || '',
+            technicalInspector: document.getElementById('fc-technicalInspector')?.value?.trim() || '',
+            financialInspector: document.getElementById('fc-financialInspector')?.value?.trim() || ''
+          };
+
           if (!name) return alert('El nombre es obligatorio.');
 
           const payload = {
@@ -479,6 +534,7 @@
             status,
             loanApproved,
             budgetApproved,
+            financialConditions,
             teamSuggestion: collectTeamSuggestion()
           };
 
@@ -487,13 +543,18 @@
           closeModal();
 
           // reset campos
-          ['pName', 'pDesc', 'pProjectType', 'kLoanApproved', 'kBudgetApproved', 'ts-promoter', 'ts-commercial', 'ts-legal', 'ts-tecnico', 'ts-gerencia', 'ts-socios', 'ts-financiero', 'ts-contable', 'ts-notes'].forEach(id => {
+          ['pName', 'pDesc', 'pProjectType', 'kLoanApproved', 'kBudgetApproved', 'ts-promoter', 'ts-commercial', 'ts-legal', 'ts-tecnico', 'ts-gerencia', 'ts-socios', 'ts-financiero', 'ts-contable', 'ts-notes', ...conditionNumbers.map(x => `fc-${x}`), ...conditionTexts.map(x => `fc-${x}`)].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
           });
 
           const st = document.getElementById('pStatus');
           if (st) st.value = 'EN_CURSO';
+          if (createFacilities) createFacilities.innerHTML = '';
+          document.querySelectorAll('[data-create-precedent]').forEach(input => { input.checked = false; });
+          ['fc-otherRequirements','fc-trustee','fc-trustType','fc-technicalInspector','fc-financialInspector'].forEach(fieldId => {
+            const field = document.getElementById(fieldId); if (field) field.value = '';
+          });
 
           // reset selects
           if (assigneesContainer) {

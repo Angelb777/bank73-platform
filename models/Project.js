@@ -68,6 +68,51 @@ const projectSchema = new Schema({
     default: '#0f172a'
   },
 
+  financialConditions: {
+    projectTotal: { type: Number, default: 0 },
+    bankFinancedAmount: { type: Number, default: 0 },
+    bankFinancedPct: { type: Number, default: 0 },
+    promoterContribution: { type: Number, default: 0 },
+    promoterContributionPct: { type: Number, default: 0 },
+    interestRate: { type: Number, default: 0 },
+    term: { type: String, trim: true, default: '' },
+    paymentMethod: { type: String, trim: true, default: '' },
+    commission: { type: String, trim: true, default: '' },
+    disbursementMethod: { type: String, trim: true, default: '' },
+    disbursementConditions: { type: String, trim: true, default: '' },
+    amortizationConditions: { type: String, trim: true, default: '' },
+    requiredPresales: { type: String, trim: true, default: '' },
+    guarantees: { type: String, trim: true, default: '' },
+    insurance: { type: String, trim: true, default: '' },
+    facilities: {
+      type: [{
+        facilityType: { type: String, trim: true, default: '' },
+        loanPurpose: { type: String, trim: true, default: '' },
+        bankFinancedPct: { type: Number, default: 0 },
+        cppSalesAmortizationPct: { type: Number, default: 0 },
+        promoterRequiredContribution: { type: Number, default: 0 }
+      }],
+      default: []
+    },
+    precedentConditions: {
+      presalesMet: { type: Boolean, default: false },
+      constructionPermitsApproved: { type: Boolean, default: false },
+      plansApproved: { type: Boolean, default: false },
+      insuranceDelivered: { type: Boolean, default: false },
+      guaranteesConstituted: { type: Boolean, default: false },
+      environmentalStudyApproved: { type: Boolean, default: false },
+      trustConstituted: { type: Boolean, default: false },
+      otherRequirementsMet: { type: Boolean, default: false },
+      otherRequirements: { type: String, trim: true, default: '' }
+    },
+    operationStructure: {
+      trustee: { type: String, trim: true, default: '' },
+      trustType: { type: String, trim: true, default: '' },
+      technicalInspector: { type: String, trim: true, default: '' },
+      financialInspector: { type: String, trim: true, default: '' }
+    }
+  },
+
   // KPIs
   loanApproved:   { type: Number, default: 0 },
   loanDisbursed:  { type: Number, default: 0 },
