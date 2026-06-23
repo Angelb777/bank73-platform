@@ -5,7 +5,7 @@
   <title>Proyecto — Bank73</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link href="/css/base.css" rel="stylesheet" />
-  <link href="/css/theme.css?v=finance-ui-v9" rel="stylesheet" />
+  <link href="/css/theme.css?v=finance-ui-v10" rel="stylesheet" />
   <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
 
   <style>
@@ -1017,6 +1017,92 @@
   grid-template-columns: minmax(180px, 260px) 1fr;
   gap: 14px 18px;
 }
+.project-title-wrap{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  flex-wrap:wrap;
+  min-width:0;
+}
+.project-title-wrap h2{
+  margin:0;
+}
+.commercial-dossier-btn{
+  min-height:38px;
+  display:inline-flex;
+  align-items:center;
+  gap:9px;
+  border:1px solid rgba(96,165,250,.38);
+  border-radius:8px;
+  padding:8px 12px;
+  background:linear-gradient(180deg, rgba(37,99,235,.18), rgba(15,23,42,.52));
+  color:#eaf2ff;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08), 0 10px 24px rgba(2,6,23,.18);
+  cursor:pointer;
+  font-weight:800;
+  line-height:1;
+}
+.commercial-dossier-btn:hover{
+  border-color:rgba(96,165,250,.72);
+  background:linear-gradient(180deg, rgba(37,99,235,.28), rgba(15,23,42,.62));
+}
+.commercial-dossier-btn .dossier-icon{
+  width:24px;
+  height:24px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:7px;
+  background:#2563eb;
+  color:#fff;
+  font-size:12px;
+  font-weight:900;
+}
+.commercial-dossier-btn .dossier-meta{
+  font-size:12px;
+  color:#a9bbd6;
+  font-weight:700;
+}
+.commercial-dossier-btn.has-file .dossier-meta{
+  color:#9ee7c6;
+}
+.commercial-dossier-modal-list{
+  display:grid;
+  gap:10px;
+}
+.commercial-dossier-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:12px;
+  align-items:center;
+  border:1px solid rgba(148,163,184,.24);
+  border-radius:8px;
+  padding:12px;
+  background:rgba(15,23,42,.04);
+}
+.commercial-dossier-row b{
+  display:block;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.commercial-dossier-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+.commercial-dossier-upload{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:10px;
+  align-items:center;
+  border:1px dashed rgba(96,165,250,.42);
+  border-radius:8px;
+  padding:12px;
+  background:rgba(37,99,235,.08);
+}
 .docs-control-panel{
   border:1px solid rgba(148,163,184,.24);
   border-radius:8px;
@@ -1213,6 +1299,23 @@
   margin-top:10px;
 }
 @media (max-width: 760px){
+  .proyecto-topbar{
+    align-items:flex-start;
+  }
+  .project-title-wrap{
+    width:100%;
+  }
+  .commercial-dossier-btn{
+    width:100%;
+    justify-content:flex-start;
+  }
+  .commercial-dossier-row,
+  .commercial-dossier-upload{
+    grid-template-columns:1fr;
+  }
+  .commercial-dossier-actions{
+    justify-content:flex-start;
+  }
   .docs-upload-form{ grid-template-columns:1fr; }
   .docs-toolbar{ grid-template-columns:1fr; }
   .docs-move-panel{ grid-template-columns:1fr; }
@@ -1309,7 +1412,14 @@
     </div>
 
     <div class="proyecto-topbar">
-      <h2 id="pname">Proyecto</h2>
+      <div class="project-title-wrap">
+        <h2 id="pname">Proyecto</h2>
+        <button id="commercialDossierBtn" class="commercial-dossier-btn" type="button" title="Dossier comercial del proyecto">
+          <span class="dossier-icon">PDF</span>
+          <span>Dossier comercial</span>
+          <span id="commercialDossierMeta" class="dossier-meta">Sin archivo</span>
+        </button>
+      </div>
       <div class="status-controls">
         <div class="project-status-picker">
           <label for="pstatusSel" class="status-label">Estado</label>
@@ -1628,18 +1738,11 @@
   <section class="summary-block" style="margin-top:18px;">
     <div class="summary-block-title">Resumen Financiero</div>
 
+    <section id="summaryFinancialProfile" class="summary-resume-wrap" style="margin-top:12px;"></section>
     <section id="summaryFinancialKpis" class="kpis-grid" style="margin-top:12px;"></section>
     <section id="summaryFinanceControlCards" class="summary-resume-wrap" style="margin-top:12px;"></section>
 
     <section class="grid-2" style="margin-top:12px;">
-      <div class="card summary-chart-card">
-        <h3>Resumen por lineas de credito</h3>
-        <div class="summary-chart-box">
-          <canvas id="sumCreditLines"></canvas>
-        </div>
-        <div id="sumCreditLinesSummary" class="summary-chart-summary"></div>
-      </div>
-
       <div class="card summary-chart-card">
         <h3>Cobertura CPP vs prestamo</h3>
         <div class="summary-chart-box">
@@ -1665,6 +1768,29 @@
         </div>
         <div id="sumPhaseSourceChartSummary" class="summary-chart-summary summary-phase-summary"></div>
       </div>
+    </section>
+
+    <section class="grid-2" style="margin-top:12px;">
+      <div class="card summary-chart-card chart-phase-lg">
+        <h3>Desviación temporal - Duración por fase</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumPhaseTimeDurationChart"></canvas>
+        </div>
+        <div id="sumPhaseTimeDurationSummary" class="summary-chart-summary"></div>
+      </div>
+
+      <div class="card summary-chart-card chart-phase-lg">
+        <h3>Desviación temporal - Fecha final</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumPhaseTimeDelayChart"></canvas>
+        </div>
+        <div id="sumPhaseTimeDelaySummary" class="summary-chart-summary"></div>
+      </div>
+    </section>
+
+    <section class="summary-phase-lines-section" style="margin-top:12px;">
+      <h3 class="summary-subsection-title">Gráficas de líneas por fase</h3>
+      <div id="summaryPhaseLineCharts" class="grid-2"></div>
     </section>
 
     <section class="grid-1 summary-legacy-cpp-coverage" style="margin-top:12px;display:none;">
@@ -1794,7 +1920,7 @@
     <div class="finance-section-head">
       <div>
         <h3>Control de financiación</h3>
-        <p>Conecta las condiciones aprobadas con el PLAN de fases y la deuda real de sus líneas.</p>
+        <p>Conecta las condiciones aprobadas con el PLAN de fases y la deuda real de cada una de sus líneas.</p>
       </div>
       <span class="finance-derived-badge">Cálculo automático</span>
     </div>
@@ -1954,6 +2080,12 @@
     </div>
   </section>
 
+  <section class="finance-deviation-section is-line-charts" style="margin-top:28px;">
+    <h3>Gráficas de líneas por fase</h3>
+    <p class="small muted">Cada fase muestra sus propias líneas de préstamo, desembolsos, amortizaciones y saldo.</p>
+    <div id="financePhaseLineCharts" class="grid-2 finance-charts-grid"></div>
+  </section>
+
   <!-- =========================================================
        5) ACUMULADOS (REAL) + RESUMEN ACUMULADO
        ========================================================= -->
@@ -2068,6 +2200,10 @@
         <input id="cl-manzana" placeholder="A" />
         <label>Cantidad</label>
         <input id="cl-cantidad" type="number" min="1" value="10" />
+        <label>Modelo definido</label>
+        <select id="cl-modeloSelect">
+          <option value="">Sin modelo / manual</option>
+        </select>
         <label>Modelo</label>
         <input id="cl-modelo" placeholder="Modelo" />
         <label>m²</label>
@@ -2422,7 +2558,7 @@
   <script src="/js/api.js"></script>
   <script src="/lib/chart.umd.min.js"></script>
   <script src="/js/theme-toggle.js"></script>
-  <script src="/js/project.js?v=finance-ui-v9"><!-- ROLE-SEP: bump --></script>
+  <script src="/js/project.js?v=project-models-v1"><!-- ROLE-SEP: bump --></script>
 
 </body>
 </html>

@@ -68,6 +68,49 @@ const projectSchema = new Schema({
     default: '#0f172a'
   },
 
+  legalData: {
+    promoterLegalName: { type: String, trim: true, default: '' },
+    boardMembers: {
+      type: [{
+        name: { type: String, trim: true, default: '' },
+        cedula: { type: String, trim: true, default: '' },
+        position: { type: String, trim: true, default: '' }
+      }],
+      default: []
+    },
+    shareholders: {
+      type: [{
+        name: { type: String, trim: true, default: '' },
+        cedula: { type: String, trim: true, default: '' },
+        percentage: { type: Number, default: 0 }
+      }],
+      default: []
+    },
+    interimBank: { type: String, trim: true, default: '' },
+    trustApplies: { type: Boolean, default: false },
+    trustName: { type: String, trim: true, default: '' }
+  },
+
+  technicalData: {
+    phasesCount: { type: Number, default: 0 },
+    totalUnits: { type: Number, default: 0 },
+    notes: { type: String, trim: true, default: '' }
+  },
+
+  housingModels: {
+    type: [{
+      name: { type: String, trim: true, default: '' },
+      bedrooms: { type: Number, default: 0 },
+      bathrooms: { type: Number, default: 0 },
+      openAreaM2: { type: Number, default: 0 },
+      closedAreaM2: { type: Number, default: 0 },
+      price: { type: Number, default: 0 },
+      unitsCount: { type: Number, default: 0 },
+      observations: { type: String, trim: true, default: '' }
+    }],
+    default: []
+  },
+
   financialConditions: {
     projectTotal: { type: Number, default: 0 },
     bankFinancedAmount: { type: Number, default: 0 },

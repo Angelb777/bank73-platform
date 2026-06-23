@@ -35,6 +35,43 @@ function normalizeUnitEstado(estado) {
   return VALID_UNIT_ESTADOS.includes(e) ? e : 'disponible';
 }
 
+function modelPayloadFromProject(project, modelIdOrName) {
+  const models = Array.isArray(project?.housingModels) ? project.housingModels : [];
+  const key = String(modelIdOrName || '').trim();
+  if (!key) return null;
+  const model = models.find(item =>
+    String(item._id || '') === key ||
+    String(item.name || '').trim().toLowerCase() === key.toLowerCase()
+  );
+  if (!model) return null;
+  return {
+    modelId: model._id || null,
+    modelo: model.name || '',
+    m2: Number(model.openAreaM2 || 0) + Number(model.closedAreaM2 || 0),
+    areaAbierta: Number(model.openAreaM2 || 0),
+    areaCerrada: Number(model.closedAreaM2 || 0),
+    recamaras: Number(model.bedrooms || 0),
+    banos: Number(model.bathrooms || 0),
+    precioLista: Number(model.price || 0),
+    price: Number(model.price || 0)
+  };
+}
+
+function unitModelFieldsFromBody(project, body = {}) {
+  const fromModel = modelPayloadFromProject(project, body.modelId || body.modelo);
+  const out = fromModel ? { ...fromModel } : {};
+  if (body.modelId !== undefined && !out.modelId && mongoose.Types.ObjectId.isValid(String(body.modelId))) {
+    out.modelId = body.modelId;
+  }
+  if (body.modelo !== undefined) out.modelo = String(body.modelo || '').trim();
+  if (body.m2 !== undefined) out.m2 = Number(body.m2 || 0);
+  if (body.precioLista !== undefined) {
+    out.precioLista = Number(body.precioLista || 0);
+    out.price = out.precioLista;
+  }
+  return out;
+}
+
 const ESTADOS_VENTA_CAIBLE = [
   'reservado',
   'con_cpp',
@@ -125,31 +162,47 @@ router.post(
   requireProjectAccess({ promoterCanEditAssigned: true }),
   async (req, res) => {
     try {
-      const { projectId, manzana, cantidad, modelo, m2, precioLista, estado } = req.body;
+      const { projectId, manzana, cantidad, estado } = req.body;
       if (!projectId || !manzana || !cantidad) {
         return res.status(400).json({ error: 'projectId, manzana y cantidad son requeridos' });
       }
 
       const lotes = Array.from({ length: parseInt(cantidad, 10) }, (_, i) => String(i + 1));
+      const modelFields = unitModelFieldsFromBody(req.project, req.body);
 
       const docs = lotes.map(lote => ({
         tenantKey: req.tenantKey,
         projectId,
         manzana,
         lote,
-        modelo: modelo || '',
-        m2: m2 || 0,
-        precioLista: precioLista || 0,
+        ...modelFields,
         estado: normalizeUnitEstado(estado),
         deletedAt: null,
 
         // legacy
         code: `${manzana}-${lote}`,
         status: normalizeUnitEstado(estado).toUpperCase(),
-        price: precioLista || 0
+        price: modelFields.precioLista || modelFields.price || 0
       }));
 
       const created = await Unit.insertMany(docs, { ordered: false });
+      const ventas = created
+        .filter(unit => unit.areaAbierta || unit.areaCerrada || unit.recamaras || unit.banos || unit.precioLista)
+        .map(unit => ({
+          tenantKey: req.tenantKey,
+          projectId,
+          unitId: unit._id,
+          manzana: unit.manzana,
+          lote: unit.lote,
+          areaAbierta: unit.areaAbierta || 0,
+          areaCerrada: unit.areaCerrada || 0,
+          areaTotalConstruccion: Number(unit.areaAbierta || 0) + Number(unit.areaCerrada || 0),
+          recamaras: unit.recamaras || 0,
+          banos: unit.banos || 0,
+          precioVenta: unit.precioLista || 0,
+          valor: unit.precioLista || 0
+        }));
+      if (ventas.length) await Venta.insertMany(ventas, { ordered: false });
 
       await syncProjectKpisSafe(req, projectId);
 
@@ -203,7 +256,10 @@ router.patch(
       const { ids = [], update = {} } = req.body || {};
       if (!ids.length) return res.status(400).json({ error: 'ids requerido' });
 
-            const set = { ...update };
+      const set = { ...update };
+      if (set.modelId || set.modelo) {
+        Object.assign(set, unitModelFieldsFromBody(req.project, set));
+      }
       if (set.precioLista != null) set.price = set.precioLista;
 
       let unitsAntes = [];
@@ -244,7 +300,25 @@ router.patch(
       }
 
       // ✅ si cambia el precio de la unidad, sincronizamos también Venta.valor
-      if (set.precioLista != null) {
+      if (
+        set.precioLista != null ||
+        set.areaAbierta != null ||
+        set.areaCerrada != null ||
+        set.recamaras != null ||
+        set.banos != null
+      ) {
+        const ventaSet = {};
+        if (set.precioLista != null) {
+          ventaSet.valor = Number(set.precioLista || 0);
+          ventaSet.precioVenta = Number(set.precioLista || 0);
+        }
+        if (set.areaAbierta != null) ventaSet.areaAbierta = Number(set.areaAbierta || 0);
+        if (set.areaCerrada != null) ventaSet.areaCerrada = Number(set.areaCerrada || 0);
+        if (set.areaAbierta != null || set.areaCerrada != null) {
+          ventaSet.areaTotalConstruccion = Number(set.areaAbierta || 0) + Number(set.areaCerrada || 0);
+        }
+        if (set.recamaras != null) ventaSet.recamaras = Number(set.recamaras || 0);
+        if (set.banos != null) ventaSet.banos = Number(set.banos || 0);
         await Venta.updateMany(
           {
             tenantKey: req.tenantKey,
@@ -252,7 +326,7 @@ router.patch(
             unitId: { $in: ids }
           },
           {
-            $set: { valor: Number(set.precioLista || 0) }
+            $set: ventaSet
           }
         );
       }
@@ -340,9 +414,12 @@ router.patch(
   requireProjectAccess({ promoterCanEditAssigned: true }),
   async (req, res) => {
     try {
-            const update = { ...req.body };
+      const update = { ...req.body };
       const estadoAnterior = req._unit?.estado;
 
+      if (update.modelId || update.modelo) {
+        Object.assign(update, unitModelFieldsFromBody(req.project, update));
+      }
       if (update.precioLista != null) update.price = update.precioLista;
 
       if (update.estado) {
@@ -378,16 +455,37 @@ router.patch(
       
 
       // ✅ si cambia el precio de la unidad, sincronizamos también Venta.valor
-      if (update.precioLista != null) {
-        await Venta.updateOne(
+      if (
+        update.precioLista != null ||
+        update.areaAbierta != null ||
+        update.areaCerrada != null ||
+        update.recamaras != null ||
+        update.banos != null
+      ) {
+        const ventaSet = {};
+        if (update.precioLista != null) {
+          ventaSet.valor = Number(update.precioLista || 0);
+          ventaSet.precioVenta = Number(update.precioLista || 0);
+        }
+        if (update.areaAbierta != null) ventaSet.areaAbierta = Number(update.areaAbierta || 0);
+        if (update.areaCerrada != null) ventaSet.areaCerrada = Number(update.areaCerrada || 0);
+        if (update.areaAbierta != null || update.areaCerrada != null) {
+          ventaSet.areaTotalConstruccion =
+            Number((update.areaAbierta ?? req._unit?.areaAbierta) || 0) +
+            Number((update.areaCerrada ?? req._unit?.areaCerrada) || 0);
+        }
+        if (update.recamaras != null) ventaSet.recamaras = Number(update.recamaras || 0);
+        if (update.banos != null) ventaSet.banos = Number(update.banos || 0);
+        await Venta.findOneAndUpdate(
           {
             tenantKey: req.tenantKey,
             projectId: u.projectId,
             unitId: u._id
           },
           {
-            $set: { valor: Number(update.precioLista || 0) }
-          }
+            $set: { ...ventaSet, tenantKey: req.tenantKey, projectId: u.projectId, unitId: u._id, deletedAt: null }
+          },
+          { upsert: true, new: true }
         );
       }
 

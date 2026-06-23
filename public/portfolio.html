@@ -39,16 +39,22 @@
       padding: 20px;
     }
     .modal.create-modal {
+      height: min(860px, calc(100vh - 80px));
       max-height: calc(100vh - 80px);
       display: flex;
       flex-direction: column;
       overflow: hidden;
       padding: 0;
+      max-width: 1120px;
+      border:1px solid rgba(226,232,240,.95);
+      box-shadow:0 28px 80px rgba(15,23,42,.24);
     }
     .create-modal-body {
       overflow: auto;
       padding: 28px 28px 18px;
       min-height: 0;
+      flex: 1 1 auto;
+      background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);
     }
     .create-modal-actions {
       position: sticky;
@@ -59,6 +65,8 @@
       background: rgba(255,255,255,.96);
       box-shadow: 0 -10px 24px rgba(15,23,42,.08);
       z-index: 2;
+      flex: 0 0 auto;
+      min-height:76px;
     }
     .modal .row {
       display: flex;
@@ -69,6 +77,26 @@
     }
     .modal h3 { margin-top: 0; }
     .modal input, .modal textarea, .modal select { border: 1px solid #ccc; background: #fff; color: #000; }
+    .create-modal input,
+    .create-modal textarea,
+    .create-modal select {
+      width:100%;
+      min-height:42px;
+      border-radius:12px;
+      border:1px solid #cbd5e1;
+      background:#fff;
+      color:#0f172a;
+      padding:10px 12px;
+      box-shadow:inset 0 1px 0 rgba(15,23,42,.03);
+    }
+    .create-modal textarea { min-height:84px; resize:vertical; }
+    .create-modal input:focus,
+    .create-modal textarea:focus,
+    .create-modal select:focus {
+      outline:none;
+      border-color:#3b82f6;
+      box-shadow:0 0 0 3px rgba(59,130,246,.14);
+    }
     .modal-close {
       position:absolute;
       top:14px;
@@ -99,6 +127,11 @@
     .modal-backdrop.is-fullscreen .modal.create-modal {
       width:100vw; height:100vh; max-width:none; max-height:none; border-radius:0;
     }
+    .filter-modal.modal.create-modal {
+      height:auto;
+      max-height:calc(100vh - 80px);
+      max-width:520px;
+    }
     #cancelCreate {
       color:#1f2937;
       background:#e5e7eb;
@@ -107,7 +140,7 @@
     }
     #cancelCreate:hover { background:#d1d5db; }
     .create-finance-section { grid-column:1/-1; padding-top:10px; border-top:1px solid #dbe2ea; }
-    .create-finance-section h4 { margin:0 0 8px; }
+    .create-finance-section h4 { margin:0 0 8px; color:#0f172a; }
     .create-facility-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:10px; margin-bottom:8px; border:1px solid #dbe2ea; border-radius:10px; }
     .create-precedent-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
     .create-precedent-grid label { display:flex; align-items:center; gap:7px; }
@@ -404,6 +437,171 @@
     @media (max-width: 720px) {
       .team-suggestion-grid { grid-template-columns: 1fr; }
     }
+    .create-steps {
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin:14px 0;
+      padding:10px;
+      border:1px solid #e2e8f0;
+      border-radius:18px;
+      background:#f8fafc;
+      justify-content:center;
+    }
+    .create-step-tab {
+      border:1px solid #cbd5e1;
+      border-radius:999px;
+      background:#fff;
+      color:#0f172a;
+      padding:8px 14px 8px 9px;
+      font-weight:700;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      min-height:40px;
+    }
+    .create-step-number {
+      width:24px;
+      height:24px;
+      border-radius:999px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      background:#e2e8f0;
+      color:#334155;
+      font-size:12px;
+      font-weight:900;
+    }
+    .create-step-tab.active { background:#0d6efd; color:#fff; border-color:#0d6efd; box-shadow:0 10px 24px rgba(13,110,253,.22); }
+    .create-step-tab.active .create-step-number { background:#fff; color:#0d6efd; }
+    .create-step { display:none; }
+    .create-step.active { display:block; }
+    .create-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .create-grid label, .create-repeat-row label { display:flex; flex-direction:column; gap:5px; font-size:13px; color:#334155; }
+    .create-repeat-row {
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr)) auto;
+      gap:8px;
+      align-items:end;
+      padding:10px;
+      border:1px solid #dbe2ea;
+      border-radius:10px;
+      margin-bottom:8px;
+      background:#fff;
+    }
+    .create-model-row {
+      grid-template-columns:repeat(4,minmax(0,1fr));
+      position:relative;
+      padding:14px;
+    }
+    .create-model-row [data-remove-create-row] { grid-column:auto; align-self:end; }
+    .create-step-actions { display:flex; justify-content:space-between; gap:10px; margin-top:14px; }
+    .create-step-card,
+    .create-finance-panel {
+      border:1px solid #dbe2ea;
+      border-radius:16px;
+      background:#fff;
+      color:#0f172a;
+      padding:16px;
+      box-shadow:0 10px 24px rgba(15,23,42,.05);
+    }
+    .create-step-card h4,
+    .create-finance-panel h4 {
+      color:#0f172a;
+      margin:18px 0 10px;
+      font-size:15px;
+      font-weight:900;
+    }
+    .create-section-title {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin:0 0 14px;
+      color:#0f172a;
+      font-size:18px;
+      font-weight:900;
+    }
+    .create-section-kicker {
+      color:#64748b;
+      font-size:13px;
+      font-weight:600;
+    }
+    .financial-conditions-form label,
+    .create-finance-panel label {
+      color:#334155;
+      font-weight:700;
+    }
+    .create-precedent-grid {
+      grid-template-columns:repeat(4,minmax(0,1fr));
+      align-items:stretch;
+    }
+    .create-precedent-grid label {
+      min-height:56px;
+      padding:10px 12px;
+      border:1px solid #dbe2ea;
+      border-radius:12px;
+      background:#f8fafc;
+      justify-content:flex-start;
+      color:#0f172a;
+      font-weight:700;
+      line-height:1.2;
+    }
+    .create-precedent-grid input[type="checkbox"] {
+      width:18px;
+      height:18px;
+      flex:0 0 auto;
+    }
+    .create-model-help {
+      margin:0 0 12px;
+      color:#475569;
+      font-size:13px;
+      line-height:1.45;
+    }
+    .create-step-card .btn,
+    .create-finance-panel .btn,
+    .create-modal-actions .btn {
+      border-radius:12px;
+      border:1px solid #cbd5e1;
+      background:#fff;
+      color:#0f172a;
+      font-weight:800;
+      min-height:42px;
+      padding:10px 16px;
+      box-shadow:none;
+    }
+    .create-step-card .btn:hover,
+    .create-finance-panel .btn:hover,
+    .create-modal-actions .btn:hover { background:#f1f5f9; }
+    .create-step-card .btn.ghost,
+    .create-finance-panel .btn.ghost {
+      border-color:#bfdbfe;
+      background:#eff6ff;
+      color:#1d4ed8;
+    }
+    #nextCreateStep,
+    #createProject {
+      background:#3b82f6;
+      border-color:#3b82f6;
+      color:#fff;
+      box-shadow:0 14px 30px rgba(59,130,246,.28);
+    }
+    #cancelCreate {
+      background:#e2e8f0;
+      border-color:#cbd5e1;
+      color:#1f2937;
+    }
+    #prevCreateStep:disabled,
+    #nextCreateStep:disabled {
+      opacity:.42;
+      box-shadow:none;
+      cursor:not-allowed;
+    }
+    @media (max-width: 840px) {
+      .create-grid, .create-repeat-row, .create-model-row { grid-template-columns:1fr; }
+      .create-precedent-grid { grid-template-columns:1fr; }
+    }
   </style>
 </head>
 
@@ -510,7 +708,18 @@
       <button id="closeCreateModal" class="modal-close" type="button" aria-label="Cerrar">×</button>
       <div class="create-modal-body">
       <h3>Crear nuevo proyecto</h3>
+      <div class="create-steps" id="createSteps">
+        <button class="create-step-tab active" type="button" data-create-step="general"><span class="create-step-number">1</span>Datos generales</button>
+        <button class="create-step-tab" type="button" data-create-step="legal"><span class="create-step-number">2</span>Datos legales</button>
+        <button class="create-step-tab" type="button" data-create-step="technical"><span class="create-step-number">3</span>Datos tecnicos</button>
+        <button class="create-step-tab" type="button" data-create-step="models"><span class="create-step-number">4</span>Modelos</button>
+        <button class="create-step-tab" type="button" data-create-step="financial"><span class="create-step-number">5</span>Datos financieros</button>
+        <button class="create-step-tab" type="button" data-create-step="team"><span class="create-step-number">6</span>Equipo sugerido</button>
+      </div>
 
+      <section class="create-step active" data-create-panel="general">
+      <div class="create-step-card">
+      <div class="create-section-title">Datos generales <span class="create-section-kicker">Identificacion del proyecto</span></div>
       <div class="row" style="justify-content:flex-start; gap:12px; flex-wrap: wrap;">
         <input id="pName" type="text" placeholder="Nombre del proyecto" style="flex: 1 1 240px;" />
         <select id="pStatus" style="flex:0 0 180px;">
@@ -531,8 +740,51 @@
         </select>
         <textarea id="pDesc" rows="3" placeholder="Descripción" style="width:100%;"></textarea>
       </div>
-      <details class="card" style="margin-top:12px;padding:12px;">
-        <summary><strong>Condiciones financieras</strong> <span class="muted">(opcional)</span></summary>
+      </div>
+      </section>
+      <section class="create-step" data-create-panel="legal">
+        <div class="create-step-card">
+        <div class="create-section-title">Datos legales <span class="create-section-kicker">Sociedad, directores, accionistas y fideicomiso</span></div>
+        <div class="create-grid">
+          <label>Promotor / deudor como sociedad legal<input id="ld-promoterLegalName" type="text"></label>
+          <label>Banco interino<input id="ld-interimBank" type="text"></label>
+          <label>Fideicomiso
+            <select id="ld-trustApplies">
+              <option value="false">No aplica</option>
+              <option value="true">Aplica</option>
+            </select>
+          </label>
+          <label>Nombre del fideicomiso<input id="ld-trustName" type="text"></label>
+        </div>
+        <h4>Junta directiva</h4>
+        <div id="createBoardMembers"></div>
+        <button id="addCreateBoardMember" class="btn ghost" type="button">+ Anadir directivo</button>
+        <h4>Accionistas</h4>
+        <div id="createShareholders"></div>
+        <button id="addCreateShareholder" class="btn ghost" type="button">+ Anadir accionista</button>
+        </div>
+      </section>
+      <section class="create-step" data-create-panel="technical">
+        <div class="create-step-card">
+        <div class="create-section-title">Datos tecnicos <span class="create-section-kicker">Etapas y volumen del proyecto</span></div>
+        <div class="create-grid">
+          <label>Cantidad de fases o etapas<input id="td-phasesCount" type="number" min="0" step="1"></label>
+          <label>Cantidad total de unidades<input id="td-totalUnits" type="number" min="0" step="1"></label>
+          <label style="grid-column:1/-1">Observaciones tecnicas<textarea id="td-notes" rows="3"></textarea></label>
+        </div>
+        </div>
+      </section>
+      <section class="create-step" data-create-panel="models">
+        <div class="create-step-card">
+        <div class="create-section-title">Modelos de vivienda/apartamento <span class="create-section-kicker">La cantidad de unidades aqui crea el inventario comercial</span></div>
+        <p class="create-model-help">Cada fila define una tipologia. Si indicas cantidad de unidades, Bank73 creara automaticamente esas unidades en Comercial con las caracteristicas comunes del modelo.</p>
+        <div id="createHousingModels"></div>
+        <button id="addCreateHousingModel" class="btn ghost" type="button">+ Anadir modelo</button>
+        </div>
+      </section>
+      <section class="create-step" data-create-panel="financial">
+      <div class="create-finance-panel">
+        <div class="create-section-title">Condiciones financieras <span class="create-section-kicker">Opcional</span></div>
         <div class="financial-conditions-form" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px;">
           <label>Total del proyecto<input id="fc-projectTotal" type="number" step="any"></label>
           <label>Monto financiado por el banco<input id="fc-bankFinancedAmount" type="number" step="any"></label>
@@ -574,7 +826,7 @@
             </div>
           </section>
         </div>
-      </details>
+      </div>
 
       <div id="createAssigneesSection" style="display:none; margin-top:12px;">
         <div class="small muted">
@@ -595,7 +847,11 @@
         </div>
       </div>
 
-      <div class="team-suggestion">
+      </section>
+
+      <section class="create-step" data-create-panel="team">
+      <div class="team-suggestion create-step-card">
+        <div class="create-section-title">Equipo sugerido <span class="create-section-kicker">Opcional</span></div>
         <div class="team-suggestion-head">
           <div>
             <strong>Equipo sugerido</strong>
@@ -616,10 +872,13 @@
           <textarea id="ts-notes" rows="3" placeholder="Cualquier comentario adicional sobre el equipo o la asignación."></textarea>
         </label>
       </div>
+      </section>
 
       </div>
 
       <div class="row create-modal-actions">
+        <button id="prevCreateStep" class="btn ghost" type="button">Anterior</button>
+        <button id="nextCreateStep" class="btn" type="button">Siguiente</button>
         <button id="cancelCreate" class="btn ghost">Cancelar</button>
         <button id="createProject" class="btn">Crear</button>
       </div>
@@ -628,6 +887,6 @@
 
   <script src="/js/api.js"></script>
   <script src="/js/theme-toggle.js"></script>
-  <script src="/js/portfolio.js?v=finance-conditions-v4"></script>
+  <script src="/js/portfolio.js?v=create-wizard-v2"></script>
 </body>
 </html>

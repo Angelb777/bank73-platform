@@ -2566,6 +2566,16 @@ async function renderSummaryUI(payload) {
 
   renderPhaseChart(financePhases, 'sumPhaseChart');
   renderPhaseSourceChart(financePhases, 'sumPhaseSourceChart');
+  renderFinanceTimeCharts(financePhases, {
+    durationCanvasId: 'sumPhaseTimeDurationChart',
+    delayCanvasId: 'sumPhaseTimeDelayChart',
+    delaySummaryId: 'sumPhaseTimeDelaySummary',
+    durationSummaryId: 'sumPhaseTimeDurationSummary',
+  });
+  renderFinancePhaseLineCharts(financePhases, 'summaryPhaseLineCharts', 'sumPhaseLineChart', {
+    lines: financial.creditLines || [],
+    summary: true,
+  });
   renderFinancePhaseSummary(financePhases);
 
   // Cabecera textual
@@ -2716,6 +2726,18 @@ if (!isPeriodView) try {
       sub: `${proformasByBank.length} bancos`
     }
   ]);
+  renderMiniKpiBox('summaryFinancialProfile', [
+    {
+      title: 'Estado del proyecto',
+      value: project.status || project.estado || 'No definido',
+      sub: `Tipo: ${projectTypeLabel} · Actualizado: ${project?.updatedAt ? new Date(project.updatedAt).toLocaleDateString() : '—'}`
+    },
+    {
+      title: 'Datos del promotor',
+      value: promoterLabel,
+      sub: `Sociedad: ${promoterCompanyLabel} · Tipo: ${promoterTypeLabel} · Perfil: ${promoterCategoryLabel}`
+    }
+  ]);
 
   // Finanzas
   if (!isPeriodView) try {
@@ -2729,10 +2751,30 @@ if (!isPeriodView) try {
     if (phases.length) {
       renderPhaseChart(phases, 'sumPhaseChart');
       renderPhaseSourceChart(phases, 'sumPhaseSourceChart');
+      renderFinanceTimeCharts(phases, {
+        durationCanvasId: 'sumPhaseTimeDurationChart',
+        delayCanvasId: 'sumPhaseTimeDelayChart',
+        delaySummaryId: 'sumPhaseTimeDelaySummary',
+        durationSummaryId: 'sumPhaseTimeDurationSummary',
+      });
+      renderFinancePhaseLineCharts(phases, 'summaryPhaseLineCharts', 'sumPhaseLineChart', {
+        lines: financial.creditLines || [],
+        summary: true,
+      });
       renderFinancePhaseSummary(phases);
     } else {
       renderPhaseChart([], 'sumPhaseChart');
       renderPhaseSourceChart([], 'sumPhaseSourceChart');
+      renderFinanceTimeCharts([], {
+        durationCanvasId: 'sumPhaseTimeDurationChart',
+        delayCanvasId: 'sumPhaseTimeDelayChart',
+        delaySummaryId: 'sumPhaseTimeDelaySummary',
+        durationSummaryId: 'sumPhaseTimeDurationSummary',
+      });
+      renderFinancePhaseLineCharts([], 'summaryPhaseLineCharts', 'sumPhaseLineChart', {
+        lines: financial.creditLines || [],
+        summary: true,
+      });
       renderFinancePhaseSummary([]);
       console.warn('[Resumen] Finanzas sin fases');
     }
@@ -3668,10 +3710,16 @@ if (btn) {
 
         'Comparación por fase (Usos)': captureCanvas('sumPhaseChart'),
         'Comparación por fase (Fuentes)': captureCanvas('sumPhaseSourceChart'),
-        'Líneas de crédito': captureCanvas('sumCreditLines'),
+        'Desviación temporal - Duración por fase': captureCanvas('sumPhaseTimeDurationChart'),
+        'Desviación temporal - Fecha final': captureCanvas('sumPhaseTimeDelayChart'),
         'Cobertura CPP vs préstamo': captureCanvas('sumCppCoverage'),
 
       };
+
+      document.querySelectorAll('[data-summary-phase-line-chart]').forEach(canvas => {
+        const title = canvas.dataset.chartTitle || `Gráfica líneas ${canvas.id || ''}`.trim();
+        charts[title] = captureCanvas(canvas.id);
+      });
 
       // Limpia nulls
 Object.keys(charts).forEach(k => { if (!charts[k]) delete charts[k]; });
@@ -5250,6 +5298,114 @@ function financeLoanLineTotals(line = {}) {
   };
 }
 
+function financeLoanLineChartTotals(line = {}) {
+  const hasSummaryShape = [
+    'disbursedAmount',
+    'totalRecovered',
+    'balanceAfterSales',
+    'debt'
+  ].some(key => line[key] !== undefined && line[key] !== null);
+
+  if (hasSummaryShape) {
+    const disbursed = numOr0(line.disbursementAmount ?? line.disbursedAmount);
+    const recovered = numOr0(line.totalRecovered ?? line.amortizedAmount);
+    const balance = line.balanceAfterSales !== undefined || line.debt !== undefined
+      ? numOr0(line.balanceAfterSales ?? line.debt)
+      : Math.max(0, disbursed - recovered);
+    return {
+      disbursed,
+      recovered,
+      amortized: recovered,
+      allocated: 0,
+      balance,
+    };
+  }
+
+  return financeLoanLineTotals(line);
+}
+
+function destroyChartsByPrefix(prefix) {
+  if (!prefix || !__sumCharts) return;
+  Object.keys(__sumCharts).forEach(key => {
+    if (!String(key).startsWith(prefix)) return;
+    __sumCharts[key]?.destroy?.();
+    delete __sumCharts[key];
+  });
+}
+
+function renderLoanLinesBarChart(canvas, lines = [], chartKey = '') {
+  if (!canvas || typeof Chart === 'undefined') return null;
+  const existingChart = Chart.getChart?.(canvas) || canvas._chart;
+  existingChart?.destroy?.();
+  if (chartKey && __sumCharts?.[chartKey]) {
+    __sumCharts[chartKey]?.destroy?.();
+    delete __sumCharts[chartKey];
+  }
+
+  const safeLines = Array.isArray(lines) ? lines : [];
+  const labels = safeLines.map((line, idx) => line.name || `Línea ${idx + 1}`);
+  const totals = safeLines.map(line => financeLoanLineChartTotals(line));
+
+  if (!labels.length) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    return null;
+  }
+
+  const chart = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Desembolsado',
+          data: totals.map(t => t.disbursed),
+          backgroundColor: 'rgba(34,197,94,.78)',
+          borderColor: 'rgba(34,197,94,1)',
+          borderWidth: 1,
+          borderRadius: 6,
+        },
+        {
+          label: 'Amortizado total',
+          data: totals.map(t => t.recovered),
+          backgroundColor: 'rgba(59,130,246,.72)',
+          borderColor: 'rgba(59,130,246,1)',
+          borderWidth: 1,
+          borderRadius: 6,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#94a3b8' } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: ${financeMoney(ctx.raw)}`,
+            footer: (items) => {
+              const idx = items?.[0]?.dataIndex ?? 0;
+              const lineTotals = totals[idx] || {};
+              return [
+                `Amortizado: ${financePct(lineTotals.recovered, lineTotals.disbursed)}`,
+                `Saldo por pagar: ${financeMoney(lineTotals.balance || 0)} (${financePct(lineTotals.balance, lineTotals.disbursed)})`
+              ];
+            },
+          },
+        },
+      },
+      scales: {
+        x: { stacked: false, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,.10)' } },
+        y: { stacked: false, beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,.12)' } },
+      },
+    },
+  });
+
+  canvas._chart = chart;
+  if (chartKey) __sumCharts[chartKey] = chart;
+  return chart;
+}
+
 function financeAllocatedToLine(line = {}) {
   const lineId = String(line._id || '');
   const lineName = String(line.name || '');
@@ -5386,65 +5542,74 @@ function renderFinanceControlKpis(totals = null) {
 function renderFinanceLoanLinesChart(lines = collectFinanceLoanLines()) {
   const el = document.getElementById('financeLoanLinesChart');
   if (!el || typeof Chart === 'undefined') return;
-  const safeLines = lines || [];
-  const labels = safeLines.map((line, idx) => line.name || `Linea ${idx + 1}`);
-  const totals = safeLines.map(line => financeLoanLineTotals(line));
-  const existingChart = Chart.getChart?.(el) || el._chart;
-  if (existingChart && typeof existingChart.destroy === 'function') existingChart.destroy();
-  if (!labels.length) {
-    const ctx = el.getContext('2d');
-    ctx.clearRect(0, 0, el.width, el.height);
+  renderLoanLinesBarChart(el, lines || []);
+}
+
+function renderFinancePhaseLineCharts(phases = [], containerId = 'financePhaseLineCharts', chartPrefix = 'financePhaseLineChart', options = {}) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  destroyChartsByPrefix(chartPrefix);
+
+  const safePhases = Array.isArray(phases) ? phases : [];
+  const sourceLines = Array.isArray(options.lines) ? options.lines : null;
+  const getLinesForPhase = (phase) => {
+    if (!sourceLines) return financeLinesForPhase(phase?._id);
+    const phaseId = String(phase?._id || '');
+    const phaseName = String(phase?.name || '');
+    const firstPhaseId = String(safePhases?.[0]?._id || '');
+    return sourceLines.filter(line => {
+      const linePhaseId = String(line.phaseId || line.phase || '');
+      const linePhaseName = String(line.phaseName || '');
+      if ((phaseId && linePhaseId === phaseId) || (phaseName && linePhaseName === phaseName)) return true;
+      return !linePhaseId && !linePhaseName && phaseId && phaseId === firstPhaseId;
+    });
+  };
+
+  if (!safePhases.length) {
+    wrap.innerHTML = '<div class="card small muted">Sin fases para construir gráficas de líneas.</div>';
     return;
   }
-  const chart = new Chart(el.getContext('2d'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'Desembolsado',
-          data: totals.map(t => t.disbursed),
-          backgroundColor: 'rgba(34,197,94,.78)',
-          borderColor: 'rgba(34,197,94,1)',
-          borderWidth: 1,
-          borderRadius: 6,
-        },
-        {
-          label: 'Amortizado total',
-          data: totals.map(t => t.recovered),
-          backgroundColor: 'rgba(59,130,246,.72)',
-          borderColor: 'rgba(59,130,246,1)',
-          borderWidth: 1,
-          borderRadius: 6,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { labels: { color: '#94a3b8' } },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => `${ctx.dataset.label}: ${financeMoney(ctx.raw)}`,
-            footer: (items) => {
-              const idx = items?.[0]?.dataIndex ?? 0;
-              const lineTotals = totals[idx] || {};
-              return [
-                `Amortizado: ${financePct(lineTotals.recovered, lineTotals.disbursed)}`,
-                `Saldo por pagar: ${financeMoney(lineTotals.balance || 0)} (${financePct(lineTotals.balance, lineTotals.disbursed)})`
-              ];
-            },
-          },
-        },
-      },
-      scales: {
-        x: { stacked: false, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,.10)' } },
-        y: { stacked: false, beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,.12)' } },
-      },
-    },
+
+  wrap.innerHTML = safePhases.map((phase, index) => {
+    const phaseName = phase?.name || `Fase ${index + 1}`;
+    const canvasId = `${chartPrefix}-${index}`;
+    const title = `Gráfica líneas ${phaseName}`;
+    return `
+      <div class="card finance-chart-card summary-chart-card">
+        <h3>${escapeHtml(title)}</h3>
+        <div class="small muted">Desembolsado frente a amortizado total de las líneas asociadas a esta fase.</div>
+        <div class="finance-chart-box summary-chart-box">
+          <canvas id="${escapeHtml(canvasId)}"${options.summary ? ` data-summary-phase-line-chart="1" data-chart-title="${escapeHtml(title)}"` : ''}></canvas>
+        </div>
+        <div id="${escapeHtml(canvasId)}Summary" class="summary-chart-summary finance-phase-line-summary"></div>
+      </div>
+    `;
+  }).join('');
+
+  safePhases.forEach((phase, index) => {
+    const phaseName = phase?.name || `Fase ${index + 1}`;
+    const canvasId = `${chartPrefix}-${index}`;
+    const lines = getLinesForPhase(phase);
+    const canvas = document.getElementById(canvasId);
+    renderLoanLinesBarChart(canvas, lines, `${chartPrefix}-${index}`);
+    const summary = document.getElementById(`${canvasId}Summary`);
+    if (!summary) return;
+    if (!lines.length) {
+      summary.innerHTML = '<div class="small muted">Esta fase todavía no tiene líneas asociadas.</div>';
+      return;
+    }
+    const totals = lines.map(line => ({ ...financeLoanLineChartTotals(line), label: line.name || 'Línea' }));
+    renderChartSummary(
+      `${canvasId}Summary`,
+      totals.map(t => ({ label: t.label, value: t.recovered, disbursed: t.disbursed, balance: t.balance })),
+      {
+        totalLabel: `Total amortizado ${phaseName}`,
+        formatter: (v, item) => item
+          ? `${financeMoney(item?.disbursed || 0)} desemb. · ${financeMoney(v)} amort. · ${financeMoney(item?.balance || 0)} saldo`
+          : financeMoney(v)
+      }
+    );
   });
-  el._chart = chart;
 }
 
 function renderFinanceLoanLines(lines = []) {
@@ -5950,6 +6115,7 @@ async function loadFinance() {
     renderPhaseChart(FINANCE?.phases || []);
     renderPhaseSourceChart(FINANCE?.phases || []);
     renderFinanceTimeCharts(FINANCE?.phases || []);
+    renderFinancePhaseLineCharts(FINANCE?.phases || []);
 
     // Resumen acumulado final
     renderAccumSummary(FINANCE?.phases || []);
@@ -6461,8 +6627,14 @@ function renderPhaseSourceChart(phases, canvasId = 'phaseSourceChart') {
 // -------------------------
 // Render: fases (cards) con PLAN vs REAL + desembolso
 // -------------------------
-function renderFinanceTimeCharts(phases = []) {
+function renderFinanceTimeCharts(phases = [], opts = {}) {
   if (typeof Chart === 'undefined') return;
+  const {
+    durationCanvasId = 'phaseTimeDurationChart',
+    delayCanvasId = 'phaseTimeDelayChart',
+    delaySummaryId = 'phaseTimeDelaySummary',
+    durationSummaryId = '',
+  } = opts || {};
   const labels = phases.map((phase, index) => phase.name || `Fase ${index + 1}`);
   const dayMs = 86400000;
   const validDate = value => {
@@ -6505,7 +6677,7 @@ function renderFinanceTimeCharts(phases = []) {
   });
   const endDeviation = timingStatus.map(item => item.value);
 
-  const durationCanvas = document.getElementById('phaseTimeDurationChart');
+  const durationCanvas = document.getElementById(durationCanvasId);
   if (durationCanvas) {
     const existingDurationChart = Chart.getChart?.(durationCanvas) || durationCanvas._chart;
     existingDurationChart?.destroy?.();
@@ -6524,7 +6696,7 @@ function renderFinanceTimeCharts(phases = []) {
     });
   }
 
-  const delayCanvas = document.getElementById('phaseTimeDelayChart');
+  const delayCanvas = document.getElementById(delayCanvasId);
   if (delayCanvas) {
     const existingDelayChart = Chart.getChart?.(delayCanvas) || delayCanvas._chart;
     existingDelayChart?.destroy?.();
@@ -6553,10 +6725,26 @@ function renderFinanceTimeCharts(phases = []) {
       }
     });
   }
-  const delaySummary = document.getElementById('phaseTimeDelaySummary');
+  const delaySummary = document.getElementById(delaySummaryId);
   if (delaySummary) delaySummary.innerHTML = timingStatus.map((item, index) => `
     <div class="finance-time-status is-${item.tone}"><strong>${escapeHtml(labels[index])}</strong><span>${escapeHtml(item.label)}</span></div>
   `).join('');
+  if (durationSummaryId) {
+    renderChartSummary(
+      durationSummaryId,
+      labels.map((label, index) => ({
+        label,
+        value: plannedDuration[index] || 0,
+        actual: actualDuration[index] || 0
+      })),
+      {
+        totalLabel: 'Duración estimada total',
+        formatter: (v, item) => item
+          ? `${Number(v || 0)} día(s) estimado · ${Number(item?.actual || 0)} día(s) real`
+          : `${Number(v || 0)} día(s) estimado`
+      }
+    );
+  }
 }
 
 function openFinancePhaseLines(phase) {
@@ -7821,6 +8009,74 @@ function estadoLabel(v) {
   let latestFinanceExpiryAlerts = [];
 
   function pill(txt){ return `<span class="tag">${txt||'-'}</span>`; }
+
+  function projectHousingModels() {
+    return Array.isArray(state?.project?.housingModels) ? state.project.housingModels : [];
+  }
+
+  function findProjectHousingModel(value) {
+    const key = String(value || '').trim();
+    if (!key) return null;
+    return projectHousingModels().find(model =>
+      String(model._id || '') === key ||
+      String(model.name || '').trim().toLowerCase() === key.toLowerCase()
+    ) || null;
+  }
+
+  function projectModelOptions(current = '', { includeEmpty = true } = {}) {
+    const models = projectHousingModels();
+    const empty = includeEmpty ? `<option value="">Sin modelo / manual</option>` : '';
+    return empty + models.map(model => {
+      const value = String(model._id || model.name || '');
+      const selected = String(current || '') === value || String(current || '').trim().toLowerCase() === String(model.name || '').trim().toLowerCase();
+      return `<option value="${safeVal(value)}" ${selected ? 'selected' : ''}>${safeVal(model.name || 'Modelo')}</option>`;
+    }).join('');
+  }
+
+  function modelToUnitDefaults(model) {
+    if (!model) return {};
+    return {
+      modelId: model._id || '',
+      modelo: model.name || '',
+      m2: Number(model.openAreaM2 || 0) + Number(model.closedAreaM2 || 0),
+      precioLista: Number(model.price || 0),
+      areaAbierta: Number(model.openAreaM2 || 0),
+      areaCerrada: Number(model.closedAreaM2 || 0),
+      recamaras: Number(model.bedrooms || 0),
+      banos: Number(model.bathrooms || 0)
+    };
+  }
+
+  function applyProjectModelToOpenUnitForm(modelValue) {
+    const model = findProjectHousingModel(modelValue);
+    if (!model) return;
+    const defaults = modelToUnitDefaults(model);
+    const setValue = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.value = value ?? '';
+    };
+    setValue('cl-modelo', defaults.modelo);
+    setValue('cl-m2', formatInputNumber('cl-m2', defaults.m2));
+    setValue('cl-precio', formatInputNumber('cl-precio', defaults.precioLista));
+  }
+
+  function applyProjectModelToFicha(modelValue) {
+    const model = findProjectHousingModel(modelValue);
+    if (!model) return;
+    const defaults = modelToUnitDefaults(model);
+    const setValue = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.value = value ?? '';
+    };
+    setValue('fu-modelo', defaults.modelo);
+    setValue('fu-m2', formatInputNumber('fu-m2', defaults.m2));
+    setValue('fu-precio', formatInputNumber('fu-precio', defaults.precioLista));
+    setValue('fv-areaAbierta', formatInputNumber('fv-areaAbierta', defaults.areaAbierta));
+    setValue('fv-areaCerrada', formatInputNumber('fv-areaCerrada', defaults.areaCerrada));
+    setValue('fv-recamaras', formatInputNumber('fv-recamaras', defaults.recamaras));
+    setValue('fv-banos', formatInputNumber('fv-banos', defaults.banos));
+    refreshAreaTotalConstruccion();
+  }
 
   // Carga ventas del proyecto y crea mapa por unidad
   async function loadVentasMap() {
@@ -9328,6 +9584,8 @@ tituloUnidad.innerHTML = `
         .join('')}
     </select>
 
+   <div class="label">Modelo definido ${info('Selecciona una plantilla del proyecto para completar datos base. Puedes dejarlo manual.')}</div>
+   <select id="fu-modeloSelect">${projectModelOptions(u.modelId || u.modelo || '')}</select>
    ${input('fu-modelo', `Modelo ${info('Modelo de vivienda asignado. Según el modelo seleccionado deberían completarse automáticamente áreas, recámaras y baños definidos por administración.')}`, u.modelo || '')}
 ${inputNum('fu-m2', `m² unidad ${info('Área general de la unidad. Puede servir como referencia rápida, aunque el modelo Bank73 separa metraje de lote, área abierta, área cerrada y área total de construcción.')}`, u.m2 || 0)}
 ${inputNum('fu-precio', `Precio lista ${info('Precio comercial base de la unidad antes de ajustes, abonos o financiamiento.')}`, u.precioLista || 0)}
@@ -9719,6 +9977,7 @@ document.getElementById('fv-montoFinanciamientoCPP')?.addEventListener('input', 
 document.getElementById('fv-porcentajeFinanciamiento')?.addEventListener('input', () => refreshFinanciamientoAuto('pct'));
 document.getElementById('fv-areaAbierta')?.addEventListener('input', refreshAreaTotalConstruccion);
 document.getElementById('fv-areaCerrada')?.addEventListener('input', refreshAreaTotalConstruccion);
+document.getElementById('fu-modeloSelect')?.addEventListener('change', (event) => applyProjectModelToFicha(event.target.value));
 
 refreshFinanciamientoAuto('monto');
 refreshAreaTotalConstruccion();
@@ -9831,6 +10090,7 @@ const uBody = {
   manzana,
   lote,
   estado: document.getElementById('fu-estado').value,
+  modelId: document.getElementById('fu-modeloSelect')?.value || undefined,
   modelo: document.getElementById('fu-modelo').value,
   m2: parseInputNumber('fu-m2', document.getElementById('fu-m2').value),
   precioLista: parsePanamaNumber(document.getElementById('fu-precio').value),
@@ -10374,7 +10634,11 @@ if (btnExportarExcel) {
   });
 }
 
-  if (btnCrear) btnCrear.addEventListener('click', () => modalCrear.style.display='flex');
+  if (btnCrear) btnCrear.addEventListener('click', () => {
+    const modelSelect = document.getElementById('cl-modeloSelect');
+    if (modelSelect) modelSelect.innerHTML = projectModelOptions('', { includeEmpty: true });
+    modalCrear.style.display='flex';
+  });
   if (modalCrearCerrar) modalCrearCerrar.addEventListener('click', () => modalCrear.style.display='none');
   if (btnBatch) btnBatch.addEventListener('click', openBatch);
   if (batchCerrar) batchCerrar.addEventListener('click', () => modalBatch.style.display='none');
@@ -10382,6 +10646,7 @@ if (btnExportarExcel) {
   if (btnDel) btnDel.addEventListener('click', openDel);
   if (delCerrar) delCerrar.addEventListener('click', closeDel);
   if (delAplicar) delAplicar.addEventListener('click', aplicarDel);
+  document.getElementById('cl-modeloSelect')?.addEventListener('change', (event) => applyProjectModelToOpenUnitForm(event.target.value));
 
   if (btnCrearSubmit) {
     btnCrearSubmit.addEventListener('click', async () => {
@@ -10395,6 +10660,7 @@ if (btnExportarExcel) {
         manzana: document.getElementById('cl-manzana').value || 'A',
         modo: 'A',
         cantidad: Number(document.getElementById('cl-cantidad').value || 0),
+        modelId: document.getElementById('cl-modeloSelect')?.value || undefined,
         modelo: document.getElementById('cl-modelo').value || '',
         m2: parseInputNumber('cl-m2', document.getElementById('cl-m2').value || 0),
         precioLista: parsePanamaNumber(document.getElementById('cl-precio').value || 0),
@@ -10434,6 +10700,7 @@ window.__docsModuleReady = true;
 function invalidateProjectDocsCache() {
   _allDocs = [];
   _docsFolderMeta = null;
+  _commercialDossierDocs = [];
 }
 
 function normStatus(s){ return String(s||'ACTIVE').toUpperCase(); }
@@ -10452,6 +10719,7 @@ let _activeDocsFolder = '';
 let _activeDocsSubfolder = '';
 let _docsManagersOpen = false;
 let _movingDocId = '';
+let _commercialDossierDocs = [];
 
 function projectDocFolderLabel(folder) {
   const id = String(folder || '').toLowerCase();
@@ -10471,6 +10739,151 @@ function effectiveDocFolder(d) {
 function projectDocSubfolder(d) {
   return String(d.subfolder || '').trim();
 }
+
+function isCommercialDossierDoc(d) {
+  return String(d?.category || '').trim() === 'commercialDossier';
+}
+
+function commercialDossierName(d) {
+  return d?.originalname || d?.title || d?.name || 'Dossier comercial';
+}
+
+function commercialDossierSize(d) {
+  const size = Number(d?.size || 0);
+  if (!size) return '';
+  const MB = 1024 * 1024;
+  return size >= MB ? `${(size / MB).toFixed(2)} MB` : `${Math.max(1, Math.round(size / 1024))} KB`;
+}
+
+async function loadCommercialDossierDocs(force = false) {
+  if (_commercialDossierDocs.length && !force) return _commercialDossierDocs;
+
+  const qs = new URLSearchParams({
+    projectId: id,
+    category: 'commercialDossier',
+    folder: 'comercial',
+    ts: String(Date.now())
+  });
+
+  _commercialDossierDocs = await API.get(`/api/documents?${qs.toString()}`)
+    .catch(err => {
+      console.warn('[Commercial dossier] No se pudo cargar', err);
+      return [];
+    });
+
+  _commercialDossierDocs = Array.isArray(_commercialDossierDocs) ? _commercialDossierDocs : [];
+  return _commercialDossierDocs;
+}
+
+function renderCommercialDossierButton(docs) {
+  const btn = document.getElementById('commercialDossierBtn');
+  const meta = document.getElementById('commercialDossierMeta');
+  if (!btn || !meta) return;
+
+  const count = Array.isArray(docs) ? docs.length : 0;
+  btn.classList.toggle('has-file', count > 0);
+  meta.textContent = count ? `${count} archivo${count === 1 ? '' : 's'}` : 'Sin archivo';
+  btn.title = count
+    ? `Dossier comercial: ${commercialDossierName(docs[0])}`
+    : 'Subir dossier comercial del proyecto';
+}
+
+async function refreshCommercialDossier(force = false) {
+  const docs = await loadCommercialDossierDocs(force);
+  renderCommercialDossierButton(docs);
+  return docs;
+}
+
+function renderCommercialDossierModal(docs) {
+  const list = Array.isArray(docs) && docs.length ? docs.map(d => {
+    const created = d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '';
+    const size = commercialDossierSize(d);
+    return `
+      <div class="commercial-dossier-row">
+        <div>
+          <b>${escapeHtml(commercialDossierName(d))}</b>
+          <div class="small muted">${escapeHtml([size, created ? `Subido: ${created}` : ''].filter(Boolean).join(' · '))}</div>
+        </div>
+        <div class="commercial-dossier-actions">
+          <a class="btn btn-ghost btn-xs js-secure-file" href="#" data-url="${secureDocUrl(d._id)}" data-filename="${escapeHtml(commercialDossierName(d))}" data-action="view">Ver</a>
+          <a class="btn btn-xs js-secure-file" href="#" data-url="${secureDocUrl(d._id)}" data-filename="${escapeHtml(commercialDossierName(d))}" data-action="download">Descargar</a>
+          ${renderDeleteBtn(d)}
+        </div>
+      </div>
+    `;
+  }).join('') : '<div class="small muted">Todavia no hay dossier comercial guardado.</div>';
+
+  return `
+    <div class="commercial-dossier-upload">
+      <input id="commercialDossierFile" type="file" accept=".pdf,.ppt,.pptx,.key,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" />
+      <button id="commercialDossierUploadBtn" class="btn" type="button">Subir dossier</button>
+    </div>
+    <div class="small muted">Se guardara en Docs > Comercial y quedara disponible para descarga ejecutiva.</div>
+    <div class="commercial-dossier-modal-list" style="margin-top:12px;">
+      ${list}
+    </div>
+  `;
+}
+
+async function openCommercialDossierModal() {
+  const docs = await refreshCommercialDossier(true);
+  openModal('Dossier comercial', renderCommercialDossierModal(docs), 'Cerrar', () => {
+    modalBackdrop.style.display = 'none';
+  });
+
+  const fileEl = document.getElementById('commercialDossierFile');
+  const uploadBtn = document.getElementById('commercialDossierUploadBtn');
+  if (!fileEl || !uploadBtn) return;
+
+  uploadBtn.addEventListener('click', async () => {
+    const f = fileEl.files && fileEl.files[0];
+    if (!f) return alert('Selecciona un archivo primero');
+
+    const fd = new FormData();
+    fd.append('projectId', id);
+    fd.append('file', f);
+    fd.append('folder', 'comercial');
+    fd.append('category', 'commercialDossier');
+
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = 'Subiendo...';
+
+    try {
+      const res = await fetch('/api/documents/upload', {
+        method: 'POST',
+        headers: { ...tenantHeaders(), ...authHeaders() },
+        body: fd,
+        credentials: 'include'
+      });
+
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
+      }
+
+      fileEl.value = '';
+      _allDocs = [];
+      _commercialDossierDocs = [];
+      if (document.getElementById('tab-docs')?.classList.contains('active')) {
+        await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+      }
+      await openCommercialDossierModal();
+    } catch (err) {
+      console.error('[Commercial dossier upload]', err);
+      alert('No se pudo subir el dossier: ' + (err.message || 'Error desconocido'));
+    } finally {
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = 'Subir dossier';
+    }
+  });
+}
+
+document.getElementById('commercialDossierBtn')?.addEventListener('click', () => {
+  openCommercialDossierModal().catch(err => {
+    console.error('[Commercial dossier modal]', err);
+    alert('No se pudo abrir el dossier comercial.');
+  });
+});
 
 async function loadDocsFolderMeta(force = false) {
   if (_docsFolderMeta && !force) return _docsFolderMeta;
@@ -10893,7 +11306,9 @@ async function loadDocs({ q } = {}) {
       });
       _docsFolderMeta = null;
       _allDocs = [];
+      _commercialDossierDocs = [];
       await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+      await refreshCommercialDossier(true);
     } catch (e) {
       alert('No se pudieron guardar los responsables.');
     }
@@ -11040,7 +11455,9 @@ function wireDocsUpload() {
       if (expEl) expEl.value = '';
 
       _allDocs = [];
+      _commercialDossierDocs = [];
       await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+      await refreshCommercialDossier(true);
 
       alert('Documento subido');
     } catch (err) {
@@ -11063,6 +11480,7 @@ document.addEventListener('click', async (ev) => {
   if (delBtn) {
     const docId = delBtn.getAttribute('data-del');
     if (!docId) return;
+    const fromCommercialDossierModal = !!delBtn.closest('.commercial-dossier-row');
 
     const pin = prompt('Introduce el PIN para eliminar (configurable en .env como DELETE_DOCS_PIN):', '');
     if (pin === null) return;
@@ -11080,7 +11498,10 @@ document.addEventListener('click', async (ev) => {
       }
 
       _allDocs = [];
+      _commercialDossierDocs = [];
       await loadDocs({ q: (document.getElementById('docsSearch')?.value || '') });
+      await refreshCommercialDossier(true);
+      if (fromCommercialDossierModal) await openCommercialDossierModal();
 
     } catch (e) {
       alert('No se pudo eliminar: ' + (e.message || ''));
@@ -11303,6 +11724,7 @@ if (['tecnico','legal'].includes(myRole)) {
   await loadProyectoData();   // /api/projects/:id/checklists  ✅ permitido
   renderProyecto();
   await loadDocs();           // /api/documents?projectId=...  ✅ permitido
+  await refreshCommercialDossier(true);
   await loadChatMessages();
   
 } else if (myRole === 'commercial') {
@@ -11311,6 +11733,7 @@ if (['tecnico','legal'].includes(myRole)) {
   await loadProyectoData();   // ✅ /api/projects/:id/checklists (ya permitido por el cambio de arriba)
   renderProyecto();           // pinta la pestaña Proyecto con solo COMERCIAL
   await loadDocs();           // ✅
+  await refreshCommercialDossier(true);
   await loadChatMessages();
 } else {
   // Roles full (admin, bank, promoter, gerencia, socios, financiero, contable)
@@ -11323,6 +11746,7 @@ if (['tecnico','legal'].includes(myRole)) {
   await loadProyectoData();   // ✅
   renderProyecto();
   await loadDocs();           // ✅
+  await refreshCommercialDossier(true);
   await loadChatMessages();
 }
 

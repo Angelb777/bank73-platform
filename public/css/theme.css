@@ -4378,6 +4378,27 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
   padding-top: 12px;
 }
 
+#tab-resumen .summary-phase-lines-section .summary-subsection-title {
+  margin:0 0 10px;
+  font-size:1.05rem;
+  font-weight:800;
+  color:var(--text,#e5e7eb);
+}
+
+#tab-resumen .summary-phase-lines-section .summary-chart-card,
+#tab-finanzas .is-line-charts .finance-chart-card {
+  min-height:360px;
+}
+
+#tab-resumen .summary-phase-lines-section .summary-chart-box,
+#tab-finanzas .is-line-charts .finance-chart-box {
+  height:260px;
+}
+
+#tab-finanzas .is-line-charts .finance-phase-line-summary {
+  margin-top:10px;
+}
+
 /* COMERCIAL: panel superior de acciones */
 #tab-comercial .commercial-control-panel {
   margin: 14px 0 18px;

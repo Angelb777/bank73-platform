@@ -277,6 +277,34 @@
   const btnExpandCreate = document.getElementById('expandCreateModal');
   const btnCreate = document.getElementById('createProject');
   const createFacilities = document.getElementById('createFacilities');
+  const createStepTabs = Array.from(document.querySelectorAll('[data-create-step]'));
+  const createStepPanels = Array.from(document.querySelectorAll('[data-create-panel]'));
+  const prevCreateStepBtn = document.getElementById('prevCreateStep');
+  const nextCreateStepBtn = document.getElementById('nextCreateStep');
+  const createBoardMembers = document.getElementById('createBoardMembers');
+  const createShareholders = document.getElementById('createShareholders');
+  const createHousingModels = document.getElementById('createHousingModels');
+  const CREATE_STEP_ORDER = ['general', 'legal', 'technical', 'models', 'financial', 'team'];
+  let activeCreateStep = 'general';
+
+  function setCreateStep(step) {
+    activeCreateStep = CREATE_STEP_ORDER.includes(step) ? step : 'general';
+    createStepTabs.forEach(btn => btn.classList.toggle('active', btn.dataset.createStep === activeCreateStep));
+    createStepPanels.forEach(panel => panel.classList.toggle('active', panel.dataset.createPanel === activeCreateStep));
+    const idx = CREATE_STEP_ORDER.indexOf(activeCreateStep);
+    if (prevCreateStepBtn) prevCreateStepBtn.disabled = idx <= 0;
+    if (nextCreateStepBtn) nextCreateStepBtn.style.display = idx >= CREATE_STEP_ORDER.length - 1 ? 'none' : '';
+  }
+
+  createStepTabs.forEach(btn => btn.addEventListener('click', () => setCreateStep(btn.dataset.createStep)));
+  prevCreateStepBtn?.addEventListener('click', () => {
+    const idx = CREATE_STEP_ORDER.indexOf(activeCreateStep);
+    setCreateStep(CREATE_STEP_ORDER[Math.max(0, idx - 1)]);
+  });
+  nextCreateStepBtn?.addEventListener('click', () => {
+    const idx = CREATE_STEP_ORDER.indexOf(activeCreateStep);
+    setCreateStep(CREATE_STEP_ORDER[Math.min(CREATE_STEP_ORDER.length - 1, idx + 1)]);
+  });
 
   function createFacilityRow(item = {}) {
     return `<div class="create-facility-row" data-create-facility-row>
@@ -288,6 +316,102 @@
       <button class="btn ghost" type="button" data-remove-create-facility>Quitar</button>
     </div>`;
   }
+
+  function createBoardMemberRow(item = {}) {
+    return `<div class="create-repeat-row" data-create-board-row>
+      <label>Nombre<input data-create-board="name" value="${escapeHtml(item.name || '')}"></label>
+      <label>Cedula<input data-create-board="cedula" value="${escapeHtml(item.cedula || '')}"></label>
+      <label>Puesto<input data-create-board="position" value="${escapeHtml(item.position || '')}"></label>
+      <button class="btn ghost" type="button" data-remove-create-row>Quitar</button>
+    </div>`;
+  }
+
+  function createShareholderRow(item = {}) {
+    return `<div class="create-repeat-row" data-create-shareholder-row>
+      <label>Nombre<input data-create-shareholder="name" value="${escapeHtml(item.name || '')}"></label>
+      <label>Cedula<input data-create-shareholder="cedula" value="${escapeHtml(item.cedula || '')}"></label>
+      <label>Porcentaje<input data-create-shareholder="percentage" type="number" step="any" value="${item.percentage ?? ''}"></label>
+      <button class="btn ghost" type="button" data-remove-create-row>Quitar</button>
+    </div>`;
+  }
+
+  function createHousingModelRow(item = {}) {
+    return `<div class="create-repeat-row create-model-row" data-create-model-row>
+      <label>Modelo<input data-create-model="name" value="${escapeHtml(item.name || '')}"></label>
+      <label>Recamaras<input data-create-model="bedrooms" type="number" min="0" step="1" value="${item.bedrooms ?? ''}"></label>
+      <label>Banos<input data-create-model="bathrooms" type="number" min="0" step="any" value="${item.bathrooms ?? ''}"></label>
+      <label>Cantidad unidades<input data-create-model="unitsCount" type="number" min="0" step="1" value="${item.unitsCount ?? ''}"></label>
+      <label>Area abierta m2<input data-create-model="openAreaM2" type="number" min="0" step="any" value="${item.openAreaM2 ?? ''}"></label>
+      <label>Area cerrada m2<input data-create-model="closedAreaM2" type="number" min="0" step="any" value="${item.closedAreaM2 ?? ''}"></label>
+      <label>Precio<input data-create-model="price" type="number" min="0" step="any" value="${item.price ?? ''}"></label>
+      <label>Observaciones<input data-create-model="observations" value="${escapeHtml(item.observations || '')}"></label>
+      <button class="btn ghost" type="button" data-remove-create-row>Quitar</button>
+    </div>`;
+  }
+
+  function numberFromCreate(value) {
+    const n = Number(value || 0);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function collectLegalData() {
+    const trustApplies = document.getElementById('ld-trustApplies')?.value === 'true';
+    return {
+      promoterLegalName: document.getElementById('ld-promoterLegalName')?.value?.trim() || '',
+      interimBank: document.getElementById('ld-interimBank')?.value?.trim() || '',
+      trustApplies,
+      trustName: trustApplies ? (document.getElementById('ld-trustName')?.value?.trim() || '') : '',
+      boardMembers: Array.from(document.querySelectorAll('[data-create-board-row]')).map(row => ({
+        name: row.querySelector('[data-create-board="name"]')?.value.trim() || '',
+        cedula: row.querySelector('[data-create-board="cedula"]')?.value.trim() || '',
+        position: row.querySelector('[data-create-board="position"]')?.value.trim() || ''
+      })),
+      shareholders: Array.from(document.querySelectorAll('[data-create-shareholder-row]')).map(row => ({
+        name: row.querySelector('[data-create-shareholder="name"]')?.value.trim() || '',
+        cedula: row.querySelector('[data-create-shareholder="cedula"]')?.value.trim() || '',
+        percentage: numberFromCreate(row.querySelector('[data-create-shareholder="percentage"]')?.value)
+      }))
+    };
+  }
+
+  function collectTechnicalData() {
+    return {
+      phasesCount: numberFromCreate(document.getElementById('td-phasesCount')?.value),
+      totalUnits: numberFromCreate(document.getElementById('td-totalUnits')?.value),
+      notes: document.getElementById('td-notes')?.value?.trim() || ''
+    };
+  }
+
+  function collectHousingModels() {
+    return Array.from(document.querySelectorAll('[data-create-model-row]')).map(row => ({
+      name: row.querySelector('[data-create-model="name"]')?.value.trim() || '',
+      bedrooms: numberFromCreate(row.querySelector('[data-create-model="bedrooms"]')?.value),
+      bathrooms: numberFromCreate(row.querySelector('[data-create-model="bathrooms"]')?.value),
+      unitsCount: numberFromCreate(row.querySelector('[data-create-model="unitsCount"]')?.value),
+      openAreaM2: numberFromCreate(row.querySelector('[data-create-model="openAreaM2"]')?.value),
+      closedAreaM2: numberFromCreate(row.querySelector('[data-create-model="closedAreaM2"]')?.value),
+      price: numberFromCreate(row.querySelector('[data-create-model="price"]')?.value),
+      observations: row.querySelector('[data-create-model="observations"]')?.value.trim() || ''
+    })).filter(item => item.name || item.unitsCount || item.price || item.openAreaM2 || item.closedAreaM2);
+  }
+
+  function syncTechnicalUnitsFromModels() {
+    const totalEl = document.getElementById('td-totalUnits');
+    if (!totalEl || String(totalEl.value || '').trim()) return;
+    const total = collectHousingModels().reduce((sum, item) => sum + numberFromCreate(item.unitsCount), 0);
+    if (total) totalEl.value = total;
+  }
+
+  document.getElementById('addCreateBoardMember')?.addEventListener('click', () => createBoardMembers?.insertAdjacentHTML('beforeend', createBoardMemberRow()));
+  document.getElementById('addCreateShareholder')?.addEventListener('click', () => createShareholders?.insertAdjacentHTML('beforeend', createShareholderRow()));
+  document.getElementById('addCreateHousingModel')?.addEventListener('click', () => createHousingModels?.insertAdjacentHTML('beforeend', createHousingModelRow()));
+  [createBoardMembers, createShareholders, createHousingModels].forEach(container => {
+    container?.addEventListener('click', event => {
+      event.target.closest('[data-remove-create-row]')?.closest('.create-repeat-row')?.remove();
+      syncTechnicalUnitsFromModels();
+    });
+  });
+  createHousingModels?.addEventListener('input', syncTechnicalUnitsFromModels);
 
   document.getElementById('addCreateFacility')?.addEventListener('click', () => createFacilities?.insertAdjacentHTML('beforeend', createFacilityRow()));
   createFacilities?.addEventListener('click', event => {
@@ -417,7 +541,11 @@
     modal.classList.remove('is-fullscreen');
     if (btnExpandCreate) { btnExpandCreate.textContent = '⛶'; btnExpandCreate.title = 'Pantalla completa'; }
     modal.classList.add('show');
+    setCreateStep('general');
     if (createFacilities && !createFacilities.children.length) createFacilities.insertAdjacentHTML('beforeend', createFacilityRow());
+    if (createBoardMembers && !createBoardMembers.children.length) createBoardMembers.insertAdjacentHTML('beforeend', createBoardMemberRow());
+    if (createShareholders && !createShareholders.children.length) createShareholders.insertAdjacentHTML('beforeend', createShareholderRow());
+    if (createHousingModels && !createHousingModels.children.length) createHousingModels.insertAdjacentHTML('beforeend', createHousingModelRow());
 
     // Modo nuevo (todos los roles)
     // Por privacidad, la creacion no carga ni muestra directorios de usuarios.
@@ -534,6 +662,9 @@
             status,
             loanApproved,
             budgetApproved,
+            legalData: collectLegalData(),
+            technicalData: collectTechnicalData(),
+            housingModels: collectHousingModels(),
             financialConditions,
             teamSuggestion: collectTeamSuggestion()
           };
@@ -551,10 +682,16 @@
           const st = document.getElementById('pStatus');
           if (st) st.value = 'EN_CURSO';
           if (createFacilities) createFacilities.innerHTML = '';
+          if (createBoardMembers) createBoardMembers.innerHTML = '';
+          if (createShareholders) createShareholders.innerHTML = '';
+          if (createHousingModels) createHousingModels.innerHTML = '';
           document.querySelectorAll('[data-create-precedent]').forEach(input => { input.checked = false; });
-          ['fc-otherRequirements','fc-trustee','fc-trustType','fc-technicalInspector','fc-financialInspector'].forEach(fieldId => {
+          ['fc-otherRequirements','fc-trustee','fc-trustType','fc-technicalInspector','fc-financialInspector','ld-promoterLegalName','ld-interimBank','ld-trustName','td-phasesCount','td-totalUnits','td-notes'].forEach(fieldId => {
             const field = document.getElementById(fieldId); if (field) field.value = '';
           });
+          const trustApplies = document.getElementById('ld-trustApplies');
+          if (trustApplies) trustApplies.value = 'false';
+          setCreateStep('general');
 
           // reset selects
           if (assigneesContainer) {

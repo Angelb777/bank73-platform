@@ -76,9 +76,112 @@ function sanitizeFinancialConditions(raw = {}) {
   return out;
 }
 
+function sanitizeLegalData(raw = {}) {
+  const cleanRows = (items, mapper) => (Array.isArray(items) ? items : [])
+    .slice(0, 50)
+    .map(mapper)
+    .filter(item => Object.values(item).some(value => String(value ?? '').trim() !== '' && Number(value || 0) !== 0));
+
+  return {
+    promoterLegalName: String(raw.promoterLegalName || raw.legalCompanyName || '').trim(),
+    boardMembers: cleanRows(raw.boardMembers, item => ({
+      name: String(item?.name || '').trim(),
+      cedula: String(item?.cedula || '').trim(),
+      position: String(item?.position || item?.puesto || '').trim()
+    })),
+    shareholders: cleanRows(raw.shareholders, item => ({
+      name: String(item?.name || '').trim(),
+      cedula: String(item?.cedula || '').trim(),
+      percentage: parsePanamaNumber(item?.percentage ?? item?.porcentaje) || 0
+    })),
+    interimBank: String(raw.interimBank || raw.bancoInterino || '').trim(),
+    trustApplies: !!raw.trustApplies,
+    trustName: raw.trustApplies ? String(raw.trustName || raw.fideicomiso || '').trim() : ''
+  };
+}
+
+function sanitizeTechnicalData(raw = {}) {
+  return {
+    phasesCount: Math.max(0, Math.round(parsePanamaNumber(raw.phasesCount ?? raw.cantidadFases) || 0)),
+    totalUnits: Math.max(0, Math.round(parsePanamaNumber(raw.totalUnits ?? raw.cantidadTotalUnidades) || 0)),
+    notes: String(raw.notes || raw.observations || '').trim()
+  };
+}
+
+function sanitizeHousingModels(raw = []) {
+  return (Array.isArray(raw) ? raw : [])
+    .slice(0, 100)
+    .map(item => ({
+      name: String(item?.name || item?.nombre || '').trim(),
+      bedrooms: Math.max(0, parsePanamaNumber(item?.bedrooms ?? item?.recamaras) || 0),
+      bathrooms: Math.max(0, parsePanamaNumber(item?.bathrooms ?? item?.banos) || 0),
+      openAreaM2: Math.max(0, parsePanamaNumber(item?.openAreaM2 ?? item?.areaAbiertaM2) || 0),
+      closedAreaM2: Math.max(0, parsePanamaNumber(item?.closedAreaM2 ?? item?.areaCerradaM2) || 0),
+      price: Math.max(0, parsePanamaNumber(item?.price ?? item?.precio) || 0),
+      unitsCount: Math.max(0, Math.round(parsePanamaNumber(item?.unitsCount ?? item?.cantidadUnidades) || 0)),
+      observations: String(item?.observations || item?.observaciones || '').trim()
+    }))
+    .filter(item => item.name || item.unitsCount || item.price || item.openAreaM2 || item.closedAreaM2);
+}
+
 function syncFinancialConditionKpis(target, conditions = {}) {
   if (conditions.projectTotal !== undefined) target.budgetApproved = conditions.projectTotal;
   if (conditions.bankFinancedAmount !== undefined) target.loanApproved = conditions.bankFinancedAmount;
+}
+
+async function createInitialUnitsFromModels({ req, project }) {
+  const models = Array.isArray(project.housingModels) ? project.housingModels : [];
+  const docs = [];
+  let sequence = 1;
+
+  for (const model of models) {
+    const count = Math.max(0, Math.round(Number(model.unitsCount || 0)));
+    if (!count) continue;
+    const modelId = model._id || new mongoose.Types.ObjectId();
+    const areaTotal = Number(model.openAreaM2 || 0) + Number(model.closedAreaM2 || 0);
+    for (let i = 1; i <= count; i++) {
+      const lote = String(sequence).padStart(3, '0');
+      docs.push({
+        tenantKey: req.tenantKey,
+        projectId: project._id,
+        manzana: String(model.name || 'Modelo').slice(0, 24),
+        lote,
+        modelId,
+        modelo: model.name || '',
+        m2: areaTotal,
+        areaAbierta: model.openAreaM2 || 0,
+        areaCerrada: model.closedAreaM2 || 0,
+        recamaras: model.bedrooms || 0,
+        banos: model.bathrooms || 0,
+        precioLista: model.price || 0,
+        estado: 'disponible',
+        deletedAt: null,
+        code: `${String(model.name || 'Modelo').slice(0, 24)}-${lote}`,
+        status: 'DISPONIBLE',
+        price: model.price || 0
+      });
+      sequence++;
+    }
+  }
+
+  if (!docs.length) return [];
+  const created = await Unit.insertMany(docs, { ordered: false });
+  const ventas = created.map(unit => ({
+    tenantKey: req.tenantKey,
+    projectId: project._id,
+    unitId: unit._id,
+    manzana: unit.manzana,
+    lote: unit.lote,
+    areaAbierta: unit.areaAbierta || 0,
+    areaCerrada: unit.areaCerrada || 0,
+    areaTotalConstruccion: Number(unit.areaAbierta || 0) + Number(unit.areaCerrada || 0),
+    recamaras: unit.recamaras || 0,
+    banos: unit.banos || 0,
+    precioVenta: unit.precioLista || 0,
+    valor: unit.precioLista || 0
+  }));
+  if (ventas.length) await Venta.insertMany(ventas, { ordered: false });
+  return created;
 }
 
 function anyAssignedFilter(userId) {
@@ -615,6 +718,13 @@ router.post('/', requireRole('admin','bank'), async (req, res) => {
     body.teamSuggestion = sanitizeTeamSuggestion(body.teamSuggestion || {});
     body.projectType = sanitizeProjectType(firstDefined(body.projectType, body.tipoProyecto));
     body.currency = sanitizeProjectCurrency(body.currency);
+    body.legalData = sanitizeLegalData(body.legalData || {});
+    body.technicalData = sanitizeTechnicalData(body.technicalData || {});
+    body.housingModels = sanitizeHousingModels(body.housingModels || []);
+    if (!body.technicalData.totalUnits && body.housingModels.length) {
+      body.technicalData.totalUnits = body.housingModels.reduce((sum, item) => sum + Number(item.unitsCount || 0), 0);
+    }
+    if (body.technicalData.totalUnits) body.unitsTotal = body.technicalData.totalUnits;
     body.financialConditions = sanitizeFinancialConditions(body.financialConditions || {});
     syncFinancialConditionKpis(body, body.financialConditions);
     delete body.tipoProyecto;
@@ -649,13 +759,23 @@ router.post('/', requireRole('admin','bank'), async (req, res) => {
     }
 
     const p = await Project.create(body);
+    const createdUnits = await createInitialUnitsFromModels({ req, project: p });
+    if (createdUnits.length) {
+      const unitsSold = 0;
+      await Project.updateOne(
+        { _id: p._id, tenantKey },
+        { $set: { unitsTotal: createdUnits.length, unitsSold } }
+      );
+      p.unitsTotal = createdUnits.length;
+      p.unitsSold = unitsSold;
+    }
     await audit(req, 'project.created', {
       targetType: 'project',
       targetId: p._id,
       projectId: p._id,
       status: 'info',
       message: 'Proyecto creado',
-      metadata: { name: p.name, publishStatus: p.publishStatus }
+      metadata: { name: p.name, publishStatus: p.publishStatus, createdUnits: createdUnits.length }
     });
     res.status(201).json(p);
   } catch (e) {
@@ -753,6 +873,20 @@ router.put('/:id', requireRole('admin','bank'), async (req, res) => {
     if (req.body.financialConditions && typeof req.body.financialConditions === 'object') {
       payload.financialConditions = sanitizeFinancialConditions(req.body.financialConditions);
       syncFinancialConditionKpis(payload, payload.financialConditions);
+    }
+    if (req.body.legalData && typeof req.body.legalData === 'object') {
+      payload.legalData = sanitizeLegalData(req.body.legalData);
+    }
+    if (req.body.technicalData && typeof req.body.technicalData === 'object') {
+      payload.technicalData = sanitizeTechnicalData(req.body.technicalData);
+      if (payload.technicalData.totalUnits) payload.unitsTotal = payload.technicalData.totalUnits;
+    }
+    if (Array.isArray(req.body.housingModels)) {
+      payload.housingModels = sanitizeHousingModels(req.body.housingModels);
+      if (payload.technicalData && !payload.technicalData.totalUnits) {
+        payload.technicalData.totalUnits = payload.housingModels.reduce((sum, item) => sum + Number(item.unitsCount || 0), 0);
+        if (payload.technicalData.totalUnits) payload.unitsTotal = payload.technicalData.totalUnits;
+      }
     }
 
     if (myRole === 'admin') {
