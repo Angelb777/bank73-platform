@@ -28,6 +28,7 @@ const UnitSchema = new mongoose.Schema({
   lote:    { type: String, default: '' },
   modelId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
   modelo:  { type: String, default: '' },
+  ubicacion: { type: String, default: '' },
   m2:      { type: Number, default: 0 },
   precioLista: { type: Number, default: 0 },
   areaAbierta: { type: Number, default: 0 },

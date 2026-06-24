@@ -141,10 +141,9 @@
     #cancelCreate:hover { background:#d1d5db; }
     .create-finance-section { grid-column:1/-1; padding-top:10px; border-top:1px solid #dbe2ea; }
     .create-finance-section h4 { margin:0 0 8px; color:#0f172a; }
-    .create-facility-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:10px; margin-bottom:8px; border:1px solid #dbe2ea; border-radius:10px; }
     .create-precedent-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
     .create-precedent-grid label { display:flex; align-items:center; gap:7px; }
-    @media (max-width:700px) { .create-facility-row,.create-precedent-grid { grid-template-columns:1fr; } }
+    @media (max-width:700px) { .create-precedent-grid { grid-template-columns:1fr; } }
 
     .muted { opacity:.7; font-size:.9rem; }
     #noProjectsBanner { margin:20px 0; text-align:center; display:none; }
@@ -738,6 +737,7 @@
           <option value="Lotes, adosados y dúplex PH">Lotes, adosados y dúplex PH</option>
           <option value="Otro">Otro</option>
         </select>
+        <input id="pLocation" type="text" placeholder="Ubicacion / direccion del proyecto" style="flex:1 1 320px;" />
         <textarea id="pDesc" rows="3" placeholder="Descripción" style="width:100%;"></textarea>
       </div>
       </div>
@@ -786,11 +786,11 @@
       <div class="create-finance-panel">
         <div class="create-section-title">Condiciones financieras <span class="create-section-kicker">Opcional</span></div>
         <div class="financial-conditions-form" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px;">
-          <label>Total del proyecto<input id="fc-projectTotal" type="number" step="any"></label>
-          <label>Monto financiado por el banco<input id="fc-bankFinancedAmount" type="number" step="any"></label>
-          <label>% financiado por el banco<input id="fc-bankFinancedPct" type="number" step="any"></label>
-          <label>Aporte del promotor<input id="fc-promoterContribution" type="number" step="any"></label>
-          <label>% aportado por el promotor<input id="fc-promoterContributionPct" type="number" step="any"></label>
+          <label>Total del proyecto<input id="fc-projectTotal" type="text" inputmode="decimal"></label>
+          <label>Monto financiado por el banco<input id="fc-bankFinancedAmount" type="text" inputmode="decimal"></label>
+          <label>% financiado por el banco<input id="fc-bankFinancedPct" type="text" inputmode="decimal"></label>
+          <label>Aporte del promotor<input id="fc-promoterContribution" type="text" inputmode="decimal"></label>
+          <label>% aportado por el promotor<input id="fc-promoterContributionPct" type="text" inputmode="decimal"></label>
           <label>Tasa de interés<input id="fc-interestRate" type="number" step="any"></label>
           <label>Plazo<input id="fc-term"></label><label>Forma de pago<input id="fc-paymentMethod"></label>
           <label>Comisión<input id="fc-commission"></label><label>Forma de desembolso<input id="fc-disbursementMethod"></label>
@@ -799,10 +799,8 @@
           <label>Preventa requerida<input id="fc-requiredPresales"></label><label>Garantías<input id="fc-guarantees"></label>
           <label style="grid-column:1/-1">Seguros<input id="fc-insurance"></label>
           <section class="create-finance-section">
-            <h4>Facilidades o líneas aprobadas</h4>
-            <datalist id="createFacilityTypes"><option value="Préstamo a término"><option value="Línea de crédito interina"><option value="Línea revolutiva"><option value="Infraestructura"><option value="Costos directos"><option value="Costos indirectos"></datalist>
-            <div id="createFacilities"></div>
-            <button id="addCreateFacility" class="btn ghost" type="button">+ Añadir facilidad</button>
+            <h4>Usos y fuentes por fase</h4>
+            <div id="createFinancePhases"></div>
           </section>
           <section class="create-finance-section">
             <h4>Condiciones precedentes</h4>

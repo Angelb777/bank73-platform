@@ -895,15 +895,417 @@ function applyProjectsFilters(list) {
   return wrap;
 }
 
-  function dashboardFacilityRow(item = {}) {
-    return `<div data-ep-facility-row style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px;border:1px solid #334155;border-radius:8px;margin-bottom:8px;">
-      <label class="small muted">Tipo de facilidad<input class="input" data-ep-facility="facilityType" value="${escapeHtml(item.facilityType || '')}"></label>
-      <label class="small muted">Destino<input class="input" data-ep-facility="loanPurpose" value="${escapeHtml(item.loanPurpose || '')}"></label>
-      <label class="small muted">% banco<input class="input" data-ep-facility="bankFinancedPct" type="number" step="any" value="${item.bankFinancedPct ?? ''}"></label>
-      <label class="small muted">% CPP/ventas a amortización<input class="input" data-ep-facility="cppSalesAmortizationPct" type="number" step="any" value="${item.cppSalesAmortizationPct ?? ''}"></label>
-      <label class="small muted">Aporte requerido promotor<input class="input" data-ep-facility="promoterRequiredContribution" type="number" step="any" value="${item.promoterRequiredContribution ?? ''}"></label>
-      <button class="btn small" type="button" data-remove-ep-facility>Quitar</button>
+  function dashboardRepeatRow(kind, item = {}) {
+    if (kind === 'board') return `<div class="create-repeat-row" data-ep-board-row style="display:grid;grid-template-columns:repeat(3,1fr) auto;gap:8px;margin-bottom:8px;">
+      <label class="small muted">Nombre<input class="input" data-ep-board="name" value="${escapeHtml(item.name || '')}"></label>
+      <label class="small muted">Cedula<input class="input" data-ep-board="cedula" value="${escapeHtml(item.cedula || '')}"></label>
+      <label class="small muted">Puesto<input class="input" data-ep-board="position" value="${escapeHtml(item.position || '')}"></label>
+      <button class="btn small" type="button" data-remove-ep-row>Quitar</button>
     </div>`;
+    return `<div class="create-repeat-row" data-ep-shareholder-row style="display:grid;grid-template-columns:repeat(3,1fr) auto;gap:8px;margin-bottom:8px;">
+      <label class="small muted">Nombre<input class="input" data-ep-shareholder="name" value="${escapeHtml(item.name || '')}"></label>
+      <label class="small muted">Cedula<input class="input" data-ep-shareholder="cedula" value="${escapeHtml(item.cedula || '')}"></label>
+      <label class="small muted">Porcentaje<input class="input" data-ep-shareholder="percentage" type="number" step="any" value="${item.percentage ?? ''}"></label>
+      <button class="btn small" type="button" data-remove-ep-row>Quitar</button>
+    </div>`;
+  }
+
+  function isValidBankNumberText(value) {
+    const text = String(value || '').trim();
+    if (!text) return true;
+    if (!/^\d{1,3}(,\d{3})*(\.\d+)?$/.test(text) && !/^\d+(\.\d+)?$/.test(text)) return false;
+    const integer = text.split('.')[0];
+    return integer.length < 4 || /^\d{1,3}(,\d{3})+$/.test(integer);
+  }
+
+  function parseBankNumber(value) {
+    const text = String(value || '').trim();
+    if (!text) return 0;
+    if (!isValidBankNumberText(text)) return NaN;
+    const n = Number(text.replace(/,/g, ''));
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  function parseBankNumberLive(value) {
+    const text = String(value || '').trim();
+    if (!text) return 0;
+    if (!/^[\d,]*\.?\d*$/.test(text)) return NaN;
+    const n = Number(text.replace(/,/g, ''));
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  function formatBankNumber(value, decimals = 2) {
+    const n = typeof value === 'number' ? value : parseBankNumber(value);
+    if (!Number.isFinite(n)) return '';
+    const hasDecimals = Math.abs(n % 1) > 0;
+    return n.toLocaleString('en-US', {
+      minimumFractionDigits: hasDecimals ? decimals : 0,
+      maximumFractionDigits: decimals
+    });
+  }
+
+  function formatPercentNumber(value) {
+    return formatBankNumber(value, 4).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  }
+
+  function bindBankNumberFormatting(root = document) {
+    root.querySelectorAll('[data-bank-number]').forEach(input => {
+      if (input.__bankFormatBound) return;
+      input.__bankFormatBound = true;
+      input.addEventListener('blur', () => {
+        if (!String(input.value || '').trim()) return;
+        const n = parseBankNumber(input.value);
+        if (Number.isFinite(n)) input.value = formatBankNumber(n);
+      });
+    });
+  }
+
+  function validateBankNumberInputs(root = document) {
+    const bad = Array.from(root.querySelectorAll('[data-bank-number]')).find(input => !isValidBankNumberText(input.value));
+    if (bad) {
+      bad.focus();
+      alert('Formato numerico invalido. Usa comas para miles y punto para decimales, por ejemplo 1,250,000.75.');
+      return false;
+    }
+    return true;
+  }
+
+  function dashboardModelRow(item = {}) {
+    const statuses = item.initialStatuses || {};
+    return `<div data-ep-model-row style="border:1px solid #2a323d;border-radius:10px;padding:10px;margin-bottom:10px;">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+        <label class="small muted">Modelo<input class="input" data-ep-model="name" value="${escapeHtml(item.name || '')}"></label>
+        <label class="small muted">Recamaras<input class="input" data-ep-model="bedrooms" type="number" step="1" value="${item.bedrooms ?? ''}"></label>
+        <label class="small muted">Banos<input class="input" data-ep-model="bathrooms" type="number" step="any" value="${item.bathrooms ?? ''}"></label>
+        <label class="small muted">Unidades<input class="input" data-ep-model="unitsCount" type="number" step="1" value="${item.unitsCount ?? ''}"></label>
+        <label class="small muted">Area abierta<input class="input" data-ep-model="openAreaM2" data-bank-number type="text" inputmode="decimal" value="${item.openAreaM2 ? formatBankNumber(item.openAreaM2) : ''}"></label>
+        <label class="small muted">Area cerrada<input class="input" data-ep-model="closedAreaM2" data-bank-number type="text" inputmode="decimal" value="${item.closedAreaM2 ? formatBankNumber(item.closedAreaM2) : ''}"></label>
+        <label class="small muted">Precio<input class="input" data-ep-model="price" data-bank-number type="text" inputmode="decimal" value="${item.price ? formatBankNumber(item.price) : ''}"></label>
+        <label class="small muted">Observaciones<input class="input" data-ep-model="observations" value="${escapeHtml(item.observations || '')}"></label>
+      </div>
+      <div style="border:1px solid #1d4ed8;background:#0b1730;border-radius:10px;padding:10px;margin-top:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+          <strong class="small">Estados iniciales de unidades</strong>
+          <span class="small muted" data-ep-model-summary>Define cantidad de unidades por estado</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+          ${[
+            ['disponible','Disponible'],['inventario','Inventario'],['reservado','Reservado'],['con_cpp','Con CPP o venta al contado'],
+            ['tramite_legal_activado','Trámite legal activado'],['escriturado_traspasado','Escriturado / Traspasado'],['vivienda_entregada','Vivienda entregada']
+          ].map(([key,label]) => `<label class="small muted">${label}<input class="input" data-ep-model-status="${key}" type="number" step="1" value="${statuses[key] ?? ''}"></label>`).join('')}
+          <button class="btn small" type="button" data-remove-ep-model>Quitar</button>
+        </div>
+      </div>
+      <div class="small muted" data-ep-model-warning></div>
+    </div>`;
+  }
+
+  function dashboardPhaseRow(index, item = {}) {
+    const lines = (kind, rows = []) => (rows.length ? rows : [{ name: '', amount: '' }]).map(row => `
+      <div data-ep-phase-line="${kind}" style="display:grid;grid-template-columns:1fr 130px;gap:8px;margin-bottom:6px;">
+        <input class="input" data-ep-phase-line-name value="${escapeHtml(row.name || '')}" placeholder="Concepto">
+        <input class="input" data-ep-phase-line-amount data-bank-number type="text" inputmode="decimal" value="${row.amount ? formatBankNumber(row.amount) : ''}" placeholder="Monto">
+      </div>`).join('');
+    return `<details open data-ep-phase-row="${index}" style="border:1px solid #2a323d;border-radius:10px;padding:10px;margin-bottom:10px;">
+      <summary>Fase ${index + 1}</summary>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
+        <label class="small muted">Nombre<input class="input" data-ep-phase="name" value="${escapeHtml(item.name || `Fase ${index + 1}`)}"></label>
+        <label class="small muted" style="grid-column:1/-1">Usos estimados<div data-ep-phase-box="planUses">${lines('planUses', item.planUses || [])}</div><button class="btn small" type="button" data-add-ep-phase-line="planUses">+ Uso</button></label>
+        <div class="small muted" style="grid-column:1/-1;border:1px solid #1d4ed8;background:#0b1730;border-radius:10px;padding:10px;" data-ep-phase-sources-summary>
+          <strong>Fuentes estimadas automaticas</strong>
+          <div style="margin-top:6px;">Total usos: <b data-phase-total-uses>0</b> · Banco: <b data-phase-bank-source>0</b> · Promotor: <b data-phase-promoter-source>0</b> · Total fuentes: <b data-phase-total-sources>0</b></div>
+        </div>
+      </div>
+    </details>`;
+  }
+
+  const dashNum = (value) => {
+    if (value === '' || value === null || value === undefined) return 0;
+    const n = parseBankNumberLive(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  function collectEditLegalData() {
+    return {
+      promoterLegalName: document.getElementById('ep-ld-promoterLegalName')?.value?.trim() || '',
+      interimBank: document.getElementById('ep-ld-interimBank')?.value?.trim() || '',
+      trustApplies: document.getElementById('ep-ld-trustApplies')?.value === 'true',
+      trustName: document.getElementById('ep-ld-trustName')?.value?.trim() || '',
+      boardMembers: Array.from(document.querySelectorAll('[data-ep-board-row]')).map(row => ({
+        name: row.querySelector('[data-ep-board="name"]')?.value.trim() || '',
+        cedula: row.querySelector('[data-ep-board="cedula"]')?.value.trim() || '',
+        position: row.querySelector('[data-ep-board="position"]')?.value.trim() || ''
+      })),
+      shareholders: Array.from(document.querySelectorAll('[data-ep-shareholder-row]')).map(row => ({
+        name: row.querySelector('[data-ep-shareholder="name"]')?.value.trim() || '',
+        cedula: row.querySelector('[data-ep-shareholder="cedula"]')?.value.trim() || '',
+        percentage: dashNum(row.querySelector('[data-ep-shareholder="percentage"]')?.value)
+      }))
+    };
+  }
+
+  function collectEditTechnicalData() {
+    return {
+      phasesCount: dashNum(document.getElementById('ep-td-phasesCount')?.value),
+      totalUnits: dashNum(document.getElementById('ep-td-totalUnits')?.value),
+      notes: document.getElementById('ep-td-notes')?.value?.trim() || ''
+    };
+  }
+
+  function collectEditHousingModels() {
+    return Array.from(document.querySelectorAll('[data-ep-model-row]')).map(row => ({
+      name: row.querySelector('[data-ep-model="name"]')?.value.trim() || '',
+      bedrooms: dashNum(row.querySelector('[data-ep-model="bedrooms"]')?.value),
+      bathrooms: dashNum(row.querySelector('[data-ep-model="bathrooms"]')?.value),
+      unitsCount: dashNum(row.querySelector('[data-ep-model="unitsCount"]')?.value),
+      openAreaM2: dashNum(row.querySelector('[data-ep-model="openAreaM2"]')?.value),
+      closedAreaM2: dashNum(row.querySelector('[data-ep-model="closedAreaM2"]')?.value),
+      price: dashNum(row.querySelector('[data-ep-model="price"]')?.value),
+      observations: row.querySelector('[data-ep-model="observations"]')?.value.trim() || '',
+      initialStatuses: Object.fromEntries(Array.from(row.querySelectorAll('[data-ep-model-status]')).map(input => [
+        input.dataset.epModelStatus,
+        dashNum(input.value)
+      ]))
+    })).filter(item => item.name || item.unitsCount || item.price || item.openAreaM2 || item.closedAreaM2);
+  }
+
+  function syncEditModelStatusRow(row, { autoFill = false } = {}) {
+    if (!row) return true;
+    const total = dashNum(row.querySelector('[data-ep-model="unitsCount"]')?.value);
+    const inputs = Array.from(row.querySelectorAll('[data-ep-model-status]'));
+    let values = inputs.map(input => Math.max(0, Math.round(dashNum(input.value))));
+    let statusTotal = values.reduce((sum, value) => sum + value, 0);
+
+    if (autoFill && total > 0 && statusTotal < total) {
+      const emptyInputs = inputs.filter(input => String(input.value || '').trim() === '');
+      if (emptyInputs.length === inputs.length) {
+        emptyInputs[0].value = total;
+      } else if (emptyInputs.length === 1) {
+        emptyInputs[0].value = total - statusTotal;
+      }
+      values = inputs.map(input => Math.max(0, Math.round(dashNum(input.value))));
+      statusTotal = values.reduce((sum, value) => sum + value, 0);
+    }
+
+    const remaining = total - statusTotal;
+    const summary = row.querySelector('[data-ep-model-summary]');
+    const warning = row.querySelector('[data-ep-model-warning]');
+    if (summary) {
+      summary.textContent = total
+        ? `Total ${total} · Asignadas ${statusTotal} · Restantes ${Math.max(remaining, 0)}`
+        : 'Define primero la cantidad total de unidades';
+      summary.style.color = remaining < 0 ? '#fca5a5' : (remaining === 0 && total ? '#86efac' : '#cbd5e1');
+    }
+    if (warning) {
+      if (!total) {
+        warning.textContent = 'Cuando indiques el total, este bloque calcula automaticamente las unidades restantes.';
+        warning.style.color = '';
+      } else if (remaining > 0) {
+        warning.textContent = `Faltan ${remaining} unidades por asignar a algun estado. Si dejas una sola casilla vacia, se completa automaticamente.`;
+        warning.style.color = '#fde68a';
+      } else if (remaining < 0) {
+        warning.textContent = `Te pasaste por ${Math.abs(remaining)} unidades. Ajusta el reparto antes de guardar.`;
+        warning.style.color = '#fca5a5';
+      } else {
+        warning.textContent = 'Reparto completo: la suma de estados coincide con el total.';
+        warning.style.color = '#86efac';
+      }
+    }
+    return !total || statusTotal === total || statusTotal === 0;
+  }
+
+  function validateEditModelStatuses(alertOnError = false) {
+    for (const row of Array.from(document.querySelectorAll('[data-ep-model-row]'))) {
+      syncEditModelStatusRow(row);
+      const total = dashNum(row.querySelector('[data-ep-model="unitsCount"]')?.value);
+      const statusTotal = Array.from(row.querySelectorAll('[data-ep-model-status]')).reduce((sum, input) => sum + dashNum(input.value), 0);
+      const ok = !total || !statusTotal || total === statusTotal;
+      if (!ok) {
+        if (alertOnError) alert('La suma de estados por modelo debe coincidir con la cantidad de unidades.');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function collectEditPhaseLines(row, kind) {
+    return Array.from(row.querySelectorAll(`[data-ep-phase-line="${kind}"]`)).map(line => ({
+      name: line.querySelector('[data-ep-phase-line-name]')?.value.trim() || '',
+      amount: dashNum(line.querySelector('[data-ep-phase-line-amount]')?.value)
+    })).filter(item => item.name || item.amount);
+  }
+
+  function currentEditFinancialNumbers() {
+    return {
+      total: dashNum(document.getElementById('ep-fc-projectTotal')?.value),
+      bankAmount: dashNum(document.getElementById('ep-fc-bankFinancedAmount')?.value),
+      bankPct: dashNum(document.getElementById('ep-fc-bankFinancedPct')?.value),
+      promoterAmount: dashNum(document.getElementById('ep-fc-promoterContribution')?.value),
+      promoterPct: dashNum(document.getElementById('ep-fc-promoterContributionPct')?.value)
+    };
+  }
+
+  function editPhaseUsesTotal(row) {
+    return collectEditPhaseLines(row, 'planUses').reduce((sum, item) => sum + dashNum(item.amount), 0);
+  }
+
+  function autoEditPhaseSourcesForUses(usesTotal, financial = currentEditFinancialNumbers()) {
+    const bank = usesTotal * dashNum(financial.bankPct) / 100;
+    const promoter = usesTotal * dashNum(financial.promoterPct) / 100;
+    return [
+      { name: 'Banco', amount: Math.round(bank * 100) / 100 },
+      { name: 'Promotor', amount: Math.round(promoter * 100) / 100 }
+    ];
+  }
+
+  function syncEditPhaseSources() {
+    const financial = currentEditFinancialNumbers();
+    let totalUsesAll = 0;
+    let totalBankAll = 0;
+    let totalPromoterAll = 0;
+    document.querySelectorAll('[data-ep-phase-row]').forEach(row => {
+      const usesTotal = editPhaseUsesTotal(row);
+      const sources = autoEditPhaseSourcesForUses(usesTotal, financial);
+      const bank = dashNum(sources.find(item => item.name === 'Banco')?.amount);
+      const promoter = dashNum(sources.find(item => item.name === 'Promotor')?.amount);
+      const total = bank + promoter;
+      totalUsesAll += usesTotal;
+      totalBankAll += bank;
+      totalPromoterAll += promoter;
+      const setText = (selector, value) => {
+        const el = row.querySelector(selector);
+        if (el) el.textContent = formatBankNumber(value);
+      };
+      setText('[data-phase-total-uses]', usesTotal);
+      setText('[data-phase-bank-source]', bank);
+      setText('[data-phase-promoter-source]', promoter);
+      setText('[data-phase-total-sources]', total);
+    });
+    renderEditPhasesGlobalSummary({
+      totalUses: totalUsesAll,
+      totalBank: totalBankAll,
+      totalPromoter: totalPromoterAll,
+      financial
+    });
+  }
+
+  function ensureEditPhasesGlobalSummary() {
+    const box = document.getElementById('ep-financePhases');
+    if (!box) return null;
+    let el = document.getElementById('epFinancePhasesSummary');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'epFinancePhasesSummary';
+      el.style.cssText = 'border:1px solid #1d4ed8;background:#0b1730;border-radius:10px;padding:10px;margin:0 0 10px;color:#e6edf3;';
+      box.parentNode?.insertBefore(el, box);
+    }
+    return el;
+  }
+
+  function renderEditPhasesGlobalSummary({ totalUses, totalBank, totalPromoter, financial }) {
+    const el = ensureEditPhasesGlobalSummary();
+    if (!el) return;
+    const diff = dashNum(financial.total) - dashNum(totalUses);
+    const ok = Math.abs(diff) <= 0.05 && financial.total > 0;
+    el.innerHTML = `
+      <strong>Resumen de fases</strong>
+      <div class="small" style="margin-top:6px;">
+        Usos fases: <b>${formatBankNumber(totalUses)}</b> · Banco: <b>${formatBankNumber(totalBank)}</b> · Promotor: <b>${formatBankNumber(totalPromoter)}</b> · Total fuentes: <b>${formatBankNumber(totalBank + totalPromoter)}</b>
+      </div>
+      <div class="small" style="margin-top:4px;color:${ok ? '#86efac' : '#fde68a'};">
+        ${financial.total ? (ok ? 'Las fases coinciden con el total del proyecto.' : `Diferencia contra total del proyecto: ${formatBankNumber(diff)}`) : 'Indica el total del proyecto para comparar la suma de fases.'}
+      </div>
+    `;
+  }
+
+  function collectEditFinancePhases() {
+    const financial = currentEditFinancialNumbers();
+    return Array.from(document.querySelectorAll('[data-ep-phase-row]')).map((row, idx) => ({
+      name: row.querySelector('[data-ep-phase="name"]')?.value.trim() || `Fase ${idx + 1}`,
+      planUses: collectEditPhaseLines(row, 'planUses'),
+      planSources: autoEditPhaseSourcesForUses(editPhaseUsesTotal(row), financial)
+    }));
+  }
+
+  function syncEditFinancePhases(phases) {
+    const box = document.getElementById('ep-financePhases');
+    if (!box) return;
+    const current = Array.isArray(phases) ? phases : collectEditFinancePhases();
+    const count = Math.max(dashNum(document.getElementById('ep-td-phasesCount')?.value), current.length);
+    box.innerHTML = Array.from({ length: count }, (_, idx) => dashboardPhaseRow(idx, current[idx] || {})).join('');
+    bindBankNumberFormatting(box);
+    syncEditPhaseSources();
+  }
+
+  function syncEditFinancialTriplet(sourceId = '') {
+    const totalEl = document.getElementById('ep-fc-projectTotal');
+    const amountEl = document.getElementById('ep-fc-bankFinancedAmount');
+    const pctEl = document.getElementById('ep-fc-bankFinancedPct');
+    const promoterEl = document.getElementById('ep-fc-promoterContribution');
+    const promoterPctEl = document.getElementById('ep-fc-promoterContributionPct');
+    const total = dashNum(totalEl?.value);
+    let amount = dashNum(amountEl?.value);
+    let pct = dashNum(pctEl?.value);
+    let promoter = dashNum(promoterEl?.value);
+    let promoterPct = dashNum(promoterPctEl?.value);
+    if (!total) return;
+    pct = Math.min(Math.max(pct, 0), 100);
+    promoterPct = Math.min(Math.max(promoterPct, 0), 100);
+
+    if (sourceId === 'ep-fc-bankFinancedPct') amount = total * pct / 100;
+    else if (sourceId === 'ep-fc-promoterContributionPct') {
+      promoter = total * promoterPct / 100;
+      amount = total - promoter;
+    } else if (sourceId === 'ep-fc-promoterContribution') {
+      promoter = Math.min(Math.max(promoter, 0), total);
+      amount = total - promoter;
+    } else if (sourceId === 'ep-fc-bankFinancedAmount') {
+      amount = Math.min(Math.max(amount, 0), total);
+      promoter = total - amount;
+    } else if (sourceId === 'ep-fc-projectTotal') {
+      if (pct) amount = total * pct / 100;
+      else if (amount) amount = Math.min(amount, total);
+      else if (promoter) amount = total - Math.min(promoter, total);
+    }
+
+    amount = Math.min(Math.max(amount, 0), total);
+    promoter = Math.max(total - amount, 0);
+    pct = total ? amount / total * 100 : 0;
+    promoterPct = total ? promoter / total * 100 : 0;
+
+    if (amountEl) amountEl.value = formatBankNumber(amount);
+    if (pctEl) pctEl.value = formatPercentNumber(pct);
+    if (promoterEl) promoterEl.value = formatBankNumber(promoter);
+    if (promoterPctEl) promoterPctEl.value = formatPercentNumber(promoterPct);
+    syncEditPhaseSources();
+  }
+
+  function validateEditFinancePhases(alertOnError = false) {
+    const financial = currentEditFinancialNumbers();
+    const phases = collectEditFinancePhases();
+    const usesTotal = phases.reduce((sum, phase) => sum + phase.planUses.reduce((a, item) => a + dashNum(item.amount), 0), 0);
+    const bankTotal = phases.reduce((sum, phase) => sum + dashNum(phase.planSources.find(item => item.name === 'Banco')?.amount), 0);
+    const promoterTotal = phases.reduce((sum, phase) => sum + dashNum(phase.planSources.find(item => item.name === 'Promotor')?.amount), 0);
+    const close = (a, b) => Math.abs(dashNum(a) - dashNum(b)) <= 0.05;
+    const fail = (message) => {
+      if (alertOnError) alert(message);
+      return false;
+    };
+    if (financial.total > 0 && phases.length && !close(usesTotal, financial.total)) {
+      return fail(`La suma de usos por fase (${formatBankNumber(usesTotal)}) debe coincidir con el total del proyecto (${formatBankNumber(financial.total)}).`);
+    }
+    if (financial.bankAmount > 0 && phases.length && !close(bankTotal, financial.bankAmount)) {
+      return fail(`La suma de fuentes Banco por fase (${formatBankNumber(bankTotal)}) debe coincidir con el monto banco (${formatBankNumber(financial.bankAmount)}).`);
+    }
+    if (financial.promoterAmount > 0 && phases.length && !close(promoterTotal, financial.promoterAmount)) {
+      return fail(`La suma de fuentes Promotor por fase (${formatBankNumber(promoterTotal)}) debe coincidir con el aporte promotor (${formatBankNumber(financial.promoterAmount)}).`);
+    }
+    for (const phase of phases) {
+      const uses = phase.planUses.reduce((a, item) => a + dashNum(item.amount), 0);
+      const sources = phase.planSources.reduce((a, item) => a + dashNum(item.amount), 0);
+      if (!close(uses, sources)) return fail(`En ${phase.name}, total usos (${formatBankNumber(uses)}) debe coincidir con total fuentes (${formatBankNumber(sources)}).`);
+    }
+    return true;
   }
 
   // ---- Modal de edición (inyectado si no existe) ----
@@ -935,6 +1337,11 @@ function applyProjectsFilters(list) {
       <select id="editProjType" class="input">
         ${renderProjectTypeOptions('')}
       </select>
+    </div>
+
+    <div style="margin-top:10px;">
+      <label class="small muted">Ubicacion / direccion del proyecto</label>
+      <input id="editProjLocation" class="input" type="text" />
     </div>
 
     <!-- NUEVO: KPIs -->
@@ -977,11 +1384,8 @@ function applyProjectsFilters(list) {
           ['disbursementMethod','Forma de desembolso','text'],['disbursementConditions','Condiciones desembolso','text'],
           ['amortizationConditions','Condiciones amortización','text'],['requiredPresales','Preventa requerida','text'],
           ['guarantees','Garantías','text'],['insurance','Seguros','text']
-        ].map(([key,label,type]) => `<label class="small muted">${label}<input id="ep-fc-${key}" class="input" type="${type}" ${type === 'number' ? 'step="any"' : ''}></label>`).join('')}
+        ].map(([key,label,type]) => `<label class="small muted">${label}<input id="ep-fc-${key}" class="input" type="${type === 'number' ? 'text' : type}" ${['projectTotal','bankFinancedAmount','promoterContribution'].includes(key) ? 'data-bank-number inputmode="decimal"' : (type === 'number' ? 'inputmode="decimal"' : '')}></label>`).join('')}
       </div>
-      <h4 style="margin:12px 0 8px;">Facilidades o líneas aprobadas</h4>
-      <div id="ep-facilities"></div>
-      <button id="ep-add-facility" class="btn small" type="button">+ Añadir facilidad</button>
       <h4 style="margin:12px 0 8px;">Condiciones precedentes</h4>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;">
         ${[['presalesMet','Preventa cumplida'],['constructionPermitsApproved','Permisos construcción'],['plansApproved','Planos aprobados'],['insuranceDelivered','Seguros entregados'],['guaranteesConstituted','Garantías constituidas'],['environmentalStudyApproved','Estudio ambiental'],['trustConstituted','Fideicomiso constituido'],['otherRequirementsMet','Otros requisitos']].map(([key,label]) => `<label class="small muted"><input type="checkbox" data-ep-precedent="${key}"> ${label}</label>`).join('')}
@@ -991,6 +1395,39 @@ function applyProjectsFilters(list) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
         ${[['trustee','Fiduciaria'],['trustType','Tipo de fideicomiso'],['technicalInspector','Inspector técnico'],['financialInspector','Inspector financiero']].map(([key,label]) => `<label class="small muted">${label}<input id="ep-op-${key}" class="input"></label>`).join('')}
       </div>
+    </details>
+
+    <details style="margin-top:14px;">
+      <summary class="small muted">Datos legales</summary>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
+        <label class="small muted">Promotor / sociedad<input id="ep-ld-promoterLegalName" class="input"></label>
+        <label class="small muted">Banco interino<input id="ep-ld-interimBank" class="input"></label>
+        <label class="small muted">Fideicomiso<select id="ep-ld-trustApplies" class="input"><option value="false">No aplica</option><option value="true">Aplica</option></select></label>
+        <label class="small muted">Nombre fideicomiso<input id="ep-ld-trustName" class="input"></label>
+      </div>
+      <h4 style="margin:12px 0 8px;">Junta directiva</h4>
+      <div id="ep-boardMembers"></div>
+      <button id="ep-add-board" class="btn small" type="button">+ Anadir directivo</button>
+      <h4 style="margin:12px 0 8px;">Accionistas</h4>
+      <div id="ep-shareholders"></div>
+      <button id="ep-add-shareholder" class="btn small" type="button">+ Anadir accionista</button>
+    </details>
+
+    <details style="margin-top:14px;">
+      <summary class="small muted">Datos tecnicos, modelos y estados</summary>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
+        <label class="small muted">Numero de fases<input id="ep-td-phasesCount" class="input" type="number" step="1"></label>
+        <label class="small muted">Total unidades<input id="ep-td-totalUnits" class="input" type="number" step="1"></label>
+        <label class="small muted" style="grid-column:1/-1">Notas tecnicas<textarea id="ep-td-notes" class="input" rows="2"></textarea></label>
+      </div>
+      <h4 style="margin:12px 0 8px;">Modelos</h4>
+      <div id="ep-housingModels"></div>
+      <button id="ep-add-model" class="btn small" type="button">+ Anadir modelo</button>
+    </details>
+
+    <details style="margin-top:14px;">
+      <summary class="small muted">Fases, usos y fuentes</summary>
+      <div id="ep-financePhases" style="margin-top:10px;"></div>
     </details>
 
     <div style="margin-top:14px;display:flex;gap:10px;justify-content:flex-end;">
@@ -1005,10 +1442,45 @@ function applyProjectsFilters(list) {
     // Handlers básicos
     document.getElementById('editProjClose').addEventListener('click', () => { wrap.style.display = 'none'; });
     document.getElementById('editProjCancel').addEventListener('click', () => { wrap.style.display = 'none'; });
-    document.getElementById('ep-add-facility')?.addEventListener('click', () => document.getElementById('ep-facilities')?.insertAdjacentHTML('beforeend', dashboardFacilityRow()));
-    document.getElementById('ep-facilities')?.addEventListener('click', event => {
-      event.target.closest('[data-remove-ep-facility]')?.closest('[data-ep-facility-row]')?.remove();
+    bindBankNumberFormatting(wrap);
+    ['ep-fc-projectTotal','ep-fc-bankFinancedAmount','ep-fc-bankFinancedPct','ep-fc-promoterContribution','ep-fc-promoterContributionPct'].forEach(fieldId => {
+      document.getElementById(fieldId)?.addEventListener('input', () => syncEditFinancialTriplet(fieldId));
     });
+    document.getElementById('ep-add-board')?.addEventListener('click', () => document.getElementById('ep-boardMembers')?.insertAdjacentHTML('beforeend', dashboardRepeatRow('board')));
+    document.getElementById('ep-add-shareholder')?.addEventListener('click', () => document.getElementById('ep-shareholders')?.insertAdjacentHTML('beforeend', dashboardRepeatRow('shareholder')));
+    document.getElementById('ep-add-model')?.addEventListener('click', () => {
+      document.getElementById('ep-housingModels')?.insertAdjacentHTML('beforeend', dashboardModelRow());
+      bindBankNumberFormatting(document.getElementById('ep-housingModels') || document);
+    });
+    document.getElementById('ep-td-phasesCount')?.addEventListener('input', syncEditFinancePhases);
+    ['ep-boardMembers','ep-shareholders','ep-housingModels'].forEach(id => {
+      document.getElementById(id)?.addEventListener('click', event => {
+        event.target.closest('[data-remove-ep-row]')?.closest('.create-repeat-row')?.remove();
+        event.target.closest('[data-remove-ep-model]')?.closest('[data-ep-model-row]')?.remove();
+        validateEditModelStatuses();
+      });
+      document.getElementById(id)?.addEventListener('input', () => {
+        document.getElementById('ep-housingModels')?.querySelectorAll('[data-ep-model-row]').forEach(row => syncEditModelStatusRow(row, { autoFill: true }));
+      });
+    });
+    document.getElementById('ep-financePhases')?.addEventListener('click', event => {
+      const btn = event.target.closest('[data-add-ep-phase-line]');
+      if (!btn) return;
+      const kind = btn.dataset.addEpPhaseLine;
+      btn.closest('[data-ep-phase-row]')?.querySelector(`[data-ep-phase-box="${kind}"]`)?.insertAdjacentHTML('beforeend', `
+        <div data-ep-phase-line="${kind}" style="display:grid;grid-template-columns:1fr 130px;gap:8px;margin-bottom:6px;">
+          <input class="input" data-ep-phase-line-name placeholder="Concepto">
+          <input class="input" data-ep-phase-line-amount data-bank-number type="text" inputmode="decimal" placeholder="Monto">
+        </div>`);
+      bindBankNumberFormatting(document.getElementById('ep-financePhases') || document);
+      syncEditPhaseSources();
+    });
+    document.getElementById('ep-financePhases')?.addEventListener('input', syncEditPhaseSources);
+    document.getElementById('ep-financePhases')?.addEventListener('change', syncEditPhaseSources);
+    document.getElementById('ep-financePhases')?.addEventListener('keyup', syncEditPhaseSources);
+    document.addEventListener('input', event => {
+      if (event.target?.matches?.('[data-ep-phase-line-amount], [data-ep-phase-line-name]')) syncEditPhaseSources();
+    }, true);
 
     // Guardar
     document.getElementById('editProjSave').addEventListener('click', async () => {
@@ -1026,13 +1498,14 @@ function applyProjectsFilters(list) {
   const payload = {
     name,
     description,
-    projectType
+    projectType,
+    location: document.getElementById('editProjLocation')?.value?.trim() || ''
   };
 
   // helper para añadir números sólo si hay valor
   const num = (id) => {
     const v = document.getElementById(id)?.value;
-    return (v === '' || v === null || v === undefined) ? null : Number(v);
+    return (v === '' || v === null || v === undefined) ? null : parseBankNumber(v);
   };
   const add = (key, id) => {
     const v = num(id);
@@ -1047,6 +1520,8 @@ function applyProjectsFilters(list) {
   add('unitsTotal',      'ep-unitsTotal');
   add('unitsSold',       'ep-unitsSold');
 
+  if (!validateBankNumberInputs(wrap)) return;
+  syncEditFinancialTriplet('ep-fc-projectTotal');
   const conditionNumbers = ['projectTotal','bankFinancedAmount','bankFinancedPct','promoterContribution','promoterContributionPct','interestRate'];
   const conditionTexts = ['term','paymentMethod','commission','disbursementMethod','disbursementConditions','amortizationConditions','requiredPresales','guarantees','insurance'];
   payload.financialConditions = {};
@@ -1055,13 +1530,7 @@ function applyProjectsFilters(list) {
     if (value !== null && !Number.isNaN(value)) payload.financialConditions[key] = value;
   });
   conditionTexts.forEach(key => { payload.financialConditions[key] = document.getElementById(`ep-fc-${key}`)?.value?.trim() || ''; });
-  payload.financialConditions.facilities = Array.from(document.querySelectorAll('[data-ep-facility-row]')).map(row => ({
-    facilityType: row.querySelector('[data-ep-facility="facilityType"]')?.value.trim() || '',
-    loanPurpose: row.querySelector('[data-ep-facility="loanPurpose"]')?.value.trim() || '',
-    bankFinancedPct: Number(row.querySelector('[data-ep-facility="bankFinancedPct"]')?.value || 0),
-    cppSalesAmortizationPct: Number(row.querySelector('[data-ep-facility="cppSalesAmortizationPct"]')?.value || 0),
-    promoterRequiredContribution: Number(row.querySelector('[data-ep-facility="promoterRequiredContribution"]')?.value || 0)
-  }));
+  payload.financialConditions.facilities = [];
   payload.financialConditions.precedentConditions = {};
   document.querySelectorAll('[data-ep-precedent]').forEach(input => { payload.financialConditions.precedentConditions[input.dataset.epPrecedent] = input.checked; });
   payload.financialConditions.precedentConditions.otherRequirements = document.getElementById('ep-fc-otherRequirements')?.value?.trim() || '';
@@ -1071,6 +1540,12 @@ function applyProjectsFilters(list) {
     technicalInspector: document.getElementById('ep-op-technicalInspector')?.value?.trim() || '',
     financialInspector: document.getElementById('ep-op-financialInspector')?.value?.trim() || ''
   };
+  payload.legalData = collectEditLegalData();
+  payload.technicalData = collectEditTechnicalData();
+  payload.housingModels = collectEditHousingModels();
+  if (!validateEditModelStatuses(true)) return;
+  if (!validateEditFinancePhases(true)) return;
+  payload.financePhases = collectEditFinancePhases();
 
   await apiUpdateProject(id, payload);
   wrap.style.display = 'none';
@@ -1409,6 +1884,7 @@ if (pEdit) {
     document.getElementById('editProjName').value = proj.name || '';
     document.getElementById('editProjDesc').value = proj.description || '';
     document.getElementById('editProjType').value = proj.projectType || proj.tipoProyecto || '';
+    document.getElementById('editProjLocation').value = proj.location || proj.address || '';
     // Rellenar KPIs
 document.getElementById('ep-loanApproved').value   = proj.loanApproved ?? '';
 document.getElementById('ep-loanDisbursed').value  = proj.loanDisbursed ?? '';
@@ -1420,10 +1896,8 @@ document.getElementById('ep-unitsSold').value      = proj.unitsSold ?? '';
     const conditions = proj.financialConditions || {};
     ['projectTotal','bankFinancedAmount','bankFinancedPct','promoterContribution','promoterContributionPct','interestRate','term','paymentMethod','commission','disbursementMethod','disbursementConditions','amortizationConditions','requiredPresales','guarantees','insurance'].forEach(key => {
       const input = document.getElementById(`ep-fc-${key}`);
-      if (input) input.value = conditions[key] ?? '';
+      if (input) input.value = input.matches('[data-bank-number]') && conditions[key] ? formatBankNumber(conditions[key]) : (conditions[key] ?? '');
     });
-    const facilitiesBox = document.getElementById('ep-facilities');
-    if (facilitiesBox) facilitiesBox.innerHTML = (conditions.facilities || []).map(dashboardFacilityRow).join('');
     const precedent = conditions.precedentConditions || {};
     document.querySelectorAll('[data-ep-precedent]').forEach(input => { input.checked = !!precedent[input.dataset.epPrecedent]; });
     document.getElementById('ep-fc-otherRequirements').value = precedent.otherRequirements || '';
@@ -1431,6 +1905,26 @@ document.getElementById('ep-unitsSold').value      = proj.unitsSold ?? '';
     ['trustee','trustType','technicalInspector','financialInspector'].forEach(key => {
       const input = document.getElementById(`ep-op-${key}`); if (input) input.value = operation[key] || '';
     });
+    const legal = proj.legalData || {};
+    document.getElementById('ep-ld-promoterLegalName').value = legal.promoterLegalName || '';
+    document.getElementById('ep-ld-interimBank').value = legal.interimBank || '';
+    document.getElementById('ep-ld-trustApplies').value = legal.trustApplies ? 'true' : 'false';
+    document.getElementById('ep-ld-trustName').value = legal.trustName || '';
+    document.getElementById('ep-boardMembers').innerHTML = (legal.boardMembers || []).map(item => dashboardRepeatRow('board', item)).join('');
+    document.getElementById('ep-shareholders').innerHTML = (legal.shareholders || []).map(item => dashboardRepeatRow('shareholder', item)).join('');
+    const tech = proj.technicalData || {};
+    document.getElementById('ep-td-phasesCount').value = tech.phasesCount ?? '';
+    document.getElementById('ep-td-totalUnits').value = tech.totalUnits ?? '';
+    document.getElementById('ep-td-notes').value = tech.notes || '';
+    document.getElementById('ep-housingModels').innerHTML = (proj.housingModels || []).map(dashboardModelRow).join('');
+    bindBankNumberFormatting(modal);
+    validateEditModelStatuses();
+    let financePhases = proj.financePhases || [];
+    try {
+      const finance = await xfetch(`/api/projects/${id}/finance`);
+      if (Array.isArray(finance?.phases) && finance.phases.length) financePhases = finance.phases;
+    } catch (_) {}
+    syncEditFinancePhases(financePhases);
 
     modal.style.display = 'flex';
   } catch (err) {

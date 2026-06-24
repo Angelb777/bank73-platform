@@ -35,6 +35,28 @@ const FINANCIAL_CONDITION_TEXT_FIELDS = [
   'disbursementConditions', 'amortizationConditions', 'requiredPresales',
   'guarantees', 'insurance'
 ];
+const UNIT_STATUS_FIELDS = [
+  'disponible',
+  'inventario',
+  'reservado',
+  'con_cpp',
+  'tramite_legal_activado',
+  'escriturado_traspasado',
+  'vivienda_entregada'
+];
+const UNIT_STATUS_ALIASES = {
+  disponible: 'disponible',
+  inventariado: 'inventario',
+  inventario: 'inventario',
+  reservado: 'reservado',
+  con_cpp: 'con_cpp',
+  cpp: 'con_cpp',
+  vendido: 'escriturado_traspasado',
+  vendido_escriturado: 'escriturado_traspasado',
+  entregado: 'vivienda_entregada',
+  vivienda_entregada: 'vivienda_entregada',
+  tramite_legal_activado: 'tramite_legal_activado'
+};
 
 function sanitizeFinancialConditions(raw = {}) {
   const out = {};
@@ -45,13 +67,7 @@ function sanitizeFinancialConditions(raw = {}) {
   for (const key of FINANCIAL_CONDITION_TEXT_FIELDS) {
     if (raw?.[key] !== undefined) out[key] = String(raw[key] || '').trim();
   }
-  out.facilities = (Array.isArray(raw.facilities) ? raw.facilities : []).slice(0, 20).map(item => ({
-    facilityType: String(item?.facilityType || '').trim(),
-    loanPurpose: String(item?.loanPurpose || '').trim(),
-    bankFinancedPct: parsePanamaNumber(item?.bankFinancedPct) || 0,
-    cppSalesAmortizationPct: parsePanamaNumber(item?.cppSalesAmortizationPct) || 0,
-    promoterRequiredContribution: parsePanamaNumber(item?.promoterRequiredContribution) || 0
-  })).filter(item => item.facilityType || item.loanPurpose || item.bankFinancedPct || item.cppSalesAmortizationPct || item.promoterRequiredContribution);
+  out.facilities = [];
 
   const precedent = raw.precedentConditions || {};
   out.precedentConditions = {
@@ -73,7 +89,50 @@ function sanitizeFinancialConditions(raw = {}) {
     technicalInspector: String(operation.technicalInspector || '').trim(),
     financialInspector: String(operation.financialInspector || '').trim()
   };
+  reconcileFinancialConditionNumbers(out);
   return out;
+}
+
+function reconcileFinancialConditionNumbers(out = {}) {
+  const total = Number(out.projectTotal || 0);
+  if (total <= 0) return;
+
+  let bankAmount = Number(out.bankFinancedAmount || 0);
+  let bankPct = Number(out.bankFinancedPct || 0);
+  let promoterAmount = Number(out.promoterContribution || 0);
+  let promoterPct = Number(out.promoterContributionPct || 0);
+
+  if (bankPct > 100) bankPct = 100;
+  if (promoterPct > 100) promoterPct = 100;
+
+  if (bankPct > 0) bankAmount = roundMoney(total * bankPct / 100);
+  else if (bankAmount > 0) bankPct = roundPct(bankAmount / total * 100);
+
+  if (promoterPct > 0 && !bankAmount) promoterAmount = roundMoney(total * promoterPct / 100);
+  if (promoterAmount > 0 && !bankAmount && !bankPct) {
+    promoterAmount = Math.min(promoterAmount, total);
+    bankAmount = roundMoney(total - promoterAmount);
+    bankPct = roundPct(bankAmount / total * 100);
+  } else {
+    bankAmount = Math.min(bankAmount, total);
+    promoterAmount = roundMoney(total - bankAmount);
+  }
+
+  promoterPct = roundPct(promoterAmount / total * 100);
+  bankPct = roundPct(bankAmount / total * 100);
+
+  out.bankFinancedAmount = bankAmount;
+  out.bankFinancedPct = bankPct;
+  out.promoterContribution = promoterAmount;
+  out.promoterContributionPct = promoterPct;
+}
+
+function roundMoney(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+function roundPct(value) {
+  return Math.round((Number(value) || 0) * 10000) / 10000;
 }
 
 function sanitizeLegalData(raw = {}) {
@@ -108,20 +167,155 @@ function sanitizeTechnicalData(raw = {}) {
   };
 }
 
+function normalizeUnitStatusKey(key) {
+  const norm = String(key || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\s-]+/g, '_');
+  return UNIT_STATUS_ALIASES[norm] || (UNIT_STATUS_FIELDS.includes(norm) ? norm : 'disponible');
+}
+
+function sanitizeInitialStatuses(raw = {}, unitsCount = 0) {
+  const out = Object.fromEntries(UNIT_STATUS_FIELDS.map(key => [key, 0]));
+  Object.entries(raw || {}).forEach(([key, value]) => {
+    const status = normalizeUnitStatusKey(key);
+    out[status] += Math.max(0, Math.round(parsePanamaNumber(value) || 0));
+  });
+  const total = Object.values(out).reduce((sum, value) => sum + value, 0);
+  if (!total && unitsCount > 0) out.disponible = unitsCount;
+  return out;
+}
+
 function sanitizeHousingModels(raw = []) {
   return (Array.isArray(raw) ? raw : [])
     .slice(0, 100)
-    .map(item => ({
-      name: String(item?.name || item?.nombre || '').trim(),
-      bedrooms: Math.max(0, parsePanamaNumber(item?.bedrooms ?? item?.recamaras) || 0),
-      bathrooms: Math.max(0, parsePanamaNumber(item?.bathrooms ?? item?.banos) || 0),
-      openAreaM2: Math.max(0, parsePanamaNumber(item?.openAreaM2 ?? item?.areaAbiertaM2) || 0),
-      closedAreaM2: Math.max(0, parsePanamaNumber(item?.closedAreaM2 ?? item?.areaCerradaM2) || 0),
-      price: Math.max(0, parsePanamaNumber(item?.price ?? item?.precio) || 0),
-      unitsCount: Math.max(0, Math.round(parsePanamaNumber(item?.unitsCount ?? item?.cantidadUnidades) || 0)),
-      observations: String(item?.observations || item?.observaciones || '').trim()
-    }))
+    .map(item => {
+      const unitsCount = Math.max(0, Math.round(parsePanamaNumber(item?.unitsCount ?? item?.cantidadUnidades) || 0));
+      return {
+        name: String(item?.name || item?.nombre || '').trim(),
+        bedrooms: Math.max(0, parsePanamaNumber(item?.bedrooms ?? item?.recamaras) || 0),
+        bathrooms: Math.max(0, parsePanamaNumber(item?.bathrooms ?? item?.banos) || 0),
+        openAreaM2: Math.max(0, parsePanamaNumber(item?.openAreaM2 ?? item?.areaAbiertaM2) || 0),
+        closedAreaM2: Math.max(0, parsePanamaNumber(item?.closedAreaM2 ?? item?.areaCerradaM2) || 0),
+        price: Math.max(0, parsePanamaNumber(item?.price ?? item?.precio) || 0),
+        unitsCount,
+        initialStatuses: sanitizeInitialStatuses(item?.initialStatuses || item?.estadosIniciales || {}, unitsCount),
+        observations: String(item?.observations || item?.observaciones || '').trim()
+      };
+    })
     .filter(item => item.name || item.unitsCount || item.price || item.openAreaM2 || item.closedAreaM2);
+}
+
+function validateHousingModelStatuses(models = []) {
+  for (const model of models) {
+    const statusTotal = Object.values(model.initialStatuses || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+    const unitsCount = Number(model.unitsCount || 0);
+    if (unitsCount && statusTotal !== unitsCount) {
+      const err = new Error(`La suma de estados del modelo "${model.name || 'sin nombre'}" debe coincidir con ${unitsCount} unidades.`);
+      err.status = 400;
+      throw err;
+    }
+  }
+}
+
+function sanitizeProjectLocation(raw = {}) {
+  const loc = raw.location || raw.ubicacion || raw.projectLocation || {};
+  if (typeof loc === 'string') {
+    return { location: loc.trim(), address: '', city: '', province: '', coordinates: { lat: null, lng: null } };
+  }
+  const coordinates = loc.coordinates || raw.coordinates || {};
+  const lat = parsePanamaNumber(coordinates.lat ?? loc.lat);
+  const lng = parsePanamaNumber(coordinates.lng ?? loc.lng);
+  const address = String(loc.address || raw.address || raw.direccion || '').trim();
+  const city = String(loc.city || raw.city || raw.ciudad || '').trim();
+  const province = String(loc.province || raw.province || raw.provincia || '').trim();
+  const location = String(loc.text || loc.location || raw.location || raw.ubicacion || [address, city, province].filter(Boolean).join(', ')).trim();
+  return {
+    location,
+    address,
+    city,
+    province,
+    coordinates: {
+      lat: Number.isFinite(lat) ? lat : null,
+      lng: Number.isFinite(lng) ? lng : null
+    }
+  };
+}
+
+function sanitizeLineItems(items = []) {
+  return (Array.isArray(items) ? items : []).slice(0, 50).map(item => ({
+    name: String(item?.name || item?.label || item?.concepto || '').trim(),
+    amount: parsePanamaNumber(item?.amount ?? item?.monto) || 0
+  })).filter(item => item.name || item.amount);
+}
+
+function sanitizeFinancePhases(raw = [], phasesCount = 0) {
+  const count = Math.max(phasesCount, Array.isArray(raw) ? raw.length : 0);
+  const source = Array.isArray(raw) ? raw : [];
+  return Array.from({ length: count }, (_, idx) => {
+    const item = source[idx] || {};
+    return {
+      name: String(item.name || item.title || `Fase ${idx + 1}`).trim(),
+      startDate: item.startDate || null,
+      endDate: item.endDate || null,
+      planUses: sanitizeLineItems(item.planUses || item.uses || item.usos),
+      planSources: sanitizeLineItems(item.planSources || item.sources || item.fuentes)
+    };
+  });
+}
+
+function sumLineItems(items = []) {
+  return (items || []).reduce((sum, item) => sum + (Number(item?.amount) || 0), 0);
+}
+
+function applyAutomaticPhaseSources(phases = [], conditions = {}) {
+  const bankPct = Number(conditions.bankFinancedPct || 0);
+  const promoterPct = Number(conditions.promoterContributionPct || 0);
+  return (phases || []).map(phase => {
+    const usesTotal = sumLineItems(phase.planUses);
+    const bankAmount = roundMoney(usesTotal * bankPct / 100);
+    const promoterAmount = roundMoney(usesTotal * promoterPct / 100);
+    return {
+      ...phase,
+      planSources: [
+        { name: 'Banco', amount: bankAmount },
+        { name: 'Promotor', amount: promoterAmount }
+      ]
+    };
+  });
+}
+
+function assertFinancePhasesBalanced(phases = [], conditions = {}) {
+  if (!Array.isArray(phases) || !phases.length) return;
+  const total = Number(conditions.projectTotal || 0);
+  const bankAmount = Number(conditions.bankFinancedAmount || 0);
+  const promoterAmount = Number(conditions.promoterContribution || 0);
+  const close = (a, b) => Math.abs((Number(a) || 0) - (Number(b) || 0)) <= 0.05;
+  const fail = (message) => {
+    const err = new Error(message);
+    err.status = 400;
+    throw err;
+  };
+
+  const totalUses = phases.reduce((sum, phase) => sum + sumLineItems(phase.planUses), 0);
+  const totalBank = phases.reduce((sum, phase) => sum + Number((phase.planSources || []).find(item => item.name === 'Banco')?.amount || 0), 0);
+  const totalPromoter = phases.reduce((sum, phase) => sum + Number((phase.planSources || []).find(item => item.name === 'Promotor')?.amount || 0), 0);
+
+  for (const phase of phases) {
+    const uses = sumLineItems(phase.planUses);
+    const sources = sumLineItems(phase.planSources);
+    if (!close(uses, sources)) {
+      fail(`En ${phase.name || 'fase'}, el total de usos debe coincidir con el total de fuentes.`);
+    }
+  }
+  if (total > 0 && !close(totalUses, total)) {
+    fail(`La suma de usos por fase (${roundMoney(totalUses)}) debe coincidir con el total del proyecto (${roundMoney(total)}).`);
+  }
+  if (bankAmount > 0 && !close(totalBank, bankAmount)) {
+    fail(`La suma de fuentes Banco por fase (${roundMoney(totalBank)}) debe coincidir con el monto banco (${roundMoney(bankAmount)}).`);
+  }
+  if (promoterAmount > 0 && !close(totalPromoter, promoterAmount)) {
+    fail(`La suma de fuentes Promotor por fase (${roundMoney(totalPromoter)}) debe coincidir con el aporte promotor (${roundMoney(promoterAmount)}).`);
+  }
 }
 
 function syncFinancialConditionKpis(target, conditions = {}) {
@@ -133,14 +327,22 @@ async function createInitialUnitsFromModels({ req, project }) {
   const models = Array.isArray(project.housingModels) ? project.housingModels : [];
   const docs = [];
   let sequence = 1;
+  const projectLocation = String(project.location || project.address || '').trim();
 
   for (const model of models) {
     const count = Math.max(0, Math.round(Number(model.unitsCount || 0)));
     if (!count) continue;
     const modelId = model._id || new mongoose.Types.ObjectId();
     const areaTotal = Number(model.openAreaM2 || 0) + Number(model.closedAreaM2 || 0);
+    const statusQueue = [];
+    for (const status of UNIT_STATUS_FIELDS) {
+      const statusCount = Math.max(0, Math.round(Number(model.initialStatuses?.[status] || 0)));
+      for (let i = 0; i < statusCount; i++) statusQueue.push(status);
+    }
+    while (statusQueue.length < count) statusQueue.push('disponible');
     for (let i = 1; i <= count; i++) {
       const lote = String(sequence).padStart(3, '0');
+      const estado = statusQueue[i - 1] || 'disponible';
       docs.push({
         tenantKey: req.tenantKey,
         projectId: project._id,
@@ -148,16 +350,17 @@ async function createInitialUnitsFromModels({ req, project }) {
         lote,
         modelId,
         modelo: model.name || '',
+        ubicacion: projectLocation,
         m2: areaTotal,
         areaAbierta: model.openAreaM2 || 0,
         areaCerrada: model.closedAreaM2 || 0,
         recamaras: model.bedrooms || 0,
         banos: model.bathrooms || 0,
         precioLista: model.price || 0,
-        estado: 'disponible',
+        estado,
         deletedAt: null,
         code: `${String(model.name || 'Modelo').slice(0, 24)}-${lote}`,
-        status: 'DISPONIBLE',
+        status: estado.toUpperCase(),
         price: model.price || 0
       });
       sequence++;
@@ -172,6 +375,7 @@ async function createInitialUnitsFromModels({ req, project }) {
     unitId: unit._id,
     manzana: unit.manzana,
     lote: unit.lote,
+    ubicacion: unit.ubicacion || projectLocation,
     areaAbierta: unit.areaAbierta || 0,
     areaCerrada: unit.areaCerrada || 0,
     areaTotalConstruccion: Number(unit.areaAbierta || 0) + Number(unit.areaCerrada || 0),
@@ -182,6 +386,96 @@ async function createInitialUnitsFromModels({ req, project }) {
   }));
   if (ventas.length) await Venta.insertMany(ventas, { ordered: false });
   return created;
+}
+
+function defaultPhaseDates(index = 0) {
+  const start = new Date();
+  start.setMonth(start.getMonth() + index);
+  start.setDate(1);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setMonth(end.getMonth() + 1);
+  end.setDate(0);
+  end.setHours(23, 59, 59, 999);
+  return { startDate: start, endDate: end };
+}
+
+async function syncInitialFinanceStructure({ projectId, phases = [], financialConditions = {}, appendOnly = false }) {
+  const desired = applyAutomaticPhaseSources(Array.isArray(phases) ? phases : [], financialConditions || {});
+  if (!desired.length) return null;
+  let doc = await ProjectFinance.findOne({ project: projectId });
+  if (!doc) doc = await ProjectFinance.create({ project: projectId, phases: [] });
+
+  const existingNames = new Set((doc.phases || []).map(ph => String(ph.name || '').trim().toLowerCase()));
+  desired.forEach((phase, idx) => {
+    const name = String(phase.name || `Fase ${idx + 1}`).trim();
+    const existing = (doc.phases || []).find(ph => String(ph.name || '').trim().toLowerCase() === name.toLowerCase());
+    const dates = defaultPhaseDates(idx);
+    const payload = {
+      name,
+      startDate: phase.startDate || dates.startDate,
+      endDate: phase.endDate || dates.endDate,
+      planUses: phase.planUses || [],
+      planSources: phase.planSources || [],
+      uses: [],
+      sources: []
+    };
+    if (existing) {
+      if (!appendOnly) {
+        existing.startDate = payload.startDate;
+        existing.endDate = payload.endDate;
+        existing.planUses = payload.planUses;
+        existing.planSources = payload.planSources;
+      }
+    } else if (!existingNames.has(name.toLowerCase())) {
+      doc.phases.push(payload);
+      existingNames.add(name.toLowerCase());
+    }
+  });
+
+  await doc.save();
+  return doc;
+}
+
+async function createMissingUnitsForNewModels({ req, project }) {
+  const models = Array.isArray(project.housingModels) ? project.housingModels : [];
+  if (!models.length) return [];
+  const existing = await Unit.find({ tenantKey: req.tenantKey, projectId: project._id, deletedAt: null }).select('modelo modelId estado').lean();
+  const existingCounts = new Map();
+  existing.forEach(unit => {
+    const key = String(unit.modelId || unit.modelo || '').trim().toLowerCase();
+    if (!key) return;
+    const bucket = existingCounts.get(key) || { total: 0, statuses: Object.fromEntries(UNIT_STATUS_FIELDS.map(status => [status, 0])) };
+    const status = normalizeUnitStatusKey(unit.estado || 'disponible');
+    bucket.total += 1;
+    bucket.statuses[status] = (bucket.statuses[status] || 0) + 1;
+    existingCounts.set(key, bucket);
+  });
+  const missingModels = models.map(model => {
+    const keyById = String(model._id || '').trim().toLowerCase();
+    const keyByName = String(model.name || '').trim().toLowerCase();
+    const byId = existingCounts.get(keyById) || { total: 0, statuses: {} };
+    const byName = existingCounts.get(keyByName) || { total: 0, statuses: {} };
+    const existingBucket = byId.total >= byName.total ? byId : byName;
+    const existingCount = existingBucket.total || 0;
+    const missing = Math.max(0, Number(model.unitsCount || 0) - existingCount);
+    if (!missing) return null;
+    const desiredStatuses = sanitizeInitialStatuses(model.initialStatuses || {}, Number(model.unitsCount || 0));
+    const nextStatuses = Object.fromEntries(UNIT_STATUS_FIELDS.map(status => [status, 0]));
+    let remaining = missing;
+    for (const status of UNIT_STATUS_FIELDS) {
+      if (!remaining) break;
+      const desired = Math.max(0, Number(desiredStatuses[status] || 0));
+      const alreadyCreated = Math.max(0, Number(existingBucket.statuses?.[status] || 0));
+      const toCreate = Math.min(remaining, Math.max(0, desired - alreadyCreated));
+      nextStatuses[status] = toCreate;
+      remaining -= toCreate;
+    }
+    if (remaining > 0) nextStatuses.disponible += remaining;
+    return { ...model, unitsCount: missing, initialStatuses: nextStatuses };
+  }).filter(Boolean);
+  if (!missingModels.length) return [];
+  return createInitialUnitsFromModels({ req, project: { ...project, housingModels: missingModels } });
 }
 
 function anyAssignedFilter(userId) {
@@ -718,14 +1012,19 @@ router.post('/', requireRole('admin','bank'), async (req, res) => {
     body.teamSuggestion = sanitizeTeamSuggestion(body.teamSuggestion || {});
     body.projectType = sanitizeProjectType(firstDefined(body.projectType, body.tipoProyecto));
     body.currency = sanitizeProjectCurrency(body.currency);
+    Object.assign(body, sanitizeProjectLocation(body));
     body.legalData = sanitizeLegalData(body.legalData || {});
     body.technicalData = sanitizeTechnicalData(body.technicalData || {});
     body.housingModels = sanitizeHousingModels(body.housingModels || []);
+    validateHousingModelStatuses(body.housingModels);
     if (!body.technicalData.totalUnits && body.housingModels.length) {
       body.technicalData.totalUnits = body.housingModels.reduce((sum, item) => sum + Number(item.unitsCount || 0), 0);
     }
     if (body.technicalData.totalUnits) body.unitsTotal = body.technicalData.totalUnits;
     body.financialConditions = sanitizeFinancialConditions(body.financialConditions || {});
+    body.financePhases = sanitizeFinancePhases(body.financePhases || body.phases || [], body.technicalData.phasesCount || 0);
+    body.financePhases = applyAutomaticPhaseSources(body.financePhases, body.financialConditions);
+    assertFinancePhasesBalanced(body.financePhases, body.financialConditions);
     syncFinancialConditionKpis(body, body.financialConditions);
     delete body.tipoProyecto;
 
@@ -759,6 +1058,11 @@ router.post('/', requireRole('admin','bank'), async (req, res) => {
     }
 
     const p = await Project.create(body);
+    await syncInitialFinanceStructure({
+      projectId: p._id,
+      phases: body.financePhases,
+      financialConditions: body.financialConditions
+    });
     const createdUnits = await createInitialUnitsFromModels({ req, project: p });
     if (createdUnits.length) {
       const unitsSold = 0;
@@ -775,11 +1079,11 @@ router.post('/', requireRole('admin','bank'), async (req, res) => {
       projectId: p._id,
       status: 'info',
       message: 'Proyecto creado',
-      metadata: { name: p.name, publishStatus: p.publishStatus, createdUnits: createdUnits.length }
+      metadata: { name: p.name, publishStatus: p.publishStatus, createdUnits: createdUnits.length, phases: body.financePhases.length }
     });
     res.status(201).json(p);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(e.status || 500).json({ error: e.message });
   }
 });
 
@@ -874,6 +1178,17 @@ router.put('/:id', requireRole('admin','bank'), async (req, res) => {
       payload.financialConditions = sanitizeFinancialConditions(req.body.financialConditions);
       syncFinancialConditionKpis(payload, payload.financialConditions);
     }
+    if (
+      req.body.location !== undefined ||
+      req.body.ubicacion !== undefined ||
+      req.body.projectLocation !== undefined ||
+      req.body.address !== undefined ||
+      req.body.city !== undefined ||
+      req.body.province !== undefined ||
+      req.body.coordinates !== undefined
+    ) {
+      Object.assign(payload, sanitizeProjectLocation(req.body));
+    }
     if (req.body.legalData && typeof req.body.legalData === 'object') {
       payload.legalData = sanitizeLegalData(req.body.legalData);
     }
@@ -883,10 +1198,21 @@ router.put('/:id', requireRole('admin','bank'), async (req, res) => {
     }
     if (Array.isArray(req.body.housingModels)) {
       payload.housingModels = sanitizeHousingModels(req.body.housingModels);
+      validateHousingModelStatuses(payload.housingModels);
       if (payload.technicalData && !payload.technicalData.totalUnits) {
         payload.technicalData.totalUnits = payload.housingModels.reduce((sum, item) => sum + Number(item.unitsCount || 0), 0);
         if (payload.technicalData.totalUnits) payload.unitsTotal = payload.technicalData.totalUnits;
       }
+    }
+    if (Array.isArray(req.body.financePhases) || Array.isArray(req.body.phases) || payload.technicalData?.phasesCount) {
+      const phaseCount = payload.technicalData?.phasesCount || 0;
+      payload.financePhases = sanitizeFinancePhases(req.body.financePhases || req.body.phases || [], phaseCount);
+      const existingForFinance = payload.financialConditions
+        ? null
+        : await Project.findOne({ _id: id, tenantKey }).select('financialConditions').lean();
+      const effectiveConditions = payload.financialConditions || existingForFinance?.financialConditions || {};
+      payload.financePhases = applyAutomaticPhaseSources(payload.financePhases, effectiveConditions);
+      assertFinancePhasesBalanced(payload.financePhases, effectiveConditions);
     }
 
     if (myRole === 'admin') {
@@ -973,6 +1299,27 @@ router.put('/:id', requireRole('admin','bank'), async (req, res) => {
     ).lean();
 
     if (!updated) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    if (payload.financePhases || payload.financialConditions) {
+      await syncInitialFinanceStructure({
+        projectId: updated._id,
+        phases: payload.financePhases || updated.financePhases || [],
+        financialConditions: payload.financialConditions || updated.financialConditions || {},
+        appendOnly: false
+      });
+    }
+    if (payload.housingModels) {
+      await createMissingUnitsForNewModels({ req, project: updated });
+    }
+    if (payload.location !== undefined || payload.address !== undefined) {
+      await Unit.updateMany(
+        { tenantKey, projectId: updated._id, deletedAt: null, $or: [{ ubicacion: '' }, { ubicacion: { $exists: false } }] },
+        { $set: { ubicacion: updated.location || updated.address || '' } }
+      );
+      await Venta.updateMany(
+        { tenantKey, projectId: updated._id, deletedAt: null, $or: [{ ubicacion: '' }, { ubicacion: { $exists: false } }] },
+        { $set: { ubicacion: updated.location || updated.address || '' } }
+      );
+    }
     await audit(req, 'project.updated', {
       targetType: 'project',
       targetId: updated._id,

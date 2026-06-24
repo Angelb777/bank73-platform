@@ -284,6 +284,7 @@
   const createBoardMembers = document.getElementById('createBoardMembers');
   const createShareholders = document.getElementById('createShareholders');
   const createHousingModels = document.getElementById('createHousingModels');
+  const createFinancePhases = document.getElementById('createFinancePhases');
   const CREATE_STEP_ORDER = ['general', 'legal', 'technical', 'models', 'financial', 'team'];
   let activeCreateStep = 'general';
 
@@ -306,17 +307,6 @@
     setCreateStep(CREATE_STEP_ORDER[Math.min(CREATE_STEP_ORDER.length - 1, idx + 1)]);
   });
 
-  function createFacilityRow(item = {}) {
-    return `<div class="create-facility-row" data-create-facility-row>
-      <label>Tipo de facilidad<input data-create-facility="facilityType" list="createFacilityTypes" value="${escapeHtml(item.facilityType || '')}"></label>
-      <label>Destino del préstamo<input data-create-facility="loanPurpose" value="${escapeHtml(item.loanPurpose || '')}"></label>
-      <label>% financiado por banco<input data-create-facility="bankFinancedPct" type="number" step="any" value="${item.bankFinancedPct ?? ''}"></label>
-      <label>% CPP/ventas a amortización<input data-create-facility="cppSalesAmortizationPct" type="number" step="any" value="${item.cppSalesAmortizationPct ?? ''}"></label>
-      <label>Aporte requerido promotor<input data-create-facility="promoterRequiredContribution" type="number" step="any" value="${item.promoterRequiredContribution ?? ''}"></label>
-      <button class="btn ghost" type="button" data-remove-create-facility>Quitar</button>
-    </div>`;
-  }
-
   function createBoardMemberRow(item = {}) {
     return `<div class="create-repeat-row" data-create-board-row>
       <label>Nombre<input data-create-board="name" value="${escapeHtml(item.name || '')}"></label>
@@ -335,22 +325,103 @@
     </div>`;
   }
 
+  function isValidBankNumberText(value) {
+    const text = String(value || '').trim();
+    if (!text) return true;
+    if (!/^\d{1,3}(,\d{3})*(\.\d+)?$/.test(text) && !/^\d+(\.\d+)?$/.test(text)) return false;
+    const integer = text.split('.')[0];
+    return integer.length < 4 || /^\d{1,3}(,\d{3})+$/.test(integer);
+  }
+
+  function parseBankNumber(value) {
+    const text = String(value || '').trim();
+    if (!text) return 0;
+    if (!isValidBankNumberText(text)) return NaN;
+    const n = Number(text.replace(/,/g, ''));
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  function parseBankNumberLive(value) {
+    const text = String(value || '').trim();
+    if (!text) return 0;
+    if (!/^[\d,]*\.?\d*$/.test(text)) return NaN;
+    const n = Number(text.replace(/,/g, ''));
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  function formatBankNumber(value, decimals = 2) {
+    const n = typeof value === 'number' ? value : parseBankNumber(value);
+    if (!Number.isFinite(n)) return '';
+    const hasDecimals = Math.abs(n % 1) > 0;
+    return n.toLocaleString('en-US', {
+      minimumFractionDigits: hasDecimals ? decimals : 0,
+      maximumFractionDigits: decimals
+    });
+  }
+
+  function formatPercentNumber(value) {
+    return formatBankNumber(value, 4).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  }
+
+  function formatBankInput(input, decimals = 2) {
+    if (!input || !String(input.value || '').trim()) return;
+    const n = parseBankNumber(input.value);
+    if (Number.isFinite(n)) input.value = formatBankNumber(n, decimals);
+  }
+
+  function validateBankNumberInputs(root = document) {
+    const bad = Array.from(root.querySelectorAll('[data-bank-number]')).find(input => !isValidBankNumberText(input.value));
+    if (bad) {
+      bad.focus();
+      alert('Formato numerico invalido. Usa comas para miles y punto para decimales, por ejemplo 1,250,000.75.');
+      return false;
+    }
+    return true;
+  }
+
+  function bindBankNumberFormatting(root = document) {
+    root.querySelectorAll('[data-bank-number]').forEach(input => {
+      if (input.__bankFormatBound) return;
+      input.__bankFormatBound = true;
+      input.addEventListener('blur', () => formatBankInput(input));
+    });
+  }
+
   function createHousingModelRow(item = {}) {
+    const statuses = item.initialStatuses || {};
     return `<div class="create-repeat-row create-model-row" data-create-model-row>
       <label>Modelo<input data-create-model="name" value="${escapeHtml(item.name || '')}"></label>
       <label>Recamaras<input data-create-model="bedrooms" type="number" min="0" step="1" value="${item.bedrooms ?? ''}"></label>
       <label>Banos<input data-create-model="bathrooms" type="number" min="0" step="any" value="${item.bathrooms ?? ''}"></label>
       <label>Cantidad unidades<input data-create-model="unitsCount" type="number" min="0" step="1" value="${item.unitsCount ?? ''}"></label>
-      <label>Area abierta m2<input data-create-model="openAreaM2" type="number" min="0" step="any" value="${item.openAreaM2 ?? ''}"></label>
-      <label>Area cerrada m2<input data-create-model="closedAreaM2" type="number" min="0" step="any" value="${item.closedAreaM2 ?? ''}"></label>
-      <label>Precio<input data-create-model="price" type="number" min="0" step="any" value="${item.price ?? ''}"></label>
+      <label>Area abierta m2<input data-create-model="openAreaM2" data-bank-number type="text" inputmode="decimal" value="${item.openAreaM2 ? formatBankNumber(item.openAreaM2) : ''}"></label>
+      <label>Area cerrada m2<input data-create-model="closedAreaM2" data-bank-number type="text" inputmode="decimal" value="${item.closedAreaM2 ? formatBankNumber(item.closedAreaM2) : ''}"></label>
+      <label>Precio<input data-create-model="price" data-bank-number type="text" inputmode="decimal" value="${item.price ? formatBankNumber(item.price) : ''}"></label>
       <label>Observaciones<input data-create-model="observations" value="${escapeHtml(item.observations || '')}"></label>
+      <div class="create-model-statuses" style="grid-column:1/-1;border:1px solid #dbeafe;background:#f8fbff;border-radius:14px;padding:12px;margin-top:4px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+          <strong style="color:#0f172a;">Estados iniciales de unidades</strong>
+          <span class="small muted" data-create-model-status-summary>Define cantidad de unidades por estado</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;">
+          ${[
+            ['disponible','Disponible'],
+            ['inventario','Inventario'],
+            ['reservado','Reservado'],
+            ['con_cpp','Con CPP o venta al contado'],
+            ['tramite_legal_activado','Trámite legal activado'],
+            ['escriturado_traspasado','Escriturado / Traspasado'],
+            ['vivienda_entregada','Vivienda entregada']
+          ].map(([key,label]) => `<label>${label}<input data-create-model-status="${key}" type="number" min="0" step="1" value="${statuses[key] ?? ''}"></label>`).join('')}
+        </div>
+        <div class="small muted" data-create-model-status-warning style="margin-top:8px;"></div>
+      </div>
       <button class="btn ghost" type="button" data-remove-create-row>Quitar</button>
     </div>`;
   }
 
   function numberFromCreate(value) {
-    const n = Number(value || 0);
+    const n = parseBankNumberLive(value);
     return Number.isFinite(n) ? n : 0;
   }
 
@@ -391,8 +462,74 @@
       openAreaM2: numberFromCreate(row.querySelector('[data-create-model="openAreaM2"]')?.value),
       closedAreaM2: numberFromCreate(row.querySelector('[data-create-model="closedAreaM2"]')?.value),
       price: numberFromCreate(row.querySelector('[data-create-model="price"]')?.value),
+      initialStatuses: Object.fromEntries(Array.from(row.querySelectorAll('[data-create-model-status]')).map(input => [
+        input.dataset.createModelStatus,
+        numberFromCreate(input.value)
+      ])),
       observations: row.querySelector('[data-create-model="observations"]')?.value.trim() || ''
     })).filter(item => item.name || item.unitsCount || item.price || item.openAreaM2 || item.closedAreaM2);
+  }
+
+  function syncCreateModelStatusRow(row, { autoFill = false } = {}) {
+    if (!row) return true;
+    const total = numberFromCreate(row.querySelector('[data-create-model="unitsCount"]')?.value);
+    const inputs = Array.from(row.querySelectorAll('[data-create-model-status]'));
+    let values = inputs.map(input => Math.max(0, Math.round(numberFromCreate(input.value))));
+    let statusTotal = values.reduce((sum, value) => sum + value, 0);
+
+    if (autoFill && total > 0 && statusTotal < total) {
+      const emptyInputs = inputs.filter(input => String(input.value || '').trim() === '');
+      if (emptyInputs.length === inputs.length) {
+        emptyInputs[0].value = total;
+      } else if (emptyInputs.length === 1) {
+        emptyInputs[0].value = total - statusTotal;
+      }
+      values = inputs.map(input => Math.max(0, Math.round(numberFromCreate(input.value))));
+      statusTotal = values.reduce((sum, value) => sum + value, 0);
+    }
+
+    const remaining = total - statusTotal;
+    const summary = row.querySelector('[data-create-model-status-summary]');
+    const warning = row.querySelector('[data-create-model-status-warning]');
+    if (summary) {
+      summary.textContent = total
+        ? `Total ${total} · Asignadas ${statusTotal} · Restantes ${Math.max(remaining, 0)}`
+        : 'Define primero la cantidad total de unidades';
+      summary.style.color = remaining < 0 ? '#b91c1c' : (remaining === 0 && total ? '#166534' : '#475569');
+    }
+    if (warning) {
+      if (!total) {
+        warning.textContent = 'Cuando indiques el total, este bloque calcula automaticamente las unidades restantes.';
+        warning.style.color = '';
+      } else if (remaining > 0) {
+        warning.textContent = `Faltan ${remaining} unidades por asignar a algun estado. Si dejas una sola casilla vacia, se completa automaticamente.`;
+        warning.style.color = '#92400e';
+      } else if (remaining < 0) {
+        warning.textContent = `Te pasaste por ${Math.abs(remaining)} unidades. Ajusta el reparto antes de guardar.`;
+        warning.style.color = '#b91c1c';
+      } else {
+        warning.textContent = 'Reparto completo: la suma de estados coincide con el total.';
+        warning.style.color = '#166534';
+      }
+    }
+    return !total || statusTotal === total || statusTotal === 0;
+  }
+
+  function validateCreateModelStatuses({ alertOnError = false } = {}) {
+    for (const row of Array.from(document.querySelectorAll('[data-create-model-row]'))) {
+      syncCreateModelStatusRow(row);
+      const total = numberFromCreate(row.querySelector('[data-create-model="unitsCount"]')?.value);
+      const statusTotal = Array.from(row.querySelectorAll('[data-create-model-status]'))
+        .reduce((sum, input) => sum + numberFromCreate(input.value), 0);
+      const warning = row.querySelector('[data-create-model-status-warning]');
+      const hasSplit = statusTotal > 0;
+      const ok = !total || !hasSplit || total === statusTotal;
+      if (!ok) {
+        if (alertOnError) alert('La suma de estados por modelo debe coincidir con la cantidad total de unidades.');
+        return false;
+      }
+    }
+    return true;
   }
 
   function syncTechnicalUnitsFromModels() {
@@ -402,21 +539,257 @@
     if (total) totalEl.value = total;
   }
 
+  function syncFinancialTriplet(sourceId = '') {
+    const totalEl = document.getElementById('fc-projectTotal');
+    const amountEl = document.getElementById('fc-bankFinancedAmount');
+    const pctEl = document.getElementById('fc-bankFinancedPct');
+    const promoterEl = document.getElementById('fc-promoterContribution');
+    const promoterPctEl = document.getElementById('fc-promoterContributionPct');
+    const total = numberFromCreate(totalEl?.value);
+    let amount = numberFromCreate(amountEl?.value);
+    let pct = numberFromCreate(pctEl?.value);
+    let promoter = numberFromCreate(promoterEl?.value);
+    let promoterPct = numberFromCreate(promoterPctEl?.value);
+    if (!total) return;
+    pct = Math.min(Math.max(pct, 0), 100);
+    promoterPct = Math.min(Math.max(promoterPct, 0), 100);
+
+    if (sourceId === 'fc-bankFinancedPct') amount = total * pct / 100;
+    else if (sourceId === 'fc-promoterContributionPct') {
+      promoter = total * promoterPct / 100;
+      amount = total - promoter;
+    } else if (sourceId === 'fc-promoterContribution') {
+      promoter = Math.min(Math.max(promoter, 0), total);
+      amount = total - promoter;
+    } else if (sourceId === 'fc-bankFinancedAmount') {
+      amount = Math.min(Math.max(amount, 0), total);
+      promoter = total - amount;
+    } else if (sourceId === 'fc-projectTotal') {
+      if (pct) amount = total * pct / 100;
+      else if (amount) amount = Math.min(amount, total);
+      else if (promoter) amount = total - Math.min(promoter, total);
+    }
+
+    amount = Math.min(Math.max(amount, 0), total);
+    promoter = Math.max(total - amount, 0);
+    pct = total ? amount / total * 100 : 0;
+    promoterPct = total ? promoter / total * 100 : 0;
+
+    if (amountEl) amountEl.value = formatBankNumber(amount);
+    if (pctEl) pctEl.value = formatPercentNumber(pct);
+    if (promoterEl) promoterEl.value = formatBankNumber(promoter);
+    if (promoterPctEl) promoterPctEl.value = formatPercentNumber(promoterPct);
+    syncCreatePhaseSources();
+  }
+
+  ['fc-projectTotal','fc-bankFinancedAmount','fc-promoterContribution'].forEach(fieldId => {
+    document.getElementById(fieldId)?.setAttribute('data-bank-number', '');
+  });
+  bindBankNumberFormatting();
+
+  ['fc-projectTotal','fc-bankFinancedAmount','fc-bankFinancedPct','fc-promoterContribution','fc-promoterContributionPct'].forEach(fieldId => {
+    document.getElementById(fieldId)?.addEventListener('input', () => syncFinancialTriplet(fieldId));
+  });
+
+  function createPhaseFinanceBlock(index, item = {}) {
+    const itemRows = (items = [], kind) => {
+      const rows = items.length ? items : [{ name: '', amount: '' }];
+      return rows.map(row => `
+        <div style="display:grid;grid-template-columns:1fr 140px;gap:8px;margin-bottom:6px;" data-create-phase-line="${kind}">
+          <input data-create-phase-line-name placeholder="Concepto" value="${escapeHtml(row.name || '')}">
+          <input data-create-phase-line-amount data-bank-number type="text" inputmode="decimal" placeholder="Monto" value="${row.amount ? formatBankNumber(row.amount) : ''}">
+        </div>
+      `).join('');
+    };
+    return `<details open class="create-phase-block" data-create-phase-row="${index}" style="border:1px solid #dbe2ea;border-radius:12px;padding:10px;margin-bottom:10px;background:#fff;">
+      <summary><strong>${escapeHtml(item.name || `Fase ${index + 1}`)}</strong></summary>
+      <div class="create-grid" style="margin-top:10px;">
+        <label>Nombre<input data-create-phase="name" value="${escapeHtml(item.name || `Fase ${index + 1}`)}"></label>
+        <label style="grid-column:1/-1">Usos estimados
+          <div data-create-phase-lines-box="planUses">${itemRows(item.planUses || [], 'planUses')}</div>
+          <button class="btn ghost" type="button" data-add-create-phase-line="planUses">+ Uso</button>
+        </label>
+        <div style="grid-column:1/-1;border:1px solid #dbeafe;background:#f8fbff;border-radius:12px;padding:10px;" data-create-phase-sources-summary>
+          <strong>Fuentes estimadas automaticas</strong>
+          <div class="small muted" style="margin-top:6px;">Total usos: <b data-phase-total-uses>0</b> · Banco: <b data-phase-bank-source>0</b> · Promotor: <b data-phase-promoter-source>0</b> · Total fuentes: <b data-phase-total-sources>0</b></div>
+        </div>
+      </div>
+    </details>`;
+  }
+
+  function currentCreateFinancialNumbers() {
+    return {
+      total: numberFromCreate(document.getElementById('fc-projectTotal')?.value),
+      bankAmount: numberFromCreate(document.getElementById('fc-bankFinancedAmount')?.value),
+      bankPct: numberFromCreate(document.getElementById('fc-bankFinancedPct')?.value),
+      promoterAmount: numberFromCreate(document.getElementById('fc-promoterContribution')?.value),
+      promoterPct: numberFromCreate(document.getElementById('fc-promoterContributionPct')?.value)
+    };
+  }
+
+  function phaseUsesTotal(row) {
+    return collectPhaseLineItems(row, 'planUses').reduce((sum, item) => sum + numberFromCreate(item.amount), 0);
+  }
+
+  function autoPhaseSourcesForUses(usesTotal, financial = currentCreateFinancialNumbers()) {
+    const bank = usesTotal * numberFromCreate(financial.bankPct) / 100;
+    const promoter = usesTotal * numberFromCreate(financial.promoterPct) / 100;
+    return [
+      { name: 'Banco', amount: Math.round(bank * 100) / 100 },
+      { name: 'Promotor', amount: Math.round(promoter * 100) / 100 }
+    ];
+  }
+
+  function syncCreatePhaseSources() {
+    const financial = currentCreateFinancialNumbers();
+    let totalUsesAll = 0;
+    let totalBankAll = 0;
+    let totalPromoterAll = 0;
+    document.querySelectorAll('[data-create-phase-row]').forEach(row => {
+      const usesTotal = phaseUsesTotal(row);
+      const sources = autoPhaseSourcesForUses(usesTotal, financial);
+      const bank = sources.find(item => item.name === 'Banco')?.amount || 0;
+      const promoter = sources.find(item => item.name === 'Promotor')?.amount || 0;
+      const total = bank + promoter;
+      totalUsesAll += usesTotal;
+      totalBankAll += bank;
+      totalPromoterAll += promoter;
+      const setText = (selector, value) => {
+        const el = row.querySelector(selector);
+        if (el) el.textContent = formatBankNumber(value);
+      };
+      setText('[data-phase-total-uses]', usesTotal);
+      setText('[data-phase-bank-source]', bank);
+      setText('[data-phase-promoter-source]', promoter);
+      setText('[data-phase-total-sources]', total);
+    });
+    renderCreatePhasesGlobalSummary({
+      totalUses: totalUsesAll,
+      totalBank: totalBankAll,
+      totalPromoter: totalPromoterAll,
+      financial
+    });
+  }
+
+  function ensureCreatePhasesGlobalSummary() {
+    if (!createFinancePhases) return null;
+    let el = document.getElementById('createFinancePhasesSummary');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'createFinancePhasesSummary';
+      el.style.cssText = 'border:1px solid #bfdbfe;background:#eff6ff;border-radius:12px;padding:12px;margin:0 0 10px;color:#0f172a;';
+      createFinancePhases.parentNode?.insertBefore(el, createFinancePhases);
+    }
+    return el;
+  }
+
+  function renderCreatePhasesGlobalSummary({ totalUses, totalBank, totalPromoter, financial }) {
+    const el = ensureCreatePhasesGlobalSummary();
+    if (!el) return;
+    const diff = numberFromCreate(financial.total) - numberFromCreate(totalUses);
+    const ok = Math.abs(diff) <= 0.05 && financial.total > 0;
+    el.innerHTML = `
+      <strong>Resumen de fases</strong>
+      <div class="small" style="margin-top:6px;">
+        Usos fases: <b>${formatBankNumber(totalUses)}</b> · Banco: <b>${formatBankNumber(totalBank)}</b> · Promotor: <b>${formatBankNumber(totalPromoter)}</b> · Total fuentes: <b>${formatBankNumber(totalBank + totalPromoter)}</b>
+      </div>
+      <div class="small" style="margin-top:4px;color:${ok ? '#166534' : '#92400e'};">
+        ${financial.total ? (ok ? 'Las fases coinciden con el total del proyecto.' : `Diferencia contra total del proyecto: ${formatBankNumber(diff)}`) : 'Indica el total del proyecto para comparar la suma de fases.'}
+      </div>
+    `;
+  }
+
+  function syncCreateFinancePhases() {
+    if (!createFinancePhases) return;
+    const count = Math.max(0, Math.round(numberFromCreate(document.getElementById('td-phasesCount')?.value)));
+    const current = collectFinancePhases();
+    createFinancePhases.innerHTML = Array.from({ length: count }, (_, idx) => createPhaseFinanceBlock(idx, current[idx] || {})).join('');
+    bindBankNumberFormatting(createFinancePhases);
+    syncCreatePhaseSources();
+  }
+
+  function collectPhaseLineItems(row, kind) {
+    return Array.from(row.querySelectorAll(`[data-create-phase-line="${kind}"]`)).map(line => ({
+      name: line.querySelector('[data-create-phase-line-name]')?.value.trim() || '',
+      amount: numberFromCreate(line.querySelector('[data-create-phase-line-amount]')?.value)
+    })).filter(item => item.name || item.amount);
+  }
+
+  function collectFinancePhases() {
+    const financial = currentCreateFinancialNumbers();
+    return Array.from(document.querySelectorAll('[data-create-phase-row]')).map((row, idx) => ({
+      name: row.querySelector('[data-create-phase="name"]')?.value.trim() || `Fase ${idx + 1}`,
+      planUses: collectPhaseLineItems(row, 'planUses'),
+      planSources: autoPhaseSourcesForUses(phaseUsesTotal(row), financial)
+    }));
+  }
+
+  function validateCreateFinancePhases({ alertOnError = false } = {}) {
+    const financial = currentCreateFinancialNumbers();
+    const phases = collectFinancePhases();
+    const usesTotal = phases.reduce((sum, phase) => sum + phase.planUses.reduce((a, item) => a + numberFromCreate(item.amount), 0), 0);
+    const bankTotal = phases.reduce((sum, phase) => sum + numberFromCreate(phase.planSources.find(item => item.name === 'Banco')?.amount), 0);
+    const promoterTotal = phases.reduce((sum, phase) => sum + numberFromCreate(phase.planSources.find(item => item.name === 'Promotor')?.amount), 0);
+    const close = (a, b) => Math.abs(numberFromCreate(a) - numberFromCreate(b)) <= 0.05;
+    const fail = (message) => {
+      if (alertOnError) alert(message);
+      return false;
+    };
+    if (financial.total > 0 && phases.length && !close(usesTotal, financial.total)) {
+      return fail(`La suma de usos por fase (${formatBankNumber(usesTotal)}) debe coincidir con el total del proyecto (${formatBankNumber(financial.total)}).`);
+    }
+    if (financial.bankAmount > 0 && phases.length && !close(bankTotal, financial.bankAmount)) {
+      return fail(`La suma de fuentes Banco por fase (${formatBankNumber(bankTotal)}) debe coincidir con el monto banco (${formatBankNumber(financial.bankAmount)}).`);
+    }
+    if (financial.promoterAmount > 0 && phases.length && !close(promoterTotal, financial.promoterAmount)) {
+      return fail(`La suma de fuentes Promotor por fase (${formatBankNumber(promoterTotal)}) debe coincidir con el aporte promotor (${formatBankNumber(financial.promoterAmount)}).`);
+    }
+    for (const phase of phases) {
+      const uses = phase.planUses.reduce((a, item) => a + numberFromCreate(item.amount), 0);
+      const sources = phase.planSources.reduce((a, item) => a + numberFromCreate(item.amount), 0);
+      if (!close(uses, sources)) return fail(`En ${phase.name}, total usos (${formatBankNumber(uses)}) debe coincidir con total fuentes (${formatBankNumber(sources)}).`);
+    }
+    return true;
+  }
+
   document.getElementById('addCreateBoardMember')?.addEventListener('click', () => createBoardMembers?.insertAdjacentHTML('beforeend', createBoardMemberRow()));
   document.getElementById('addCreateShareholder')?.addEventListener('click', () => createShareholders?.insertAdjacentHTML('beforeend', createShareholderRow()));
-  document.getElementById('addCreateHousingModel')?.addEventListener('click', () => createHousingModels?.insertAdjacentHTML('beforeend', createHousingModelRow()));
+  document.getElementById('addCreateHousingModel')?.addEventListener('click', () => {
+    createHousingModels?.insertAdjacentHTML('beforeend', createHousingModelRow());
+    bindBankNumberFormatting(createHousingModels || document);
+  });
   [createBoardMembers, createShareholders, createHousingModels].forEach(container => {
     container?.addEventListener('click', event => {
       event.target.closest('[data-remove-create-row]')?.closest('.create-repeat-row')?.remove();
       syncTechnicalUnitsFromModels();
+      validateCreateModelStatuses();
     });
   });
-  createHousingModels?.addEventListener('input', syncTechnicalUnitsFromModels);
-
-  document.getElementById('addCreateFacility')?.addEventListener('click', () => createFacilities?.insertAdjacentHTML('beforeend', createFacilityRow()));
-  createFacilities?.addEventListener('click', event => {
-    event.target.closest('[data-remove-create-facility]')?.closest('[data-create-facility-row]')?.remove();
+  createHousingModels?.addEventListener('input', () => {
+    syncTechnicalUnitsFromModels();
+    createHousingModels.querySelectorAll('[data-create-model-row]').forEach(row => syncCreateModelStatusRow(row, { autoFill: true }));
   });
+  document.getElementById('td-phasesCount')?.addEventListener('input', syncCreateFinancePhases);
+  createFinancePhases?.addEventListener('click', event => {
+    const addBtn = event.target.closest('[data-add-create-phase-line]');
+    if (!addBtn) return;
+    const kind = addBtn.dataset.addCreatePhaseLine;
+    const box = addBtn.closest('[data-create-phase-row]')?.querySelector(`[data-create-phase-lines-box="${kind}"]`);
+    box?.insertAdjacentHTML('beforeend', `
+      <div style="display:grid;grid-template-columns:1fr 140px;gap:8px;margin-bottom:6px;" data-create-phase-line="${kind}">
+        <input data-create-phase-line-name placeholder="Concepto">
+        <input data-create-phase-line-amount data-bank-number type="text" inputmode="decimal" placeholder="Monto">
+      </div>
+    `);
+    bindBankNumberFormatting(createFinancePhases);
+    syncCreatePhaseSources();
+  });
+  createFinancePhases?.addEventListener('input', syncCreatePhaseSources);
+  createFinancePhases?.addEventListener('change', syncCreatePhaseSources);
+  createFinancePhases?.addEventListener('keyup', syncCreatePhaseSources);
+  document.addEventListener('input', event => {
+    if (event.target?.matches?.('[data-create-phase-line-amount], [data-create-phase-line-name]')) syncCreatePhaseSources();
+  }, true);
 
   // Nuevo contenedor de roles (tu HTML final lo trae)
   const assigneesContainer = document.getElementById('assigneesContainer');
@@ -542,10 +915,10 @@
     if (btnExpandCreate) { btnExpandCreate.textContent = '⛶'; btnExpandCreate.title = 'Pantalla completa'; }
     modal.classList.add('show');
     setCreateStep('general');
-    if (createFacilities && !createFacilities.children.length) createFacilities.insertAdjacentHTML('beforeend', createFacilityRow());
     if (createBoardMembers && !createBoardMembers.children.length) createBoardMembers.insertAdjacentHTML('beforeend', createBoardMemberRow());
     if (createShareholders && !createShareholders.children.length) createShareholders.insertAdjacentHTML('beforeend', createShareholderRow());
     if (createHousingModels && !createHousingModels.children.length) createHousingModels.insertAdjacentHTML('beforeend', createHousingModelRow());
+    bindBankNumberFormatting(modal);
 
     // Modo nuevo (todos los roles)
     // Por privacidad, la creacion no carga ni muestra directorios de usuarios.
@@ -617,6 +990,7 @@
         try {
           const name = document.getElementById('pName')?.value?.trim() || '';
           const description = document.getElementById('pDesc')?.value?.trim() || '';
+          const location = document.getElementById('pLocation')?.value?.trim() || '';
           const status = document.getElementById('pStatus')?.value || 'EN_CURSO';
           const projectType = document.getElementById('pProjectType')?.value || '';
 
@@ -626,23 +1000,19 @@
           const loanApproved = kLoan ? Number(kLoan.value || 0) : 0;
           const budgetApproved = kBudg ? Number(kBudg.value || 0) : 0;
 
+          if (!validateBankNumberInputs(modal || document)) return;
+          syncFinancialTriplet('fc-projectTotal');
           const conditionNumbers = ['projectTotal','bankFinancedAmount','bankFinancedPct','promoterContribution','promoterContributionPct','interestRate'];
           const conditionTexts = ['term','paymentMethod','commission','disbursementMethod','disbursementConditions','amortizationConditions','requiredPresales','guarantees','insurance'];
           const financialConditions = {};
           conditionNumbers.forEach(key => {
             const raw = document.getElementById(`fc-${key}`)?.value;
-            if (raw !== '' && raw != null && Number.isFinite(Number(raw))) financialConditions[key] = Number(raw);
+            if (raw !== '' && raw != null && Number.isFinite(numberFromCreate(raw))) financialConditions[key] = numberFromCreate(raw);
           });
           conditionTexts.forEach(key => {
             financialConditions[key] = document.getElementById(`fc-${key}`)?.value?.trim() || '';
           });
-          financialConditions.facilities = Array.from(document.querySelectorAll('[data-create-facility-row]')).map(row => ({
-            facilityType: row.querySelector('[data-create-facility="facilityType"]')?.value.trim() || '',
-            loanPurpose: row.querySelector('[data-create-facility="loanPurpose"]')?.value.trim() || '',
-            bankFinancedPct: Number(row.querySelector('[data-create-facility="bankFinancedPct"]')?.value || 0),
-            cppSalesAmortizationPct: Number(row.querySelector('[data-create-facility="cppSalesAmortizationPct"]')?.value || 0),
-            promoterRequiredContribution: Number(row.querySelector('[data-create-facility="promoterRequiredContribution"]')?.value || 0)
-          }));
+          financialConditions.facilities = [];
           financialConditions.precedentConditions = {};
           document.querySelectorAll('[data-create-precedent]').forEach(input => { financialConditions.precedentConditions[input.dataset.createPrecedent] = input.checked; });
           financialConditions.precedentConditions.otherRequirements = document.getElementById('fc-otherRequirements')?.value?.trim() || '';
@@ -654,10 +1024,13 @@
           };
 
           if (!name) return alert('El nombre es obligatorio.');
+          if (!validateCreateModelStatuses({ alertOnError: true })) return;
+          if (!validateCreateFinancePhases({ alertOnError: true })) return;
 
           const payload = {
             name,
             description,
+            location,
             projectType,
             status,
             loanApproved,
@@ -665,6 +1038,7 @@
             legalData: collectLegalData(),
             technicalData: collectTechnicalData(),
             housingModels: collectHousingModels(),
+            financePhases: collectFinancePhases(),
             financialConditions,
             teamSuggestion: collectTeamSuggestion()
           };
@@ -674,7 +1048,7 @@
           closeModal();
 
           // reset campos
-          ['pName', 'pDesc', 'pProjectType', 'kLoanApproved', 'kBudgetApproved', 'ts-promoter', 'ts-commercial', 'ts-legal', 'ts-tecnico', 'ts-gerencia', 'ts-socios', 'ts-financiero', 'ts-contable', 'ts-notes', ...conditionNumbers.map(x => `fc-${x}`), ...conditionTexts.map(x => `fc-${x}`)].forEach(id => {
+          ['pName', 'pDesc', 'pLocation', 'pProjectType', 'kLoanApproved', 'kBudgetApproved', 'ts-promoter', 'ts-commercial', 'ts-legal', 'ts-tecnico', 'ts-gerencia', 'ts-socios', 'ts-financiero', 'ts-contable', 'ts-notes', ...conditionNumbers.map(x => `fc-${x}`), ...conditionTexts.map(x => `fc-${x}`)].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
           });
@@ -685,6 +1059,7 @@
           if (createBoardMembers) createBoardMembers.innerHTML = '';
           if (createShareholders) createShareholders.innerHTML = '';
           if (createHousingModels) createHousingModels.innerHTML = '';
+          if (createFinancePhases) createFinancePhases.innerHTML = '';
           document.querySelectorAll('[data-create-precedent]').forEach(input => { input.checked = false; });
           ['fc-otherRequirements','fc-trustee','fc-trustType','fc-technicalInspector','fc-financialInspector','ld-promoterLegalName','ld-interimBank','ld-trustName','td-phasesCount','td-totalUnits','td-notes'].forEach(fieldId => {
             const field = document.getElementById(fieldId); if (field) field.value = '';

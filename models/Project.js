@@ -19,6 +19,14 @@ const projectSchema = new Schema({
 
   name: String,
   description: String,
+  location: { type: String, trim: true, default: '' },
+  address: { type: String, trim: true, default: '' },
+  city: { type: String, trim: true, default: '' },
+  province: { type: String, trim: true, default: '' },
+  coordinates: {
+    lat: { type: Number, default: null },
+    lng: { type: Number, default: null }
+  },
   projectType: { type: String, enum: ['', ...PROJECT_TYPES], default: '' },
   currency: { type: String, enum: PROJECT_CURRENCIES, default: 'PAB' },
 
@@ -106,7 +114,35 @@ const projectSchema = new Schema({
       closedAreaM2: { type: Number, default: 0 },
       price: { type: Number, default: 0 },
       unitsCount: { type: Number, default: 0 },
+      initialStatuses: {
+        disponible: { type: Number, default: 0 },
+        inventario: { type: Number, default: 0 },
+        reservado: { type: Number, default: 0 },
+        con_cpp: { type: Number, default: 0 },
+        tramite_legal_activado: { type: Number, default: 0 },
+        escriturado_traspasado: { type: Number, default: 0 },
+        vivienda_entregada: { type: Number, default: 0 },
+        cancelado: { type: Number, default: 0 }
+      },
       observations: { type: String, trim: true, default: '' }
+    }],
+    default: []
+  },
+
+  financePhases: {
+    type: [{
+      name: { type: String, trim: true, default: '' },
+      startDate: { type: Date, default: null },
+      endDate: { type: Date, default: null },
+      planUses: {
+        type: [{ name: { type: String, trim: true, default: '' }, amount: { type: Number, default: 0 } }],
+        default: []
+      },
+      planSources: {
+        type: [{ name: { type: String, trim: true, default: '' }, amount: { type: Number, default: 0 } }],
+        default: []
+      },
+      loanLineNames: [{ type: String, trim: true }]
     }],
     default: []
   },

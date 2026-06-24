@@ -8058,6 +8058,8 @@ function estadoLabel(v) {
     setValue('cl-modelo', defaults.modelo);
     setValue('cl-m2', formatInputNumber('cl-m2', defaults.m2));
     setValue('cl-precio', formatInputNumber('cl-precio', defaults.precioLista));
+    const loc = document.getElementById('cl-ubicacion');
+    if (loc && !loc.value) loc.value = state?.project?.location || state?.project?.address || '';
   }
 
   function applyProjectModelToFicha(modelValue) {
@@ -10637,6 +10639,8 @@ if (btnExportarExcel) {
   if (btnCrear) btnCrear.addEventListener('click', () => {
     const modelSelect = document.getElementById('cl-modeloSelect');
     if (modelSelect) modelSelect.innerHTML = projectModelOptions('', { includeEmpty: true });
+    const loc = document.getElementById('cl-ubicacion');
+    if (loc) loc.value = state?.project?.location || state?.project?.address || '';
     modalCrear.style.display='flex';
   });
   if (modalCrearCerrar) modalCrearCerrar.addEventListener('click', () => modalCrear.style.display='none');
@@ -10662,6 +10666,7 @@ if (btnExportarExcel) {
         cantidad: Number(document.getElementById('cl-cantidad').value || 0),
         modelId: document.getElementById('cl-modeloSelect')?.value || undefined,
         modelo: document.getElementById('cl-modelo').value || '',
+        ubicacion: document.getElementById('cl-ubicacion')?.value || state?.project?.location || state?.project?.address || '',
         m2: parseInputNumber('cl-m2', document.getElementById('cl-m2').value || 0),
         precioLista: parsePanamaNumber(document.getElementById('cl-precio').value || 0),
         estado: document.getElementById('cl-estado').value || 'disponible'

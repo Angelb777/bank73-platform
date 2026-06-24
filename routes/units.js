@@ -65,6 +65,11 @@ function unitModelFieldsFromBody(project, body = {}) {
   }
   if (body.modelo !== undefined) out.modelo = String(body.modelo || '').trim();
   if (body.m2 !== undefined) out.m2 = Number(body.m2 || 0);
+  if (body.ubicacion !== undefined) {
+    out.ubicacion = String(body.ubicacion || '').trim();
+  } else if (!out.ubicacion) {
+    out.ubicacion = String(project?.location || project?.address || '').trim();
+  }
   if (body.precioLista !== undefined) {
     out.precioLista = Number(body.precioLista || 0);
     out.price = out.precioLista;
@@ -176,6 +181,7 @@ router.post(
         manzana,
         lote,
         ...modelFields,
+        ubicacion: modelFields.ubicacion || String(req.project?.location || req.project?.address || '').trim(),
         estado: normalizeUnitEstado(estado),
         deletedAt: null,
 
@@ -194,6 +200,7 @@ router.post(
           unitId: unit._id,
           manzana: unit.manzana,
           lote: unit.lote,
+          ubicacion: unit.ubicacion || req.project?.location || req.project?.address || '',
           areaAbierta: unit.areaAbierta || 0,
           areaCerrada: unit.areaCerrada || 0,
           areaTotalConstruccion: Number(unit.areaAbierta || 0) + Number(unit.areaCerrada || 0),
@@ -305,9 +312,11 @@ router.patch(
         set.areaAbierta != null ||
         set.areaCerrada != null ||
         set.recamaras != null ||
-        set.banos != null
+        set.banos != null ||
+        set.ubicacion != null
       ) {
         const ventaSet = {};
+        if (set.ubicacion != null) ventaSet.ubicacion = String(set.ubicacion || '').trim();
         if (set.precioLista != null) {
           ventaSet.valor = Number(set.precioLista || 0);
           ventaSet.precioVenta = Number(set.precioLista || 0);
@@ -460,9 +469,11 @@ router.patch(
         update.areaAbierta != null ||
         update.areaCerrada != null ||
         update.recamaras != null ||
-        update.banos != null
+        update.banos != null ||
+        update.ubicacion != null
       ) {
         const ventaSet = {};
+        if (update.ubicacion != null) ventaSet.ubicacion = String(update.ubicacion || '').trim();
         if (update.precioLista != null) {
           ventaSet.valor = Number(update.precioLista || 0);
           ventaSet.precioVenta = Number(update.precioLista || 0);
