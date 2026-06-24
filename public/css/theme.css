@@ -4372,6 +4372,147 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
   }
 }
 
+/* Mobile: modal de lineas de credito por fase */
+@media (max-width: 720px) {
+  .finance-phase-modal {
+    width: 100dvw;
+    height: 100dvh;
+    padding: 0;
+    place-items: stretch;
+    overflow: hidden;
+  }
+
+  .finance-phase-modal-dialog {
+    width: 100dvw;
+    max-width: 100dvw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .finance-phase-modal-header {
+    flex: 0 0 auto;
+    align-items: flex-start;
+    gap: 10px;
+    padding: calc(12px + env(safe-area-inset-top)) 12px 12px;
+  }
+
+  .finance-phase-modal-header > div:first-child {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .finance-phase-modal-header h3 {
+    font-size: 20px;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+
+  .finance-phase-modal-header .row {
+    flex: 0 0 auto;
+    gap: 8px;
+  }
+
+  .finance-phase-modal-header .btn {
+    min-width: 0;
+    min-height: 44px;
+    padding: 9px 12px;
+    border-radius: 14px;
+    white-space: nowrap;
+    box-shadow: none;
+  }
+
+  #financePhaseFullscreenBtn {
+    width: 46px;
+    padding-inline: 0;
+  }
+
+  .finance-phase-modal-body {
+    flex: 1 1 auto;
+    max-height: none;
+    padding: 0 10px calc(18px + env(safe-area-inset-bottom));
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .finance-modal-funding-summary {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .finance-modal-funding-summary > div {
+    min-width: 0;
+    padding: 8px;
+  }
+
+  .finance-modal-funding-summary strong {
+    font-size: 13px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  #tab-finanzas .finance-loan-line-card {
+    padding: 10px;
+  }
+
+  #tab-finanzas .finance-loan-line-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+
+  #tab-finanzas .finance-loan-line-metrics > span:not(.finance-status) {
+    display: flex;
+    min-height: 68px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    padding: 8px 7px;
+    border-radius: 18px;
+    font-size: 12px;
+    line-height: 1.15;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+
+  #tab-finanzas .finance-loan-line-metrics b {
+    display: block;
+    width: 100%;
+    font-size: 15px;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+
+  #tab-finanzas .finance-loan-line-metrics > .finance-status {
+    min-height: 44px;
+    align-self: center;
+    border-radius: 999px;
+    font-size: 12px;
+  }
+
+  #tab-finanzas .finance-line-progress {
+    grid-column: 1 / -1;
+    height: 9px;
+  }
+
+  #tab-finanzas .finance-inline-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  #tab-finanzas .finance-inline-actions .btn {
+    width: 100%;
+    min-height: 48px;
+    padding: 8px;
+    white-space: normal;
+    line-height: 1.15;
+  }
+}
+
 #tab-resumen .summary-chart-summary {
   margin-top: 14px;
   border-top: 1px solid rgba(255,255,255,.08);
