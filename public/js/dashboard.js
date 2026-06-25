@@ -663,7 +663,7 @@ function applyProjectsFilters(list) {
         <td>${p.name || '-'}</td>
         <td>
           <div>${p.description || '-'}</div>
-          <div class="muted" style="font-size:.82rem;">Tipo: ${escapeHtml(p.projectType || 'No definido')}</div>
+          <div class="muted" style="font-size:.82rem;">Tipo: ${escapeHtml(p.projectType || p.tipoProyecto || 'No definido')}</div>
           ${teamSuggestionHtml(p.teamSuggestion)}
         </td>
         <td><span class="badge ${st}">${st.toUpperCase()}</span></td>
@@ -704,7 +704,7 @@ function applyProjectsFilters(list) {
       <td>${p.name || '-'}</td>
       <td>
         <div>${p.description || '-'}</div>
-        <div class="muted" style="font-size:.82rem;">Tipo: ${escapeHtml(p.projectType || 'No definido')}</div>
+        <div class="muted" style="font-size:.82rem;">Tipo: ${escapeHtml(p.projectType || p.tipoProyecto || 'No definido')}</div>
       </td>
       <td><span class="badge ${st}">${st.toUpperCase()}</span></td>
       <td>${proms.length ? proms.join(', ') : '<span class="muted">—</span>'}</td>

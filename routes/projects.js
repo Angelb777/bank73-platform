@@ -142,7 +142,7 @@ function sanitizeLegalData(raw = {}) {
     .filter(item => Object.values(item).some(value => String(value ?? '').trim() !== '' && Number(value || 0) !== 0));
 
   return {
-    promoterLegalName: String(raw.promoterLegalName || raw.legalCompanyName || '').trim(),
+    promoterLegalName: String(raw.promoterLegalName || raw.legalCompanyName || raw.sociedad || raw.companyName || raw.promoterSociety || raw.debtorLegalName || '').trim(),
     boardMembers: cleanRows(raw.boardMembers, item => ({
       name: String(item?.name || '').trim(),
       cedula: String(item?.cedula || '').trim(),
@@ -248,6 +248,48 @@ function sanitizeLineItems(items = []) {
   })).filter(item => item.name || item.amount);
 }
 
+function sanitizePhaseFinancialConditions(raw = {}) {
+  const out = {};
+  [
+    'interimBank',
+    'letterReference',
+    'generalConditions',
+    'guarantees',
+    'insurance',
+    'requiredPresales',
+    'precedentConditions',
+    'otherRequirements',
+    'disbursementConditions',
+    'amortizationConditions',
+    'promoterObligations',
+    'covenants',
+    'trustee',
+    'trustType',
+    'technicalInspector',
+    'financialInspector',
+    'generalObservations'
+  ].forEach(key => { out[key] = String(raw?.[key] || '').trim(); });
+  ['phaseTotal', 'bankFinancedAmount', 'bankFinancedPct', 'promoterContribution', 'promoterContributionPct'].forEach(key => {
+    const value = parsePanamaNumber(raw?.[key]);
+    if (typeof value === 'number' && Number.isFinite(value)) out[key] = value;
+  });
+  out.letterDate = raw?.letterDate || null;
+  return out;
+}
+
+function sanitizePhaseFinancingLines(raw = []) {
+  return (Array.isArray(raw) ? raw : []).slice(0, 50).map(item => ({
+    name: String(item?.name || item?.facility || item?.facilityName || '').trim(),
+    approvedAmount: parsePanamaNumber(item?.approvedAmount ?? item?.amount ?? item?.montoAprobado) || 0,
+    interestRate: String(item?.interestRate || item?.rate || '').trim(),
+    term: String(item?.term || item?.plazo || '').trim(),
+    paymentMethod: String(item?.paymentMethod || item?.formaPago || '').trim(),
+    disbursementMethod: String(item?.disbursementMethod || item?.formaDesembolso || '').trim(),
+    commission: String(item?.commission || item?.comision || '').trim(),
+    observations: String(item?.observations || item?.notes || item?.observaciones || '').trim()
+  })).filter(item => Object.values(item).some(value => String(value ?? '').trim() !== '' && Number(value || 0) !== 0));
+}
+
 function sanitizeFinancePhases(raw = [], phasesCount = 0) {
   const count = Math.max(phasesCount, Array.isArray(raw) ? raw.length : 0);
   const source = Array.isArray(raw) ? raw : [];
@@ -258,7 +300,9 @@ function sanitizeFinancePhases(raw = [], phasesCount = 0) {
       startDate: item.startDate || null,
       endDate: item.endDate || null,
       planUses: sanitizeLineItems(item.planUses || item.uses || item.usos),
-      planSources: sanitizeLineItems(item.planSources || item.sources || item.fuentes)
+      planSources: sanitizeLineItems(item.planSources || item.sources || item.fuentes),
+      financialConditions: sanitizePhaseFinancialConditions(item.financialConditions || {}),
+      financingLines: sanitizePhaseFinancingLines(item.financingLines || item.financingFacilities || [])
     };
   });
 }
@@ -268,10 +312,12 @@ function sumLineItems(items = []) {
 }
 
 function applyAutomaticPhaseSources(phases = [], conditions = {}) {
-  const bankPct = Number(conditions.bankFinancedPct || 0);
-  const promoterPct = Number(conditions.promoterContributionPct || 0);
   return (phases || []).map(phase => {
-    const usesTotal = sumLineItems(phase.planUses);
+    const phaseTotal = Number(phase.financialConditions?.phaseTotal || 0);
+    const usesTotal = phaseTotal || sumLineItems(phase.planUses);
+    const phaseConditions = phase.financialConditions || {};
+    const bankPct = Number(phaseConditions.bankFinancedPct || conditions.bankFinancedPct || 0);
+    const promoterPct = Number(phaseConditions.promoterContributionPct || conditions.promoterContributionPct || 0);
     const bankAmount = roundMoney(usesTotal * bankPct / 100);
     const promoterAmount = roundMoney(usesTotal * promoterPct / 100);
     return {
@@ -287,8 +333,6 @@ function applyAutomaticPhaseSources(phases = [], conditions = {}) {
 function assertFinancePhasesBalanced(phases = [], conditions = {}) {
   if (!Array.isArray(phases) || !phases.length) return;
   const total = Number(conditions.projectTotal || 0);
-  const bankAmount = Number(conditions.bankFinancedAmount || 0);
-  const promoterAmount = Number(conditions.promoterContribution || 0);
   const close = (a, b) => Math.abs((Number(a) || 0) - (Number(b) || 0)) <= 0.05;
   const fail = (message) => {
     const err = new Error(message);
@@ -297,24 +341,20 @@ function assertFinancePhasesBalanced(phases = [], conditions = {}) {
   };
 
   const totalUses = phases.reduce((sum, phase) => sum + sumLineItems(phase.planUses), 0);
-  const totalBank = phases.reduce((sum, phase) => sum + Number((phase.planSources || []).find(item => item.name === 'Banco')?.amount || 0), 0);
-  const totalPromoter = phases.reduce((sum, phase) => sum + Number((phase.planSources || []).find(item => item.name === 'Promotor')?.amount || 0), 0);
-
   for (const phase of phases) {
     const uses = sumLineItems(phase.planUses);
     const sources = sumLineItems(phase.planSources);
     if (!close(uses, sources)) {
       fail(`En ${phase.name || 'fase'}, el total de usos debe coincidir con el total de fuentes.`);
     }
+    const bankSource = Number((phase.planSources || []).find(item => item.name === 'Banco')?.amount || 0);
+    const financingLinesTotal = (phase.financingLines || []).reduce((sum, line) => sum + Number(line?.approvedAmount || 0), 0);
+    if ((bankSource > 0 || financingLinesTotal > 0) && !close(bankSource, financingLinesTotal)) {
+      fail(`En ${phase.name || 'fase'}, la suma de lineas aprobadas debe coincidir con la fuente Banco de la fase.`);
+    }
   }
   if (total > 0 && !close(totalUses, total)) {
     fail(`La suma de usos por fase (${roundMoney(totalUses)}) debe coincidir con el total del proyecto (${roundMoney(total)}).`);
-  }
-  if (bankAmount > 0 && !close(totalBank, bankAmount)) {
-    fail(`La suma de fuentes Banco por fase (${roundMoney(totalBank)}) debe coincidir con el monto banco (${roundMoney(bankAmount)}).`);
-  }
-  if (promoterAmount > 0 && !close(totalPromoter, promoterAmount)) {
-    fail(`La suma de fuentes Promotor por fase (${roundMoney(totalPromoter)}) debe coincidir con el aporte promotor (${roundMoney(promoterAmount)}).`);
   }
 }
 
@@ -417,6 +457,8 @@ async function syncInitialFinanceStructure({ projectId, phases = [], financialCo
       endDate: phase.endDate || dates.endDate,
       planUses: phase.planUses || [],
       planSources: phase.planSources || [],
+      financialConditions: phase.financialConditions || {},
+      financingLines: phase.financingLines || [],
       uses: [],
       sources: []
     };
@@ -426,6 +468,8 @@ async function syncInitialFinanceStructure({ projectId, phases = [], financialCo
         existing.endDate = payload.endDate;
         existing.planUses = payload.planUses;
         existing.planSources = payload.planSources;
+        existing.financialConditions = payload.financialConditions;
+        existing.financingLines = payload.financingLines;
       }
     } else if (!existingNames.has(name.toLowerCase())) {
       doc.phases.push(payload);
@@ -1010,10 +1054,14 @@ router.post('/', requireRole('admin','bank'), async (req, res) => {
     body.publishStatus = 'pending';
     body.createdBy = toObjectId(req.user.userId);
     body.teamSuggestion = sanitizeTeamSuggestion(body.teamSuggestion || {});
+    body.description = String(firstDefined(body.description, body.descripcion, body.desc) || '').trim();
     body.projectType = sanitizeProjectType(firstDefined(body.projectType, body.tipoProyecto));
     body.currency = sanitizeProjectCurrency(body.currency);
     Object.assign(body, sanitizeProjectLocation(body));
-    body.legalData = sanitizeLegalData(body.legalData || {});
+    body.legalData = sanitizeLegalData({
+      legalCompanyName: firstDefined(body.legalCompanyName, body.sociedad, body.companyName),
+      ...(body.legalData || {})
+    });
     body.technicalData = sanitizeTechnicalData(body.technicalData || {});
     body.housingModels = sanitizeHousingModels(body.housingModels || []);
     validateHousingModelStatuses(body.housingModels);
@@ -2624,7 +2672,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       tipoProyecto: project.projectType || '',
       promoters: projectPromoters.map(promoterPublicShape).filter(Boolean),
       promoterName: primaryPromoter?.name || primaryPromoter?.email || '',
-      promoterCompanyName: primaryPromoter?.promoterProfile?.companyName || '',
+      promoterCompanyName: primaryPromoter?.promoterProfile?.companyName || project.legalData?.promoterLegalName || '',
       promoterCategory: primaryPromoter?.promoterCategory || 'No definido',
       promoterType: primaryPromoter?.promoterProfile?.promoterType || 'No definido',
       promoterProfile: primaryPromoter?.promoterProfile || null,
@@ -2989,7 +3037,7 @@ if (isSoldLikeStatus(st)) U.sold++;
       projectName: project.name || 'Proyecto',
       projectType: project.projectType || '',
       promoterName: exportPrimaryPromoter?.name || exportPrimaryPromoter?.email || '',
-      promoterCompanyName: exportPrimaryPromoter?.promoterProfile?.companyName || '',
+      promoterCompanyName: exportPrimaryPromoter?.promoterProfile?.companyName || project.legalData?.promoterLegalName || '',
       promoterCategory: exportPrimaryPromoter?.promoterCategory || 'No definido',
       promoterType: exportPrimaryPromoter?.promoterProfile?.promoterType || 'No definido',
       updatedAt: project.updatedAt,

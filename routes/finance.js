@@ -106,6 +106,49 @@ function normalizeLoanLine(raw = {}, idx = 0) {
   };
 }
 
+function normalizePhaseFinancialConditions(raw = {}) {
+  const cleanDateValue = cleanDate(raw.letterDate);
+  return {
+    interimBank: String(raw.interimBank || '').trim(),
+    letterDate: cleanDateValue,
+    letterReference: String(raw.letterReference || '').trim(),
+    phaseTotal: toNum(raw.phaseTotal),
+    bankFinancedAmount: toNum(raw.bankFinancedAmount),
+    bankFinancedPct: toNum(raw.bankFinancedPct),
+    promoterContribution: toNum(raw.promoterContribution),
+    promoterContributionPct: toNum(raw.promoterContributionPct),
+    generalConditions: String(raw.generalConditions || '').trim(),
+    guarantees: String(raw.guarantees || '').trim(),
+    insurance: String(raw.insurance || '').trim(),
+    requiredPresales: String(raw.requiredPresales || '').trim(),
+    precedentConditions: String(raw.precedentConditions || '').trim(),
+    otherRequirements: String(raw.otherRequirements || '').trim(),
+    disbursementConditions: String(raw.disbursementConditions || '').trim(),
+    amortizationConditions: String(raw.amortizationConditions || '').trim(),
+    promoterObligations: String(raw.promoterObligations || '').trim(),
+    covenants: String(raw.covenants || '').trim(),
+    trustee: String(raw.trustee || '').trim(),
+    trustType: String(raw.trustType || '').trim(),
+    technicalInspector: String(raw.technicalInspector || '').trim(),
+    financialInspector: String(raw.financialInspector || '').trim(),
+    generalObservations: String(raw.generalObservations || '').trim(),
+  };
+}
+
+function normalizePhaseFinancingLines(raw = []) {
+  return (Array.isArray(raw) ? raw : []).slice(0, 50).map(item => ({
+    _id: mongoose.isValidObjectId(item?._id) ? item._id : undefined,
+    name: String(item?.name || item?.facility || '').trim(),
+    approvedAmount: toNum(item?.approvedAmount ?? item?.amount),
+    interestRate: String(item?.interestRate || '').trim(),
+    term: String(item?.term || '').trim(),
+    paymentMethod: String(item?.paymentMethod || '').trim(),
+    disbursementMethod: String(item?.disbursementMethod || '').trim(),
+    commission: String(item?.commission || '').trim(),
+    observations: String(item?.observations || item?.notes || '').trim(),
+  })).filter(item => Object.values(item).some(value => String(value ?? '').trim() !== '' && toNum(value) !== 0));
+}
+
 function normalizeUnitAmortization(raw = {}) {
   const unitId = mongoose.isValidObjectId(raw.unitId) ? raw.unitId : null;
   const allocations = Array.isArray(raw.allocations) ? raw.allocations.map(a => ({
@@ -545,7 +588,9 @@ router.post('/projects/:projectId/finance/phases', async (req, res) => {
       interesesDevengados = 0,
       aportesPropios = 0,
       preventas = 0,
-      alertDaysBefore = 15
+      alertDaysBefore = 15,
+      financialConditions = {},
+      financingLines = []
     } = req.body || {};
 
     if (!name || !startDate || !endDate) {
@@ -558,6 +603,8 @@ router.post('/projects/:projectId/finance/phases', async (req, res) => {
       actualStartDate, actualEndDate, isCompleted, completedAt,
       uses, sources,
       planUses, planSources,
+      financialConditions: normalizePhaseFinancialConditions(financialConditions),
+      financingLines: normalizePhaseFinancingLines(financingLines),
       disbExpected, disbActual, disbActualAt: disbActualAt || (toNum(disbActual) > 0 ? new Date() : null), disbRequested, disbRequestedAt,
       interesesDevengados, aportesPropios, preventas,
       alertDaysBefore
@@ -584,11 +631,17 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
       'actualStartDate','actualEndDate','isCompleted','completedAt',
       'uses','sources',
       'planUses','planSources',
+      'financialConditions','financingLines',
       'disbExpected','disbActual','disbActualAt','disbRequested','disbRequestedAt',
       'interesesDevengados','aportesPropios','preventas',
       'alertDaysBefore','alerted'
     ];
-    for (const f of fields) if (f in req.body) ph[f] = req.body[f];
+    for (const f of fields) {
+      if (!(f in req.body)) continue;
+      if (f === 'financialConditions') ph[f] = normalizePhaseFinancialConditions(req.body[f] || {});
+      else if (f === 'financingLines') ph[f] = normalizePhaseFinancingLines(req.body[f] || []);
+      else ph[f] = req.body[f];
+    }
     if (!hadActualDisbursement && toNum(ph.disbActual) > 0 && !ph.disbActualAt) {
       ph.disbActualAt = new Date();
     }

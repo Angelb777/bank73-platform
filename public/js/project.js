@@ -2683,6 +2683,9 @@ if (!isPeriodView) try {
   const promoterCompanyLabel =
     project.promoterCompanyName ||
     project.promoterSocietyName ||
+    project.legalData?.promoterLegalName ||
+    project.legalCompanyName ||
+    project.sociedad ||
     project.promoterProfile?.companyName ||
     (Array.isArray(project.promoters)
       ? project.promoters.map(p => p?.promoterProfile?.companyName).find(Boolean)
@@ -4863,23 +4866,90 @@ function financeLinesForPhase(phaseId) {
   });
 }
 
+function financeSeedLoanLinesFromApprovedPhaseLines(phase = {}) {
+  const phaseId = String(phase?._id || FINANCE_SELECTED_PHASE_ID || '');
+  const phaseName = phase?.name || FINANCE_SELECTED_PHASE_NAME || '';
+  const approvedLines = Array.isArray(phase?.financingLines) ? phase.financingLines : [];
+  return approvedLines
+    .filter(line => String(line?.name || '').trim() || numOr0(line?.approvedAmount))
+    .map((line, idx) => {
+      const details = [
+        numOr0(line.approvedAmount) ? `Aprobado: ${financeMoney(line.approvedAmount)}` : '',
+        line.interestRate ? `Tasa: ${line.interestRate}` : '',
+        line.term ? `Plazo: ${line.term}` : '',
+        line.paymentMethod ? `Pago: ${line.paymentMethod}` : '',
+        line.disbursementMethod ? `Desembolso: ${line.disbursementMethod}` : '',
+        line.commission ? `Comision: ${line.commission}` : '',
+        line.observations || ''
+      ].filter(Boolean).join(' | ');
+      return {
+        _id: `approved-${phaseId || phaseName || 'phase'}-${idx}`,
+        phaseId,
+        phaseName,
+        name: line.name || `Linea ${idx + 1}`,
+        notes: details,
+        entries: [{
+          _id: `approved-entry-${phaseId || phaseName || 'phase'}-${idx}`,
+          disbursementDate: '',
+          loanNumber: '',
+          disbursementAmount: 0,
+          maturityDate: '',
+          amortizedAmount: 0,
+          notes: ''
+        }]
+      };
+    });
+}
+
+function financeLoanLineHasMeaningfulData(line = {}, idx = 0) {
+  const defaultName = new RegExp(`^linea\\s*${idx + 1}$`, 'i');
+  const name = String(line.name || '').trim();
+  const hasCustomName = name && !defaultName.test(name);
+  const hasEntries = (Array.isArray(line.entries) ? line.entries : []).some(entry =>
+    entry?.disbursementDate ||
+    entry?.loanNumber ||
+    numOr0(entry?.disbursementAmount) ||
+    entry?.maturityDate ||
+    numOr0(entry?.amortizedAmount) ||
+    String(entry?.notes || '').trim()
+  );
+  return hasCustomName || String(line.notes || '').trim() || hasEntries || numOr0(line.disbursementAmount) || numOr0(line.amortizedAmount);
+}
+
+function financeLoanLinesWithApprovedSeeds(savedLines = [], phase = {}) {
+  const seeds = financeSeedLoanLinesFromApprovedPhaseLines(phase);
+  if (!seeds.length) return savedLines;
+  if (!savedLines.length) return seeds;
+  if (!savedLines.some((line, idx) => financeLoanLineHasMeaningfulData(line, idx))) return seeds;
+  const savedNames = new Set(savedLines.map(line => String(line.name || '').trim().toLowerCase()).filter(Boolean));
+  const missingSeeds = seeds.filter(line => !savedNames.has(String(line.name || '').trim().toLowerCase()));
+  return [...savedLines, ...missingSeeds];
+}
+
 function financeProjectBasis() {
   const project = FINANCE_PROJECT || state.project || {};
   const conditions = project.financialConditions || {};
-  const projectTotal = numOr0(conditions.projectTotal || project.budgetApproved || FINANCE_CONTROL?.totals?.budgetApproved);
-  const explicitBankApproved = numOr0(conditions.bankFinancedAmount || project.loanApproved || FINANCE_CONTROL?.totals?.loanApproved);
+  const phases = Array.isArray(FINANCE?.phases) ? FINANCE.phases : [];
+  const phaseProjectTotal = phases.reduce((sum, ph) => sum + numOr0(ph?.financialConditions?.phaseTotal), 0);
+  const phaseBankApproved = phases.reduce((sum, ph) => sum + numOr0(ph?.financialConditions?.bankFinancedAmount), 0);
+  const phasePromoterApproved = phases.reduce((sum, ph) => sum + numOr0(ph?.financialConditions?.promoterContribution), 0);
+  const projectTotal = numOr0(conditions.projectTotal || project.budgetApproved || FINANCE_CONTROL?.totals?.budgetApproved) || phaseProjectTotal;
+  const explicitBankApproved = numOr0(conditions.bankFinancedAmount || project.loanApproved || FINANCE_CONTROL?.totals?.loanApproved) || phaseBankApproved;
   const bankPct = numOr0(conditions.bankFinancedPct) || (projectTotal > 0 ? explicitBankApproved / projectTotal * 100 : 0);
   const bankApproved = explicitBankApproved || (projectTotal * bankPct / 100);
-  const promoterApproved = numOr0(conditions.promoterContribution) || Math.max(0, projectTotal - bankApproved);
+  const promoterApproved = numOr0(conditions.promoterContribution) || phasePromoterApproved || Math.max(0, projectTotal - bankApproved);
   const promoterPct = numOr0(conditions.promoterContributionPct) || (projectTotal > 0 ? promoterApproved / projectTotal * 100 : Math.max(0, 100 - bankPct));
   return { projectTotal, bankApproved, promoterApproved, bankPct, promoterPct };
 }
 
 function financePhaseFunding(ph = {}) {
   const basis = financeProjectBasis();
-  const planBudget = sumItems(ph.planUses);
-  const recommendedBank = planBudget * basis.bankPct / 100;
-  const recommendedPromoter = Math.max(0, planBudget - recommendedBank);
+  const phaseConditions = ph.financialConditions || {};
+  const planBudget = numOr0(phaseConditions.phaseTotal) || sumItems(ph.planUses);
+  const phaseBankPct = numOr0(phaseConditions.bankFinancedPct) || basis.bankPct;
+  const recommendedBank = numOr0(phaseConditions.bankFinancedAmount) || (planBudget * phaseBankPct / 100);
+  const recommendedPromoter = numOr0(phaseConditions.promoterContribution) || Math.max(0, planBudget - recommendedBank);
+  const phasePromoterPct = numOr0(phaseConditions.promoterContributionPct) || (planBudget > 0 ? recommendedPromoter / planBudget * 100 : Math.max(0, 100 - phaseBankPct));
   const lines = financeLinesForPhase(ph._id);
   const actual = lines.reduce((acc, line) => {
     const entries = Array.isArray(line.entries) && line.entries.length ? line.entries : [line];
@@ -4893,6 +4963,11 @@ function financePhaseFunding(ph = {}) {
   }, { disbursed: 0, amortized: 0, debt: 0 });
   return {
     ...basis,
+    projectTotal: planBudget,
+    bankApproved: recommendedBank,
+    promoterApproved: recommendedPromoter,
+    bankPct: phaseBankPct,
+    promoterPct: phasePromoterPct,
     planBudget,
     recommendedBank,
     recommendedPromoter,
@@ -5002,6 +5077,66 @@ const FINANCE_OPERATION_FIELDS = [
   ['technicalInspector','Inspector técnico'], ['financialInspector','Inspector financiero']
 ];
 
+const FINANCE_PHASE_CONDITION_FIELDS = [
+  ['generalConditions','Condiciones generales'],
+  ['phaseTotal','Total de la fase'],
+  ['bankFinancedAmount','Financiacion bancaria'],
+  ['promoterContribution','Aporte del promotor'],
+  ['bankFinancedPct','% banco'],
+  ['promoterContributionPct','% promotor'],
+  ['guarantees','Garantias'],
+  ['insurance','Seguros'],
+  ['requiredPresales','Preventa requerida'],
+  ['precedentConditions','Condiciones precedentes'],
+  ['otherRequirements','Detalle de otros requisitos'],
+  ['disbursementConditions','Condiciones de desembolso'],
+  ['amortizationConditions','Condiciones de amortizacion/pago'],
+  ['promoterObligations','Obligaciones del promotor'],
+  ['covenants','Restricciones/covenants'],
+  ['trustee','Fiduciaria'],
+  ['trustType','Tipo de fideicomiso'],
+  ['technicalInspector','Inspector tecnico'],
+  ['financialInspector','Inspector financiero'],
+  ['generalObservations','Observaciones generales']
+];
+
+function financePhaseConditionsHtml(ph = {}) {
+  const c = ph.financialConditions || {};
+  const hasConditions = Object.values(c || {}).some(value => String(value || '').trim());
+  const lines = Array.isArray(ph.financingLines) ? ph.financingLines : [];
+  const letterRows = [
+    ['Banco/interino', c.interimBank],
+    ['Fecha de carta', financeDateInput(c.letterDate)],
+    ['Referencia', c.letterReference]
+  ].map(([label, value]) => `<div class="finance-condition-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || '---')}</strong></div>`).join('');
+  const conditionRows = FINANCE_PHASE_CONDITION_FIELDS
+    .filter(([key]) => String(c[key] || '').trim())
+    .map(([key,label]) => `<div class="finance-condition-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(c[key])}</strong></div>`)
+    .join('');
+  const lineRows = lines.map((line, idx) => `
+    <tr>
+      <td>${escapeHtml(line.name || `Linea ${idx + 1}`)}</td>
+      <td class="right">${financeMoney(line.approvedAmount)}</td>
+      <td>${escapeHtml(line.interestRate || '---')}</td>
+      <td>${escapeHtml(line.term || '---')}</td>
+      <td>${escapeHtml(line.paymentMethod || '---')}</td>
+      <td>${escapeHtml(line.disbursementMethod || '---')}</td>
+      <td>${escapeHtml(line.commission || '---')}</td>
+      <td>${escapeHtml(line.observations || '---')}</td>
+    </tr>`).join('');
+  return `
+    <details class="finance-condition-collapsible finance-phase-conditions-compact">
+      <summary>Condiciones y lineas aprobadas <span>${lines.length} lineas</span></summary>
+      <div class="finance-conditions-subgrid">${letterRows}${conditionRows || (!hasConditions ? '<div class="small muted">Sin condiciones de fase registradas.</div>' : '')}</div>
+      <div style="overflow:auto;margin:10px;">
+        <table class="table">
+          <thead><tr><th>Nombre/facilidad</th><th class="right">Monto aprobado</th><th>Tasa</th><th>Plazo</th><th>Forma de pago</th><th>Forma de desembolso</th><th>Comision</th><th>Observaciones</th></tr></thead>
+          <tbody>${lineRows || '<tr><td colspan="8" class="muted">Sin lineas de financiacion aprobadas para esta fase.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </details>`;
+}
+
 function financeFacilityFormRow(item = {}) {
   return `<div class="finance-facility-form-row" data-facility-row>
     <label><span>Tipo de facilidad</span><input class="input" data-facility="facilityType" list="financeFacilityTypes" value="${escapeHtml(item.facilityType || '')}"></label>
@@ -5024,6 +5159,7 @@ function renderFinanceConditions(project = state.project || {}) {
   const view = document.getElementById('financeConditionsView');
   const form = document.getElementById('financeConditionsForm');
   const summary = document.getElementById('financeProjectFinancialSummary');
+  const section = document.querySelector('.finance-conditions-card');
   if (!view || !form) return;
   if (summary) summary.innerHTML = `<h4>Datos financieros del proyecto</h4>` + [
     ['Total del proyecto', financeMoney(effective.projectTotal)],
@@ -5042,8 +5178,9 @@ function renderFinanceConditions(project = state.project || {}) {
   const facilities = Array.isArray(conditions.facilities) ? conditions.facilities : [];
   const precedent = conditions.precedentConditions || {};
   const operation = conditions.operationStructure || {};
+  if (section) section.hidden = true;
   view.innerHTML = `
-    <details class="finance-condition-collapsible"><summary>Condiciones bancarias generales</summary><div class="finance-conditions-subgrid">${baseView}</div></details>
+    <details class="finance-condition-collapsible"><summary>Condiciones generales heredadas</summary><div class="finance-conditions-subgrid">${baseView}</div></details>
     <details class="finance-condition-collapsible"><summary>Facilidades o líneas aprobadas <span>${facilities.length}</span></summary><div class="finance-facilities-view">${facilities.map((item, idx) => `
       <article class="finance-facility-card"><strong>${escapeHtml(item.facilityType || `Facilidad ${idx + 1}`)}</strong><span>${escapeHtml(item.loanPurpose || 'Sin destino indicado')}</span>
       <div><b>${numOr0(item.bankFinancedPct)}%</b> banco · <b>${numOr0(item.cppSalesAmortizationPct)}%</b> CPP/ventas · Promotor <b>${financeMoney(item.promoterRequiredContribution)}</b></div></article>
@@ -6053,7 +6190,9 @@ async function loadFinance() {
     // ================================
     // ✅ Bind botones PLAN / REAL (solo 1 vez)
     // ================================
+    const canEditFinanceStructure = ['admin', 'bank', 'financiero', 'gerencia', 'socios'].includes(myRole);
     const planBtn = document.getElementById('addPhasePlanBtn');
+    if (planBtn) planBtn.hidden = !canEditFinanceStructure;
     if (planBtn && !planBtn.dataset.bound) {
       planBtn.addEventListener('click', () => {
         openPhaseEditor(null, 'plan');
@@ -6062,6 +6201,7 @@ async function loadFinance() {
     }
 
     const realBtn = document.getElementById('addPhaseRealBtn');
+    if (realBtn) realBtn.hidden = !canEditFinanceStructure;
     if (realBtn && !realBtn.dataset.bound) {
       realBtn.addEventListener('click', () => {
         openPhaseEditor(null, 'real');
@@ -6071,6 +6211,7 @@ async function loadFinance() {
 
     // (Legacy) si aún existe el botón antiguo, lo desactivamos para evitar confusión
     const legacyBtn = document.getElementById('addPhaseBtn');
+    if (legacyBtn) legacyBtn.hidden = !canEditFinanceStructure;
     if (legacyBtn && !legacyBtn.dataset.bound) {
       legacyBtn.addEventListener('click', () => {
         // Por defecto, crear fase debe ser PLAN
@@ -6078,6 +6219,8 @@ async function loadFinance() {
       });
       legacyBtn.dataset.bound = '1';
     }
+    const unifiedBtn = document.getElementById('addPhaseUnifiedBtn');
+    if (unifiedBtn) unifiedBtn.hidden = !canEditFinanceStructure;
 
     // KPIs del proyecto (cabecera)
     if (res.project) {
@@ -6757,7 +6900,8 @@ function openFinancePhaseLines(phase) {
   const expand = document.getElementById('financePhaseFullscreenBtn');
   if (expand) { expand.textContent = '⛶'; expand.title = 'Pantalla completa'; }
   document.getElementById('financePhaseModalTitle').textContent = `Líneas — ${FINANCE_SELECTED_PHASE_NAME}`;
-  const lines = financeLinesForPhase(FINANCE_SELECTED_PHASE_ID);
+  const savedLines = financeLinesForPhase(FINANCE_SELECTED_PHASE_ID);
+  const lines = financeLoanLinesWithApprovedSeeds(savedLines, phase);
   const funding = financePhaseFunding(phase);
   const fundingSummary = document.getElementById('financePhaseFundingSummary');
   if (fundingSummary) fundingSummary.innerHTML = [
@@ -6893,6 +7037,7 @@ function renderUnifiedFinancePhases(phases = []) {
 }
 
 function renderPhases(phases = []) {
+  const canEditFinanceStructure = ['admin', 'bank', 'financiero', 'gerencia', 'socios'].includes(myRole);
   const wrapPlan = document.getElementById('phasesPlanList');
   const wrapReal = document.getElementById('phasesRealList');
 
@@ -6927,6 +7072,7 @@ function renderPhases(phases = []) {
 
     const st = getPhaseStatus(ph);
     const phaseHasReal = !!ph?.actualStartDate || !!ph?.actualEndDate || sumItems(ph?.uses) > 0 || sumItems(ph?.sources) > 0 || numOr0(ph?.disbActual) > 0;
+    const editLabel = variant === 'plan' ? 'Editar plan' : (phaseHasReal ? 'Editar real' : 'Iniciar real');
 
     // Badge: para REAL, si está solicitado, lo marcamos claro
     const disbReq = !!ph?.disbRequested;
@@ -6953,13 +7099,9 @@ function renderPhases(phases = []) {
         </div>
 
         <div class="fin-phase-actions">
-  <button class="fin-btn fin-btn-edit" data-act="edit">
-    ${variant === 'plan' ? 'Editar plan' : (phaseHasReal ? 'Editar real' : 'Iniciar real')}
-  </button>
-  <button class="fin-btn fin-btn-del" data-act="del">
-    Eliminar
-  </button>
-</div>
+          ${canEditFinanceStructure ? `<button class="fin-btn fin-btn-edit" data-act="edit">${editLabel}</button>` : ''}
+          ${canEditFinanceStructure ? '<button class="fin-btn fin-btn-del" data-act="del">Eliminar</button>' : ''}
+        </div>
       </div>
 
       <div class="fin-phase-body">
@@ -7011,7 +7153,10 @@ function renderPhases(phases = []) {
       <div class="small muted" style="margin-top:8px;">
         Recomendación informativa: no modifica tus fuentes guardadas.
       </div>
-      <div class="finance-phase-card-actions"><button class="btn btn-xs" data-act="lines">Líneas de la fase</button></div>
+      <div class="finance-phase-conditions-inline" style="margin-top:12px;">
+        ${financePhaseConditionsHtml(ph)}
+      </div>
+      <div class="finance-phase-card-actions"><button class="btn btn-xs" data-act="lines">Gestionar desembolsos</button></div>
     `;
 
     const planCard = makeCardShell({ variant: 'plan', ph, titleRight: planBody });
@@ -7167,7 +7312,84 @@ const hasRealData =
 // Modal: crear/editar fase con 4 tablas:
 // PLAN usos/fuentes + REAL usos/fuentes + desembolso esperado/real
 // (SIMPLIFICADO: quitamos Intereses/Aportes/Preventas para evitar duplicidad)
+const FINANCE_PHASE_CONDITION_FORM_FIELDS = [
+  ['interimBank','Banco/interino','input','Banco General / Banistmo'],
+  ['letterDate','Fecha de carta','date',''],
+  ['letterReference','Numero o referencia de carta','input','Carta term sheet BG-2026-015'],
+  ['phaseTotal','Total de la fase','number','10000000'],
+  ['bankFinancedAmount','Financiacion bancaria','number','250000'],
+  ['promoterContribution','Aporte del promotor','number','100000'],
+  ['bankFinancedPct','% banco','number','70'],
+  ['promoterContributionPct','% promotor','number','30'],
+  ['generalConditions','Condiciones generales de la fase','textarea','Facilidad aprobada sujeta a cumplimiento de hitos tecnicos y legales'],
+  ['guarantees','Garantias','textarea','Hipoteca, fideicomiso de garantia, cesion de ventas, fianza solidaria'],
+  ['insurance','Seguros','textarea','CAR, incendio, cumplimiento, fianza de pago'],
+  ['requiredPresales','Preventa requerida','textarea','40% de preventa evidenciada mediante CPP cedida al banco'],
+  ['precedentConditions','Condiciones precedentes','textarea','Permisos aprobados, planos aprobados, seguros entregados, garantias constituidas'],
+  ['otherRequirements','Detalle de otros requisitos','textarea','Permisos especiales, aprobaciones municipales o condiciones adicionales del banco'],
+  ['disbursementConditions','Condiciones de desembolso','textarea','Contra avance certificado por inspector autorizado'],
+  ['amortizationConditions','Condiciones de amortizacion/pago','textarea','Intereses y FECI mensuales, capital al vencimiento'],
+  ['promoterObligations','Obligaciones del promotor','textarea','Aportes de capital previos a cada desembolso y entrega mensual de reportes'],
+  ['covenants','Restricciones/covenants','textarea','No endeudamiento con otros bancos, no cambios accionarios sin autorizacion'],
+  ['trustee','Fiduciaria','input','BG Trust, S.A.'],
+  ['trustType','Tipo de fideicomiso','input','Fideicomiso de garantia y administracion'],
+  ['technicalInspector','Inspector tecnico','input','Inspector autorizado por el banco'],
+  ['financialInspector','Inspector financiero','input','Auditor financiero del banco'],
+  ['generalObservations','Observaciones generales','textarea','Condiciones sujetas a contrato definitivo y aprobaciones internas']
+];
+
+function phaseConditionsFormHtml(conditions = {}) {
+  return `<div class="finance-conditions-subgrid">${FINANCE_PHASE_CONDITION_FORM_FIELDS.map(([key, label, type, placeholder]) => {
+    const value = key === 'letterDate' ? financeDateInput(conditions[key]) : (conditions[key] || '');
+    if (type === 'textarea') return `<label><span>${escapeHtml(label)}</span><textarea class="input" data-phase-condition="${key}" rows="2" placeholder="${escapeHtml(placeholder)}">${escapeHtml(value)}</textarea></label>`;
+    return `<label><span>${escapeHtml(label)}</span><input class="input" data-phase-condition="${key}" type="${type}" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value)}"></label>`;
+  }).join('')}</div>`;
+}
+
+function phaseFinancingLinesFormHtml(lines = []) {
+  const safeLines = Array.isArray(lines) && lines.length
+    ? lines
+    : ['Terreno', 'Infraestructura', 'Construccion', 'Costos directos', 'Costos indirectos', 'Otra'].map(name => ({ name }));
+  return `<div id="ph-financing-lines">${safeLines.map(line => `
+    <div class="finance-facility-form-row" data-phase-financing-line>
+      <label><span>Nombre/facilidad</span><input class="input" data-phase-financing="name" value="${escapeHtml(line.name || '')}" placeholder="Terreno"></label>
+      <label><span>Monto aprobado</span><input class="input" data-phase-financing="approvedAmount" type="number" step="any" value="${numOr0(line.approvedAmount) || ''}" placeholder="250000"></label>
+      <label><span>Tasa de interes</span><input class="input" data-phase-financing="interestRate" value="${escapeHtml(line.interestRate || '')}" placeholder="SOFR + 3.50%"></label>
+      <label><span>Plazo</span><input class="input" data-phase-financing="term" value="${escapeHtml(line.term || '')}" placeholder="24 meses"></label>
+      <label><span>Forma de pago</span><input class="input" data-phase-financing="paymentMethod" value="${escapeHtml(line.paymentMethod || '')}" placeholder="Intereses y FECI mensuales, capital al vencimiento"></label>
+      <label><span>Forma de desembolso</span><input class="input" data-phase-financing="disbursementMethod" value="${escapeHtml(line.disbursementMethod || '')}" placeholder="Contra avance certificado por inspector autorizado"></label>
+      <label><span>Comision</span><input class="input" data-phase-financing="commission" value="${escapeHtml(line.commission || '')}" placeholder="1% flat"></label>
+      <label><span>Observaciones</span><input class="input" data-phase-financing="observations" value="${escapeHtml(line.observations || '')}" placeholder="Observaciones"></label>
+      <button class="btn btn-danger btn-xs" type="button" data-remove-phase-financing>Quitar</button>
+    </div>`).join('')}</div><button class="btn btn-ghost btn-xs" type="button" data-add-phase-financing>+ Añadir linea</button>`;
+}
+
+function collectPhaseFinancialConditionsFromModal() {
+  const out = {};
+  document.querySelectorAll('[data-phase-condition]').forEach(input => {
+    out[input.dataset.phaseCondition] = input.value?.trim() || '';
+  });
+  return out;
+}
+
+function collectPhaseFinancingLinesFromModal() {
+  return Array.from(document.querySelectorAll('[data-phase-financing-line]')).map(row => ({
+    name: row.querySelector('[data-phase-financing="name"]')?.value.trim() || '',
+    approvedAmount: numOr0(row.querySelector('[data-phase-financing="approvedAmount"]')?.value),
+    interestRate: row.querySelector('[data-phase-financing="interestRate"]')?.value.trim() || '',
+    term: row.querySelector('[data-phase-financing="term"]')?.value.trim() || '',
+    paymentMethod: row.querySelector('[data-phase-financing="paymentMethod"]')?.value.trim() || '',
+    disbursementMethod: row.querySelector('[data-phase-financing="disbursementMethod"]')?.value.trim() || '',
+    commission: row.querySelector('[data-phase-financing="commission"]')?.value.trim() || '',
+    observations: row.querySelector('[data-phase-financing="observations"]')?.value.trim() || ''
+  })).filter(item => Object.values(item).some(value => String(value ?? '').trim() !== '' && numOr0(value) !== 0));
+}
+
 function openPhaseEditor(ph = null, focus = 'plan') {
+  if (!['admin', 'bank', 'financiero', 'gerencia', 'socios'].includes(myRole)) {
+    alert('No tienes permiso para editar las fases financieras.');
+    return;
+  }
   const isEdit = !!ph;
   const hasExistingReal = !!ph?.actualStartDate || !!ph?.actualEndDate || sumItems(ph?.uses) > 0 || sumItems(ph?.sources) > 0 || numOr0(ph?.disbActual) > 0;
   const fundingBasis = financeProjectBasis();
@@ -7202,6 +7424,8 @@ function openPhaseEditor(ph = null, focus = 'plan') {
 
     planUses: Array.isArray(ph?.planUses) ? ph.planUses.slice() : [],
     planSources: Array.isArray(ph?.planSources) ? ph.planSources.slice() : [],
+    financialConditions: ph?.financialConditions || {},
+    financingLines: Array.isArray(ph?.financingLines) ? ph.financingLines.slice() : [],
 
     uses: Array.isArray(ph?.uses) ? ph.uses.slice() : [],
     sources: Array.isArray(ph?.sources) ? ph.sources.slice() : [],
@@ -7261,6 +7485,12 @@ function openPhaseEditor(ph = null, focus = 'plan') {
 
     <h4 style="margin-top:12px;">PLAN (estimación) — Fuentes</h4>
     ${tbl('ph-plan-sources', phaseData.planSources)}
+
+    <h4 style="margin-top:14px;">Carta y condiciones de la fase</h4>
+    ${phaseConditionsFormHtml(phaseData.financialConditions)}
+
+    <h4 style="margin-top:14px;">Lineas de financiacion aprobadas</h4>
+    ${phaseFinancingLinesFormHtml(phaseData.financingLines)}
   `;
 
   const htmlReal = `
@@ -7328,6 +7558,8 @@ function openPhaseEditor(ph = null, focus = 'plan') {
           alertDaysBefore: Number(document.getElementById('ph-alert').value || 15),
           planUses: collect('ph-plan-uses'),
           planSources: collect('ph-plan-sources'),
+          financialConditions: collectPhaseFinancialConditionsFromModal(),
+          financingLines: collectPhaseFinancingLinesFromModal(),
         };
 
         if (!payload.startDate || !payload.endDate) {
@@ -7427,6 +7659,26 @@ const payload = {
   };
 
   // Solo engancha las que existan en el modal actual
+  modalBody?.addEventListener('click', (ev) => {
+    if (ev.target.closest('[data-add-phase-financing]')) {
+      document.getElementById('ph-financing-lines')?.insertAdjacentHTML('beforeend', `
+        <div class="finance-facility-form-row" data-phase-financing-line>
+          <label><span>Nombre/facilidad</span><input class="input" data-phase-financing="name" placeholder="Terreno"></label>
+          <label><span>Monto aprobado</span><input class="input" data-phase-financing="approvedAmount" type="number" step="any" placeholder="250000"></label>
+          <label><span>Tasa de interes</span><input class="input" data-phase-financing="interestRate" placeholder="SOFR + 3.50%"></label>
+          <label><span>Plazo</span><input class="input" data-phase-financing="term" placeholder="24 meses"></label>
+          <label><span>Forma de pago</span><input class="input" data-phase-financing="paymentMethod" placeholder="Intereses y FECI mensuales, capital al vencimiento"></label>
+          <label><span>Forma de desembolso</span><input class="input" data-phase-financing="disbursementMethod" placeholder="Contra avance certificado por inspector autorizado"></label>
+          <label><span>Comision</span><input class="input" data-phase-financing="commission" placeholder="1% flat"></label>
+          <label><span>Observaciones</span><input class="input" data-phase-financing="observations" placeholder="Observaciones"></label>
+          <button class="btn btn-danger btn-xs" type="button" data-remove-phase-financing>Quitar</button>
+        </div>
+      `);
+    }
+    if (ev.target.closest('[data-remove-phase-financing]')) {
+      ev.target.closest('[data-phase-financing-line]')?.remove();
+    }
+  });
   hookTable('ph-plan-uses');
   hookTable('ph-plan-sources');
   hookTable('ph-real-uses');

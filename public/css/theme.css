@@ -2506,7 +2506,7 @@ body.ba-viewer-open {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
-  align-items: start;
+  align-items: stretch;
   margin-top: 12px;
 }
 
@@ -2522,7 +2522,7 @@ body.ba-viewer-open {
 
 /* La card dentro del grid: que no se estire raro */
 .fin-phase-card{
-  height: auto;
+  height: 100%;
   min-height: 170px;
 }
 
@@ -3579,6 +3579,10 @@ body.finance-modal-open { overflow: hidden; }
   cursor: pointer;
   font-weight: 800;
   background: rgba(255,255,255,.025);
+}
+#tab-finanzas .finance-phase-conditions-compact > summary {
+  min-height: 42px;
+  align-items: center;
 }
 #tab-finanzas .finance-condition-collapsible[open] > summary,
 #tab-finanzas details.finance-condition-form-section[open] > summary { border-bottom:1px solid rgba(148,163,184,.14); }

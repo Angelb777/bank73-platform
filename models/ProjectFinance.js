@@ -7,6 +7,43 @@ const LineItemSchema = new Schema({
   amount: { type: Number, required: true, default: 0 },
 }, { _id: true });
 
+const PhaseFinancingLineSchema = new Schema({
+  name: { type: String, trim: true, default: '' },
+  approvedAmount: { type: Number, default: 0 },
+  interestRate: { type: String, trim: true, default: '' },
+  term: { type: String, trim: true, default: '' },
+  paymentMethod: { type: String, trim: true, default: '' },
+  disbursementMethod: { type: String, trim: true, default: '' },
+  commission: { type: String, trim: true, default: '' },
+  observations: { type: String, trim: true, default: '' },
+}, { _id: true });
+
+const PhaseFinancialConditionsSchema = new Schema({
+  interimBank: { type: String, trim: true, default: '' },
+  letterDate: { type: Date, default: null },
+  letterReference: { type: String, trim: true, default: '' },
+  phaseTotal: { type: Number, default: 0 },
+  bankFinancedAmount: { type: Number, default: 0 },
+  bankFinancedPct: { type: Number, default: 0 },
+  promoterContribution: { type: Number, default: 0 },
+  promoterContributionPct: { type: Number, default: 0 },
+  generalConditions: { type: String, trim: true, default: '' },
+  guarantees: { type: String, trim: true, default: '' },
+  insurance: { type: String, trim: true, default: '' },
+  requiredPresales: { type: String, trim: true, default: '' },
+  precedentConditions: { type: String, trim: true, default: '' },
+  otherRequirements: { type: String, trim: true, default: '' },
+  disbursementConditions: { type: String, trim: true, default: '' },
+  amortizationConditions: { type: String, trim: true, default: '' },
+  promoterObligations: { type: String, trim: true, default: '' },
+  covenants: { type: String, trim: true, default: '' },
+  trustee: { type: String, trim: true, default: '' },
+  trustType: { type: String, trim: true, default: '' },
+  technicalInspector: { type: String, trim: true, default: '' },
+  financialInspector: { type: String, trim: true, default: '' },
+  generalObservations: { type: String, trim: true, default: '' },
+}, { _id: false });
+
 const PhaseSchema = new Schema({
   name: { type: String, required: true },                // "Fase 1"
   startDate: { type: Date, required: true },
@@ -27,6 +64,9 @@ const PhaseSchema = new Schema({
   // =========================
   planUses:    { type: [LineItemSchema], default: [] },  // estimación (usos) de ESTA fase
   planSources: { type: [LineItemSchema], default: [] },  // estimación (fuentes) de ESTA fase
+
+  financialConditions: { type: PhaseFinancialConditionsSchema, default: () => ({}) },
+  financingLines: { type: [PhaseFinancingLineSchema], default: [] },
 
   // Desembolso por fase (banco)
 disbExpected:  { type: Number, default: 0 },   // desembolso esperado en esta fase
