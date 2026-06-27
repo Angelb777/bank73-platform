@@ -1111,6 +1111,16 @@ button.danger { background: var(--danger); color: #fff; }
 #fichaContenido select { width: 100%; min-height: 34px; }
 input[type="checkbox"].chk-box { width: auto; transform: translateY(1px); }
 
+#fichaContenido .bank-select-field {
+  display: grid;
+  gap: 6px;
+  align-self: stretch;
+}
+
+#fichaContenido .bank-select-field .bank-other-input {
+  margin-top: 0 !important;
+}
+
 /* Tabs del modal Ficha — override para que se vean bien */
 #fichaUnidadModal .modal-tabs{
   display:flex;
@@ -5008,6 +5018,60 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
 
 #tab-resumen #summaryKpis .kpi {
   min-height: 82px;
+}
+
+#tab-resumen #summaryFinancialKpis.kpis-grid,
+#tab-resumen #summaryCommercialKpis.kpis-grid,
+#tab-resumen #summaryLegalKpis.kpis-grid,
+#tab-resumen #summaryTechnicalKpis.kpis-grid,
+#tab-resumen #summaryPeriodKpis.kpis-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 10px;
+  margin: 10px 0 16px !important;
+}
+
+#tab-resumen #summaryFinancialKpis .kpi,
+#tab-resumen #summaryCommercialKpis .kpi,
+#tab-resumen #summaryLegalKpis .kpi,
+#tab-resumen #summaryTechnicalKpis .kpi,
+#tab-resumen #summaryPeriodKpis .kpi {
+  flex: 0 1 190px;
+  min-width: 150px;
+  max-width: 240px;
+  min-height: 68px;
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+
+#tab-resumen #summaryFinancialKpis .kpi .label,
+#tab-resumen #summaryCommercialKpis .kpi .label,
+#tab-resumen #summaryLegalKpis .kpi .label,
+#tab-resumen #summaryTechnicalKpis .kpi .label,
+#tab-resumen #summaryPeriodKpis .kpi .label {
+  font-size: .78rem;
+  line-height: 1.2;
+}
+
+#tab-resumen #summaryFinancialKpis .kpi .value,
+#tab-resumen #summaryCommercialKpis .kpi .value,
+#tab-resumen #summaryLegalKpis .kpi .value,
+#tab-resumen #summaryTechnicalKpis .kpi .value,
+#tab-resumen #summaryPeriodKpis .kpi .value {
+  font-size: 1.05rem;
+  line-height: 1.18;
+  overflow-wrap: anywhere;
+}
+
+#tab-resumen #summaryFinancialKpis .kpi .small,
+#tab-resumen #summaryCommercialKpis .kpi .small,
+#tab-resumen #summaryLegalKpis .kpi .small,
+#tab-resumen #summaryTechnicalKpis .kpi .small,
+#tab-resumen #summaryPeriodKpis .kpi .small {
+  margin-top: 4px;
+  font-size: .72rem;
+  line-height: 1.25;
 }
 
 #tab-resumen #summaryPeriodChartCard[hidden] {

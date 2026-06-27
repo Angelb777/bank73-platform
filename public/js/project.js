@@ -9916,7 +9916,9 @@ async function aplicarImportWord(unitId) {
 
   const bankSelectCustom = (id, label, current = '') => `
     <div class="label">${label}</div>
-    ${window.BankSelect?.bankSelectHtml?.(id, current) || input(id, label, current)}
+    <div class="bank-select-field">
+      ${window.BankSelect?.bankSelectHtml?.(id, current) || `<input id="${id}" type="text" value="${safeVal(current)}">`}
+    </div>
   `;
 
   const tituloUnidad = document.getElementById('fichaTitulo');
