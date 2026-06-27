@@ -748,7 +748,10 @@
         <div class="create-grid">
           <label>Promotor registrado<select id="ld-promoterProfileSelect"><option value="">Escribir manualmente</option></select></label>
           <label>Promotor / deudor como sociedad legal<input id="ld-promoterLegalName" type="text"></label>
-          <label>Banco interino<input id="ld-interimBank" type="text"></label>
+          <label>Banco interino
+            <select id="ld-interimBank"></select>
+            <input id="ld-interimBankOther" type="text" placeholder="Especificar banco" style="display:none;margin-top:6px;">
+          </label>
           <label>Fideicomiso
             <select id="ld-trustApplies">
               <option value="false">No aplica</option>
@@ -779,6 +782,14 @@
         <div class="create-step-card">
         <div class="create-section-title">Modelos de vivienda/apartamento <span class="create-section-kicker">La cantidad de unidades aqui crea el inventario comercial</span></div>
         <p class="create-model-help">Cada fila define una tipologia. Si indicas cantidad de unidades, Bank73 creara automaticamente esas unidades en Comercial con las caracteristicas comunes del modelo.</p>
+        <div class="summary-import-actions" style="margin:10px 0;">
+          <label class="summary-file-picker" for="createDatoUnicoFile">
+            <span class="summary-file-picker-label">Seleccionar Excel para IMPORTAR</span>
+            <span class="summary-file-picker-name" id="createDatoUnicoFileName">Ningun archivo seleccionado</span>
+          </label>
+          <input class="summary-file-input" type="file" id="createDatoUnicoFile" accept=".xlsx,.xls" />
+          <span class="small muted">Se importara despues de crear el proyecto usando el importador Dato Unico existente.</span>
+        </div>
         <div id="createHousingModels"></div>
         <button id="addCreateHousingModel" class="btn ghost" type="button">+ Anadir modelo</button>
         </div>
@@ -885,6 +896,7 @@
   </div>
 
   <script src="/js/api.js"></script>
+  <script src="/js/banks.js"></script>
   <script src="/js/theme-toggle.js"></script>
   <script src="/js/portfolio.js?v=create-wizard-v2"></script>
 </body>

@@ -217,6 +217,54 @@ function validateHousingModelStatuses(models = []) {
   }
 }
 
+function splitUnitCode(code = '') {
+  const text = String(code || '').trim();
+  if (!text) return { manzana: '', lote: '' };
+  const parts = text.split('-');
+  if (parts.length < 2) return { manzana: '', lote: text };
+  return {
+    manzana: parts.slice(0, -1).join('-').trim(),
+    lote: parts[parts.length - 1].trim()
+  };
+}
+
+function sanitizeInitialUnits(raw = []) {
+  return (Array.isArray(raw) ? raw : [])
+    .slice(0, 2000)
+    .map(item => {
+      const code = String(item?.code || item?.nombreUnidad || item?.unidad || '').trim();
+      const split = splitUnitCode(code);
+      const areaAbierta = Math.max(0, parsePanamaNumber(item?.areaAbierta ?? item?.areaAbiertaVivienda) || 0);
+      const areaCerrada = Math.max(0, parsePanamaNumber(item?.areaCerrada ?? item?.areaCerradaVivienda) || 0);
+      const areaTotal = Math.max(0, parsePanamaNumber(item?.areaTotalConstruccion) || 0) || areaAbierta + areaCerrada;
+      return {
+        code,
+        manzana: String(item?.manzana || split.manzana || item?.modelo || 'Modelo').trim().slice(0, 80),
+        lote: String(item?.lote || split.lote || '').trim().slice(0, 80),
+        estado: normalizeUnitStatusKey(item?.estado),
+        modelo: String(item?.modelo || '').trim(),
+        ubicacion: String(item?.ubicacion || item?.location || '').trim(),
+        m2: Math.max(0, parsePanamaNumber(item?.m2 ?? item?.m2Unidad) || 0),
+        precioLista: Math.max(0, parsePanamaNumber(item?.precioLista ?? item?.precio) || 0),
+        numeroFinca: String(item?.numeroFinca || '').trim(),
+        codigoUbicacion: String(item?.codigoUbicacion || '').trim(),
+        calle: String(item?.calle || '').trim(),
+        loteEsquina: String(item?.loteEsquina || '').trim(),
+        metrosExtra: Math.max(0, parsePanamaNumber(item?.metrosExtra ?? item?.m2Extra) || 0),
+        precioLoteEsquina: Math.max(0, parsePanamaNumber(item?.precioLoteEsquina ?? item?.precioLoteEsquinero) || 0),
+        precioM2Extra: Math.max(0, parsePanamaNumber(item?.precioM2Extra) || 0),
+        areaAbierta,
+        areaCerrada,
+        areaTotalConstruccion: areaTotal,
+        recamaras: Math.max(0, parsePanamaNumber(item?.recamaras) || 0),
+        banos: Math.max(0, parsePanamaNumber(item?.banos ?? item?.banos) || 0),
+        valorMejoras: Math.max(0, parsePanamaNumber(item?.valorMejoras) || 0),
+        valorTerreno: Math.max(0, parsePanamaNumber(item?.valorTerreno) || 0)
+      };
+    })
+    .filter(item => item.code || item.manzana || item.lote || item.modelo);
+}
+
 function sanitizeProjectLocation(raw = {}) {
   const loc = raw.location || raw.ubicacion || raw.projectLocation || {};
   if (typeof loc === 'string') {
@@ -363,11 +411,47 @@ function syncFinancialConditionKpis(target, conditions = {}) {
   if (conditions.bankFinancedAmount !== undefined) target.loanApproved = conditions.bankFinancedAmount;
 }
 
-async function createInitialUnitsFromModels({ req, project }) {
+async function createInitialUnitsFromModels({ req, project, initialUnits = [] }) {
   const models = Array.isArray(project.housingModels) ? project.housingModels : [];
   const docs = [];
   let sequence = 1;
   const projectLocation = String(project.location || project.address || '').trim();
+
+  if (Array.isArray(initialUnits) && initialUnits.length) {
+    initialUnits.forEach((unit, idx) => {
+      const manzana = unit.manzana || unit.modelo || 'Modelo';
+      const lote = unit.lote || String(idx + 1);
+      docs.push({
+        tenantKey: req.tenantKey,
+        projectId: project._id,
+        manzana,
+        lote,
+        modelo: unit.modelo || '',
+        ubicacion: unit.ubicacion || projectLocation,
+        m2: unit.m2 || unit.areaTotalConstruccion || 0,
+        precioLista: unit.precioLista || 0,
+        numeroFinca: unit.numeroFinca || '',
+        codigoUbicacion: unit.codigoUbicacion || '',
+        calle: unit.calle || '',
+        loteEsquina: unit.loteEsquina || '',
+        metrosExtra: unit.metrosExtra || 0,
+        precioLoteEsquina: unit.precioLoteEsquina || 0,
+        precioM2Extra: unit.precioM2Extra || 0,
+        areaAbierta: unit.areaAbierta || 0,
+        areaCerrada: unit.areaCerrada || 0,
+        areaTotalConstruccion: unit.areaTotalConstruccion || Number(unit.areaAbierta || 0) + Number(unit.areaCerrada || 0),
+        recamaras: unit.recamaras || 0,
+        banos: unit.banos || 0,
+        valorMejoras: unit.valorMejoras || 0,
+        valorTerreno: unit.valorTerreno || 0,
+        estado: normalizeUnitStatusKey(unit.estado),
+        deletedAt: null,
+        code: unit.code || `${manzana}-${lote}`,
+        status: normalizeUnitStatusKey(unit.estado).toUpperCase(),
+        price: unit.precioLista || 0
+      });
+    });
+  } else {
 
   for (const model of models) {
     const count = Math.max(0, Math.round(Number(model.unitsCount || 0)));
@@ -406,6 +490,7 @@ async function createInitialUnitsFromModels({ req, project }) {
       sequence++;
     }
   }
+  }
 
   if (!docs.length) return [];
   const created = await Unit.insertMany(docs, { ordered: false });
@@ -416,11 +501,20 @@ async function createInitialUnitsFromModels({ req, project }) {
     manzana: unit.manzana,
     lote: unit.lote,
     ubicacion: unit.ubicacion || projectLocation,
+    numeroFinca: unit.numeroFinca || '',
+    codigoUbicacion: unit.codigoUbicacion || '',
+    calle: unit.calle || '',
+    loteEsquina: unit.loteEsquina || '',
+    metrosExtra: unit.metrosExtra || 0,
+    precioLoteEsquina: unit.precioLoteEsquina || 0,
+    precioM2Extra: unit.precioM2Extra || 0,
     areaAbierta: unit.areaAbierta || 0,
     areaCerrada: unit.areaCerrada || 0,
-    areaTotalConstruccion: Number(unit.areaAbierta || 0) + Number(unit.areaCerrada || 0),
+    areaTotalConstruccion: unit.areaTotalConstruccion || Number(unit.areaAbierta || 0) + Number(unit.areaCerrada || 0),
     recamaras: unit.recamaras || 0,
     banos: unit.banos || 0,
+    valorMejoras: unit.valorMejoras || 0,
+    valorTerreno: unit.valorTerreno || 0,
     precioVenta: unit.precioLista || 0,
     valor: unit.precioLista || 0
   }));
@@ -1064,6 +1158,8 @@ router.post('/', requireRole('admin','bank'), async (req, res) => {
     });
     body.technicalData = sanitizeTechnicalData(body.technicalData || {});
     body.housingModels = sanitizeHousingModels(body.housingModels || []);
+    const initialUnits = sanitizeInitialUnits(body.initialUnits || []);
+    delete body.initialUnits;
     validateHousingModelStatuses(body.housingModels);
     if (!body.technicalData.totalUnits && body.housingModels.length) {
       body.technicalData.totalUnits = body.housingModels.reduce((sum, item) => sum + Number(item.unitsCount || 0), 0);
@@ -1111,7 +1207,7 @@ router.post('/', requireRole('admin','bank'), async (req, res) => {
       phases: body.financePhases,
       financialConditions: body.financialConditions
     });
-    const createdUnits = await createInitialUnitsFromModels({ req, project: p });
+    const createdUnits = await createInitialUnitsFromModels({ req, project: p, initialUnits });
     if (createdUnits.length) {
       const unitsSold = 0;
       await Project.updateOne(

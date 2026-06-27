@@ -146,6 +146,18 @@ body.light-theme .table td {
   border-color: var(--border);
 }
 
+.create-units-preview-table th,
+.create-units-preview-table td {
+  vertical-align: middle;
+}
+
+.create-units-preview-table input,
+.create-units-preview-table select {
+  width: 100%;
+  min-width: 72px;
+  box-sizing: border-box;
+}
+
 body.light-theme .modal {
   background: #ffffff;
   border-color: var(--border);
@@ -3638,6 +3650,30 @@ body.finance-modal-open { overflow: hidden; }
 #tab-finanzas .finance-conditions-form textarea { width:100%; }
 #tab-finanzas [hidden] { display:none !important; }
 
+#tab-resumen .summary-legal-project-data {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+#tab-resumen .summary-legal-project-data .finance-condition-item {
+  padding: 10px;
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: 10px;
+}
+
+#tab-resumen .summary-legal-project-data .finance-condition-item span {
+  display: block;
+  color: #94a3b8;
+  font-size: .78rem;
+  margin-bottom: 5px;
+}
+
+#tab-resumen .summary-legal-project-data .finance-condition-item strong {
+  display: block;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 800px) {
   #tab-finanzas .finance-conditions-grid,
   #tab-finanzas .finance-conditions-form { grid-template-columns: 1fr; }
@@ -4556,24 +4592,44 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
 
 #tab-comercial .commercial-actions-bar {
   display: grid;
-  grid-template-columns: minmax(150px, auto) minmax(420px, 1fr) minmax(190px, auto);
+  grid-template-columns: minmax(170px, .7fr) minmax(430px, 1.4fr) minmax(190px, .65fr) minmax(420px, 1.1fr);
   gap: 12px;
   align-items: stretch;
 }
 
 #tab-comercial .commercial-action-group {
-  display: flex;
-  align-items: center;
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  align-items: stretch;
+  justify-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 8px;
+  padding: 28px 10px 10px;
   border: 1px solid rgba(148, 163, 184, .18);
   border-radius: 14px;
   background: rgba(15, 23, 42, .26);
 }
 
+#tab-comercial .commercial-action-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  align-self: end;
+  min-width: 0;
+}
+
+#tab-comercial .commercial-action-group > .commercial-btn,
+#tab-comercial .commercial-action-group > .btn {
+  grid-row: 2;
+  align-self: end;
+  justify-self: center;
+}
+
 #tab-comercial .commercial-action-main {
-  justify-content: flex-start;
+  justify-content: center;
 }
 
 #tab-comercial .commercial-action-selection {
@@ -4581,12 +4637,81 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
 }
 
 #tab-comercial .commercial-action-export {
-  justify-content: flex-end;
+  justify-content: center;
+}
+
+#tab-comercial #commercialImportDatoUnicoSlot {
+  justify-content: center;
+}
+
+#tab-comercial #commercialImportDatoUnicoSlot .summary-import-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: end;
+  gap: 8px;
+  min-width: 0;
+}
+
+#tab-comercial #commercialImportDatoUnicoSlot .summary-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#tab-comercial #commercialImportDatoUnicoSlot .summary-file-picker {
+  width: 240px;
+  min-height: 40px;
+  height: 40px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, .28);
+  background: rgba(255, 255, 255, .045);
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+
+#tab-comercial #commercialImportDatoUnicoSlot .summary-file-picker-label {
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  background: rgba(90, 162, 255, .16);
+  border-right: 1px solid rgba(148, 163, 184, .22);
+  color: #e6ecff;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+#tab-comercial #commercialImportDatoUnicoSlot .summary-file-picker-name {
+  min-width: 0;
+  padding: 0 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tab-comercial #commercialImportDatoUnicoSlot #importDatoUnicoBtn {
+  min-height: 40px;
+  height: 40px;
+  margin: 0;
+  white-space: nowrap;
+  padding: 0 16px;
 }
 
 #tab-comercial .commercial-action-label {
-  flex: 0 0 auto;
-  padding: 0 8px;
+  position: absolute;
+  top: 10px;
+  left: 0;
+  right: 0;
+  padding: 0;
+  text-align: center;
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
@@ -4814,6 +4939,26 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
   justify-content: center;
   margin: 0;
   white-space: nowrap;
+}
+
+@media (max-width: 1280px) {
+  #tab-comercial .commercial-actions-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #tab-comercial .commercial-action-export {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 820px) {
+  #tab-comercial .commercial-actions-bar {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-comercial #commercialImportDatoUnicoSlot .summary-import-actions {
+    flex-wrap: wrap;
+  }
 }
 
 @media (max-width: 1280px) {

@@ -418,6 +418,42 @@
     });
   }
 
+  function bankChoiceHtml(field, current = '') {
+    const options = window.BankSelect?.bankOptionsHtml?.(current) || `<option value="${escapeHtml(current)}">${escapeHtml(current)}</option>`;
+    const isOther = current && !(window.BANKS_PANAMA || []).some(bank => norm(bank) === norm(current));
+    return `
+      <select data-create-phase-condition="${field}" data-bank-choice>${options}</select>
+      <input data-bank-choice-other="${field}" value="${isOther ? escapeHtml(current) : ''}" placeholder="Especificar banco" style="display:${isOther ? '' : 'none'};margin-top:6px;">
+    `;
+  }
+
+  function readBankChoice(select) {
+    if (!select) return '';
+    if (select.value === '__OTHER__') {
+      return select.parentElement?.querySelector(`[data-bank-choice-other="${select.dataset.createPhaseCondition}"]`)?.value?.trim() || '';
+    }
+    return select.value || '';
+  }
+
+  function bindBankChoices(root = document) {
+    if (window.BankSelect) {
+      const ld = document.getElementById('ld-interimBank');
+      if (ld && !ld.children.length) ld.innerHTML = window.BankSelect.bankOptionsHtml('');
+      window.BankSelect.bindBankSelect('ld-interimBank');
+    }
+    root.querySelectorAll('[data-bank-choice]').forEach(select => {
+      if (select.dataset.bankChoiceBound) return;
+      select.dataset.bankChoiceBound = '1';
+      select.addEventListener('change', () => {
+        const other = select.parentElement?.querySelector(`[data-bank-choice-other="${select.dataset.createPhaseCondition}"]`);
+        if (!other) return;
+        other.style.display = select.value === '__OTHER__' ? '' : 'none';
+        if (select.value !== '__OTHER__') other.value = '';
+      });
+      select.dispatchEvent(new Event('change'));
+    });
+  }
+
   function createHousingModelRow(item = {}) {
     const statuses = item.initialStatuses || {};
     return `<div class="create-repeat-row create-model-row" data-create-model-row>
@@ -447,6 +483,10 @@
         </div>
         <div class="small muted" data-create-model-status-warning style="margin-top:8px;"></div>
       </div>
+      <details class="create-model-units-preview" data-create-units-preview style="grid-column:1/-1;border:1px solid #dbe2ea;border-radius:12px;padding:10px;background:#fff;margin-top:6px;">
+        <summary><strong>Unidades generadas</strong> <span class="small muted" data-create-units-summary></span></summary>
+        <div data-create-units-box style="overflow:auto;margin-top:10px;"></div>
+      </details>
       <button class="btn ghost" type="button" data-remove-create-row>Quitar</button>
     </div>`;
   }
@@ -460,7 +500,7 @@
     const trustApplies = document.getElementById('ld-trustApplies')?.value === 'true';
     return {
       promoterLegalName: document.getElementById('ld-promoterLegalName')?.value?.trim() || '',
-      interimBank: document.getElementById('ld-interimBank')?.value?.trim() || '',
+      interimBank: window.BankSelect?.getBankValue?.('ld-interimBank') || document.getElementById('ld-interimBank')?.value?.trim() || '',
       trustApplies,
       trustName: trustApplies ? (document.getElementById('ld-trustName')?.value?.trim() || '') : '',
       boardMembers: Array.from(document.querySelectorAll('[data-create-board-row]')).map(row => ({
@@ -499,6 +539,123 @@
       ])),
       observations: row.querySelector('[data-create-model="observations"]')?.value.trim() || ''
     })).filter(item => item.name || item.unitsCount || item.price || item.openAreaM2 || item.closedAreaM2);
+  }
+
+  const CREATE_UNIT_FIELDS = [
+    ['code', 'Unidad', 'text'],
+    ['estado', 'Estado', 'status'],
+    ['ubicacion', 'Ubicacion', 'text'],
+    ['numeroFinca', 'No. finca', 'text'],
+    ['codigoUbicacion', 'Cod. ubicacion', 'text'],
+    ['calle', 'Calle', 'text'],
+    ['loteEsquina', 'Lote esquina', 'corner'],
+    ['metrosExtra', 'm2 extra', 'number'],
+    ['precioLoteEsquina', 'Precio esquina', 'money'],
+    ['precioM2Extra', 'Precio m2 extra', 'money'],
+    ['valorMejoras', 'Valor mejoras', 'money'],
+    ['valorTerreno', 'Valor terreno', 'money']
+  ];
+
+  const UNIT_STATUS_OPTIONS = [
+    ['disponible','Disponible'],
+    ['inventario','Inventario'],
+    ['reservado','Reservado'],
+    ['con_cpp','Con CPP o venta al contado'],
+    ['tramite_legal_activado','Tramite legal activado'],
+    ['escriturado_traspasado','Escriturado / Traspasado'],
+    ['vivienda_entregada','Vivienda entregada']
+  ];
+
+  function modelDefaultsFromRow(row) {
+    const name = row.querySelector('[data-create-model="name"]')?.value.trim() || 'Modelo';
+    const open = numberFromCreate(row.querySelector('[data-create-model="openAreaM2"]')?.value);
+    const closed = numberFromCreate(row.querySelector('[data-create-model="closedAreaM2"]')?.value);
+    return {
+      modelo: name,
+      ubicacion: document.getElementById('pLocation')?.value?.trim() || '',
+      m2: open + closed,
+      precioLista: numberFromCreate(row.querySelector('[data-create-model="price"]')?.value),
+      areaAbierta: open,
+      areaCerrada: closed,
+      areaTotalConstruccion: open + closed,
+      recamaras: numberFromCreate(row.querySelector('[data-create-model="bedrooms"]')?.value),
+      banos: numberFromCreate(row.querySelector('[data-create-model="bathrooms"]')?.value)
+    };
+  }
+
+  function readCreateUnitRow(row) {
+    const out = {};
+    row.querySelectorAll('[data-create-unit]').forEach(input => {
+      const field = input.dataset.createUnit;
+      const raw = String(input.value ?? '').trim();
+      if (!raw && !['code', 'estado', 'ubicacion'].includes(field)) return;
+      out[field] = ['m2','precioLista','metrosExtra','precioLoteEsquina','precioM2Extra','areaAbierta','areaCerrada','areaTotalConstruccion','recamaras','banos','valorMejoras','valorTerreno'].includes(field)
+        ? numberFromCreate(raw)
+        : raw;
+    });
+    out.__manualEstado = row.dataset.statusManual === '1';
+    out.__manualUbicacion = row.dataset.locationManual === '1';
+    return out;
+  }
+
+  function unitInputHtml(field, type, value) {
+    if (type === 'status') {
+      return `<select data-create-unit="${field}">${UNIT_STATUS_OPTIONS.map(([v,l]) => `<option value="${v}" ${value === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+    }
+    if (type === 'corner') {
+      return `<select data-create-unit="${field}"><option value=""></option><option value="SI" ${value === 'SI' ? 'selected' : ''}>Si</option><option value="NO" ${value === 'NO' ? 'selected' : ''}>No</option></select>`;
+    }
+    const attrs = type === 'money' ? 'data-bank-number type="text" inputmode="decimal"' : (type === 'number' ? 'type="number" step="any" min="0"' : 'type="text"');
+    const display = type === 'money' && value ? formatBankNumber(value) : value;
+    return `<input data-create-unit="${field}" ${attrs} value="${escapeHtml(display ?? '')}">`;
+  }
+
+  function syncCreateUnitsPreview(row, { force = false } = {}) {
+    const box = row.querySelector('[data-create-units-box]');
+    if (!box) return;
+    const count = Math.max(0, Math.round(numberFromCreate(row.querySelector('[data-create-model="unitsCount"]')?.value)));
+    const defaults = modelDefaultsFromRow(row);
+    const existing = Array.from(box.querySelectorAll('[data-create-unit-row]')).map(readCreateUnitRow);
+    const statusInputs = Array.from(row.querySelectorAll('[data-create-model-status]'));
+    const statusQueue = [];
+    statusInputs.forEach(input => {
+      const n = Math.max(0, Math.round(numberFromCreate(input.value)));
+      for (let i = 0; i < n; i++) statusQueue.push(input.dataset.createModelStatus);
+    });
+    while (statusQueue.length < count) statusQueue.push('disponible');
+
+    const rows = Array.from({ length: count }, (_, idx) => {
+      const prev = existing[idx] || {};
+      const code = prev.code || `${defaults.modelo}-${idx + 1}`;
+      const item = {
+        ...prev,
+        code,
+        estado: prev.__manualEstado ? (prev.estado || 'disponible') : (statusQueue[idx] || 'disponible'),
+        ubicacion: prev.__manualUbicacion ? (prev.ubicacion || '') : defaults.ubicacion
+      };
+      return `<tr data-create-unit-row ${prev.__manualEstado ? 'data-status-manual="1"' : ''} ${prev.__manualUbicacion ? 'data-location-manual="1"' : ''}>${CREATE_UNIT_FIELDS.map(([field, _label, type]) => `<td>${unitInputHtml(field, type, item[field] ?? '')}</td>`).join('')}</tr>`;
+    }).join('');
+
+    box.innerHTML = count ? `
+      <table class="table create-units-preview-table" style="min-width:1250px;">
+        <thead><tr>${CREATE_UNIT_FIELDS.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join('')}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    ` : '<div class="small muted">Indica cantidad de unidades para generar la vista previa.</div>';
+    const summary = row.querySelector('[data-create-units-summary]');
+    if (summary) summary.textContent = count ? `${count} unidades editables` : 'sin unidades';
+    bindBankNumberFormatting(box);
+  }
+
+  function collectInitialUnits() {
+    return Array.from(document.querySelectorAll('[data-create-model-row]')).flatMap(row =>
+      Array.from(row.querySelectorAll('[data-create-unit-row]')).map(unitRow => {
+        const item = { ...modelDefaultsFromRow(row), ...readCreateUnitRow(unitRow) };
+        delete item.__manualEstado;
+        delete item.__manualUbicacion;
+        return item;
+      })
+    ).filter(item => item.code || item.modelo);
   }
 
   function syncCreateModelStatusRow(row, { autoFill = false } = {}) {
@@ -707,7 +864,7 @@
       <summary><strong>${escapeHtml(item.name || `Fase ${index + 1}`)}</strong></summary>
       <div class="create-grid" style="margin-top:10px;">
         <label>Nombre<input data-create-phase="name" value="${escapeHtml(item.name || `Fase ${index + 1}`)}"></label>
-        <label>Banco/interino<input data-create-phase-condition="interimBank" placeholder="Banco General / Banistmo" value="${escapeHtml(condition.interimBank || '')}"></label>
+        <label>Banco/interino${bankChoiceHtml('interimBank', condition.interimBank || '')}</label>
         <label>Fecha de carta<input data-create-phase-condition="letterDate" type="date" value="${escapeHtml((condition.letterDate || '').slice(0, 10))}"></label>
         <label>Numero o referencia de carta<input data-create-phase-condition="letterReference" placeholder="Carta term sheet BG-2026-015" value="${escapeHtml(condition.letterReference || '')}"></label>
         <div style="grid-column:1/-1;border:1px solid #dbeafe;background:#f8fbff;border-radius:12px;padding:10px;">
@@ -901,6 +1058,7 @@
     const current = collectFinancePhases();
     createFinancePhases.innerHTML = Array.from({ length: count }, (_, idx) => createPhaseFinanceBlock(idx, current[idx] || {})).join('');
     bindBankNumberFormatting(createFinancePhases);
+    bindBankChoices(createFinancePhases);
     syncCreatePhaseSources();
   }
 
@@ -914,7 +1072,9 @@
   function collectPhaseFinancialConditions(row) {
     const out = {};
     row.querySelectorAll('[data-create-phase-condition]').forEach(input => {
-      out[input.dataset.createPhaseCondition] = input.value?.trim() || '';
+      out[input.dataset.createPhaseCondition] = input.matches('[data-bank-choice]')
+        ? readBankChoice(input)
+        : (input.value?.trim() || '');
     });
     const phaseFinancial = currentPhaseFinancialNumbers(row);
     out.phaseTotal = phaseFinancial.phaseTotal;
@@ -980,6 +1140,8 @@
   document.getElementById('addCreateHousingModel')?.addEventListener('click', () => {
     createHousingModels?.insertAdjacentHTML('beforeend', createHousingModelRow());
     bindBankNumberFormatting(createHousingModels || document);
+    const row = createHousingModels?.lastElementChild;
+    if (row) syncCreateUnitsPreview(row);
   });
   [createBoardMembers, createShareholders, createHousingModels].forEach(container => {
     container?.addEventListener('click', event => {
@@ -988,11 +1150,26 @@
       validateCreateModelStatuses();
     });
   });
-  createHousingModels?.addEventListener('input', () => {
+  createHousingModels?.addEventListener('input', event => {
+    if (event.target?.matches?.('[data-create-unit]')) return;
     syncTechnicalUnitsFromModels();
-    createHousingModels.querySelectorAll('[data-create-model-row]').forEach(row => syncCreateModelStatusRow(row, { autoFill: true }));
+    createHousingModels.querySelectorAll('[data-create-model-row]').forEach(row => {
+      syncCreateModelStatusRow(row, { autoFill: true });
+      syncCreateUnitsPreview(row);
+    });
+  });
+  createHousingModels?.addEventListener('change', event => {
+    const unitStatus = event.target?.matches?.('[data-create-unit="estado"]') ? event.target : null;
+    if (unitStatus) unitStatus.closest('[data-create-unit-row]')?.setAttribute('data-status-manual', '1');
+  });
+  createHousingModels?.addEventListener('input', event => {
+    const unitLocation = event.target?.matches?.('[data-create-unit="ubicacion"]') ? event.target : null;
+    if (unitLocation) unitLocation.closest('[data-create-unit-row]')?.setAttribute('data-location-manual', '1');
   });
   document.getElementById('td-phasesCount')?.addEventListener('input', syncCreateFinancePhases);
+  document.getElementById('pLocation')?.addEventListener('input', () => {
+    createHousingModels?.querySelectorAll('[data-create-model-row]').forEach(row => syncCreateUnitsPreview(row));
+  });
   createFinancePhases?.addEventListener('click', event => {
     const addBtn = event.target.closest('[data-add-create-phase-line]');
     const addFinancingBtn = event.target.closest('[data-add-phase-financing-line]');
@@ -1040,6 +1217,11 @@
   });
   createFinancePhases?.addEventListener('change', syncCreatePhaseSources);
   createFinancePhases?.addEventListener('keyup', syncCreatePhaseSources);
+  document.getElementById('createDatoUnicoFile')?.addEventListener('change', event => {
+    const name = event.target.files?.[0]?.name || 'Ningun archivo seleccionado';
+    const label = document.getElementById('createDatoUnicoFileName');
+    if (label) label.textContent = name;
+  });
   document.addEventListener('input', event => {
     if (event.target?.matches?.('[data-create-phase-line-amount], [data-create-phase-line-name]')) syncCreatePhaseSources();
   }, true);
@@ -1172,6 +1354,8 @@
     if (createShareholders && !createShareholders.children.length) createShareholders.insertAdjacentHTML('beforeend', createShareholderRow());
     if (createHousingModels && !createHousingModels.children.length) createHousingModels.insertAdjacentHTML('beforeend', createHousingModelRow());
     bindBankNumberFormatting(modal);
+    bindBankChoices(modal);
+    createHousingModels?.querySelectorAll('[data-create-model-row]').forEach(row => syncCreateUnitsPreview(row));
     hideGlobalCreateFinancialConditionFields();
     await loadCreatePromoterProfiles();
 
@@ -1293,12 +1477,24 @@
             legalCompanyName: legalData.promoterLegalName,
             technicalData: collectTechnicalData(),
             housingModels: collectHousingModels(),
+            initialUnits: collectInitialUnits(),
             financePhases: collectFinancePhases(),
             financialConditions,
             teamSuggestion: collectTeamSuggestion()
           };
 
-          await API.post('/api/projects', payload);
+          const createdProject = await API.post('/api/projects', payload);
+          const importFile = document.getElementById('createDatoUnicoFile')?.files?.[0];
+          if (importFile && createdProject?._id) {
+            const fd = new FormData();
+            fd.append('file', importFile);
+            try {
+              await API.upload(`/api/projects/${createdProject._id}/import-dato-unico`, fd);
+            } catch (importErr) {
+              console.error(importErr);
+              alert('Proyecto creado, pero no se pudo importar el Excel Dato Unico.');
+            }
+          }
 
           closeModal();
 
@@ -1316,9 +1512,13 @@
           if (createHousingModels) createHousingModels.innerHTML = '';
           if (createFinancePhases) createFinancePhases.innerHTML = '';
           document.querySelectorAll('[data-create-precedent]').forEach(input => { input.checked = false; });
-          ['fc-otherRequirements','fc-trustee','fc-trustType','fc-technicalInspector','fc-financialInspector','ld-promoterLegalName','ld-interimBank','ld-trustName','td-phasesCount','td-totalUnits','td-notes'].forEach(fieldId => {
+          ['fc-otherRequirements','fc-trustee','fc-trustType','fc-technicalInspector','fc-financialInspector','ld-promoterLegalName','ld-interimBank','ld-interimBankOther','ld-trustName','td-phasesCount','td-totalUnits','td-notes'].forEach(fieldId => {
             const field = document.getElementById(fieldId); if (field) field.value = '';
           });
+          const createDatoFile = document.getElementById('createDatoUnicoFile');
+          const createDatoFileName = document.getElementById('createDatoUnicoFileName');
+          if (createDatoFile) createDatoFile.value = '';
+          if (createDatoFileName) createDatoFileName.textContent = 'Ningun archivo seleccionado';
           const trustApplies = document.getElementById('ld-trustApplies');
           if (trustApplies) trustApplies.value = 'false';
           setCreateStep('general');

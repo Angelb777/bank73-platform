@@ -31,10 +31,20 @@ const UnitSchema = new mongoose.Schema({
   ubicacion: { type: String, default: '' },
   m2:      { type: Number, default: 0 },
   precioLista: { type: Number, default: 0 },
+  numeroFinca: { type: String, default: '' },
+  codigoUbicacion: { type: String, default: '' },
+  calle: { type: String, default: '' },
+  loteEsquina: { type: String, default: '' },
+  metrosExtra: { type: Number, default: 0 },
+  precioLoteEsquina: { type: Number, default: 0 },
+  precioM2Extra: { type: Number, default: 0 },
   areaAbierta: { type: Number, default: 0 },
   areaCerrada: { type: Number, default: 0 },
+  areaTotalConstruccion: { type: Number, default: 0 },
   recamaras: { type: Number, default: 0 },
   banos: { type: Number, default: 0 },
+  valorMejoras: { type: Number, default: 0 },
+  valorTerreno: { type: Number, default: 0 },
 
   estado: {
     type: String,
@@ -73,6 +83,10 @@ UnitSchema.pre('save', function(next) {
 
   if (this.isModified('precioLista')) {
     this.price = this.precioLista;
+  }
+
+  if (this.isModified('areaAbierta') || this.isModified('areaCerrada')) {
+    this.areaTotalConstruccion = Number(this.areaAbierta || 0) + Number(this.areaCerrada || 0);
   }
 
   if (this.isModified('estado')) {

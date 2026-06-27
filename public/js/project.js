@@ -152,6 +152,8 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
   });
   activateTab(document.querySelector('.tab.active')?.dataset.tab || 'proyecto');
 
+  setTimeout(() => bindDatoUnicoImportControls(), 0);
+
 // Delegación global: "Gestionar permisos"
 document.addEventListener('click', (ev) => {
   const btn = ev.target.closest('.js-open-permits');
@@ -2729,6 +2731,32 @@ if (!isPeriodView) try {
       sub: `${proformasByBank.length} bancos`
     }
   ]);
+
+  const legalData = project.legalData || {};
+  document.getElementById('summaryLegalDataBox')?.remove();
+  const legalRows = [
+    ['Promotor/deudor como sociedad legal', legalData.promoterLegalName || project.legalCompanyName || project.sociedad],
+    ['Banco interino', legalData.interimBank],
+    ['Fideicomiso', legalData.trustApplies ? 'Aplica' : 'No aplica'],
+    ['Nombre del fideicomiso', legalData.trustName],
+    ['Representantes legales', (legalData.legalRepresentatives || legalData.representantesLegales || []).map(x => x.name || x.nombre || x).filter(Boolean).join(', ')]
+  ].filter(([, value]) => String(value || '').trim());
+  const boardRows = (legalData.boardMembers || []).map(item =>
+    [item.name, item.cedula, item.position].filter(Boolean).join(' - ')
+  ).filter(Boolean);
+  const shareholderRows = (legalData.shareholders || []).map(item =>
+    [item.name, item.cedula, item.percentage ? `${item.percentage}%` : ''].filter(Boolean).join(' - ')
+  ).filter(Boolean);
+  const legalBox = document.getElementById('summaryLegalProjectData');
+  if (legalBox) legalBox.innerHTML = `
+    <div class="finance-conditions-subgrid summary-legal-project-data">
+      ${legalRows.map(([label, value]) => `<div class="finance-condition-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || '---')}</strong></div>`).join('') || '<div class="small muted">Sin datos legales registrados.</div>'}
+    </div>
+    <div class="charts-grid" style="margin-top:12px;">
+      <div class="card summary-chart-card"><h3>Junta directiva</h3><div class="small muted">${boardRows.map(escapeHtml).join('<br>') || 'Sin directivos registrados.'}</div></div>
+      <div class="card summary-chart-card"><h3>Accionistas</h3><div class="small muted">${shareholderRows.map(escapeHtml).join('<br>') || 'Sin accionistas registrados.'}</div></div>
+    </div>
+  `;
   renderMiniKpiBox('summaryFinancialProfile', [
     {
       title: 'Estado del proyecto',
@@ -3892,6 +3920,71 @@ const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
     __summaryDirty = false;
   } catch (e) {
     console.error('Error cargando resumen', e);
+  }
+}
+
+function bindDatoUnicoImportControls() {
+  const importBlock = document.querySelector('.summary-import-actions');
+  const slot = document.getElementById('commercialImportDatoUnicoSlot');
+  if (importBlock && slot && importBlock.parentElement !== slot) {
+    importBlock.style.display = '';
+    slot.appendChild(importBlock);
+  }
+
+  const importBtn = document.getElementById('importDatoUnicoBtn');
+  const datoUnicoInput = document.getElementById('datoUnicoFile');
+  const datoUnicoFileName = document.getElementById('datoUnicoFileName');
+  if (datoUnicoInput && datoUnicoFileName && !datoUnicoInput.dataset.bound) {
+    datoUnicoInput.dataset.bound = '1';
+    datoUnicoInput.addEventListener('change', () => {
+      datoUnicoFileName.textContent = datoUnicoInput.files?.[0]?.name || 'Ningun archivo seleccionado';
+    });
+  }
+  if (importBtn && !importBtn.dataset.bound) {
+    importBtn.dataset.bound = '1';
+    importBtn.addEventListener('click', async () => {
+      if (importBtn.disabled) return;
+
+      try {
+        const f = datoUnicoInput?.files?.[0];
+        if (!f) return alert('Selecciona el Excel primero');
+
+        importBtn.disabled = true;
+        importBtn.innerText = 'Importando...';
+
+        const fd = new FormData();
+        fd.append('file', f);
+
+        const resp3 = await fetch(`/api/projects/${id}/import-dato-unico`, {
+          method: 'POST',
+          body: fd,
+          headers: {
+            ...(typeof authHeaders === 'function' ? authHeaders() : {}),
+            ...(typeof tenantHeaders === 'function' ? tenantHeaders() : {}),
+          }
+        });
+
+        if (!resp3.ok) {
+          const txt = await resp3.text().catch(() => '');
+          console.error(txt);
+          alert('Error importando Dato Unico (mira consola)');
+          return;
+        }
+
+        const json = await resp3.json();
+        alert(`Importado: ${json.ventasUpserted} ventas / ${json.unitsUpserted} unidades`);
+
+        await loadSummary();
+        await refreshTopHeaderKpis();
+        if (typeof loadCommercial === 'function') await loadCommercial();
+      } catch (err) {
+        console.error(err);
+        alert(err.message || 'Error importando Dato Unico');
+      } finally {
+        importBtn.disabled = false;
+        importBtn.innerText = 'Importar Dato Unico';
+      }
+    });
   }
 }
 
@@ -7342,6 +7435,10 @@ function phaseConditionsFormHtml(conditions = {}) {
   return `<div class="finance-conditions-subgrid">${FINANCE_PHASE_CONDITION_FORM_FIELDS.map(([key, label, type, placeholder]) => {
     const value = key === 'letterDate' ? financeDateInput(conditions[key]) : (conditions[key] || '');
     if (type === 'textarea') return `<label><span>${escapeHtml(label)}</span><textarea class="input" data-phase-condition="${key}" rows="2" placeholder="${escapeHtml(placeholder)}">${escapeHtml(value)}</textarea></label>`;
+    if (key === 'interimBank' && window.BankSelect) {
+      const known = (window.BANKS_PANAMA || []).some(bank => String(bank).toLowerCase() === String(value).toLowerCase());
+      return `<label><span>${escapeHtml(label)}</span><select class="input" data-phase-condition="${key}" data-phase-bank>${window.BankSelect.bankOptionsHtml(value)}</select><input class="input" data-phase-bank-other value="${known ? '' : escapeHtml(value)}" placeholder="Especificar banco" style="display:${value && !known ? '' : 'none'};margin-top:6px;"></label>`;
+    }
     return `<label><span>${escapeHtml(label)}</span><input class="input" data-phase-condition="${key}" type="${type}" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value)}"></label>`;
   }).join('')}</div>`;
 }
@@ -7367,7 +7464,9 @@ function phaseFinancingLinesFormHtml(lines = []) {
 function collectPhaseFinancialConditionsFromModal() {
   const out = {};
   document.querySelectorAll('[data-phase-condition]').forEach(input => {
-    out[input.dataset.phaseCondition] = input.value?.trim() || '';
+    out[input.dataset.phaseCondition] = input.matches('[data-phase-bank]')
+      ? (input.value === '__OTHER__' ? input.parentElement?.querySelector('[data-phase-bank-other]')?.value?.trim() || '' : input.value || '')
+      : (input.value?.trim() || '');
   });
   return out;
 }
@@ -7678,6 +7777,17 @@ const payload = {
     if (ev.target.closest('[data-remove-phase-financing]')) {
       ev.target.closest('[data-phase-financing-line]')?.remove();
     }
+  });
+  modalBody?.querySelectorAll('[data-phase-bank]').forEach(select => {
+    if (select.dataset.bankBound) return;
+    select.dataset.bankBound = '1';
+    select.addEventListener('change', () => {
+      const other = select.parentElement?.querySelector('[data-phase-bank-other]');
+      if (!other) return;
+      other.style.display = select.value === '__OTHER__' ? '' : 'none';
+      if (select.value !== '__OTHER__') other.value = '';
+    });
+    select.dispatchEvent(new Event('change'));
   });
   hookTable('ph-plan-uses');
   hookTable('ph-plan-sources');
@@ -9804,6 +9914,11 @@ async function aplicarImportWord(unitId) {
     </select>
   `;
 
+  const bankSelectCustom = (id, label, current = '') => `
+    <div class="label">${label}</div>
+    ${window.BankSelect?.bankSelectHtml?.(id, current) || input(id, label, current)}
+  `;
+
   const tituloUnidad = document.getElementById('fichaTitulo');
 
 tituloUnidad.innerHTML = `
@@ -9967,7 +10082,7 @@ ${inputNum('fv-abonoInicial', `Abono inicial ${info('Se calcula automáticamente
 ${inputNum('fv-porcentajeFinanciamiento', `% financiamiento ${info('Porcentaje del precio de venta cubierto por financiamiento bancario.')}`, v.porcentajeFinanciamiento || 0)}
 ${input('fv-cesionAFavorDe', `Cesión a favor de ${info('Entidad o banco a favor de quien se realiza la cesión de la CPP, si aplica.')}`, v.cesionAFavorDe || '')}
 
-${input('fv-banco', `Banco del cliente ${info('Banco que tramita o aprueba el financiamiento del cliente.')}`, v.banco || '')}
+${bankSelectCustom('fv-banco', `Banco del cliente ${info('Banco que tramita o aprueba el financiamiento del cliente.')}`, v.banco || '')}
 ${input('fv-oficialBanco', `Oficial de trámite / crédito ${info('Oficial bancario encargado del expediente de crédito del cliente.')}`, v.oficialBanco || '')}
 ${inputDate('fv-fechaProforma', `Fecha proforma ${info('Fecha de emisión de la proforma comercial.')}`, v.fechaProforma)}
 
@@ -10187,6 +10302,7 @@ const viewExports = document.createElement('div');
     v.statusBanco || '',
     { includeEmpty: false }
   );
+  window.BankSelect?.bindBankSelect?.('fv-banco');
 
   const elCons = document.getElementById('fv-constructora');
   if (elCons) elCons.value = safeVal(v.constructora);
@@ -10455,7 +10571,7 @@ const uBody = {
       // =====================================================
       // Banco / CPP / financiamiento
       // =====================================================
-      banco: vVal('fv-banco'),
+      banco: window.BankSelect?.getBankValue?.('fv-banco') || vVal('fv-banco'),
       oficialBanco: vVal('fv-oficialBanco'),
       statusBanco: getStatusBancoValue('fv-statusBancoSel', 'fv-statusBancoOther'),
       estatusCPP: vVal('fv-estatusCPP'),
@@ -10616,9 +10732,15 @@ const uBody = {
   // === Batch ===
   function openBatch() {
   if (!selected.size) return alert('Selecciona al menos una unidad.');
+  const bankBatch = document.getElementById('b-banco');
+  if (bankBatch && window.BankSelect && !bankBatch.children.length) {
+    bankBatch.innerHTML = window.BankSelect.bankOptionsHtml('');
+  }
+  window.BankSelect?.bindBankSelect?.('b-banco');
   modalBatch.querySelectorAll('input, select').forEach(el => {
     el.value = '';
   });
+  document.getElementById('b-banco')?.dispatchEvent(new Event('change'));
   modalBatch.style.display='flex';
 
   // ✅ llenar select y permitir "(no cambiar)"
@@ -10636,7 +10758,9 @@ const uBody = {
     const el = document.getElementById(`b-${field}`);
     if (!el) return;
 
-    const raw = String(el.value || '').trim();
+    const raw = field === 'banco' && window.BankSelect
+      ? String(window.BankSelect.getBankValue('b-banco') || '').trim()
+      : String(el.value || '').trim();
     if (!raw) return;
 
     if (type === 'number') {
@@ -10920,10 +11044,35 @@ if (btnExportarExcel) {
         modelo: document.getElementById('cl-modelo').value || '',
         ubicacion: document.getElementById('cl-ubicacion')?.value || state?.project?.location || state?.project?.address || '',
         m2: parseInputNumber('cl-m2', document.getElementById('cl-m2').value || 0),
+        areaAbierta: parseInputNumber('cl-areaAbierta', document.getElementById('cl-areaAbierta')?.value || 0),
+        areaCerrada: parseInputNumber('cl-areaCerrada', document.getElementById('cl-areaCerrada')?.value || 0),
+        recamaras: parseInputNumber('cl-recamaras', document.getElementById('cl-recamaras')?.value || 0),
+        banos: parseInputNumber('cl-banos', document.getElementById('cl-banos')?.value || 0),
         precioLista: parsePanamaNumber(document.getElementById('cl-precio').value || 0),
         estado: document.getElementById('cl-estado').value || 'disponible'
       };
       try {
+        if (document.getElementById('cl-guardarModelo')?.checked && body.modelo) {
+          const models = Array.isArray(state?.project?.housingModels) ? [...state.project.housingModels] : [];
+          const exists = models.some(model => String(model.name || '').trim().toLowerCase() === String(body.modelo || '').trim().toLowerCase());
+          if (!exists) {
+            const initialStatuses = { disponible: 0, inventario: 0, reservado: 0, con_cpp: 0, tramite_legal_activado: 0, escriturado_traspasado: 0, vivienda_entregada: 0 };
+            initialStatuses[body.estado] = body.cantidad;
+            models.push({
+              name: body.modelo,
+              bedrooms: body.recamaras,
+              bathrooms: body.banos,
+              openAreaM2: body.areaAbierta || body.m2,
+              closedAreaM2: body.areaCerrada,
+              price: body.precioLista,
+              unitsCount: body.cantidad,
+              initialStatuses,
+              observations: 'Creado desde Comercial'
+            });
+            await apiPatch(`/api/projects/${id}`, { housingModels: models });
+            state.project.housingModels = models;
+          }
+        }
         await apiPost('/api/units/batch', body);
         modalCrear.style.display = 'none';
         await loadUnits();

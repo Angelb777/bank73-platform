@@ -74,7 +74,50 @@ function unitModelFieldsFromBody(project, body = {}) {
     out.precioLista = Number(body.precioLista || 0);
     out.price = out.precioLista;
   }
+  if (body.areaAbierta !== undefined) out.areaAbierta = Number(body.areaAbierta || 0);
+  if (body.areaCerrada !== undefined) out.areaCerrada = Number(body.areaCerrada || 0);
+  if (body.areaAbierta !== undefined || body.areaCerrada !== undefined) {
+    out.areaTotalConstruccion = Number(out.areaAbierta || 0) + Number(out.areaCerrada || 0);
+    if (!out.m2) out.m2 = out.areaTotalConstruccion;
+  }
+  if (body.recamaras !== undefined) out.recamaras = Number(body.recamaras || 0);
+  if (body.banos !== undefined) out.banos = Number(body.banos || 0);
   return out;
+}
+
+const UNIT_VENTA_SYNC_FIELDS = [
+  'numeroFinca',
+  'codigoUbicacion',
+  'calle',
+  'loteEsquina',
+  'metrosExtra',
+  'precioLoteEsquina',
+  'precioM2Extra',
+  'areaAbierta',
+  'areaCerrada',
+  'areaTotalConstruccion',
+  'recamaras',
+  'banos',
+  'valorMejoras',
+  'valorTerreno'
+];
+
+function ventaSyncPayloadFromUnitSet(set = {}, fallback = {}) {
+  const ventaSet = {};
+  UNIT_VENTA_SYNC_FIELDS.forEach(field => {
+    if (set[field] != null) ventaSet[field] = set[field];
+  });
+  if (set.ubicacion != null) ventaSet.ubicacion = String(set.ubicacion || '').trim();
+  if (set.precioLista != null) {
+    ventaSet.valor = Number(set.precioLista || 0);
+    ventaSet.precioVenta = Number(set.precioLista || 0);
+  }
+  if (set.areaAbierta != null || set.areaCerrada != null) {
+    ventaSet.areaTotalConstruccion =
+      Number((set.areaAbierta ?? fallback.areaAbierta) || 0) +
+      Number((set.areaCerrada ?? fallback.areaCerrada) || 0);
+  }
+  return ventaSet;
 }
 
 const ESTADOS_VENTA_CAIBLE = [
@@ -313,21 +356,10 @@ router.patch(
         set.areaCerrada != null ||
         set.recamaras != null ||
         set.banos != null ||
-        set.ubicacion != null
+        set.ubicacion != null ||
+        UNIT_VENTA_SYNC_FIELDS.some(field => set[field] != null)
       ) {
-        const ventaSet = {};
-        if (set.ubicacion != null) ventaSet.ubicacion = String(set.ubicacion || '').trim();
-        if (set.precioLista != null) {
-          ventaSet.valor = Number(set.precioLista || 0);
-          ventaSet.precioVenta = Number(set.precioLista || 0);
-        }
-        if (set.areaAbierta != null) ventaSet.areaAbierta = Number(set.areaAbierta || 0);
-        if (set.areaCerrada != null) ventaSet.areaCerrada = Number(set.areaCerrada || 0);
-        if (set.areaAbierta != null || set.areaCerrada != null) {
-          ventaSet.areaTotalConstruccion = Number(set.areaAbierta || 0) + Number(set.areaCerrada || 0);
-        }
-        if (set.recamaras != null) ventaSet.recamaras = Number(set.recamaras || 0);
-        if (set.banos != null) ventaSet.banos = Number(set.banos || 0);
+        const ventaSet = ventaSyncPayloadFromUnitSet(set);
         await Venta.updateMany(
           {
             tenantKey: req.tenantKey,
@@ -470,23 +502,10 @@ router.patch(
         update.areaCerrada != null ||
         update.recamaras != null ||
         update.banos != null ||
-        update.ubicacion != null
+        update.ubicacion != null ||
+        UNIT_VENTA_SYNC_FIELDS.some(field => update[field] != null)
       ) {
-        const ventaSet = {};
-        if (update.ubicacion != null) ventaSet.ubicacion = String(update.ubicacion || '').trim();
-        if (update.precioLista != null) {
-          ventaSet.valor = Number(update.precioLista || 0);
-          ventaSet.precioVenta = Number(update.precioLista || 0);
-        }
-        if (update.areaAbierta != null) ventaSet.areaAbierta = Number(update.areaAbierta || 0);
-        if (update.areaCerrada != null) ventaSet.areaCerrada = Number(update.areaCerrada || 0);
-        if (update.areaAbierta != null || update.areaCerrada != null) {
-          ventaSet.areaTotalConstruccion =
-            Number((update.areaAbierta ?? req._unit?.areaAbierta) || 0) +
-            Number((update.areaCerrada ?? req._unit?.areaCerrada) || 0);
-        }
-        if (update.recamaras != null) ventaSet.recamaras = Number(update.recamaras || 0);
-        if (update.banos != null) ventaSet.banos = Number(update.banos || 0);
+        const ventaSet = ventaSyncPayloadFromUnitSet(update, req._unit || {});
         await Venta.findOneAndUpdate(
           {
             tenantKey: req.tenantKey,

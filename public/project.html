@@ -1506,7 +1506,7 @@
           <button id="summaryReportDateClear" class="summary-date-clear" type="button" title="Informe global">Limpiar</button>
         </div>
       </div>
-    <div class="summary-import-actions">
+    <div class="summary-import-actions" style="display:none;">
       <label class="summary-file-picker" for="datoUnicoFile">
         <span class="summary-file-picker-label">Seleccionar Excel</span>
         <span class="summary-file-picker-name" id="datoUnicoFileName">Ningún archivo seleccionado</span>
@@ -1649,8 +1649,10 @@
   <!-- =========================
        RESUMEN LEGAL
        ========================= -->
-  <section class="summary-block" style="margin-top:18px;">
+  <section class="summary-block" id="summaryLegalBlock" style="margin-top:18px;">
     <div class="summary-block-title">Resumen Legal</div>
+
+    <section id="summaryLegalProjectData" style="margin-top:12px;"></section>
 
     <section id="summaryLegalKpis" class="kpis-grid" style="margin-top:12px;"></section>
 
@@ -2157,7 +2159,9 @@
     <div class="commercial-actions-bar">
       <div class="commercial-action-group commercial-action-main">
         <span class="commercial-action-label">Gestión</span>
-        <button id="btnCrearLote" class="btn commercial-btn commercial-btn-primary" type="button">Crear en lote</button>
+        <div class="commercial-action-controls">
+          <button id="btnCrearLote" class="btn commercial-btn commercial-btn-primary" type="button">Crear en lote</button>
+        </div>
       </div>
       <div class="commercial-action-group commercial-action-selection">
         <span class="commercial-action-label">Selección</span>
@@ -2169,6 +2173,9 @@
         <span class="commercial-action-label">Exportar</span>
         <button id="btnExportarCsv" class="btn commercial-btn commercial-btn-soft" type="button">CSV</button>
         <button id="btnExportarExcel" class="btn btn-primary commercial-btn commercial-btn-primary" type="button">Excel</button>
+      </div>
+      <div class="commercial-action-group commercial-action-export" id="commercialImportDatoUnicoSlot">
+        <span class="commercial-action-label">Importar</span>
       </div>
     </div>
 
@@ -2208,8 +2215,17 @@
         </select>
         <label>Modelo</label>
         <input id="cl-modelo" placeholder="Modelo" />
+        <label><input id="cl-guardarModelo" type="checkbox" /> Guardar como nuevo modelo del proyecto</label>
         <label>m²</label>
         <input id="cl-m2" type="number" min="0" value="60" />
+        <label>Area abierta m2</label>
+        <input id="cl-areaAbierta" type="number" min="0" value="0" />
+        <label>Area cerrada m2</label>
+        <input id="cl-areaCerrada" type="number" min="0" value="0" />
+        <label>Recamaras</label>
+        <input id="cl-recamaras" type="number" min="0" value="0" />
+        <label>Banos</label>
+        <input id="cl-banos" type="number" min="0" value="0" />
         <label>Precio lista</label>
         <input id="cl-precio" type="text" inputmode="decimal" value="100,000.00" />
         <label>Ubicacion</label>
@@ -2379,7 +2395,7 @@
           </div>
           <div>
             <h4>Comercial (Venta)</h4>
-            <label>Banco</label><input id="b-banco" />
+            <label>Banco</label><select id="b-banco"></select><input id="b-bancoOther" placeholder="Especificar banco" style="display:none;margin-top:6px;" />
             <label>Oficial banco</label><input id="b-oficialBanco" />
             <label>Status en Banco</label>
 <select id="b-statusBancoSel"></select>
@@ -2560,6 +2576,7 @@
   </div>
 
   <script src="/js/api.js"></script>
+  <script src="/js/banks.js"></script>
   <script src="/lib/chart.umd.min.js"></script>
   <script src="/js/theme-toggle.js"></script>
   <script src="/js/project.js?v=project-models-v1"><!-- ROLE-SEP: bump --></script>
