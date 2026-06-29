@@ -287,9 +287,6 @@ const VentaSchema = new mongoose.Schema({
   // ====== Soft delete ======
   deletedAt: { type: Date, default: null },
 
-  // ====== Soft delete ======
-  deletedAt: { type: Date, default: null },
-
   // ====== Checklist ======
   checklist: { type: [ChecklistStepSchema], default: [] }
 
@@ -297,5 +294,8 @@ const VentaSchema = new mongoose.Schema({
 
 // Un expediente por unidad y proyecto
 VentaSchema.index({ projectId: 1, unitId: 1 }, { unique: true });
+VentaSchema.index({ tenantKey: 1, projectId: 1, deletedAt: 1, createdAt: -1 });
+VentaSchema.index({ tenantKey: 1, projectId: 1, deletedAt: 1, unitId: 1 });
+VentaSchema.index({ tenantKey: 1, projectId: 1, estadoVenta: 1, deletedAt: 1 });
 
 module.exports = mongoose.models.Venta || mongoose.model('Venta', VentaSchema);

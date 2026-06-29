@@ -95,6 +95,71 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
     projectCurrencySel.closest('.currency-picker')?.setAttribute('title', meta.label);
   }
 
+  const PROJECT_DATA_CACHE = Object.create(null);
+
+  function invalidateProjectDataCache(keys) {
+    const list = Array.isArray(keys) ? keys : [keys];
+    list.filter(Boolean).forEach(key => {
+      delete PROJECT_DATA_CACHE[key];
+    });
+  }
+
+  async function cachedProjectGet(key, urlFactory, { force = false } = {}) {
+    if (!key) return API.get(urlFactory());
+    const current = PROJECT_DATA_CACHE[key];
+    if (!force && current?.data !== undefined) return current.data;
+    if (!force && current?.promise) return current.promise;
+
+    const entry = PROJECT_DATA_CACHE[key] || {};
+    entry.promise = API.get(urlFactory()).then(data => {
+      entry.data = data;
+      entry.promise = null;
+      PROJECT_DATA_CACHE[key] = entry;
+      return data;
+    }).catch(err => {
+      if (PROJECT_DATA_CACHE[key] === entry) entry.promise = null;
+      throw err;
+    });
+    PROJECT_DATA_CACHE[key] = entry;
+    return entry.promise;
+  }
+
+  function cacheBustQuery(force) {
+    return force ? `&ts=${Date.now()}` : '';
+  }
+
+  function getProjectUnitsAll({ force = false } = {}) {
+    return cachedProjectGet(
+      'unitsAll',
+      () => `/api/units?projectId=${id}${cacheBustQuery(force)}`,
+      { force }
+    );
+  }
+
+  function getProjectVentas({ force = false } = {}) {
+    return cachedProjectGet(
+      'ventas',
+      () => `/api/ventas?projectId=${id}${cacheBustQuery(force)}`,
+      { force }
+    );
+  }
+
+  function getProjectPortfolio({ force = false } = {}) {
+    return cachedProjectGet(
+      'portfolio',
+      () => `/api/projects/portfolio${force ? `?ts=${Date.now()}` : ''}`,
+      { force }
+    );
+  }
+
+  function getProjectFinanceSnapshot({ force = false } = {}) {
+    return cachedProjectGet(
+      'finance',
+      () => `/api/projects/${id}/finance${force ? `?ts=${Date.now()}` : ''}`,
+      { force }
+    );
+  }
+
   async function refreshSummaryFromServer() {
     if (typeof loadSummary === 'function') {
       await loadSummary();
@@ -112,6 +177,7 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
 
   async function markProjectDataChanged({ refreshSummary = false, refreshHeader = true } = {}) {
     __summaryDirty = true;
+    invalidateProjectDataCache(['unitsAll', 'ventas', 'portfolio', 'finance']);
 
     try {
       if (refreshHeader && typeof refreshTopHeaderKpis === 'function') {
@@ -2559,8 +2625,8 @@ async function renderSummaryUI(payload) {
 
     // ✅ FIX SUMMARY: recalcula ventas y CPP activos desde datos reales
   if (!isPeriodView) try {
-    const unitsFix = await API.get(`/api/units?projectId=${id}&ts=${Date.now()}`);
-    const ventasFix = await API.get(`/api/ventas?projectId=${id}&ts=${Date.now()}`);
+    const unitsFix = await getProjectUnitsAll();
+    const ventasFix = await getProjectVentas();
 
     total = Array.isArray(unitsFix) ? unitsFix.length : total;
     sold = (unitsFix || []).filter(isSummarySoldUnit).length;
@@ -2619,7 +2685,7 @@ const app = kpis.appraisal || {};
 
 // ✅ FIX: usar la misma fuente que los KPIs globales del proyecto
 if (!isPeriodView) try {
-  const portfolio = await API.get(`/api/projects/portfolio?ts=${Date.now()}`);
+  const portfolio = await getProjectPortfolio();
   const me = (portfolio || []).find(p => String(p._id) === String(id));
 
   if (me) {
@@ -2638,7 +2704,7 @@ if (!isPeriodView) try {
 
 // ✅ FIX: CPP activos = tienen numCPP y NO están vencidos
 if (!isPeriodView) try {
-  const ventas = await API.get(`/api/ventas?projectId=${id}&ts=${Date.now()}`);
+  const ventas = await getProjectVentas();
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -2791,7 +2857,7 @@ if (!isPeriodView) try {
 
   // Finanzas
   if (!isPeriodView) try {
-    const fin = await API.get(`/api/projects/${id}/finance?ts=${Date.now()}`);
+    const fin = await getProjectFinanceSnapshot();
     const phases = fin?.finance?.phases || [];
     window.__LAST_SUMMARY_PAYLOAD__ = window.__LAST_SUMMARY_PAYLOAD__ || {};
     window.__LAST_SUMMARY_PAYLOAD__.finance = {
@@ -3511,7 +3577,7 @@ wireInfoTooltips();
 async function syncUnitsSoldFromPortfolio() {
   try {
     // 1) Traemos el mismo listado que usa el portfolio
-    const list = await API.get('/api/projects/portfolio');
+    const list = await getProjectPortfolio();
     const me = (list || []).find(p => String(p._id) === String(id));
     if (!me) return;
 
@@ -3905,6 +3971,7 @@ const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
 
     alert(`Importado: ${json.ventasUpserted} ventas / ${json.unitsUpserted} unidades`);
 
+    invalidateProjectDataCache(['unitsAll', 'ventas', 'portfolio', 'finance']);
     await loadSummary();
     await refreshTopHeaderKpis();
     if (typeof loadCommercial === 'function') {
@@ -3983,6 +4050,7 @@ function bindDatoUnicoImportControls() {
         const json = await resp3.json();
         alert(`Importado: ${json.ventasUpserted} ventas / ${json.unitsUpserted} unidades`);
 
+        invalidateProjectDataCache(['unitsAll', 'ventas', 'portfolio', 'finance']);
         await loadSummary();
         await refreshTopHeaderKpis();
         if (typeof loadCommercial === 'function') await loadCommercial();
@@ -6271,10 +6339,10 @@ function getPhaseStatus(ph, { deviationPct = 0.10 } = {}) {
 // -------------------------
 // Load principal
 // -------------------------
-async function loadFinance() {
+async function loadFinance({ force = true } = {}) {
   try {
     console.log('[Finance] carga de finanzas', { projectId: id });
-    const res = await API.get(`/api/projects/${id}/finance`);
+    const res = await getProjectFinanceSnapshot({ force });
     FINANCE = res.finance;
     FINANCE_KPIS = res.kpis;
     FINANCE_CONTROL = res.financeControl || null;
@@ -8624,7 +8692,7 @@ function getCppExpiryAlert(u, venta) {
 
 async function getCreditLineExpiryAlerts() {
   try {
-    const res = await API.get(`/api/projects/${id}/finance`);
+    const res = await getProjectFinanceSnapshot();
     const lines = res?.financeControl?.loanLines || [];
     return lines.flatMap(line => {
       const entries = Array.isArray(line.entries) && line.entries.length ? line.entries : [line];
@@ -12154,7 +12222,7 @@ if (['tecnico','legal'].includes(myRole)) {
   await loadProject();        // ✅
   await loadSummary();        // ✅
   await Promise.all([
-    loadFinance(),            // ✅
+    loadFinance({ force: false }), // ✅ reutiliza snapshot de resumen si ya existe
     loadUnits()               // ✅
   ]);
   await loadProyectoData();   // ✅

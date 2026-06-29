@@ -153,5 +153,8 @@ const ProjectChecklistSchema = new mongoose.Schema({
    cada campo ya tiene lowercase:true + set(normalizeRole).
 */
 
+ProjectChecklistSchema.index({ projectId: 1, tenantKey: 1, level: 1, orderInLevel: 1, createdAt: 1 });
+ProjectChecklistSchema.index({ projectId: 1, tenantKey: 1, status: 1, validated: 1 });
+
 module.exports = mongoose.model('ProjectChecklist', ProjectChecklistSchema);
 module.exports.CHECKLIST_ROLES = CHECKLIST_ROLES;

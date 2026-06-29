@@ -76,7 +76,9 @@ app.use(cors({
     return cb(null, allowedOrigins.includes(origin));
   }
 }));
-app.use(morgan('dev'));
+if (!isProd) {
+  app.use(morgan('dev'));
+}
 app.use(express.json({ limit: jsonLimit }));
 app.use(express.urlencoded({ extended: true, limit: jsonLimit }));
 
@@ -123,14 +125,13 @@ const uploadLimiter = rateLimit({
   message: 'Demasiadas subidas en poco tiempo. Espera unos minutos.'
 });
 
-// DEV: no cachear HTML/CSS/JS
+// En desarrollo no cacheamos nada. En produccion permitimos revalidacion
+// de JS/CSS para no descargar project.js completo en cada visita.
 app.use((req, res, next) => {
-  if (
-    req.path === '/' ||
-    req.path.endsWith('.html') ||
-    req.path.endsWith('.css') ||
-    req.path.endsWith('.js')
-  ) {
+  const isHtml = ['/', '/dashboard', '/portfolio', '/project', '/login', '/register'].includes(req.path) ||
+    req.path.endsWith('.html');
+  const isAsset = req.path.endsWith('.css') || req.path.endsWith('.js');
+  if (isHtml || (!isProd && isAsset)) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -142,8 +143,11 @@ app.use((req, res, next) => {
 /* =========================================================================
    Static
    ========================================================================= */
-app.use('/assets', express.static(path.join(__dirname, 'assets')));
-app.use(express.static(path.join(__dirname, 'public')));
+const staticOptions = isProd
+  ? { etag: true, lastModified: true, maxAge: 0 }
+  : {};
+app.use('/assets', express.static(path.join(__dirname, 'assets'), staticOptions));
+app.use(express.static(path.join(__dirname, 'public'), staticOptions));
 
 /* =========================================================================
    Mongo
@@ -234,11 +238,11 @@ app.use('/api', ...guard, financeRoutes);
 // Admin
 app.use('/api/admin', ...guard, adminRoutes);
 
-console.log('[MOUNT] /api/permits routes mounted ✅');
+if (!isProd) console.log('[MOUNT] /api/permits routes mounted ✅');
 
 // TRACE permits
 app.use('/api/permits', (req, _res, next) => {
-  console.log('[TRACE] /api/permits >>>', req.method, req.originalUrl);
+  if (!isProd) console.log('[TRACE] /api/permits >>>', req.method, req.originalUrl);
   next();
 });
 

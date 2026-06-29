@@ -73,6 +73,8 @@ const UnitSchema = new mongoose.Schema({
 
 UnitSchema.index({ projectId: 1, manzana: 1, lote: 1 }, { unique: false });
 UnitSchema.index({ projectId: 1, folderId: 1, folderOrder: 1 });
+UnitSchema.index({ tenantKey: 1, projectId: 1, deletedAt: 1, estado: 1 });
+UnitSchema.index({ tenantKey: 1, projectId: 1, deletedAt: 1, manzana: 1, lote: 1 });
 
 UnitSchema.pre('save', function(next) {
   if (this.isModified('manzana') || this.isModified('lote')) {
