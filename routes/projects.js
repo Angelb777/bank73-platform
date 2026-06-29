@@ -3,6 +3,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { requireRole, requireProjectAccess } = require('../middleware/rbac');
 const ProjectPermit = require('../models/ProjectPermit'); 
+const PermitTemplate = require('../models/PermitTemplate');
 
 const Project           = require('../models/Project');
 const ProjectChecklist  = require('../models/ProjectChecklist');
@@ -409,6 +410,123 @@ function assertFinancePhasesBalanced(phases = [], conditions = {}) {
 function syncFinancialConditionKpis(target, conditions = {}) {
   if (conditions.projectTotal !== undefined) target.budgetApproved = conditions.projectTotal;
   if (conditions.bankFinancedAmount !== undefined) target.loanApproved = conditions.bankFinancedAmount;
+}
+
+function parsePermitDays(v) {
+  if (v == null) return 0;
+  const s = String(v).toUpperCase();
+  const n = parseInt(s.match(/\d+/)?.[0] || '0', 10);
+  if (!Number.isFinite(n)) return 0;
+  if (/\bMES/.test(s)) return n * 30;
+  return n;
+}
+
+function sanitizeInitialChecklistKeys(raw = []) {
+  return new Set((Array.isArray(raw) ? raw : [])
+    .map(v => String(v || '').trim())
+    .filter(Boolean)
+    .slice(0, 500));
+}
+
+async function applyInitialChecklists({ req, projectId, completedKeys }) {
+  if (!completedKeys?.size) return 0;
+  const col = mongoose.connection.db.collection('processTemplates');
+  const tpl = await col.findOne({ active: true });
+  if (!tpl?.steps?.length) return 0;
+
+  const projectIdObj = toObjectId(projectId);
+  const existing = await ProjectChecklist.find({ projectId: projectIdObj }, { templateKey: 1 }).lean();
+  const existingKeys = new Set(existing.map(e => e.templateKey).filter(Boolean));
+  const now = new Date();
+  const docs = [];
+
+  for (const step of tpl.steps || []) {
+    if (existingKeys.has(step.key)) continue;
+    const isDone = completedKeys.has(step.key);
+    const roleOwner = String(step.role || 'tecnico').toLowerCase();
+    docs.push({
+      tenantKey: req.tenantKey,
+      projectId: projectIdObj,
+      templateKey: step.key,
+      title: step.title,
+      phase: step.phase,
+      level: step.level,
+      orderInLevel: step.orderInLevel || 0,
+      role: step.role,
+      roleOwner,
+      visibleToRoles: Array.isArray(step.visibleToRoles) ? step.visibleToRoles.map(r => String(r).toLowerCase()) : [],
+      prerequisitesKeys: step.prerequisites || [],
+      status: isDone ? 'COMPLETADO' : 'PENDIENTE',
+      validated: isDone,
+      createdBy: req.user?.email || req.user?.userId || 'usuario',
+      completedBy: isDone ? (req.user?.email || req.user?.userId || 'usuario') : undefined,
+      validatedBy: isDone ? (req.user?.email || req.user?.userId || 'usuario') : undefined,
+      completedAt: isDone ? now : undefined,
+      validatedAt: isDone ? now : undefined,
+      subtasks: (step.type === 'GROUP' && Array.isArray(step.subtasksTemplate))
+        ? step.subtasksTemplate.map(st => ({ title: st.title, completed: isDone }))
+        : []
+    });
+  }
+
+  if (docs.length) await ProjectChecklist.insertMany(docs);
+  if (!docs.length) {
+    await ProjectChecklist.updateMany(
+      { projectId: projectIdObj, templateKey: { $in: Array.from(completedKeys) } },
+      {
+        $set: {
+          status: 'COMPLETADO',
+          validated: true,
+          completedAt: now,
+          validatedAt: now,
+          completedBy: req.user?.email || req.user?.userId || 'usuario',
+          validatedBy: req.user?.email || req.user?.userId || 'usuario',
+          'subtasks.$[].completed': true
+        }
+      }
+    );
+  }
+  return completedKeys.size;
+}
+
+async function applyInitialPermits({ tenantKey, projectId, initialPermits = {} }) {
+  const templateId = String(initialPermits.templateId || '').trim();
+  if (!templateId || !mongoose.Types.ObjectId.isValid(templateId)) return null;
+  const tpl = await PermitTemplate.findOne({ _id: templateId, tenantKey }).lean();
+  if (!tpl) return null;
+  const statuses = initialPermits.statuses || {};
+  const allowed = new Set(['pending','in_progress','submitted','approved','rejected','waived']);
+  const now = new Date();
+  const items = (tpl.items || []).map(i => {
+    const status = allowed.has(String(statuses[i.code] || '').trim()) ? String(statuses[i.code]).trim() : 'pending';
+    return {
+      code: i.code,
+      title: i.title,
+      institution: i.institution || '',
+      type: i.type || (String(i.title || '').split(' - ')[0] || 'General'),
+      requirements: i.requirements || [],
+      observations: i.observations || [],
+      slaDays: parsePermitDays(i.slaDays ?? 0),
+      dependencies: i.dependencies || [],
+      status,
+      submittedAt: status === 'submitted' ? now : undefined,
+      resolvedAt: (status === 'approved' || status === 'rejected') ? now : undefined
+    };
+  });
+
+  return ProjectPermit.findOneAndUpdate(
+    { tenantKey, projectId },
+    {
+      $set: {
+        tenantKey,
+        projectId,
+        templateId: tpl._id,
+        templateVersion: tpl.version || 1,
+        items
+      }
+    },
+    { upsert: true, new: true }
+  );
 }
 
 async function createInitialUnitsFromModels({ req, project, initialUnits = [] }) {
@@ -1140,10 +1258,15 @@ router.get('/assignees', requireRole('admin','bank'), async (req, res) => {
    ========================================================================= */
 
 // POST /api/projects
-router.post('/', requireRole('admin','bank'), async (req, res) => {
+router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
   try {
     const tenantKey = req.tenantKey;
     const body = { ...req.body, tenantKey };
+    const initialChecklistKeys = sanitizeInitialChecklistKeys(body.initialChecklistCompletedKeys || body.initialChecklistsCompleted || []);
+    const initialPermits = body.initialPermits || {};
+    delete body.initialChecklistCompletedKeys;
+    delete body.initialChecklistsCompleted;
+    delete body.initialPermits;
 
     body.publishStatus = 'pending';
     body.createdBy = toObjectId(req.user.userId);
@@ -1174,13 +1297,16 @@ router.post('/', requireRole('admin','bank'), async (req, res) => {
 
     // Crear proyecto ya no requiere exponer/asignar usuarios en el alta.
     // Si llegan asignaciones legacy, se validan contra el tenant, pero son opcionales.
+    const isPromoterCreator = String(req.user?.role || '').toLowerCase() === 'promoter';
     const promotersRaw   = Array.isArray(body.assignedPromoters)   ? body.assignedPromoters   : [];
     const commercialsRaw = Array.isArray(body.assignedCommercials) ? body.assignedCommercials : [];
 
     const validPromoters   = await validateAssignees({ tenantKey, role:'promoter',   ids: promotersRaw });
     const validCommercials = await validateAssignees({ tenantKey, role:'commercial', ids: commercialsRaw });
 
-    body.assignedPromoters   = validPromoters;
+    body.assignedPromoters   = isPromoterCreator
+      ? Array.from(new Set([...validPromoters.map(String), String(req.user.userId)])).map(toObjectId)
+      : validPromoters;
     body.assignedCommercials = validCommercials;
 
     // Si envías más asignaciones en el body y existen esos campos en Project, las dejamos pasar:
@@ -1202,6 +1328,8 @@ router.post('/', requireRole('admin','bank'), async (req, res) => {
     }
 
     const p = await Project.create(body);
+    await applyInitialChecklists({ req, projectId: p._id, completedKeys: initialChecklistKeys });
+    await applyInitialPermits({ tenantKey, projectId: p._id, initialPermits });
     await syncInitialFinanceStructure({
       projectId: p._id,
       phases: body.financePhases,

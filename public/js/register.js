@@ -7,7 +7,6 @@
   const btn    = document.getElementById('submitBtn');
   const pwd    = document.getElementById('password');
   const toggle = document.getElementById('togglePwd');
-  const promoterProfileFields = document.getElementById('promoterProfileFields');
 
   // Roles solicitables (todos menos admin). Deben coincidir con models/User.js (roleRequested enum)
   const REQUESTABLE_ROLES = [
@@ -84,31 +83,6 @@
     return 'bank';
   }
 
-  function syncPromoterProfileFields() {
-    if (!promoterProfileFields) return;
-    const isPromoter = getRequestedRole() === 'promoter';
-    promoterProfileFields.style.display = isPromoter ? '' : 'none';
-    const companyInput = document.getElementById('ppCompanyName');
-    if (companyInput) companyInput.required = isPromoter;
-  }
-
-  function collectPromoterProfile() {
-    if (getRequestedRole() !== 'promoter') return undefined;
-    return {
-      companyName: document.getElementById('ppCompanyName')?.value.trim() || '',
-      promoterType: document.getElementById('ppPromoterType')?.value || 'No definido',
-      yearsExperience: document.getElementById('ppYearsExperience')?.value || '',
-      deliveredProjects: document.getElementById('ppDeliveredProjects')?.value || '',
-      activeProjects: document.getElementById('ppActiveProjects')?.value || '',
-      developedVolume: document.getElementById('ppDevelopedVolume')?.value || '',
-      countries: document.getElementById('ppCountries')?.value || '',
-      notes: document.getElementById('ppNotes')?.value || ''
-    };
-  }
-
-  document.getElementById('roleRequested')?.addEventListener('change', syncPromoterProfileFields);
-  syncPromoterProfileFields();
-
   // Tenancy header (usa lo que tengas en localStorage o default a bancodemo)
   function getTenant() {
     try { return localStorage.getItem('tenant') || 'bancodemo'; } catch (_) { return 'bancodemo'; }
@@ -128,18 +102,10 @@
     const email    = document.getElementById('email')?.value.trim();
     const password = document.getElementById('password')?.value;
     const roleReq  = getRequestedRole(); // uno de REQUESTABLE_ROLES
-    const promoterProfile = collectPromoterProfile();
 
     // Validación mínima de rol (evita valores raros si tocan el DOM)
     if (!REQUESTABLE_ROLES.includes(roleReq)) {
       if (msg) { msg.textContent = 'Selecciona un rol válido.'; msg.style.color = 'salmon'; }
-      btn && btn.classList.remove('loading');
-      return;
-    }
-
-    if (roleReq === 'promoter' && !promoterProfile?.companyName) {
-      if (msg) { msg.textContent = 'El nombre de la sociedad es obligatorio para promotores.'; msg.style.color = 'salmon'; }
-      document.getElementById('ppCompanyName')?.focus();
       btn && btn.classList.remove('loading');
       return;
     }
@@ -153,8 +119,7 @@
         },
         body: JSON.stringify({
           name, email, password,
-          roleRequested: roleReq,
-          ...(promoterProfile ? { promoterProfile } : {})
+          roleRequested: roleReq
         })
       });
 

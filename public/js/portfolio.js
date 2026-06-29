@@ -12,6 +12,12 @@
   const applyFiltersBtn = document.getElementById('applyFilters');
   const clearFiltersBtn = document.getElementById('clearFilters');
   const closeFilterModalBtn = document.getElementById('closeFilterModal');
+  const profileBtn = document.getElementById('portfolioProfileBtn');
+  const profileModalBackdrop = document.getElementById('profileModalBackdrop');
+  const closeProfileModalBtn = document.getElementById('closeProfileModal');
+  const cancelProfileModalBtn = document.getElementById('cancelProfileModal');
+  const saveProfileModalBtn = document.getElementById('saveProfileModal');
+  const profileCompletionText = document.getElementById('profileCompletionText');
   const promoterMap = new Map();
   let promoterOptionsLoaded = false;
   const createPromoterProfiles = new Map();
@@ -26,6 +32,7 @@
 
   // ✅ Solo admin, bank y promoter pueden crear
   const CAN_CREATE = role === 'admin' || role === 'bank' || role === 'promoter';
+  let promoterProfileState = null;
 
   // Roles
   const ALL_ROLES = [
@@ -50,6 +57,33 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
   }[m]));
 
+  const splitCsv = (value) => String(value || '').split(/\r?\n|,/).map(x => x.trim()).filter(Boolean);
+  const numberOrNull = (value) => {
+    if (value === '' || value === null || value === undefined) return null;
+    const n = Number(String(value).replace(/,/g, ''));
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  const profileMoneyFields = ['pp-developedVolume', 'pp-averageProjectTicket'];
+  const formatProfileMoney = (value) => {
+    const n = numberOrNull(value);
+    if (n === null) return '';
+    return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  function bindProfileMoneyInputs(root = document) {
+    profileMoneyFields.forEach(id => {
+      const el = root.getElementById ? root.getElementById(id) : document.getElementById(id);
+      if (!el || el.dataset.moneyBound === '1') return;
+      el.dataset.moneyBound = '1';
+      el.addEventListener('input', () => {
+        el.value = el.value.replace(/[^\d,.]/g, '');
+      });
+      el.addEventListener('blur', () => {
+        el.value = formatProfileMoney(el.value);
+      });
+    });
+  }
+
   const debounce = (fn, ms = 120) => {
     let t;
     return (...args) => {
@@ -57,6 +91,95 @@
       t = setTimeout(() => fn(...args), ms);
     };
   };
+
+  function setProfileField(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.type === 'checkbox') el.checked = !!value;
+    else el.value = value ?? '';
+  }
+
+  function getProfileField(id) {
+    const el = document.getElementById(id);
+    if (!el) return '';
+    return el.type === 'checkbox' ? el.checked : el.value;
+  }
+
+  function updateProfileButton(completion = {}) {
+    if (!profileBtn || role !== 'promoter') return;
+    profileBtn.style.display = '';
+    profileBtn.classList.toggle('is-complete', !!completion.sufficient);
+    profileBtn.classList.toggle('is-incomplete', !completion.sufficient);
+    profileBtn.title = completion.sufficient
+      ? 'Perfil de promotora completo'
+      : 'Completa el perfil de promotora';
+    if (profileCompletionText) {
+      profileCompletionText.textContent = `Completitud: ${completion.percent || 0}% · Scoring: ${promoterProfileState?.promoterCategory || 'No definido'}`;
+    }
+  }
+
+  function fillProfileModal(data = {}) {
+    const p = data.promoterProfile || {};
+    promoterProfileState = data;
+    setProfileField('pp-companyName', p.companyName);
+    setProfileField('pp-promoterType', p.promoterType || 'No definido');
+    setProfileField('pp-yearsExperience', p.yearsExperience);
+    setProfileField('pp-deliveredProjects', p.deliveredProjects);
+    setProfileField('pp-activeProjects', p.activeProjects);
+    setProfileField('pp-developedUnits', p.developedUnits);
+    setProfileField('pp-countries', (p.countries || []).join(', '));
+    setProfileField('pp-developedVolume', formatProfileMoney(p.developedVolume));
+    setProfileField('pp-averageProjectTicket', formatProfileMoney(p.averageProjectTicket));
+    setProfileField('pp-bankFinancingExperience', p.bankFinancingExperience);
+    setProfileField('pp-banksWorkedWith', (p.banksWorkedWith || []).join(', '));
+    setProfileField('pp-onTimeDeliveryHistory', p.onTimeDeliveryHistory);
+    setProfileField('pp-incidentHistory', p.incidentHistory);
+    setProfileField('pp-documentationLevel', p.documentationLevel);
+    setProfileField('pp-team-technical', p.internalTeam?.technical);
+    setProfileField('pp-team-financial', p.internalTeam?.financial);
+    setProfileField('pp-team-commercial', p.internalTeam?.commercial);
+    setProfileField('pp-team-legal', p.internalTeam?.legal);
+    setProfileField('pp-notes', p.notes);
+    bindProfileMoneyInputs();
+    updateProfileButton(data.promoterProfileCompletion || {});
+  }
+
+  function collectProfileModal() {
+    return {
+      companyName: getProfileField('pp-companyName').trim(),
+      promoterType: getProfileField('pp-promoterType') || 'No definido',
+      yearsExperience: numberOrNull(getProfileField('pp-yearsExperience')),
+      deliveredProjects: numberOrNull(getProfileField('pp-deliveredProjects')),
+      activeProjects: numberOrNull(getProfileField('pp-activeProjects')),
+      developedUnits: numberOrNull(getProfileField('pp-developedUnits')),
+      countries: splitCsv(getProfileField('pp-countries')),
+      developedVolume: numberOrNull(getProfileField('pp-developedVolume')),
+      averageProjectTicket: numberOrNull(getProfileField('pp-averageProjectTicket')),
+      bankFinancingExperience: getProfileField('pp-bankFinancingExperience').trim(),
+      banksWorkedWith: splitCsv(getProfileField('pp-banksWorkedWith')),
+      onTimeDeliveryHistory: getProfileField('pp-onTimeDeliveryHistory').trim(),
+      incidentHistory: getProfileField('pp-incidentHistory').trim(),
+      documentationLevel: getProfileField('pp-documentationLevel'),
+      internalTeam: {
+        technical: getProfileField('pp-team-technical'),
+        financial: getProfileField('pp-team-financial'),
+        commercial: getProfileField('pp-team-commercial'),
+        legal: getProfileField('pp-team-legal')
+      },
+      notes: getProfileField('pp-notes').trim()
+    };
+  }
+
+  async function loadPromoterProfile() {
+    if (role !== 'promoter' || !profileBtn) return;
+    try {
+      const data = await API.get('/api/auth/promoter-profile');
+      fillProfileModal(data);
+    } catch (e) {
+      console.warn('No se pudo cargar el perfil de promotora', e);
+      updateProfileButton({ sufficient: false, percent: 0 });
+    }
+  }
 
   async function loadPromotersForFilters() {
     if (!filterPromoter || promoterOptionsLoaded) return;
@@ -193,8 +316,9 @@
 
   function renderList(list) {
     if (!Array.isArray(list) || list.length === 0) {
-      container.innerHTML = '';
-      if (banner) banner.style.display = 'block';
+      const showPromoterPlaceholder = role === 'promoter' && CAN_CREATE && FULL_LIST.length === 0;
+      container.innerHTML = showPromoterPlaceholder ? placeholderCard() : '';
+      if (banner) banner.style.display = showPromoterPlaceholder ? 'none' : 'block';
       return;
     }
     if (banner) banner.style.display = 'none';
@@ -288,7 +412,7 @@
   const createShareholders = document.getElementById('createShareholders');
   const createHousingModels = document.getElementById('createHousingModels');
   const createFinancePhases = document.getElementById('createFinancePhases');
-  const CREATE_STEP_ORDER = ['general', 'legal', 'technical', 'models', 'financial', 'team'];
+  const CREATE_STEP_ORDER = ['general', 'legal', 'technical', 'models', 'financial', 'progress', 'team'];
   let activeCreateStep = 'general';
 
   function setCreateStep(step) {
@@ -326,6 +450,113 @@
       select.innerHTML = '<option value="">Escribir manualmente</option>';
       console.warn('No se pudieron cargar promotores para creacion', e);
     }
+  }
+
+  let createProcessTemplateLoaded = false;
+  let createPermitTemplatesLoaded = false;
+  let createPermitTemplates = [];
+
+  function phaseLabel(key) {
+    return String(key || 'General').replace(/_/g, ' ');
+  }
+
+  async function loadCreateProgressChecks() {
+    const host = document.getElementById('createProgressChecks');
+    if (!host || createProcessTemplateLoaded) return;
+    host.innerHTML = '<div class="small muted">Cargando checks...</div>';
+    try {
+      const tpl = await API.get('/api/process/templates/active');
+      const groups = new Map();
+      (tpl.steps || []).forEach(step => {
+        if (!step?.key || !step?.title) return;
+        const phase = step.phase || 'GENERAL';
+        if (!groups.has(phase)) groups.set(phase, []);
+        groups.get(phase).push(step);
+      });
+      host.innerHTML = Array.from(groups.entries()).map(([phase, steps]) => `
+        <details class="create-progress-group">
+          <summary class="create-progress-group-title">${escapeHtml(phaseLabel(phase))}</summary>
+          <div class="create-progress-group-body">
+            ${steps.map(step => `
+              <label class="create-progress-item">
+                <input type="checkbox" data-create-checklist-key="${escapeHtml(step.key)}">
+                <span>${escapeHtml(step.title)}</span>
+              </label>
+            `).join('')}
+          </div>
+        </details>
+      `).join('') || '<div class="small muted">No hay checks configurados.</div>';
+      createProcessTemplateLoaded = true;
+    } catch (e) {
+      host.innerHTML = '<div class="small muted">No se pudieron cargar los checks de avances.</div>';
+      console.warn('No se pudieron cargar avances iniciales', e);
+    }
+  }
+
+  async function loadCreatePermitTemplates() {
+    const select = document.getElementById('createPermitTemplate');
+    if (!select || createPermitTemplatesLoaded) return;
+    try {
+      createPermitTemplates = await API.get('/api/permits/templates');
+      select.innerHTML = '<option value="">Sin plantilla inicial</option>' + (createPermitTemplates || [])
+        .map(t => `<option value="${escapeHtml(t._id)}">${escapeHtml(t.name || 'Plantilla')} (v${escapeHtml(t.version || 1)})</option>`)
+        .join('');
+      createPermitTemplatesLoaded = true;
+    } catch (e) {
+      select.innerHTML = '<option value="">No se pudieron cargar plantillas</option>';
+      console.warn('No se pudieron cargar plantillas de permisos', e);
+    }
+  }
+
+  function renderCreatePermitItems() {
+    const select = document.getElementById('createPermitTemplate');
+    const host = document.getElementById('createPermitItems');
+    if (!select || !host) return;
+    const tpl = createPermitTemplates.find(t => String(t._id) === String(select.value));
+    if (!tpl) {
+      host.innerHTML = '';
+      return;
+    }
+    const groups = new Map();
+    (tpl.items || []).forEach(item => {
+      const phase = item.type || String(item.title || '').split(' - ')[0] || 'General';
+      if (!groups.has(phase)) groups.set(phase, []);
+      groups.get(phase).push(item);
+    });
+    host.innerHTML = Array.from(groups.entries()).map(([phase, items]) => `
+      <details class="create-progress-group">
+        <summary class="create-progress-group-title">${escapeHtml(phase)}</summary>
+        <div class="create-progress-group-body">
+          ${items.map(item => `
+            <label class="create-progress-item">
+              <span></span>
+              <span>${escapeHtml(item.title || item.code)}</span>
+              <select data-create-permit-status="${escapeHtml(item.code)}">
+                <option value="pending">Pendiente</option>
+                <option value="in_progress">En curso</option>
+                <option value="submitted">Presentado</option>
+                <option value="approved">Aprobado</option>
+                <option value="rejected">Rechazado</option>
+                <option value="waived">No aplica</option>
+              </select>
+            </label>
+          `).join('')}
+        </div>
+      </details>
+    `).join('');
+  }
+
+  function collectInitialProgress() {
+    return {
+      initialChecklistCompletedKeys: Array.from(document.querySelectorAll('[data-create-checklist-key]:checked'))
+        .map(input => input.dataset.createChecklistKey)
+        .filter(Boolean),
+      initialPermits: {
+        templateId: document.getElementById('createPermitTemplate')?.value || '',
+        statuses: Object.fromEntries(Array.from(document.querySelectorAll('[data-create-permit-status]'))
+          .map(select => [select.dataset.createPermitStatus, select.value || 'pending']))
+      }
+    };
   }
 
   createStepTabs.forEach(btn => btn.addEventListener('click', () => setCreateStep(btn.dataset.createStep)));
@@ -1052,6 +1283,27 @@
     `;
   }
 
+  function placeholderCard() {
+    return `
+      <div class="card status-EN_CURSO">
+        <div class="portfolio-card-head">
+          <h3 class="portfolio-card-title">Aquí verás tus proyectos cuando estén creados.</h3>
+          <span class="badge">PORTFOLIO</span>
+        </div>
+        <div class="portfolio-card-meta">
+          <p class="muted portfolio-card-description">Crea tu primer proyecto y quedará enviado a revisión del administrador.</p>
+          <p class="small muted portfolio-card-type">&nbsp;</p>
+          <p class="small muted portfolio-card-promoter">&nbsp;</p>
+        </div>
+        <div class="progress portfolio-card-progress"><div style="width:0%"></div></div>
+        <p class="small muted portfolio-card-sales">0/0 unidades vendidas (0%)</p>
+        <div class="row">
+          <button class="btn" type="button" data-create-project-placeholder>Crear proyecto</button>
+        </div>
+      </div>
+    `;
+  }
+
   function syncCreateFinancePhases() {
     if (!createFinancePhases) return;
     const count = Math.max(0, Math.round(numberFromCreate(document.getElementById('td-phasesCount')?.value)));
@@ -1358,6 +1610,9 @@
     createHousingModels?.querySelectorAll('[data-create-model-row]').forEach(row => syncCreateUnitsPreview(row));
     hideGlobalCreateFinancialConditionFields();
     await loadCreatePromoterProfiles();
+    await loadCreateProgressChecks();
+    await loadCreatePermitTemplates();
+    renderCreatePermitItems();
 
     // Modo nuevo (todos los roles)
     // Por privacidad, la creacion no carga ni muestra directorios de usuarios.
@@ -1415,8 +1670,12 @@
   if (CAN_CREATE) {
     if (fab) fab.style.display = '';
     if (fab) fab.addEventListener('click', openModal);
+    container?.addEventListener('click', event => {
+      if (event.target.closest('[data-create-project-placeholder]')) openModal();
+    });
     if (btnCancel) btnCancel.addEventListener('click', closeModal);
     if (btnCloseCreate) btnCloseCreate.addEventListener('click', closeModal);
+    document.getElementById('createPermitTemplate')?.addEventListener('change', renderCreatePermitItems);
     document.getElementById('ld-promoterProfileSelect')?.addEventListener('change', ev => {
       const user = createPromoterProfiles.get(String(ev.target.value || ''));
       const legalName = user?.promoterProfile?.companyName || '';
@@ -1480,7 +1739,8 @@
             initialUnits: collectInitialUnits(),
             financePhases: collectFinancePhases(),
             financialConditions,
-            teamSuggestion: collectTeamSuggestion()
+            teamSuggestion: collectTeamSuggestion(),
+            ...collectInitialProgress()
           };
 
           const createdProject = await API.post('/api/projects', payload);
@@ -1512,6 +1772,10 @@
           if (createHousingModels) createHousingModels.innerHTML = '';
           if (createFinancePhases) createFinancePhases.innerHTML = '';
           document.querySelectorAll('[data-create-precedent]').forEach(input => { input.checked = false; });
+          document.querySelectorAll('[data-create-checklist-key]').forEach(input => { input.checked = false; });
+          const createPermitTemplate = document.getElementById('createPermitTemplate');
+          if (createPermitTemplate) createPermitTemplate.value = '';
+          renderCreatePermitItems();
           ['fc-otherRequirements','fc-trustee','fc-trustType','fc-technicalInspector','fc-financialInspector','ld-promoterLegalName','ld-interimBank','ld-interimBankOther','ld-trustName','td-phasesCount','td-totalUnits','td-notes'].forEach(fieldId => {
             const field = document.getElementById(fieldId); if (field) field.value = '';
           });
@@ -1541,10 +1805,40 @@
         }
       });
     }
+
+    if (new URLSearchParams(location.search).get('create') === '1') {
+      setTimeout(() => { openModal(); }, 0);
+    }
   } else {
     // 🔒 otros roles: quitar FAB y modal
     if (fab && fab.parentNode) fab.parentNode.removeChild(fab);
     if (modal && modal.parentNode) modal.parentNode.removeChild(modal);
+  }
+
+  if (role === 'promoter') {
+    profileBtn?.addEventListener('click', async () => {
+      await loadPromoterProfile();
+      profileModalBackdrop?.classList.add('show');
+    });
+    const closeProfile = () => profileModalBackdrop?.classList.remove('show');
+    closeProfileModalBtn?.addEventListener('click', closeProfile);
+    cancelProfileModalBtn?.addEventListener('click', closeProfile);
+    profileModalBackdrop?.addEventListener('click', event => {
+      if (event.target === profileModalBackdrop) closeProfile();
+    });
+    saveProfileModalBtn?.addEventListener('click', async () => {
+      try {
+        saveProfileModalBtn.disabled = true;
+        const data = await API.patch('/api/auth/promoter-profile', { promoterProfile: collectProfileModal() });
+        fillProfileModal(data);
+        closeProfile();
+      } catch (e) {
+        alert('No se pudo guardar el perfil: ' + (e.message || e));
+      } finally {
+        saveProfileModalBtn.disabled = false;
+      }
+    });
+    await loadPromoterProfile();
   }
 
   // Init

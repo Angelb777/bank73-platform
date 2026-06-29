@@ -54,19 +54,83 @@ const PromoterProfileSchema = new mongoose.Schema(
     deliveredProjects: { type: Number, min: 0, default: null },
     activeProjects: { type: Number, min: 0, default: null },
     developedVolume: { type: Number, min: 0, default: null },
+    developedUnits: { type: Number, min: 0, default: null },
+    averageProjectTicket: { type: Number, min: 0, default: null },
+    bankFinancingExperience: { type: String, trim: true, default: '' },
+    banksWorkedWith: [{ type: String, trim: true }],
+    onTimeDeliveryHistory: { type: String, trim: true, default: '' },
+    incidentHistory: { type: String, trim: true, default: '' },
+    documentationLevel: { type: String, trim: true, default: '' },
+    internalTeam: {
+      technical: { type: Boolean, default: false },
+      financial: { type: Boolean, default: false },
+      commercial: { type: Boolean, default: false },
+      legal: { type: Boolean, default: false }
+    },
     countries: [{ type: String, trim: true }],
     notes: { type: String, trim: true, default: '' }
   },
   { _id: false }
 );
 
+function promoterProfileCompletion(profile = {}) {
+  const checks = [
+    !!profile.companyName,
+    profile.promoterType && profile.promoterType !== 'No definido',
+    profile.yearsExperience !== null && profile.yearsExperience !== undefined,
+    profile.deliveredProjects !== null && profile.deliveredProjects !== undefined,
+    profile.activeProjects !== null && profile.activeProjects !== undefined,
+    profile.developedUnits !== null && profile.developedUnits !== undefined,
+    Array.isArray(profile.countries) && profile.countries.length > 0,
+    profile.developedVolume !== null && profile.developedVolume !== undefined,
+    profile.averageProjectTicket !== null && profile.averageProjectTicket !== undefined,
+    !!profile.bankFinancingExperience,
+    Array.isArray(profile.banksWorkedWith) && profile.banksWorkedWith.length > 0,
+    !!profile.onTimeDeliveryHistory,
+    !!profile.incidentHistory,
+    !!profile.documentationLevel,
+    !!profile.internalTeam && Object.values(profile.internalTeam).some(Boolean)
+  ];
+  const completed = checks.filter(Boolean).length;
+  const total = checks.length;
+  return {
+    completed,
+    total,
+    percent: total ? Math.round((completed / total) * 100) : 0,
+    sufficient: completed >= 10 && !!profile.companyName
+  };
+}
+
 function calculatePromoterCategory(profile = {}) {
   const years = Number(profile.yearsExperience || 0);
   const delivered = Number(profile.deliveredProjects || 0);
+  const volume = Number(profile.developedVolume || 0);
+  const units = Number(profile.developedUnits || 0);
+  const completion = promoterProfileCompletion(profile);
+  let points = 0;
 
-  if (years >= 15 || delivered > 20) return 'Institucional';
-  if (years >= 7 || delivered > 8) return 'Consolidado';
-  if (years >= 2 || delivered >= 1) return 'En desarrollo';
+  if (years >= 15) points += 25;
+  else if (years >= 7) points += 18;
+  else if (years >= 2) points += 10;
+  else if (years > 0) points += 5;
+
+  if (delivered > 20) points += 25;
+  else if (delivered > 8) points += 18;
+  else if (delivered >= 1) points += 10;
+
+  if (volume >= 50000000 || units >= 500) points += 20;
+  else if (volume >= 10000000 || units >= 100) points += 12;
+  else if (volume > 0 || units > 0) points += 6;
+
+  if (String(profile.bankFinancingExperience || '').trim()) points += 8;
+  if (String(profile.documentationLevel || '').toLowerCase().includes('alta')) points += 8;
+  if (Object.values(profile.internalTeam || {}).filter(Boolean).length >= 3) points += 8;
+  if (String(profile.onTimeDeliveryHistory || '').toLowerCase().includes('mayor')) points += 6;
+
+  if (!completion.sufficient && points < 35) return 'Emergente';
+  if (points >= 75 || years >= 15 || delivered > 20) return 'Institucional';
+  if (points >= 50 || years >= 7 || delivered > 8) return 'Consolidado';
+  if (points >= 25 || years >= 2 || delivered >= 1) return 'En desarrollo';
   return 'Emergente';
 }
 
@@ -147,3 +211,4 @@ module.exports.STATUSES = STATUSES;
 module.exports.PROMOTER_CATEGORIES = PROMOTER_CATEGORIES;
 module.exports.PROMOTER_TYPES = PROMOTER_TYPES;
 module.exports.calculatePromoterCategory = calculatePromoterCategory;
+module.exports.promoterProfileCompletion = promoterProfileCompletion;

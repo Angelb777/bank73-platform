@@ -244,6 +244,9 @@ if (roleSelectDefault) {
   async function apiBlockUser(id) {
     return xfetch(`/api/admin/users/${id}/block`, { method: 'POST' });
   }
+  async function apiUnblockUser(id) {
+    return xfetch(`/api/admin/users/${id}/unblock`, { method: 'POST' });
+  }
   async function apiDeleteUser(id) {
     return xfetch(`/api/admin/users/${id}`, { method: 'DELETE' });
   }
@@ -382,7 +385,7 @@ function promoterProfileCell(u = {}) {
   return `
     <div class="promoter-profile-cell">
       ${lines ? `<div>${lines}</div>` : ''}
-      <button class="btn small promoter-profile-action" data-user-promoter-profile="${u._id}">Editar perfil</button>
+      <button class="btn small promoter-profile-action" data-user-promoter-profile="${u._id}">Ver/editar perfil</button>
     </div>
   `;
 }
@@ -394,6 +397,7 @@ const ACTION_LABELS = {
   'auth.register_requested': 'Registro solicitado',
   'user.approved': 'Usuario aprobado',
   'user.blocked': 'Usuario bloqueado',
+  'user.unblocked': 'Usuario desbloqueado',
   'user.deleted': 'Usuario eliminado',
   'project.created': 'Proyecto creado',
   'project.updated': 'Proyecto actualizado',
@@ -549,7 +553,7 @@ function applyProjectsFilters(list) {
         ${renderRoleOptions(initialRole)}
       </select>
       <button class="btn small approve" data-id="${u._id}">Aprobar</button>
-      <button class="btn small" data-action="block" data-id="${u._id}">Bloquear</button>
+      <button class="btn small" data-action="block" data-id="${u._id}" data-status="${st}">Bloquear</button>
       <button class="btn danger small" data-action="delete" data-id="${u._id}">Eliminar</button>
     </div>
   </td>
@@ -594,7 +598,7 @@ function applyProjectsFilters(list) {
           <div class="actions">
             ${st==='pending'
               ? `<button class="btn small approve" data-id="${u._id}">Aprobar</button>`
-              : `<button class="btn small" data-action="block" data-id="${u._id}">${st==='blocked'?'Desbloquear':'Bloquear'}</button>`
+              : `<button class="btn small" data-action="block" data-id="${u._id}" data-status="${st}">${st==='blocked'?'Desbloquear':'Bloquear'}</button>`
             }
             <select class="input role-inline" data-id="${u._id}">
             ${renderRoleOptions(u.role)}
@@ -1559,6 +1563,32 @@ function applyProjectsFilters(list) {
   }
 
 
+  const promoterMoneyFields = ['pp-developedVolume', 'pp-averageProjectTicket'];
+  const parsePromoterNumber = (value) => {
+    if (value === '' || value === null || value === undefined) return '';
+    const n = Number(String(value).replace(/,/g, ''));
+    return Number.isFinite(n) && n >= 0 ? n : '';
+  };
+  const formatPromoterMoney = (value) => {
+    const n = parsePromoterNumber(value);
+    if (n === '') return '';
+    return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  function bindPromoterMoneyInputs() {
+    promoterMoneyFields.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el || el.dataset.moneyBound === '1') return;
+      el.dataset.moneyBound = '1';
+      el.addEventListener('input', () => {
+        el.value = el.value.replace(/[^\d,.]/g, '');
+      });
+      el.addEventListener('blur', () => {
+        el.value = formatPromoterMoney(el.value);
+      });
+    });
+  }
+
   function ensurePromoterProfileModal() {
     if (document.getElementById('promoterProfileModal')) return;
 
@@ -1596,13 +1626,49 @@ function applyProjectsFilters(list) {
             <input id="pp-activeProjects" class="input" type="number" min="0" step="1" />
           </label>
           <label class="small muted">Unidades desarrolladas
-            <input id="pp-developedVolume" class="input" type="number" min="0" step="any" />
+            <input id="pp-developedUnits" class="input" type="number" min="0" step="1" placeholder="Ej: 120 viviendas/locales" />
+          </label>
+          <label class="small muted">Volumen total desarrollado (B/.)
+            <input id="pp-developedVolume" class="input" type="text" inputmode="decimal" placeholder="Ej: 25,000,000.00" title="Importe económico total desarrollado durante la trayectoria de la promotora" />
+          </label>
+          <label class="small muted">Ticket medio de proyecto (B/.)
+            <input id="pp-averageProjectTicket" class="input" type="text" inputmode="decimal" placeholder="Ej: 4,500,000.00" />
           </label>
         </div>
 
         <label class="small muted" style="display:block;margin-top:10px;">Países de operación
           <input id="pp-countries" class="input" type="text" placeholder="Panamá, Colombia..." />
         </label>
+        <label class="small muted" style="display:block;margin-top:10px;">Experiencia con financiacion bancaria
+          <input id="pp-bankFinancingExperience" class="input" type="text" />
+        </label>
+        <label class="small muted" style="display:block;margin-top:10px;">Bancos con los que ha trabajado
+          <input id="pp-banksWorkedWith" class="input" type="text" placeholder="Banco General, Banistmo..." />
+        </label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;">
+          <label class="small muted">Historial de entregas a tiempo
+            <input id="pp-onTimeDeliveryHistory" class="input" type="text" />
+          </label>
+          <label class="small muted">Historial de incidencias legales o tecnicas
+            <input id="pp-incidentHistory" class="input" type="text" />
+          </label>
+          <label class="small muted">Nivel de documentacion disponible
+            <select id="pp-documentationLevel" class="input">
+              <option value="">No definido</option>
+              <option value="Baja">Baja</option>
+              <option value="Media">Media</option>
+              <option value="Alta">Alta</option>
+            </select>
+          </label>
+          <label class="small muted">Equipo interno propio
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">
+              <label><input id="pp-team-technical" type="checkbox"> Tecnico</label>
+              <label><input id="pp-team-financial" type="checkbox"> Financiero</label>
+              <label><input id="pp-team-commercial" type="checkbox"> Comercial</label>
+              <label><input id="pp-team-legal" type="checkbox"> Legal</label>
+            </div>
+          </label>
+        </div>
         <label class="small muted" style="display:block;margin-top:10px;">Notas
           <textarea id="pp-notes" class="input" rows="4" style="resize:vertical;"></textarea>
         </label>
@@ -1624,7 +1690,7 @@ function applyProjectsFilters(list) {
       if (!id) return;
       const numOrBlank = (fieldId) => {
         const value = document.getElementById(fieldId)?.value;
-        return value === '' || value === null || value === undefined ? '' : Number(value);
+        return parsePromoterNumber(value);
       };
       const profile = {
         companyName: document.getElementById('pp-companyName')?.value || '',
@@ -1632,8 +1698,21 @@ function applyProjectsFilters(list) {
         yearsExperience: numOrBlank('pp-yearsExperience'),
         deliveredProjects: numOrBlank('pp-deliveredProjects'),
         activeProjects: numOrBlank('pp-activeProjects'),
+        developedUnits: numOrBlank('pp-developedUnits'),
         developedVolume: numOrBlank('pp-developedVolume'),
+        averageProjectTicket: numOrBlank('pp-averageProjectTicket'),
         countries: document.getElementById('pp-countries')?.value || '',
+        bankFinancingExperience: document.getElementById('pp-bankFinancingExperience')?.value || '',
+        banksWorkedWith: document.getElementById('pp-banksWorkedWith')?.value || '',
+        onTimeDeliveryHistory: document.getElementById('pp-onTimeDeliveryHistory')?.value || '',
+        incidentHistory: document.getElementById('pp-incidentHistory')?.value || '',
+        documentationLevel: document.getElementById('pp-documentationLevel')?.value || '',
+        internalTeam: {
+          technical: !!document.getElementById('pp-team-technical')?.checked,
+          financial: !!document.getElementById('pp-team-financial')?.checked,
+          commercial: !!document.getElementById('pp-team-commercial')?.checked,
+          legal: !!document.getElementById('pp-team-legal')?.checked
+        },
         notes: document.getElementById('pp-notes')?.value || ''
       };
 
@@ -1659,10 +1738,22 @@ function applyProjectsFilters(list) {
     document.getElementById('pp-yearsExperience').value = profile.yearsExperience ?? '';
     document.getElementById('pp-deliveredProjects').value = profile.deliveredProjects ?? '';
     document.getElementById('pp-activeProjects').value = profile.activeProjects ?? '';
-    document.getElementById('pp-developedVolume').value = profile.developedVolume ?? '';
+    document.getElementById('pp-developedUnits').value = profile.developedUnits ?? '';
+    document.getElementById('pp-developedVolume').value = formatPromoterMoney(profile.developedVolume);
+    document.getElementById('pp-averageProjectTicket').value = formatPromoterMoney(profile.averageProjectTicket);
     document.getElementById('pp-countries').value = Array.isArray(profile.countries) ? profile.countries.join(', ') : '';
+    document.getElementById('pp-bankFinancingExperience').value = profile.bankFinancingExperience || '';
+    document.getElementById('pp-banksWorkedWith').value = Array.isArray(profile.banksWorkedWith) ? profile.banksWorkedWith.join(', ') : '';
+    document.getElementById('pp-onTimeDeliveryHistory').value = profile.onTimeDeliveryHistory || '';
+    document.getElementById('pp-incidentHistory').value = profile.incidentHistory || '';
+    document.getElementById('pp-documentationLevel').value = profile.documentationLevel || '';
+    document.getElementById('pp-team-technical').checked = !!profile.internalTeam?.technical;
+    document.getElementById('pp-team-financial').checked = !!profile.internalTeam?.financial;
+    document.getElementById('pp-team-commercial').checked = !!profile.internalTeam?.commercial;
+    document.getElementById('pp-team-legal').checked = !!profile.internalTeam?.legal;
     document.getElementById('pp-notes').value = profile.notes || '';
     document.getElementById('pp-category').textContent = user.promoterCategory || 'No definido';
+    bindPromoterMoneyInputs();
     wrap.style.display = 'flex';
   }
 
@@ -1800,9 +1891,12 @@ function applyProjectsFilters(list) {
     const blockBtn = e.target.closest?.('button[data-action="block"]');
     if (blockBtn) {
       const id = blockBtn.getAttribute('data-id');
+      const isBlocked = String(blockBtn.getAttribute('data-status') || '').toLowerCase() === 'blocked' ||
+        blockBtn.textContent.trim().toLowerCase() === 'desbloquear';
       blockBtn.disabled = true;
       try {
-        await apiBlockUser(id);
+        if (isBlocked) await apiUnblockUser(id);
+        else await apiBlockUser(id);
         loadPendingUsers();
         loadUsers();
       } catch (err) {

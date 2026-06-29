@@ -150,7 +150,7 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
   activateTab(key);
   if (key === 'chat') loadChatMessages({ append:false }); // 👈
   });
-  activateTab(document.querySelector('.tab.active')?.dataset.tab || 'proyecto');
+  activateTab(document.querySelector('.tab.active')?.dataset.tab || 'resumen');
 
   setTimeout(() => bindDatoUnicoImportControls(), 0);
 
@@ -1665,13 +1665,13 @@ function renderHeaderKpis(project, hs = {}, kpis = {}) {
   const loanApproved   = project.loanApproved   ?? kpis.loan?.approved   ?? 0;
   const loanDisbursed  = project.loanDisbursed  ?? kpis.loan?.disbursed  ?? 0;
   const budgetApproved = project.budgetApproved ?? 0;            // si no lo llevas en kpis, quedará 0
-  const budgetSpent    = project.budgetSpent    ?? project.expense ?? 0;
+  const budgetSpent    = window.FINANCE_KPIS?.real?.uses ?? FINANCE_KPIS?.real?.uses ?? project.budgetSpent ?? project.expense ?? 0;
 
   const tiles = [
     { key:'loan-approved',   label:'Loan aprobado',     value: formatProjectMoney(loanApproved) },
     { key:'disbursed',       label:'Desembolsado',      value: formatProjectMoney(loanDisbursed) },
     { key:'budget-approved', label:'Budget aprobado',   value: formatProjectMoney(budgetApproved) },
-    { key:'expense', label:'Gasto', value: formatProjectMoney(window.FINANCE_KPIS?.real?.uses ?? budgetSpent ?? 0) },
+    { key:'expense', label:'Gasto', value: formatProjectMoney(budgetSpent ?? 0) },
     { key:'units-total',     label:'Unidades totales',  value: (hs.unitsTotal ?? project.unitsTotal ?? 0) },
     { key:'units-sold',      label:'Unidades vendidas', value: (hs.unitsSold  ?? project.unitsSold  ?? 0) },
   ];
@@ -4243,6 +4243,19 @@ function semaphoreForRole(roleKey) {
     return `<div class="kpi"><div class="label">${label}</div><div class="value">${value}</div></div>`;
   }
 
+  function renderProjectHeaderKpis(project = state.project || {}) {
+    if (!kpisDiv || !project) return;
+    const gasto = window.FINANCE_KPIS?.real?.uses ?? FINANCE_KPIS?.real?.uses ?? project.budgetSpent ?? project.expense ?? 0;
+    kpisDiv.innerHTML = [
+      kpi('Loan aprobado',     project.loanApproved),
+      kpi('Desembolsado',      project.loanDisbursed),
+      kpi('Budget aprobado',   project.budgetApproved),
+      kpi('Gasto',             gasto),
+      kpi('Unidades totales',  project.unitsTotal),
+      kpi('Unidades vendidas', project.unitsSold)
+    ].join('');
+  }
+
   // ====== Carga de datos ======
   async function loadProject() {
     const p = await API.get('/api/projects/' + id);
@@ -4258,14 +4271,7 @@ function semaphoreForRole(roleKey) {
     if (statusSel) statusSel.value = (p.status || 'EN_CURSO');
     if (projectTypeText) projectTypeText.textContent = `Tipo de proyecto: ${p.projectType || p.tipoProyecto || 'No definido'}`;
 
-    kpisDiv.innerHTML = [
-      kpi('Loan aprobado',     p.loanApproved),
-      kpi('Desembolsado',      p.loanDisbursed),
-      kpi('Budget aprobado',   p.budgetApproved),
-      kpi('Gasto',             (window.FINANCE_KPIS?.real?.uses ?? p.budgetSpent ?? 0)),
-      kpi('Unidades totales',  p.unitsTotal),
-      kpi('Unidades vendidas', p.unitsSold)
-    ].join('');
+    renderProjectHeaderKpis(p);
       // ROLE-SEP: control de publicación y UI para commercial
   const pub = String(
     p.publishStatus || p.publicationStatus || p.pubStatus || p.statusPublicacion || p.statusPublish || ''
@@ -6276,6 +6282,7 @@ async function loadFinance() {
     FINANCE_ALL_LOAN_LINES = (FINANCE_CONTROL?.loanLines || []).map(line => ({ ...line }));
     FINANCE_COMMERCIAL_UNITS = res.commercialUnits || [];
     window.FINANCE_KPIS = FINANCE_KPIS;
+    renderProjectHeaderKpis(FINANCE_PROJECT || state.project || {});
 
     // ✅ Guardamos FINANCE en window para el modal "Iniciar REAL" (dropdown de fases)
     window.FINANCE = FINANCE;
@@ -12146,8 +12153,8 @@ if (['tecnico','legal'].includes(myRole)) {
 } else {
   // Roles full (admin, bank, promoter, gerencia, socios, financiero, contable)
   await loadProject();        // ✅
+  await loadSummary();        // ✅
   await Promise.all([
-    loadSummary(),            // ✅
     loadFinance(),            // ✅
     loadUnits()               // ✅
   ]);

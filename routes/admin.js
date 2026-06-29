@@ -9,12 +9,13 @@ const router = express.Router();
 
 const { ROLES: VALID_ROLES } = require('../models/User'); // usa la misma fuente que el modelo
 const { PROMOTER_TYPES = [] } = require('../models/User');
+const { promoterProfileCompletion } = require('../models/User');
 const VALID_PUBLISH = ['draft','pending','approved','rejected']; // ROLE-SEP
 
 function sanitizePromoterProfile(input = {}) {
   const toNum = (v) => {
     if (v === '' || v === null || v === undefined) return null;
-    const n = Number(v);
+    const n = Number(String(v).replace(/,/g, ''));
     if (!Number.isFinite(n) || n < 0) {
       const err = new Error('Los campos numéricos del perfil del promotor deben ser positivos.');
       err.status = 400;
@@ -41,7 +42,23 @@ function sanitizePromoterProfile(input = {}) {
     yearsExperience: toNum(input.yearsExperience ?? input.aniosExperiencia),
     deliveredProjects: toNum(input.deliveredProjects ?? input.proyectosEntregados),
     activeProjects: toNum(input.activeProjects ?? input.proyectosActivos),
-    developedVolume: toNum(input.developedVolume ?? input.volumenDesarrollado),
+    developedVolume: toNum(input.developedVolume ?? input.volumenDesarrollado ?? input.volumenTotalDesarrollado),
+    developedUnits: toNum(input.developedUnits ?? input.unidadesDesarrolladas),
+    averageProjectTicket: toNum(input.averageProjectTicket ?? input.ticketMedioProyecto),
+    bankFinancingExperience: String(input.bankFinancingExperience ?? input.experienciaFinanciacionBancaria ?? '').trim().slice(0, 240),
+    banksWorkedWith: Array.from(new Set((Array.isArray(input.banksWorkedWith)
+      ? input.banksWorkedWith
+      : String(input.banksWorkedWith || input.bancosTrabajados || '').split(/\r?\n|,/))
+      .map(x => String(x || '').trim()).filter(Boolean))).slice(0, 30),
+    onTimeDeliveryHistory: String(input.onTimeDeliveryHistory ?? input.historialEntregasTiempo ?? '').trim().slice(0, 240),
+    incidentHistory: String(input.incidentHistory ?? input.historialIncidencias ?? '').trim().slice(0, 240),
+    documentationLevel: String(input.documentationLevel ?? input.nivelDocumentacion ?? '').trim().slice(0, 120),
+    internalTeam: {
+      technical: !!(input.internalTeam?.technical ?? input.equipoTecnico),
+      financial: !!(input.internalTeam?.financial ?? input.equipoFinanciero),
+      commercial: !!(input.internalTeam?.commercial ?? input.equipoComercial),
+      legal: !!(input.internalTeam?.legal ?? input.equipoLegal)
+    },
     countries: Array.from(new Set(countriesRaw.map(x => String(x || '').trim()).filter(Boolean))).slice(0, 20),
     notes: String(input.notes ?? input.notas ?? '').trim().slice(0, 1000)
   };
@@ -179,7 +196,8 @@ router.patch('/users/:id/promoter-profile', async (req, res) => {
         status: user.status,
         tenantKey: user.tenantKey,
         promoterProfile: user.promoterProfile || null,
-        promoterCategory: user.promoterCategory || 'No definido'
+        promoterCategory: user.promoterCategory || 'No definido',
+        promoterProfileCompletion: promoterProfileCompletion(user.promoterProfile || {})
       }
     });
   } catch (e) {
@@ -209,6 +227,40 @@ router.post('/users/:id/block', async (req, res) => {
       targetId: user._id,
       status: 'blocked',
       message: 'Usuario bloqueado',
+      metadata: { email: user.email, role: user.role, name: user.name }
+    });
+
+    res.json({
+      ok: true,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        tenantKey: user.tenantKey
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/users/:id/unblock', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await User.findOne({ _id: id, tenantKey: req.tenantKey });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    user.status = 'active';
+    await user.save();
+
+    await audit(req, 'user.unblocked', {
+      targetType: 'user',
+      targetId: user._id,
+      status: 'info',
+      message: 'Usuario desbloqueado',
       metadata: { email: user.email, role: user.role, name: user.name }
     });
 

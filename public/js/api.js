@@ -51,6 +51,7 @@ const API = (() => {
   const get  = (p, opts)         => request(p, { ...opts });
   const post = (p, data, opts)   => request(p, { method:'POST', body: JSON.stringify(data ?? {}), ...opts });
   const put  = (p, data, opts)   => request(p, { method:'PUT',  body: JSON.stringify(data ?? {}), ...opts });
+  const patch = (p, data, opts)  => request(p, { method:'PATCH', body: JSON.stringify(data ?? {}), ...opts });
   const del  = (p, opts)         => request(p, { method:'DELETE', ...opts });
   const upload = (p, formData, opts) => request(p, { method:'POST', body: formData, isForm:true, ...opts });
 
@@ -58,12 +59,13 @@ const API = (() => {
   const getSilent  = (p, opts)         => request(p, { ...opts, silent:true });
   const postSilent = (p, data, opts)   => request(p, { method:'POST', body: JSON.stringify(data ?? {}), silent:true, ...opts });
   const putSilent  = (p, data, opts)   => request(p, { method:'PUT',  body: JSON.stringify(data ?? {}), silent:true, ...opts });
+  const patchSilent = (p, data, opts)  => request(p, { method:'PATCH', body: JSON.stringify(data ?? {}), silent:true, ...opts });
   const delSilent  = (p, opts)         => request(p, { method:'DELETE', silent:true, ...opts });
 
   return {
     setAuth, getToken, getRole, clearAuth,
-    get, post, put, del, upload, setTenant,
-    getSilent, postSilent, putSilent, delSilent,
+    get, post, put, patch, del, upload, setTenant,
+    getSilent, postSilent, putSilent, patchSilent, delSilent,
     logout: () => clearAuth()
   };
 })();

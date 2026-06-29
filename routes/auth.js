@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { ROLES } = User;
 const { PROMOTER_TYPES = [] } = User;
+const { promoterProfileCompletion } = User;
 const auth = require('../middleware/auth');
 const { hashPassword, isHashedPassword, verifyPassword } = require('../utils/passwords');
 const audit = require('../utils/audit');
@@ -21,7 +22,7 @@ function sanitizePromoterProfile(input = {}) {
 
   const toNum = (v) => {
     if (v === '' || v === null || v === undefined) return null;
-    const n = Number(v);
+    const n = Number(String(v).replace(/,/g, ''));
     return Number.isFinite(n) && n >= 0 ? n : null;
   };
   const countriesRaw = Array.isArray(input.countries)
@@ -43,7 +44,23 @@ function sanitizePromoterProfile(input = {}) {
     yearsExperience: toNum(input.yearsExperience ?? input.aniosExperiencia),
     deliveredProjects: toNum(input.deliveredProjects ?? input.proyectosEntregados),
     activeProjects: toNum(input.activeProjects ?? input.proyectosActivos),
-    developedVolume: toNum(input.developedVolume ?? input.volumenDesarrollado),
+    developedVolume: toNum(input.developedVolume ?? input.volumenDesarrollado ?? input.volumenTotalDesarrollado),
+    developedUnits: toNum(input.developedUnits ?? input.unidadesDesarrolladas),
+    averageProjectTicket: toNum(input.averageProjectTicket ?? input.ticketMedioProyecto),
+    bankFinancingExperience: String(input.bankFinancingExperience ?? input.experienciaFinanciacionBancaria ?? '').trim().slice(0, 240),
+    banksWorkedWith: Array.from(new Set((Array.isArray(input.banksWorkedWith)
+      ? input.banksWorkedWith
+      : String(input.banksWorkedWith || input.bancosTrabajados || '').split(/\r?\n|,/))
+      .map(x => String(x || '').trim()).filter(Boolean))).slice(0, 30),
+    onTimeDeliveryHistory: String(input.onTimeDeliveryHistory ?? input.historialEntregasTiempo ?? '').trim().slice(0, 240),
+    incidentHistory: String(input.incidentHistory ?? input.historialIncidencias ?? '').trim().slice(0, 240),
+    documentationLevel: String(input.documentationLevel ?? input.nivelDocumentacion ?? '').trim().slice(0, 120),
+    internalTeam: {
+      technical: !!(input.internalTeam?.technical ?? input.equipoTecnico),
+      financial: !!(input.internalTeam?.financial ?? input.equipoFinanciero),
+      commercial: !!(input.internalTeam?.commercial ?? input.equipoComercial),
+      legal: !!(input.internalTeam?.legal ?? input.equipoLegal)
+    },
     countries: Array.from(new Set(countriesRaw.map(x => String(x || '').trim()).filter(Boolean))).slice(0, 20),
     notes: String(input.notes ?? input.notas ?? '').trim().slice(0, 1000)
   };
@@ -204,22 +221,8 @@ if (!allowedRequested.includes(requested)) {
       roleRequested: requested    // ROLE-SEP
     };
 
-    if (requested === 'promoter') {
-      const profileInput = req.body?.promoterProfile || req.body?.perfilPromotor || {};
-      const companyName = String(
-        req.body?.promoterCompanyName ??
-        req.body?.sociedad ??
-        profileInput.companyName ??
-        profileInput.sociedad ??
-        profileInput.nombreSociedad ??
-        ''
-      ).trim();
-
-      if (!companyName) {
-        return res.status(400).json({ error: 'El nombre de la sociedad es obligatorio para promotores.' });
-      }
-
-      userPayload.promoterProfile = sanitizePromoterProfile({ ...profileInput, companyName });
+    if (requested === 'promoter' && (req.body?.promoterProfile || req.body?.perfilPromotor)) {
+      userPayload.promoterProfile = sanitizePromoterProfile(req.body.promoterProfile || req.body.perfilPromotor);
     }
 
     const user = await User.create(userPayload);
@@ -264,10 +267,55 @@ router.get('/me', auth, async (req, res) => {
       email: user.email,
       role: user.role,       // ROLE-SEP
       status: user.status,   // ROLE-SEP
-      tenantKey: user.tenantKey
+      tenantKey: user.tenantKey,
+      promoterProfile: user.promoterProfile || null,
+      promoterCategory: user.promoterCategory || 'No definido',
+      promoterProfileCompletion: promoterProfileCompletion(user.promoterProfile || {})
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/promoter-profile', auth, async (req, res) => {
+  try {
+    const user = await User.findOne({ _id: req.user.userId, tenantKey: req.user.tenantKey }, { password: 0 });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (user.role !== 'promoter') return res.status(403).json({ error: 'Solo disponible para promotores.' });
+    res.json({
+      promoterProfile: user.promoterProfile || null,
+      promoterCategory: user.promoterCategory || 'No definido',
+      promoterProfileCompletion: promoterProfileCompletion(user.promoterProfile || {})
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.patch('/promoter-profile', auth, async (req, res) => {
+  try {
+    const user = await User.findOne({ _id: req.user.userId, tenantKey: req.user.tenantKey });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (user.role !== 'promoter') return res.status(403).json({ error: 'Solo disponible para promotores.' });
+
+    user.promoterProfile = sanitizePromoterProfile(req.body?.promoterProfile || req.body?.perfilPromotor || req.body || {});
+    await user.save();
+
+    await audit(req, 'auth.promoter_profile_updated', {
+      targetType: 'user',
+      targetId: user._id,
+      message: 'Perfil de promotora actualizado por el promotor',
+      metadata: { promoterCategory: user.promoterCategory }
+    });
+
+    res.json({
+      ok: true,
+      promoterProfile: user.promoterProfile || null,
+      promoterCategory: user.promoterCategory || 'No definido',
+      promoterProfileCompletion: promoterProfileCompletion(user.promoterProfile || {})
+    });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
   }
 });
 

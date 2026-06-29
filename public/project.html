@@ -1466,15 +1466,18 @@
 
   <!-- Cabecera + export -->
   <section id="summaryHeader" class="summary-header">
-    <div class="summary-title-block">
+    <div class="summary-title-block summary-action-group">
+      <span class="summary-action-label">Proyecto</span>
       <h2 id="summaryProjectName">Proyecto</h2>
       <div class="small muted" id="summaryUpdatedAt">Actualizado: —</div>
     </div>
-    <div class="summary-export-actions">
+    <div class="summary-export-actions summary-action-group">
+      <span class="summary-action-label">Exportar</span>
       <a id="exportSummaryPdf"  class="btn btn-primary btn-sm"  href="#">PDF</a>
       <a id="exportSummaryXlsx" class="btn btn-ghost  btn-sm"  href="#">Excel</a>
     </div>
-    <div class="summary-date-filter" aria-label="Rango de fechas para el informe">
+    <div class="summary-date-filter summary-action-group" aria-label="Rango de fechas para el informe">
+        <span class="summary-action-label">Periodo y comparacion</span>
         <div class="summary-date-group">
           <span class="summary-date-filter-title">Periodo del resumen</span>
           <div class="summary-date-fields">
@@ -1506,7 +1509,8 @@
           <button id="summaryReportDateClear" class="summary-date-clear" type="button" title="Informe global">Limpiar</button>
         </div>
       </div>
-    <div class="summary-import-actions" style="display:none;">
+    <div class="summary-import-actions summary-action-group" style="display:none;">
+      <span class="summary-action-label">Importar</span>
       <label class="summary-file-picker" for="datoUnicoFile">
         <span class="summary-file-picker-label">Seleccionar Excel</span>
         <span class="summary-file-picker-name" id="datoUnicoFileName">Ningún archivo seleccionado</span>

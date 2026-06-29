@@ -8,25 +8,386 @@
   <link href="/css/theme.css" rel="stylesheet" />
   <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
   <style>
+    :root{
+      --admin-bg-1:#081426;
+      --admin-bg-2:#102846;
+      --admin-panel:rgba(15, 23, 42, .72);
+      --admin-panel-2:rgba(15, 23, 42, .48);
+      --admin-border:rgba(148,163,184,.20);
+      --admin-border-strong:rgba(148,163,184,.34);
+      --admin-text:#e5e7eb;
+      --admin-muted:#9ca3af;
+      --admin-blue:#3b82f6;
+      --admin-blue-2:#60a5fa;
+      --admin-green:#22c55e;
+      --admin-red:#ef4444;
+      --admin-amber:#f59e0b;
+      --admin-radius:18px;
+    }
+
+    body{
+      background:
+        radial-gradient(circle at top left, rgba(59,130,246,.22), transparent 32%),
+        linear-gradient(135deg, var(--admin-bg-1), var(--admin-bg-2));
+      min-height:100vh;
+    }
+
+    .topbar{
+      position:sticky;
+      top:0;
+      z-index:50;
+      backdrop-filter: blur(14px);
+      background:rgba(8,20,38,.78);
+      border-bottom:1px solid var(--admin-border);
+    }
+
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      font-weight:800;
+      letter-spacing:.2px;
+    }
+
+    /* Sin icono decorativo en la appbar: el usuario pidió dejar sólo el título. */
+    .brand::before{ display:none; }
+
+    .container{
+      max-width:1440px;
+      padding-top:22px;
+      padding-bottom:42px;
+    }
+
+    .admin-hero{ display:none; }
+
+    .admin-hero-main{
+      border:1px solid var(--admin-border);
+      background:linear-gradient(135deg, rgba(15,23,42,.86), rgba(30,64,175,.36));
+      border-radius:var(--admin-radius);
+      padding:22px;
+      box-shadow:0 24px 70px rgba(0,0,0,.25);
+    }
+
+    .admin-hero-main h1{
+      margin:0 0 8px;
+      font-size:1.65rem;
+      line-height:1.15;
+    }
+
+    .admin-hero-main p{
+      max-width:850px;
+      margin:0;
+      color:var(--admin-muted);
+    }
+
+    .admin-hero-side{
+      border:1px solid var(--admin-border);
+      background:rgba(15,23,42,.64);
+      border-radius:var(--admin-radius);
+      padding:16px;
+      display:grid;
+      gap:10px;
+      align-content:center;
+    }
+
+    .admin-mini-line{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:10px 12px;
+      border-radius:12px;
+      background:rgba(15,23,42,.48);
+      border:1px solid rgba(148,163,184,.14);
+    }
+
+    .admin-mini-line span:first-child{ color:var(--admin-muted); font-size:.86rem; }
+    .admin-mini-line span:last-child{ font-weight:800; }
+
+    .admin-tabs{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      justify-content:center;
+      flex-wrap:wrap;
+      padding:10px;
+      border:1px solid var(--admin-border);
+      background:rgba(15,23,42,.60);
+      border-radius:16px;
+      margin:10px auto 18px;
+      position:sticky;
+      top:64px;
+      z-index:45;
+      backdrop-filter: blur(14px);
+    }
+
+    .admin-tab{
+      appearance:none;
+      border:1px solid transparent;
+      background:transparent;
+      color:var(--admin-muted);
+      border-radius:999px;
+      min-height:42px;
+      padding:.6rem 1.1rem;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      cursor:pointer;
+      font-weight:700;
+      transition:.18s ease;
+    }
+
+    .admin-tab:hover{
+      color:#fff;
+      background:rgba(59,130,246,.12);
+      border-color:rgba(96,165,250,.24);
+    }
+
+    .admin-tab.active{
+      color:#fff;
+      background:linear-gradient(135deg, rgba(59,130,246,.95), rgba(37,99,235,.95));
+      border-color:rgba(147,197,253,.36);
+      box-shadow:0 12px 34px rgba(37,99,235,.26);
+    }
+
+    .admin-tab .dot{
+      width:8px;
+      height:8px;
+      border-radius:999px;
+      background:currentColor;
+      opacity:.75;
+    }
+
+    .admin-panel-section{ display:none; }
+    .admin-panel-section.active{ display:block; }
+
+    .card{
+      border:1px solid var(--admin-border);
+      border-radius:var(--admin-radius);
+      background:var(--admin-panel);
+      box-shadow:0 22px 60px rgba(0,0,0,.18);
+    }
+
     .badge { display:inline-block; padding:.25rem .5rem; border-radius:999px; font-size:.75rem; border:1px solid #334155; background:#0f1722; }
-    /* Usuarios */
     .badge.pending { border-color:#f59e0b; color:#f59e0b; }
     .badge.active { border-color:#22c55e; color:#22c55e; }
     .badge.blocked { border-color:#ef4444; color:#ef4444; }
-    /* Proyectos (publishStatus) */
     .badge.approved { border-color:#22c55e; color:#22c55e; }
     .badge.rejected { border-color:#ef4444; color:#ef4444; }
     .badge.draft { border-color:#64748b; color:#94a3b8; }
 
     .toolbar { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
-    .toolbar .input, .toolbar select { min-height:36px; }
+    .toolbar .input, .toolbar select { min-height:38px; }
     .grid { display:grid; gap:16px; }
-    @media (min-width: 1024px) { .grid.cols-2 { grid-template-columns: 1fr 1fr; } }
+    .grid.cols-2{
+    display:flex;
+    flex-direction:column;
+    gap:22px;
+    }
     .muted { opacity:.8; }
     .table th, .table td { vertical-align: middle; }
+    .table{
+      border-collapse:separate;
+      border-spacing:0;
+      overflow:hidden;
+      border-radius:14px;
+    }
+    .table thead th{
+      background:rgba(15,23,42,.58);
+      color:#cbd5e1;
+      font-size:.78rem;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }
+    .table tbody tr:hover{ background:rgba(59,130,246,.06); }
     .actions { display:flex; gap:.5rem; flex-wrap:wrap; }
     .btn.small { padding:.35rem .6rem; font-size:.85rem; }
     .input[disabled] { opacity:.7; }
+
+    .admin-card-head {
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:16px;
+      margin-bottom:14px;
+    }
+    .admin-card-head h2 { margin-bottom:8px; }
+    .audit-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+
+    .section-head {
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:16px;
+      margin-bottom:12px;
+    }
+    .section-head h2 { margin:0 0 8px; }
+
+    .admin-subcard{
+      border:1px solid rgba(148,163,184,.16);
+      background:rgba(15,23,42,.34);
+      border-radius:16px;
+      padding:16px;
+      min-width:0;
+      overflow:hidden;
+    }
+
+    .table-scroll{
+    width:100%;
+    overflow:visible;
+    border:none;
+    margin-top:12px;
+}
+
+.table-scroll .table{
+    width:100%;
+    min-width:100%;
+    table-layout:fixed;
+}
+
+.table th,
+.table td{
+    word-break:break-word;
+    white-space:normal;
+}
+
+    .admin-subcard .toolbar{ margin-bottom:0; }
+
+    .admin-subcard h3{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      margin-top:0;
+    }
+
+    .admin-subcard h3::before{
+      content:"";
+      width:9px;
+      height:9px;
+      border-radius:999px;
+      background:#60a5fa;
+      box-shadow:0 0 0 4px rgba(96,165,250,.12);
+    }
+
+    .collapse-toggle {
+      width:36px;
+      height:36px;
+      min-width:36px;
+      padding:0;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      border-radius:10px;
+      line-height:1;
+      font-weight:700;
+    }
+    .collapsible-body.is-collapsed { display:none; }
+    .pager {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-top:12px;
+      flex-wrap:wrap;
+    }
+
+    .audit-summary, .payment-summary {
+      display:grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap:10px;
+      margin:14px 0;
+    }
+    .audit-kpi, .payment-kpi {
+      border:1px solid rgba(148,163,184,.18);
+      background:rgba(15,23,42,.36);
+      border-radius:12px;
+      padding:12px;
+      min-height:78px;
+    }
+    .audit-kpi .label, .payment-kpi .label { color:#9ca3af; font-size:.82rem; }
+    .audit-kpi .value, .payment-kpi .value { font-size:1.35rem; font-weight:800; margin-top:4px; }
+
+    .audit-table-wrap, .payment-table-wrap {
+      overflow:auto;
+      border-radius:14px;
+      background:rgba(15,23,42,.28);
+      border:1px solid rgba(148,163,184,.12);
+    }
+    .audit-action {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:.25rem .5rem;
+      border-radius:999px;
+      background:#111827;
+      border:1px solid #334155;
+      white-space:nowrap;
+      font-size:.8rem;
+    }
+    .audit-status.success { border-color:#22c55e; color:#86efac; }
+    .audit-status.failure { border-color:#ef4444; color:#fca5a5; }
+    .audit-status.blocked { border-color:#f59e0b; color:#fbbf24; }
+    .audit-status.info { border-color:#60a5fa; color:#93c5fd; }
+    .audit-detail {
+      max-width:420px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .audit-footer {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-top:12px;
+      flex-wrap:wrap;
+    }
+
+    .payment-form{
+      display:grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap:10px;
+      margin-top:12px;
+    }
+
+    .payment-form .input,
+    .payment-form select,
+    .payment-form textarea{
+      width:100%;
+    }
+
+    .payment-form .wide-2{ grid-column: span 2; }
+    .payment-form .wide-3{ grid-column: span 3; }
+    .payment-form .wide-6{ grid-column: 1 / -1; }
+    .payment-form-actions{
+      grid-column: 1 / -1;
+      display:flex;
+      gap:8px;
+      justify-content:flex-end;
+      flex-wrap:wrap;
+    }
+
+    .payment-note{
+      border:1px solid rgba(96,165,250,.22);
+      background:rgba(59,130,246,.09);
+      border-radius:14px;
+      padding:12px 14px;
+      color:#cbd5e1;
+      margin-top:12px;
+    }
+
+    .payment-status{
+      display:inline-flex;
+      border-radius:999px;
+      padding:.25rem .55rem;
+      font-size:.78rem;
+      border:1px solid rgba(148,163,184,.24);
+      background:rgba(15,23,42,.60);
+      white-space:nowrap;
+    }
+    .payment-status.recibido{ color:#86efac; border-color:rgba(34,197,94,.45); }
+    .payment-status.pendiente{ color:#fbbf24; border-color:rgba(245,158,11,.45); }
+    .payment-status.devuelto{ color:#fca5a5; border-color:rgba(239,68,68,.45); }
 
     /* Modal simple */
     .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index: 70; }
@@ -71,122 +432,59 @@
       color:#123B6D;
       margin-bottom:6px;
     }
-
-    /* ✅ NUEVO: body scroll interno del modal */
     .modal-body{
       max-height: calc(100vh - 260px);
       overflow: auto;
       padding-right: 6px;
     }
-
-    /* ✅ NUEVO: roles en grid 2 columnas */
     #assignRolesContainer{
       display:grid;
       grid-template-columns: 1fr 1fr;
       gap: 12px;
     }
-    .admin-card-head {
-      display:flex;
-      align-items:flex-start;
-      justify-content:space-between;
-      gap:16px;
-      margin-bottom:14px;
-    }
-    .admin-card-head h2 { margin-bottom:8px; }
-    .audit-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
-    .audit-summary {
-      display:grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap:10px;
-      margin:14px 0;
-    }
-    .audit-kpi {
-      border:1px solid rgba(148,163,184,.18);
-      background:rgba(15,23,42,.36);
-      border-radius:8px;
-      padding:12px;
-      min-height:70px;
-    }
-    .audit-kpi .label { color:#9ca3af; font-size:.82rem; }
-    .audit-kpi .value { font-size:1.35rem; font-weight:700; margin-top:4px; }
-    .audit-table-wrap {
-      overflow:auto;
-      border-radius:8px;
-      background:rgba(15,23,42,.28);
-    }
-    .audit-action {
-      display:inline-flex;
-      align-items:center;
-      gap:6px;
-      padding:.25rem .5rem;
-      border-radius:999px;
-      background:#111827;
-      border:1px solid #334155;
-      white-space:nowrap;
-      font-size:.8rem;
-    }
-    .audit-status.success { border-color:#22c55e; color:#86efac; }
-    .audit-status.failure { border-color:#ef4444; color:#fca5a5; }
-    .audit-status.blocked { border-color:#f59e0b; color:#fbbf24; }
-    .audit-status.info { border-color:#60a5fa; color:#93c5fd; }
-    .audit-detail {
-      max-width:420px;
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-    }
-    .audit-footer {
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-      margin-top:12px;
-      flex-wrap:wrap;
-    }
-    .section-head {
-      display:flex;
-      align-items:flex-start;
-      justify-content:space-between;
-      gap:16px;
-      margin-bottom:12px;
-    }
-    .section-head h2 { margin:0 0 8px; }
-    .collapse-toggle {
-      width:36px;
-      height:36px;
-      min-width:36px;
-      padding:0;
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      border-radius:10px;
-      line-height:1;
-      font-weight:700;
-    }
-    .collapsible-body.is-collapsed { display:none; }
-    .pager {
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-      margin-top:12px;
-      flex-wrap:wrap;
+
+
+    .card{ padding:22px; }
+    .admin-panel-section > .card{ margin-top:0; }
+    #approvalsCard .grid.cols-2{ align-items:start; }
+    #pendingUsersTable th:last-child,
+#pendingUsersTable td:last-child,
+#usersTable th:last-child,
+#usersTable td:last-child{
+    width:150px;
+    min-width:150px;
+}
+
+    #pendingUsersTable .actions, #usersTable .actions, #allProjectsTable .actions{ flex-direction:column; align-items:flex-start; gap:6px; }
+    #pendingUsersTable select{ max-width:110px; }
+    .section-head, .admin-card-head{ margin-bottom:18px; }
+    .admin-panel-section[data-admin-panel="activity"] #activityCard{ display:block !important; }
+
+    @media (max-width: 980px){
+      .admin-hero{ grid-template-columns:1fr; }
+      .admin-tabs{ top:58px; overflow-x:auto; flex-wrap:nowrap; }
+      .admin-tab{ white-space:nowrap; }
+      .payment-form{ grid-template-columns:1fr 1fr; }
+      .payment-form .wide-2,
+      .payment-form .wide-3{ grid-column: span 1; }
     }
     @media (max-width: 860px){
       #assignRolesContainer{ grid-template-columns: 1fr; }
       .admin-card-head { flex-direction:column; }
       .section-head { align-items:center; }
       .audit-actions { justify-content:flex-start; }
-      .audit-summary { grid-template-columns: 1fr 1fr; }
+      .audit-summary, .payment-summary { grid-template-columns: 1fr 1fr; }
     }
     @media (max-width: 560px){
-      .audit-summary { grid-template-columns: 1fr; }
+      .audit-summary, .payment-summary { grid-template-columns: 1fr; }
+      .payment-form{ grid-template-columns:1fr; }
+      .admin-hero-main{ padding:18px; }
     }
   </style>
 </head>
 <body>
   <div class="topbar">
-    <div class="brand">Administración</div>
+    <div class="brand">Administración Bank73</div>
     <div class="toolbar">
       <span id="whoami" class="badge">ADMIN</span>
       <button id="logoutBtn" class="btn">Salir</button>
@@ -203,239 +501,352 @@
       </div>
     </div>
 
-    <!-- APROBACIONES -->
-    <section class="card" id="approvalsCard">
-      <div class="admin-card-head">
-        <div>
-          <h2>Administrador de Bank73</h2>
-          <p class="muted">Revisa y aprueba usuarios y proyectos pendientes</p>
-        </div>
-        <div class="audit-actions">
-          <button id="openActivityBtn" class="btn small">Actividad</button>
-        </div>
-      </div>
+    <div id="adminWorkspace">
+      <nav class="admin-tabs" aria-label="Secciones del dashboard de administración">
+        <button class="admin-tab active" type="button" data-admin-tab="pending"><span class="dot"></span>Pendientes</button>
+        <button class="admin-tab" type="button" data-admin-tab="users"><span class="dot"></span>Usuarios</button>
+        <button class="admin-tab" type="button" data-admin-tab="projects"><span class="dot"></span>Proyectos</button>
+        <button class="admin-tab" type="button" data-admin-tab="activity"><span class="dot"></span>Actividad</button>
+        <button class="admin-tab" type="button" data-admin-tab="payments"><span class="dot"></span>Pagos recibidos</button>
+      </nav>
 
-      <div class="grid cols-2">
-        <!-- Usuarios pendientes -->
-        <div>
-          <h3>Usuarios pendientes</h3>
+      <!-- PENDIENTES -->
+      <section class="admin-panel-section active" data-admin-panel="pending">
+        <section class="card" id="approvalsCard">
+          <div class="admin-card-head">
+            <div>
+              <h2>Pendientes</h2>
+              <p class="muted">Revisa y aprueba usuarios y proyectos pendientes.</p>
+            </div>
+            <div class="audit-actions">
+              <button id="openActivityBtn" class="btn small" type="button" style="display:none;">Actividad</button>
+            </div>
+          </div>
+
+          <div class="grid cols-2">
+            <div class="admin-subcard">
+              <h3>Usuarios pendientes</h3>
+              <div class="toolbar">
+                <select id="roleSelectDefault" title="Rol por defecto al aprobar" class="input">
+                  <option value="">— Rol al aprobar (opcional) —</option>
+                  <option value="bank">Bank</option>
+                  <option value="promoter">Promoter</option>
+                  <option value="commercial">Commercial</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <button id="refreshPendingUsers" class="btn small" type="button">Refrescar</button>
+              </div>
+              <div class="table-scroll">
+                <table class="table" id="pendingUsersTable">
+                <thead>
+                  <tr>
+                    <th>Nombre</th>
+                    <th>Email</th>
+                    <th>Solicitado</th>
+                    <th>Estado</th>
+                    <th>Perfil promotor</th>
+                    <th style="width:280px;">Acciones</th>
+                  </tr>
+                </thead>
+                  <tbody id="pendingUsersTbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="admin-subcard">
+              <h3>Proyectos pendientes</h3>
+              <div class="toolbar">
+                <button id="refreshPendingProjects" class="btn small" type="button">Refrescar</button>
+              </div>
+              <div class="table-scroll">
+                <table class="table" id="pendingProjectsTable">
+                <thead>
+                  <tr>
+                    <th>Nombre</th>
+                    <th>Descripción</th>
+                    <th>Publicación</th>
+                    <th style="width:200px;">Acciones</th>
+                  </tr>
+                </thead>
+                  <tbody id="pendingProjectsTbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <!-- USUARIOS -->
+      <section class="admin-panel-section" data-admin-panel="users">
+        <section class="card" id="usersCard">
+          <div class="section-head">
+            <div>
+              <h2>Usuarios</h2>
+              <p class="muted">Lista de usuarios del tenant. Puedes aprobar, bloquear o eliminar.</p>
+            </div>
+            <button id="toggleUsersCard" class="btn ghost small collapse-toggle" type="button" aria-label="Ocultar usuarios" aria-expanded="true" style="display:none;">^</button>
+          </div>
+
+          <div id="usersCardBody" class="collapsible-body">
+            <div class="toolbar">
+              <select id="usersStatusFilter" class="input">
+                <option value="">Todos</option>
+                <option value="pending">Pendientes</option>
+                <option value="active">Activos</option>
+                <option value="blocked">Bloqueados</option>
+              </select>
+              <input id="usersSearch" class="input" type="search" placeholder="Buscar por nombre o email..." />
+              <button id="refreshUsers" class="btn small" type="button">Refrescar</button>
+            </div>
+
+            <div id="msg" class="msg"></div>
+
+            <div class="table-scroll">
+              <table class="table" id="usersTable">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Email</th>
+                  <th>Rol</th>
+                  <th>Solicitado</th>
+                  <th>Estado</th>
+                  <th>Creado</th>
+                  <th>Perfil promotor</th>
+                  <th style="width:150px;">Acciones</th>
+                </tr>
+              </thead>
+                <tbody id="usersTbody"></tbody>
+              </table>
+            </div>
+
+            <div class="pager">
+              <span id="usersPagerInfo" class="muted">-</span>
+              <div class="actions">
+                <button id="usersPrev" class="btn ghost small" type="button">Anterior</button>
+                <button id="usersNext" class="btn ghost small" type="button">Siguiente</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <!-- PROYECTOS -->
+      <section class="admin-panel-section" data-admin-panel="projects">
+        <section class="card" id="projectsCard">
+          <div class="section-head">
+            <div>
+              <h2>Proyectos</h2>
+              <p class="muted">Lista completa de proyectos del tenant. Puedes asignar equipo o eliminar.</p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+              <a href="/portfolio?create=1" class="btn small">Crear proyecto</a>
+              <a href="/portfolio" class="btn small">Ir al portfolio</a>
+            </div>
+          </div>
+
           <div class="toolbar">
-            <select id="roleSelectDefault" title="Rol por defecto al aprobar" class="input">
-              <option value="">— Rol al aprobar (opcional) —</option>
-              <option value="bank">Bank</option>
-              <option value="promoter">Promoter</option>
-              <option value="commercial">Commercial</option>
-              <option value="admin">Admin</option>
+            <select id="allProjectsFilter" class="input" title="Filtrar por publicación">
+              <option value="">Todos</option>
+              <option value="pending">Pendientes</option>
+              <option value="approved">Aprobados</option>
+              <option value="rejected">Rechazados</option>
+              <option value="draft">Borrador</option>
             </select>
-            <button id="refreshPendingUsers" class="btn small">Refrescar</button>
+            <input id="allProjectsSearch" class="input" type="search" placeholder="Buscar por nombre, descripción o equipo..." />
+            <button id="refreshAllProjects" class="btn small" type="button">Refrescar</button>
           </div>
-          <table class="table" id="pendingUsersTable">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Email</th>
-                <th>Solicitado</th>
-                <th>Estado</th>
-                <th>Perfil promotor</th>
-                <th style="width:280px;">Acciones</th>
-              </tr>
-            </thead>
-            <tbody id="pendingUsersTbody"></tbody>
-          </table>
-        </div>
 
-        <!-- Proyectos pendientes -->
-        <div>
-          <h3>Proyectos pendientes</h3>
-          <div class="toolbar">
-            <button id="refreshPendingProjects" class="btn small">Refrescar</button>
-          </div>
-          <table class="table" id="pendingProjectsTable">
+          <div class="table-scroll">
+            <table class="table" id="allProjectsTable">
             <thead>
               <tr>
                 <th>Nombre</th>
                 <th>Descripción</th>
                 <th>Publicación</th>
-                <th style="width:200px;">Acciones</th>
+                <th>Promotores</th>
+                <th>Comerciales</th>
+                <th style="width:320px;">Acciones</th>
               </tr>
             </thead>
-            <tbody id="pendingProjectsTbody"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- ACTIVIDAD / AUDITORÍA -->
-    <section class="card" id="activityCard" style="display:none;">
-      <div class="admin-card-head">
-        <div>
-          <h2>Actividad</h2>
-          <p class="muted">Trazabilidad de accesos, usuarios, proyectos y documentos sensibles.</p>
-        </div>
-        <div class="audit-actions">
-          <button id="refreshAuditLogs" class="btn small">Refrescar</button>
-          <button id="hideActivityBtn" class="btn ghost small">Ocultar</button>
-        </div>
-      </div>
-
-      <div class="toolbar">
-        <select id="auditActionFilter" class="input" title="Filtrar por acción">
-          <option value="">Todas las acciones</option>
-          <option value="auth.login_success">Login correcto</option>
-          <option value="auth.login_failed">Login fallido</option>
-          <option value="auth.login_blocked">Login bloqueado</option>
-          <option value="auth.register_requested">Registro solicitado</option>
-          <option value="user.approved">Usuario aprobado</option>
-          <option value="user.blocked">Usuario bloqueado</option>
-          <option value="user.deleted">Usuario eliminado</option>
-          <option value="project.created">Proyecto creado</option>
-          <option value="project.updated">Proyecto actualizado</option>
-          <option value="project.approved">Proyecto aprobado</option>
-          <option value="project.rejected">Proyecto rechazado</option>
-          <option value="project.assigned">Equipo asignado</option>
-          <option value="project.deleted">Proyecto eliminado</option>
-          <option value="document.uploaded">Documento subido</option>
-          <option value="document.downloaded">Documento descargado</option>
-          <option value="document.deleted">Documento eliminado</option>
-          <option value="security.rate_limited">Límite activado</option>
-        </select>
-        <select id="auditStatusFilter" class="input" title="Filtrar por estado">
-          <option value="">Todos los estados</option>
-          <option value="success">Correcto</option>
-          <option value="failure">Fallido</option>
-          <option value="blocked">Bloqueado</option>
-          <option value="info">Info</option>
-        </select>
-        <input id="auditSearch" class="input" type="search" placeholder="Buscar por usuario, acción, IP o detalle..." />
-      </div>
-
-      <div class="audit-summary">
-        <div class="audit-kpi"><div class="label">Eventos</div><div class="value" id="auditTotal">—</div></div>
-        <div class="audit-kpi"><div class="label">Login fallidos</div><div class="value" id="auditFailures">—</div></div>
-        <div class="audit-kpi"><div class="label">Documentos</div><div class="value" id="auditDocs">—</div></div>
-        <div class="audit-kpi"><div class="label">Último evento</div><div class="value" id="auditLatest">—</div></div>
-      </div>
-
-      <div class="audit-table-wrap">
-        <table class="table" id="auditTable">
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Acción</th>
-              <th>Usuario</th>
-              <th>Estado</th>
-              <th>Recurso</th>
-              <th>IP</th>
-              <th>Detalle</th>
-            </tr>
-          </thead>
-          <tbody id="auditTbody"></tbody>
-        </table>
-      </div>
-
-      <div class="audit-footer">
-        <span id="auditPagerInfo" class="muted">—</span>
-        <div class="actions">
-          <button id="auditPrev" class="btn ghost small">Anterior</button>
-          <button id="auditNext" class="btn ghost small">Siguiente</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- USUARIOS (lista completa) -->
-    <section class="card" id="usersCard">
-      <div class="section-head">
-        <div>
-          <h2>Usuarios</h2>
-          <p class="muted">Lista de usuarios del tenant. Puedes aprobar, bloquear o eliminar.</p>
-        </div>
-        <button id="toggleUsersCard" class="btn ghost small collapse-toggle" type="button" aria-label="Ocultar usuarios" aria-expanded="true">^</button>
-      </div>
-
-      <div id="usersCardBody" class="collapsible-body">
-        <div class="toolbar">
-          <select id="usersStatusFilter" class="input">
-            <option value="">Todos</option>
-            <option value="pending">Pendientes</option>
-            <option value="active">Activos</option>
-            <option value="blocked">Bloqueados</option>
-          </select>
-          <input id="usersSearch" class="input" type="search" placeholder="Buscar por nombre o email..." />
-          <button id="refreshUsers" class="btn small">Refrescar</button>
-        </div>
-
-        <div id="msg" class="msg"></div>
-
-        <table class="table" id="usersTable">
-          <thead>
-            <tr>
-              <th>Nombre</th>
-              <th>Email</th>
-              <th>Rol</th>
-              <th>Solicitado</th>
-              <th>Estado</th>
-              <th>Creado</th>
-              <th>Perfil promotor</th>
-              <th style="width:380px;">Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="usersTbody"></tbody>
-        </table>
-
-        <div class="pager">
-          <span id="usersPagerInfo" class="muted">-</span>
-          <div class="actions">
-            <button id="usersPrev" class="btn ghost small" type="button">Anterior</button>
-            <button id="usersNext" class="btn ghost small" type="button">Siguiente</button>
+              <tbody id="allProjectsTbody"></tbody>
+            </table>
           </div>
-        </div>
-      </div>
-    </section>
 
-    <!-- PROYECTOS (ADMIN - lista completa) -->
-    <section class="card">
-      <div class="section-head">
-        <div>
-          <h2>Proyectos</h2>
-          <p class="muted">Lista completa de proyectos del tenant. Puedes asignar equipo o eliminar.</p>
-        </div>
-        <a href="/portfolio" class="btn small">Ir al portfolio</a>
-      </div>
+          <div class="pager">
+            <span id="allProjectsPagerInfo" class="muted">-</span>
+            <div class="actions">
+              <button id="allProjectsPrev" class="btn ghost small" type="button">Anterior</button>
+              <button id="allProjectsNext" class="btn ghost small" type="button">Siguiente</button>
+            </div>
+          </div>
+        </section>
+      </section>
 
-      <div class="toolbar">
-        <select id="allProjectsFilter" class="input" title="Filtrar por publicación">
-          <option value="">Todos</option>
-          <option value="pending">Pendientes</option>
-          <option value="approved">Aprobados</option>
-          <option value="rejected">Rechazados</option>
-          <option value="draft">Borrador</option>
-        </select>
-        <input id="allProjectsSearch" class="input" type="search" placeholder="Buscar por nombre, descripción o equipo..." />
-        <button id="refreshAllProjects" class="btn small">Refrescar</button>
-      </div>
+      <!-- ACTIVIDAD / AUDITORÍA -->
+      <section class="admin-panel-section" data-admin-panel="activity">
+        <section class="card" id="activityCard">
+          <div class="admin-card-head">
+            <div>
+              <h2>Actividad</h2>
+              <p class="muted">Trazabilidad de accesos, usuarios, proyectos y documentos sensibles.</p>
+            </div>
+            <div class="audit-actions">
+              <button id="refreshAuditLogs" class="btn small" type="button">Refrescar</button>
+              <button id="hideActivityBtn" class="btn ghost small" type="button" style="display:none;">Ocultar</button>
+            </div>
+          </div>
 
-      <table class="table" id="allProjectsTable">
-        <thead>
-          <tr>
-            <th>Nombre</th>
-            <th>Descripción</th>
-            <th>Publicación</th>
-            <th>Promotores</th>
-            <th>Comerciales</th>
-            <th style="width:320px;">Acciones</th>
-          </tr>
-        </thead>
-        <tbody id="allProjectsTbody"></tbody>
-      </table>
+          <div class="toolbar">
+            <select id="auditActionFilter" class="input" title="Filtrar por acción">
+              <option value="">Todas las acciones</option>
+              <option value="auth.login_success">Login correcto</option>
+              <option value="auth.login_failed">Login fallido</option>
+              <option value="auth.login_blocked">Login bloqueado</option>
+              <option value="auth.register_requested">Registro solicitado</option>
+              <option value="user.approved">Usuario aprobado</option>
+              <option value="user.blocked">Usuario bloqueado</option>
+              <option value="user.unblocked">Usuario desbloqueado</option>
+              <option value="user.deleted">Usuario eliminado</option>
+              <option value="project.created">Proyecto creado</option>
+              <option value="project.updated">Proyecto actualizado</option>
+              <option value="project.approved">Proyecto aprobado</option>
+              <option value="project.rejected">Proyecto rechazado</option>
+              <option value="project.assigned">Equipo asignado</option>
+              <option value="project.deleted">Proyecto eliminado</option>
+              <option value="document.uploaded">Documento subido</option>
+              <option value="document.downloaded">Documento descargado</option>
+              <option value="document.deleted">Documento eliminado</option>
+              <option value="security.rate_limited">Límite activado</option>
+            </select>
+            <select id="auditStatusFilter" class="input" title="Filtrar por estado">
+              <option value="">Todos los estados</option>
+              <option value="success">Correcto</option>
+              <option value="failure">Fallido</option>
+              <option value="blocked">Bloqueado</option>
+              <option value="info">Info</option>
+            </select>
+            <input id="auditSearch" class="input" type="search" placeholder="Buscar por usuario, acción, IP o detalle..." />
+          </div>
 
-      <div class="pager">
-        <span id="allProjectsPagerInfo" class="muted">-</span>
-        <div class="actions">
-          <button id="allProjectsPrev" class="btn ghost small" type="button">Anterior</button>
-          <button id="allProjectsNext" class="btn ghost small" type="button">Siguiente</button>
-        </div>
-      </div>
-    </section>
+          <div class="audit-summary">
+            <div class="audit-kpi"><div class="label">Eventos</div><div class="value" id="auditTotal">—</div></div>
+            <div class="audit-kpi"><div class="label">Login fallidos</div><div class="value" id="auditFailures">—</div></div>
+            <div class="audit-kpi"><div class="label">Documentos</div><div class="value" id="auditDocs">—</div></div>
+            <div class="audit-kpi"><div class="label">Último evento</div><div class="value" id="auditLatest">—</div></div>
+          </div>
+
+          <div class="audit-table-wrap">
+            <table class="table" id="auditTable">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Acción</th>
+                  <th>Usuario</th>
+                  <th>Estado</th>
+                  <th>Recurso</th>
+                  <th>IP</th>
+                  <th>Detalle</th>
+                </tr>
+              </thead>
+              <tbody id="auditTbody"></tbody>
+            </table>
+          </div>
+
+          <div class="audit-footer">
+            <span id="auditPagerInfo" class="muted">—</span>
+            <div class="actions">
+              <button id="auditPrev" class="btn ghost small" type="button">Anterior</button>
+              <button id="auditNext" class="btn ghost small" type="button">Siguiente</button>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <!-- PAGOS RECIBIDOS -->
+      <section class="admin-panel-section" data-admin-panel="payments">
+        <section class="card" id="paymentsCard">
+          <div class="admin-card-head">
+            <div>
+              <h2>Pagos recibidos</h2>
+              <p class="muted">Registro interno manual para controlar pagos aunque todavía no pasen por la plataforma.</p>
+            </div>
+            <div class="audit-actions">
+              <button id="exportPaymentsCsv" class="btn ghost small" type="button">Exportar CSV</button>
+              <button id="clearPaymentForm" class="btn ghost small" type="button">Limpiar</button>
+            </div>
+          </div>
+
+          <div class="payment-note">
+            Esta pestaña no procesa pagos. Solo sirve para que el admin pueda registrar importes recibidos, método, fecha, cliente/proyecto y notas.
+          </div>
+
+          <div class="payment-summary">
+            <div class="payment-kpi"><div class="label">Total recibido</div><div class="value" id="paymentsTotalReceived">B/. 0.00</div></div>
+            <div class="payment-kpi"><div class="label">Registros</div><div class="value" id="paymentsTotalCount">0</div></div>
+            <div class="payment-kpi"><div class="label">Pendientes</div><div class="value" id="paymentsPendingCount">0</div></div>
+            <div class="payment-kpi"><div class="label">Último pago</div><div class="value" id="paymentsLatestDate">—</div></div>
+          </div>
+
+          <form id="paymentForm" class="payment-form">
+            <input id="paymentDate" class="input" type="date" title="Fecha" />
+            <input id="paymentPayer" class="input wide-2" type="text" placeholder="Pagador / sociedad" />
+            <input id="paymentProject" class="input wide-2" type="text" placeholder="Proyecto asociado" />
+            <select id="paymentCurrency" class="input" title="Moneda">
+              <option value="B/.">B/.</option>
+              <option value="$">$</option>
+              <option value="€">€</option>
+            </select>
+            <input id="paymentAmount" class="input" type="number" min="0" step="0.01" placeholder="Importe" />
+            <select id="paymentMethod" class="input" title="Método">
+              <option value="Transferencia">Transferencia</option>
+              <option value="Cheque">Cheque</option>
+              <option value="Efectivo">Efectivo</option>
+              <option value="Tarjeta">Tarjeta</option>
+              <option value="Otro">Otro</option>
+            </select>
+            <select id="paymentStatus" class="input" title="Estado">
+              <option value="recibido">Recibido</option>
+              <option value="pendiente">Pendiente</option>
+              <option value="devuelto">Devuelto</option>
+            </select>
+            <input id="paymentReference" class="input wide-2" type="text" placeholder="Referencia / comprobante" />
+            <textarea id="paymentNotes" class="input wide-6" rows="3" placeholder="Notas internas..."></textarea>
+            <div class="payment-form-actions">
+              <button id="paymentSubmit" class="btn" type="submit">Añadir pago</button>
+            </div>
+          </form>
+
+          <div class="toolbar" style="margin-top:16px;">
+            <input id="paymentsSearch" class="input" type="search" placeholder="Buscar pago por pagador, proyecto, referencia o notas..." />
+            <select id="paymentsStatusFilter" class="input">
+              <option value="">Todos los estados</option>
+              <option value="recibido">Recibidos</option>
+              <option value="pendiente">Pendientes</option>
+              <option value="devuelto">Devueltos</option>
+            </select>
+          </div>
+
+          <div class="payment-table-wrap" style="margin-top:12px;">
+            <table class="table" id="paymentsTable">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Pagador</th>
+                  <th>Proyecto</th>
+                  <th>Importe</th>
+                  <th>Método</th>
+                  <th>Estado</th>
+                  <th>Referencia</th>
+                  <th>Notas</th>
+                  <th style="width:120px;">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="paymentsTbody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </div>
   </main>
 
   <!-- Modal asignación -->
@@ -463,13 +874,257 @@
         const role = (localStorage.getItem('role') || '').toLowerCase();
         const status = (localStorage.getItem('status') || '').toLowerCase();
         if (role !== 'admin') {
-          document.getElementById('approvalsCard').style.display = 'none';
+          const workspace = document.getElementById('adminWorkspace');
+          const approvals = document.getElementById('approvalsCard');
+          if (workspace) workspace.style.display = 'none';
+          if (approvals) approvals.style.display = 'none';
           document.getElementById('notAdmin').style.display = 'block';
         }
         const who = document.getElementById('whoami');
+        const heroRole = document.getElementById('adminHeroRole');
         if (who) who.textContent = (role || '—').toUpperCase();
+        if (heroRole) heroRole.textContent = (role || '—').toUpperCase();
         if (status && status !== 'active') location.href = '/pending.html';
       } catch (_) {}
+    })();
+  </script>
+
+  <script>
+    (function adminTabsAndPayments(){
+      const tabButtons = Array.from(document.querySelectorAll('[data-admin-tab]'));
+      const panels = Array.from(document.querySelectorAll('[data-admin-panel]'));
+      const heroTab = document.getElementById('adminHeroTab');
+
+      const tabLabels = {
+        pending: 'Pendientes',
+        users: 'Usuarios',
+        projects: 'Proyectos',
+        activity: 'Actividad',
+        payments: 'Pagos recibidos'
+      };
+
+      function activateTab(tabName){
+        tabButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.adminTab === tabName));
+        panels.forEach(panel => panel.classList.toggle('active', panel.dataset.adminPanel === tabName));
+        if (heroTab) heroTab.textContent = tabLabels[tabName] || tabName;
+        try { sessionStorage.setItem('bank73AdminTab', tabName); } catch(_) {}
+      }
+
+      tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => activateTab(btn.dataset.adminTab));
+      });
+
+      const openActivityBtn = document.getElementById('openActivityBtn');
+      if (openActivityBtn) {
+        openActivityBtn.addEventListener('click', () => activateTab('activity'));
+      }
+
+      const hideActivityBtn = document.getElementById('hideActivityBtn');
+      if (hideActivityBtn) {
+        hideActivityBtn.addEventListener('click', () => activateTab('pending'));
+      }
+
+      try {
+        const saved = sessionStorage.getItem('bank73AdminTab');
+        if (saved && tabLabels[saved]) activateTab(saved);
+      } catch(_) {}
+
+      const storageKey = 'bank73_admin_manual_payments_v1';
+      const form = document.getElementById('paymentForm');
+      const tbody = document.getElementById('paymentsTbody');
+      const search = document.getElementById('paymentsSearch');
+      const statusFilter = document.getElementById('paymentsStatusFilter');
+      const clearBtn = document.getElementById('clearPaymentForm');
+      const exportBtn = document.getElementById('exportPaymentsCsv');
+
+      const fields = {
+        date: document.getElementById('paymentDate'),
+        payer: document.getElementById('paymentPayer'),
+        project: document.getElementById('paymentProject'),
+        currency: document.getElementById('paymentCurrency'),
+        amount: document.getElementById('paymentAmount'),
+        method: document.getElementById('paymentMethod'),
+        status: document.getElementById('paymentStatus'),
+        reference: document.getElementById('paymentReference'),
+        notes: document.getElementById('paymentNotes')
+      };
+
+      function today(){
+        const d = new Date();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${d.getFullYear()}-${mm}-${dd}`;
+      }
+
+      function loadPayments(){
+        try { return JSON.parse(localStorage.getItem(storageKey) || '[]'); }
+        catch(_) { return []; }
+      }
+
+      function savePayments(payments){
+        localStorage.setItem(storageKey, JSON.stringify(payments));
+      }
+
+      function esc(value){
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({
+          '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;'
+        }[ch]));
+      }
+
+      function formatMoney(currency, amount){
+        const n = Number(amount || 0);
+        return `${currency || 'B/.'} ${n.toLocaleString('es-PA', { minimumFractionDigits:2, maximumFractionDigits:2 })}`;
+      }
+
+      function filteredPayments(){
+        const q = (search?.value || '').trim().toLowerCase();
+        const st = statusFilter?.value || '';
+        return loadPayments()
+          .filter(p => !st || p.status === st)
+          .filter(p => {
+            if (!q) return true;
+            return [p.payer, p.project, p.reference, p.notes, p.method, p.status]
+              .some(v => String(v || '').toLowerCase().includes(q));
+          })
+          .sort((a,b) => String(b.date || '').localeCompare(String(a.date || '')));
+      }
+
+      function renderPaymentSummary(payments){
+        const received = payments.filter(p => p.status === 'recibido');
+        const total = received.reduce((acc, p) => acc + Number(p.amount || 0), 0);
+        const pending = payments.filter(p => p.status === 'pendiente').length;
+        const latest = payments.length
+          ? payments.slice().sort((a,b) => String(b.date || '').localeCompare(String(a.date || '')))[0].date
+          : '—';
+
+        const totalEl = document.getElementById('paymentsTotalReceived');
+        const countEl = document.getElementById('paymentsTotalCount');
+        const pendingEl = document.getElementById('paymentsPendingCount');
+        const latestEl = document.getElementById('paymentsLatestDate');
+
+        if (totalEl) totalEl.textContent = formatMoney('B/.', total);
+        if (countEl) countEl.textContent = String(payments.length);
+        if (pendingEl) pendingEl.textContent = String(pending);
+        if (latestEl) latestEl.textContent = latest || '—';
+      }
+
+      function renderPayments(){
+        if (!tbody) return;
+        const all = loadPayments();
+        const rows = filteredPayments();
+        renderPaymentSummary(all);
+
+        if (!rows.length) {
+          tbody.innerHTML = '<tr><td colspan="9" class="muted">No hay pagos registrados todavía.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = rows.map(p => `
+          <tr>
+            <td>${esc(p.date)}</td>
+            <td>${esc(p.payer)}</td>
+            <td>${esc(p.project)}</td>
+            <td><strong>${esc(formatMoney(p.currency, p.amount))}</strong></td>
+            <td>${esc(p.method)}</td>
+            <td><span class="payment-status ${esc(p.status)}">${esc(p.status)}</span></td>
+            <td>${esc(p.reference)}</td>
+            <td class="audit-detail" title="${esc(p.notes)}">${esc(p.notes)}</td>
+            <td>
+              <button class="btn ghost small" type="button" data-delete-payment="${esc(p.id)}">Eliminar</button>
+            </td>
+          </tr>
+        `).join('');
+      }
+
+      function resetPaymentForm(){
+        if (!form) return;
+        form.reset();
+        if (fields.date) fields.date.value = today();
+        if (fields.currency) fields.currency.value = 'B/.';
+        if (fields.status) fields.status.value = 'recibido';
+      }
+
+      if (fields.date && !fields.date.value) fields.date.value = today();
+
+      if (form) {
+        form.addEventListener('submit', (ev) => {
+          ev.preventDefault();
+          const amount = Number(fields.amount?.value || 0);
+          const payer = (fields.payer?.value || '').trim();
+
+          if (!payer) {
+            alert('Indica el pagador o sociedad.');
+            fields.payer?.focus();
+            return;
+          }
+
+          if (!amount || amount <= 0) {
+            alert('Indica un importe válido.');
+            fields.amount?.focus();
+            return;
+          }
+
+          const payments = loadPayments();
+          payments.push({
+            id: `pay_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+            date: fields.date?.value || today(),
+            payer,
+            project: (fields.project?.value || '').trim(),
+            currency: fields.currency?.value || 'B/.',
+            amount,
+            method: fields.method?.value || 'Transferencia',
+            status: fields.status?.value || 'recibido',
+            reference: (fields.reference?.value || '').trim(),
+            notes: (fields.notes?.value || '').trim(),
+            createdAt: new Date().toISOString()
+          });
+
+          savePayments(payments);
+          resetPaymentForm();
+          renderPayments();
+        });
+      }
+
+      if (tbody) {
+        tbody.addEventListener('click', (ev) => {
+          const btn = ev.target.closest('[data-delete-payment]');
+          if (!btn) return;
+          if (!confirm('¿Eliminar este pago del registro interno?')) return;
+          const id = btn.getAttribute('data-delete-payment');
+          savePayments(loadPayments().filter(p => p.id !== id));
+          renderPayments();
+        });
+      }
+
+      if (search) search.addEventListener('input', renderPayments);
+      if (statusFilter) statusFilter.addEventListener('change', renderPayments);
+      if (clearBtn) clearBtn.addEventListener('click', resetPaymentForm);
+
+      if (exportBtn) {
+        exportBtn.addEventListener('click', () => {
+          const payments = filteredPayments();
+          const headers = ['Fecha','Pagador','Proyecto','Moneda','Importe','Método','Estado','Referencia','Notas'];
+          const lines = [
+            headers.join(','),
+            ...payments.map(p => [
+              p.date, p.payer, p.project, p.currency, p.amount, p.method, p.status, p.reference, p.notes
+            ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+          ];
+
+          const blob = new Blob([lines.join('\n')], { type:'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `bank73-pagos-recibidos-${today()}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        });
+      }
+
+      resetPaymentForm();
+      renderPayments();
     })();
   </script>
 

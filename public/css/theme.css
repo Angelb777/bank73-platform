@@ -482,6 +482,16 @@ body.light-theme #summaryHeader .summary-date-filter {
   box-shadow: 0 10px 24px rgba(31, 45, 74, .08);
 }
 
+body.light-theme #summaryHeader .summary-action-group {
+  background: rgba(255, 255, 255, .96);
+  border-color: #dbe3ef;
+  box-shadow: 0 10px 24px rgba(31, 45, 74, .08);
+}
+
+body.light-theme #summaryHeader .summary-action-label {
+  color: #647089;
+}
+
 body.light-theme #summaryHeader .summary-date-group-compare {
   border-left-color: #d7dfec;
 }
@@ -4661,6 +4671,11 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
   align-self: end;
   gap: 8px;
   min-width: 0;
+  width: 100%;
+}
+
+#tab-comercial #commercialImportDatoUnicoSlot .summary-import-actions > .summary-action-label {
+  display: none;
 }
 
 #tab-comercial #commercialImportDatoUnicoSlot .summary-file-input {
@@ -4672,7 +4687,9 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
 }
 
 #tab-comercial #commercialImportDatoUnicoSlot .summary-file-picker {
-  width: 240px;
+  width: auto;
+  flex: 1 1 210px;
+  min-width: 0;
   min-height: 40px;
   height: 40px;
   padding: 0;
@@ -4878,10 +4895,10 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
 /* RESUMEN: barra superior ordenada */
 #tab-resumen #summaryHeader.summary-header {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto minmax(560px, auto) minmax(360px, auto);
-  grid-template-areas: "title export period import";
+  grid-template-columns: minmax(220px, 1fr) minmax(560px, auto) minmax(170px, 1fr);
+  grid-template-areas: "title period export";
   gap: 14px;
-  align-items: center;
+  align-items: stretch;
   margin: 18px 0 18px;
   padding: 16px;
   border: 1px solid rgba(148, 163, 184, .24);
@@ -4892,11 +4909,48 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
 
 #tab-resumen #summaryHeader .summary-title-block {
   grid-area: title;
-  align-self: stretch;
+  justify-self: start;
+  width: min(100%, 420px);
+}
+
+#tab-resumen #summaryHeader .summary-action-group {
+  position: relative;
+  min-width: 0;
+  padding: 28px 12px 12px;
+  border: 1px solid rgba(148, 163, 184, .18);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, .26);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+}
+
+#tab-resumen #summaryHeader .summary-action-label {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  right: 12px;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--muted);
+}
+
+body.light-theme #tab-resumen #summaryHeader .summary-action-group {
+  background: #ffffff;
+  border-color: #d7dfec;
+  box-shadow: 0 10px 24px rgba(31, 45, 74, .08);
+}
+
+body.light-theme #tab-resumen #summaryHeader .summary-action-label {
+  color: #647089;
+}
+
+#tab-resumen #summaryHeader .summary-title-block {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-width: 0;
 }
 
 #tab-resumen #summaryHeader .summary-title-block h2 {
@@ -4907,14 +4961,19 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
 #tab-resumen #summaryHeader .summary-export-actions {
   grid-area: export;
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: center;
-  justify-content: flex-start;
-  min-width: 0;
+  justify-content: center;
+  justify-self: end;
+  width: max-content;
+  min-width: 170px;
 }
 
 #tab-resumen #summaryHeader .summary-date-filter {
   grid-area: period;
+  justify-self: center;
+  width: min(100%, 720px);
 }
 
 #tab-resumen #summaryHeader .summary-import-actions {
@@ -4923,15 +4982,14 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
   grid-template-columns: minmax(220px, 300px) auto;
   gap: 10px;
   align-items: center;
-  justify-content: flex-start;
-  min-width: 0;
+  justify-content: center;
 }
 
 #tab-resumen #summaryHeader .summary-date-filter {
-  width: auto;
   min-height: 64px;
   align-items: center;
   border-radius: 12px;
+  padding-top: 30px;
 }
 
 #tab-resumen #summaryHeader .summary-file-picker {
@@ -4976,24 +5034,36 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
     grid-template-columns: minmax(220px, 1fr) auto;
     grid-template-areas:
       "title export"
-      "period period"
-      "import import";
+      "period period";
   }
 
-  #tab-resumen #summaryHeader .summary-export-actions,
-  #tab-resumen #summaryHeader .summary-import-actions {
-    justify-content: start;
-  }
-}
-
-@media (max-width: 820px) {
-  #tab-resumen #summaryHeader .summary-export-actions,
-  #tab-resumen #summaryHeader .summary-import-actions {
-    grid-template-columns: 1fr;
+  #tab-resumen #summaryHeader .summary-export-actions {
+    justify-self: end;
   }
 
   #tab-resumen #summaryHeader .summary-date-filter {
     width: 100%;
+  }
+}
+
+@media (max-width: 820px) {
+  #tab-resumen #summaryHeader.summary-header {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "title"
+      "period"
+      "export";
+  }
+
+  #tab-resumen #summaryHeader .summary-title-block,
+  #tab-resumen #summaryHeader .summary-export-actions,
+  #tab-resumen #summaryHeader .summary-date-filter {
+    justify-self: stretch;
+    width: 100%;
+  }
+
+  #tab-resumen #summaryHeader .summary-export-actions {
+    justify-content: flex-start;
   }
 }
 
