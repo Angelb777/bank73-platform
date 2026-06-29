@@ -1660,21 +1660,35 @@ function kpiCard(label, value, sub=''){
   </div>`;
 }
 
-// cerca de tus helpers en public/js/project.js
-function renderHeaderKpis(project, hs = {}, kpis = {}) {
-  const loanApproved   = project.loanApproved   ?? kpis.loan?.approved   ?? 0;
-  const loanDisbursed  = project.loanDisbursed  ?? kpis.loan?.disbursed  ?? 0;
-  const budgetApproved = project.budgetApproved ?? 0;            // si no lo llevas en kpis, quedará 0
-  const budgetSpent    = window.FINANCE_KPIS?.real?.uses ?? FINANCE_KPIS?.real?.uses ?? project.budgetSpent ?? project.expense ?? 0;
+const TOP_HEADER_KPI_LABELS = {
+  budgetApproved: 'Presupuesto Total',
+  loanApproved: 'Cuantía Bancaria Aprobada',
+  loanDisbursed: 'Desembolsado',
+  budgetSpent: 'Gasto',
+  unitsTotal: 'Unidades totales',
+  unitsSold: 'Unidades vendidas'
+};
 
-  const tiles = [
-    { key:'budget-approved', label:'Presupuesto Total',   value: formatProjectMoney(budgetApproved) },
-    { key:'loan-approved',   label:'Cuantía Bancaria Aprobada',     value: formatProjectMoney(loanApproved) },
-    { key:'disbursed',       label:'Desembolsado',      value: formatProjectMoney(loanDisbursed) },
-    { key:'expense', label:'Gasto', value: formatProjectMoney(budgetSpent ?? 0) },
-    { key:'units-total',     label:'Unidades totales',  value: (hs.unitsTotal ?? project.unitsTotal ?? 0) },
-    { key:'units-sold',      label:'Unidades vendidas', value: (hs.unitsSold  ?? project.unitsSold  ?? 0) },
+function buildTopHeaderKpiTiles(project = {}, hs = {}, kpis = {}) {
+  const financeKpis = window.FINANCE_KPIS || {};
+  const loanApproved = project.loanApproved ?? hs.loanApproved ?? kpis.loan?.approved ?? 0;
+  const loanDisbursed = project.loanDisbursed ?? hs.loanDisbursed ?? kpis.loan?.disbursed ?? 0;
+  const budgetApproved = project.budgetApproved ?? hs.budgetApproved ?? 0;
+  const budgetSpent = financeKpis?.real?.uses ?? project.budgetSpent ?? project.expense ?? 0;
+
+  return [
+    { key: 'budget-approved', label: TOP_HEADER_KPI_LABELS.budgetApproved, value: formatProjectMoney(budgetApproved) },
+    { key: 'loan-approved', label: TOP_HEADER_KPI_LABELS.loanApproved, value: formatProjectMoney(loanApproved) },
+    { key: 'disbursed', label: TOP_HEADER_KPI_LABELS.loanDisbursed, value: formatProjectMoney(loanDisbursed) },
+    { key: 'expense', label: TOP_HEADER_KPI_LABELS.budgetSpent, value: formatProjectMoney(budgetSpent) },
+    { key: 'units-total', label: TOP_HEADER_KPI_LABELS.unitsTotal, value: (hs.unitsTotal ?? project.unitsTotal ?? 0) },
+    { key: 'units-sold', label: TOP_HEADER_KPI_LABELS.unitsSold, value: (hs.unitsSold ?? project.unitsSold ?? 0) },
   ];
+}
+
+function renderTopHeaderKpis(project = {}, hs = {}, kpis = {}) {
+  if (!kpisDiv) return;
+  const tiles = buildTopHeaderKpiTiles(project, hs, kpis);
 
   kpisDiv.innerHTML = tiles.map(t => `
     <div class="kpi" data-key="${t.key}">
@@ -1682,6 +1696,11 @@ function renderHeaderKpis(project, hs = {}, kpis = {}) {
       <div class="value">${t.value}</div>
     </div>
   `).join('');
+}
+
+// cerca de tus helpers en public/js/project.js
+function renderHeaderKpis(project, hs = {}, kpis = {}) {
+  renderTopHeaderKpis(project, hs, kpis);
 }
 
 function authHeadersFromApp(){
@@ -3496,20 +3515,13 @@ async function syncUnitsSoldFromPortfolio() {
     const me = (list || []).find(p => String(p._id) === String(id));
     if (!me) return;
 
-    // 2) Actualizamos los tiles de cabecera
-    const tiles = (kpisDiv && kpisDiv.querySelectorAll('.kpi')) || [];
-    tiles.forEach(tile => {
-      const label = tile.querySelector('.label')?.textContent?.trim().toLowerCase();
-      const valEl = tile.querySelector('.value');
-      if (!valEl || !label) return;
-
-      if (label === 'unidades vendidas') {
-        valEl.textContent = (me.unitsSold || 0).toLocaleString();
-      }
-      if (label === 'unidades totales') {
-        valEl.textContent = (me.unitsTotal || 0).toLocaleString();
-      }
-    });
+    // 2) Actualizamos los tiles de cabecera por data-key, no por texto visible.
+    const setHeaderKpiValue = (key, value) => {
+      const valEl = kpisDiv?.querySelector(`.kpi[data-key="${key}"] .value`);
+      if (valEl) valEl.textContent = Number(value || 0).toLocaleString();
+    };
+    setHeaderKpiValue('units-sold', me.unitsSold);
+    setHeaderKpiValue('units-total', me.unitsTotal);
 
     // 3) (opcional) Línea pequeña “x/y unidades vendidas (%)” si la tienes
     const unitsTxt = document.getElementById('summaryUnits');
@@ -3913,9 +3925,6 @@ const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
     // Wire de subida Antes/Después
     wireBAUploads();
 
-    // Refrescar la grilla A/D directamente desde /api/documents
-    await refreshBeforeAfter();
-
     if (!activePeriod) await syncUnitsSoldFromPortfolio();
     __summaryDirty = false;
   } catch (e) {
@@ -4244,16 +4253,7 @@ function semaphoreForRole(roleKey) {
   }
 
   function renderProjectHeaderKpis(project = state.project || {}) {
-    if (!kpisDiv || !project) return;
-    const gasto = window.FINANCE_KPIS?.real?.uses ?? FINANCE_KPIS?.real?.uses ?? project.budgetSpent ?? project.expense ?? 0;
-    kpisDiv.innerHTML = [
-      kpi('Presupuesto Total',   project.budgetApproved),
-      kpi('Cuantía Bancaria Aprobada',     project.loanApproved),
-      kpi('Desembolsado',      project.loanDisbursed),
-      kpi('Gasto',             gasto),
-      kpi('Unidades totales',  project.unitsTotal),
-      kpi('Unidades vendidas', project.unitsSold)
-    ].join('');
+    renderTopHeaderKpis(project);
   }
 
   // ====== Carga de datos ======
@@ -11100,8 +11100,7 @@ if (btnExportarExcel) {
   });
   }
 
-  // Carga inicial
-  loadUnits();
+  // La carga inicial la orquesta el init principal para evitar llamadas duplicadas.
 })();
 
 
