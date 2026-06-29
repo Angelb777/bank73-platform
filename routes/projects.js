@@ -58,6 +58,13 @@ const UNIT_STATUS_ALIASES = {
   vivienda_entregada: 'vivienda_entregada',
   tramite_legal_activado: 'tramite_legal_activado'
 };
+const SOLD_UNIT_STATUS_FIELDS = [
+  'reservado',
+  'con_cpp',
+  'tramite_legal_activado',
+  'escriturado_traspasado',
+  'vivienda_entregada'
+];
 
 function sanitizeFinancialConditions(raw = {}) {
   const out = {};
@@ -360,6 +367,57 @@ function sumLineItems(items = []) {
   return (items || []).reduce((sum, item) => sum + (Number(item?.amount) || 0), 0);
 }
 
+function sumPhaseFinancingLines(phase = {}) {
+  return (phase.financingLines || []).reduce((sum, line) => sum + Number(line?.approvedAmount || 0), 0);
+}
+
+function deriveFinancialConditionsFromPhases(conditions = {}, phases = []) {
+  const out = { ...(conditions || {}) };
+  if (!Array.isArray(phases) || !phases.length) return out;
+
+  const phaseTotal = phases.reduce((sum, phase) => (
+    sum + Number(phase.financialConditions?.phaseTotal || sumLineItems(phase.planUses) || 0)
+  ), 0);
+  const bankTotal = phases.reduce((sum, phase) => {
+    const phaseConditions = phase.financialConditions || {};
+    const uses = Number(phaseConditions.phaseTotal || sumLineItems(phase.planUses) || 0);
+    const explicitAmount = Number(phaseConditions.bankFinancedAmount || 0);
+    const pctAmount = Number(phaseConditions.bankFinancedPct || 0) > 0
+      ? roundMoney(uses * Number(phaseConditions.bankFinancedPct || 0) / 100)
+      : 0;
+    const sourceAmount = Number((phase.planSources || []).find(item => item.name === 'Banco')?.amount || 0);
+    return sum + (explicitAmount || pctAmount || sourceAmount || sumPhaseFinancingLines(phase));
+  }, 0);
+  const promoterTotal = phases.reduce((sum, phase) => {
+    const phaseConditions = phase.financialConditions || {};
+    const uses = Number(phaseConditions.phaseTotal || sumLineItems(phase.planUses) || 0);
+    const explicitAmount = Number(phaseConditions.promoterContribution || 0);
+    const pctAmount = Number(phaseConditions.promoterContributionPct || 0) > 0
+      ? roundMoney(uses * Number(phaseConditions.promoterContributionPct || 0) / 100)
+      : 0;
+    const sourceAmount = Number((phase.planSources || []).find(item => item.name === 'Promotor')?.amount || 0);
+    return sum + (explicitAmount || pctAmount || sourceAmount);
+  }, 0);
+
+  const total = Number(out.projectTotal || 0) || phaseTotal;
+  if (!Number(out.projectTotal || 0) && total > 0) out.projectTotal = roundMoney(total);
+  if (!Number(out.bankFinancedAmount || 0) && bankTotal > 0) out.bankFinancedAmount = roundMoney(bankTotal);
+  if (
+    total > 0 &&
+    (!Number(out.promoterContribution || 0) ||
+      (bankTotal > 0 && !Number(conditions.bankFinancedAmount || 0) && Number(out.promoterContribution || 0) === total))
+  ) {
+    out.promoterContribution = roundMoney(promoterTotal || Math.max(0, total - Number(out.bankFinancedAmount || 0)));
+  }
+  if (!Number(out.bankFinancedPct || 0) && total > 0 && Number(out.bankFinancedAmount || 0) > 0) {
+    out.bankFinancedPct = roundPct(Number(out.bankFinancedAmount || 0) / total * 100);
+  }
+  if (!Number(out.promoterContributionPct || 0) && total > 0 && Number(out.promoterContribution || 0) > 0) {
+    out.promoterContributionPct = roundPct(Number(out.promoterContribution || 0) / total * 100);
+  }
+  return out;
+}
+
 function applyAutomaticPhaseSources(phases = [], conditions = {}) {
   return (phases || []).map(phase => {
     const phaseTotal = Number(phase.financialConditions?.phaseTotal || 0);
@@ -367,8 +425,11 @@ function applyAutomaticPhaseSources(phases = [], conditions = {}) {
     const phaseConditions = phase.financialConditions || {};
     const bankPct = Number(phaseConditions.bankFinancedPct || conditions.bankFinancedPct || 0);
     const promoterPct = Number(phaseConditions.promoterContributionPct || conditions.promoterContributionPct || 0);
-    const bankAmount = roundMoney(usesTotal * bankPct / 100);
-    const promoterAmount = roundMoney(usesTotal * promoterPct / 100);
+    const bankAmount = roundMoney(Number(phaseConditions.bankFinancedAmount || 0) || usesTotal * bankPct / 100);
+    const promoterAmount = roundMoney(
+      Number(phaseConditions.promoterContribution || 0) ||
+      (promoterPct > 0 ? usesTotal * promoterPct / 100 : Math.max(0, usesTotal - bankAmount))
+    );
     return {
       ...phase,
       planSources: [
@@ -410,6 +471,13 @@ function assertFinancePhasesBalanced(phases = [], conditions = {}) {
 function syncFinancialConditionKpis(target, conditions = {}) {
   if (conditions.projectTotal !== undefined) target.budgetApproved = conditions.projectTotal;
   if (conditions.bankFinancedAmount !== undefined) target.loanApproved = conditions.bankFinancedAmount;
+}
+
+function countSoldUnits(units = []) {
+  return (units || []).reduce((sum, unit) => {
+    const status = normalizeUnitStatusKey(unit?.estado || unit?.status);
+    return sum + (SOLD_UNIT_STATUS_FIELDS.includes(status) ? 1 : 0);
+  }, 0);
 }
 
 function parsePermitDays(v) {
@@ -1290,7 +1358,9 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
     if (body.technicalData.totalUnits) body.unitsTotal = body.technicalData.totalUnits;
     body.financialConditions = sanitizeFinancialConditions(body.financialConditions || {});
     body.financePhases = sanitizeFinancePhases(body.financePhases || body.phases || [], body.technicalData.phasesCount || 0);
+    body.financialConditions = deriveFinancialConditionsFromPhases(body.financialConditions, body.financePhases);
     body.financePhases = applyAutomaticPhaseSources(body.financePhases, body.financialConditions);
+    body.financialConditions = deriveFinancialConditionsFromPhases(body.financialConditions, body.financePhases);
     assertFinancePhasesBalanced(body.financePhases, body.financialConditions);
     syncFinancialConditionKpis(body, body.financialConditions);
     delete body.tipoProyecto;
@@ -1337,7 +1407,7 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
     });
     const createdUnits = await createInitialUnitsFromModels({ req, project: p, initialUnits });
     if (createdUnits.length) {
-      const unitsSold = 0;
+      const unitsSold = countSoldUnits(createdUnits);
       await Project.updateOne(
         { _id: p._id, tenantKey },
         { $set: { unitsTotal: createdUnits.length, unitsSold } }
@@ -1485,6 +1555,17 @@ router.put('/:id', requireRole('admin','bank'), async (req, res) => {
       const effectiveConditions = payload.financialConditions || existingForFinance?.financialConditions || {};
       payload.financePhases = applyAutomaticPhaseSources(payload.financePhases, effectiveConditions);
       assertFinancePhasesBalanced(payload.financePhases, effectiveConditions);
+    }
+    if (payload.financialConditions || payload.financePhases) {
+      const existingForFinance = await Project.findOne({ _id: id, tenantKey })
+        .select('financialConditions financePhases')
+        .lean();
+      const effectivePhases = payload.financePhases || existingForFinance?.financePhases || [];
+      payload.financialConditions = deriveFinancialConditionsFromPhases(
+        payload.financialConditions || existingForFinance?.financialConditions || {},
+        effectivePhases
+      );
+      syncFinancialConditionKpis(payload, payload.financialConditions);
     }
 
     if (myRole === 'admin') {

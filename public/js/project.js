@@ -4944,10 +4944,10 @@ function fillFinanceKpiInputsFromProject(project) {
   a.value = formatPanamaNumber(conditions.bankFinancedAmount || project?.loanApproved);
   d.value = formatPanamaNumber(project?.loanDisbursed);
   b.value = formatPanamaNumber(conditions.projectTotal || project?.budgetApproved);
-  a.readOnly = numOr0(conditions.bankFinancedAmount) > 0;
-  b.readOnly = numOr0(conditions.projectTotal) > 0;
-  a.title = a.readOnly ? 'Se edita desde Condiciones financieras' : '';
-  b.title = b.readOnly ? 'Se edita desde Condiciones financieras' : '';
+  a.readOnly = false;
+  b.readOnly = false;
+  a.title = '';
+  b.title = '';
   if (promoter) promoter.value = formatPanamaNumber(
     conditions.promoterContribution || Math.max(0, numOr0(conditions.projectTotal || project?.budgetApproved) - numOr0(conditions.bankFinancedAmount || project?.loanApproved))
   );

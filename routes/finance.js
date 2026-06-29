@@ -36,6 +36,44 @@ const toNum = (v) => {
 
 const sumItems = (arr = []) => (arr || []).reduce((a, b) => a + toNum(b?.amount), 0);
 
+function financeApprovedTotals(doc = {}, project = {}) {
+  const conditions = project.financialConditions || {};
+  const phases = Array.isArray(doc.phases) && doc.phases.length
+    ? doc.phases
+    : (Array.isArray(project.financePhases) ? project.financePhases : []);
+  const phaseBudget = phases.reduce((sum, phase) => (
+    sum + toNum(phase?.financialConditions?.phaseTotal || sumItems(phase?.planUses))
+  ), 0);
+  const phaseBank = phases.reduce((sum, phase) => {
+    const phaseConditions = phase?.financialConditions || {};
+    const uses = toNum(phaseConditions.phaseTotal || sumItems(phase?.planUses));
+    const source = (phase?.planSources || []).find(item => item?.name === 'Banco');
+    const financingLines = (phase?.financingLines || []).reduce((acc, line) => acc + toNum(line?.approvedAmount), 0);
+    const pctAmount = toNum(phaseConditions.bankFinancedPct) > 0
+      ? uses * toNum(phaseConditions.bankFinancedPct) / 100
+      : 0;
+    return sum + (toNum(phaseConditions.bankFinancedAmount) || toNum(source?.amount) || financingLines || pctAmount);
+  }, 0);
+  const phasePromoter = phases.reduce((sum, phase) => {
+    const phaseConditions = phase?.financialConditions || {};
+    const uses = toNum(phaseConditions.phaseTotal || sumItems(phase?.planUses));
+    const source = (phase?.planSources || []).find(item => item?.name === 'Promotor');
+    const pctAmount = toNum(phaseConditions.promoterContributionPct) > 0
+      ? uses * toNum(phaseConditions.promoterContributionPct) / 100
+      : 0;
+    return sum + (toNum(phaseConditions.promoterContribution) || toNum(source?.amount) || pctAmount);
+  }, 0);
+
+  const budgetApproved = toNum(conditions.projectTotal) || toNum(project.budgetApproved) || phaseBudget;
+  const loanApproved = toNum(conditions.bankFinancedAmount) || toNum(project.loanApproved) || phaseBank;
+  let promoterContribution = toNum(conditions.promoterContribution);
+  if ((!promoterContribution || (phaseBank > 0 && !toNum(conditions.bankFinancedAmount) && promoterContribution === budgetApproved)) && budgetApproved > 0) {
+    promoterContribution = phasePromoter || Math.max(0, budgetApproved - loanApproved);
+  }
+
+  return { budgetApproved, loanApproved, promoterContribution };
+}
+
 const fmtDate = (d) => {
   try {
     if (!d) return '—';
@@ -288,9 +326,9 @@ function buildFinanceControlSummary(doc, project = {}) {
   const amortizationLine1Total = unitAmortizations.reduce((a, u) => a + toNum(u.amortizationLine1), 0);
   const amortizationLine2Total = unitAmortizations.reduce((a, u) => a + toNum(u.amortizationLine2), 0);
   const promoterTotal = unitAmortizations.reduce((a, u) => a + toNum(u.promoterAmount), 0);
-  const conditions = project.financialConditions || {};
-  const loanApproved = toNum(conditions.bankFinancedAmount) || toNum(project.loanApproved);
-  const budgetApproved = toNum(conditions.projectTotal) || toNum(project.budgetApproved);
+  const approvedTotals = financeApprovedTotals(doc, project);
+  const loanApproved = approvedTotals.loanApproved;
+  const budgetApproved = approvedTotals.budgetApproved;
   const planByPhases = doc.phasesPlanAccumTotals ? doc.phasesPlanAccumTotals() : { uses: 0 };
   const real = doc.phasesAccumTotals ? doc.phasesAccumTotals() : { uses: 0 };
 
@@ -300,7 +338,7 @@ function buildFinanceControlSummary(doc, project = {}) {
     totals: {
       budgetApproved,
       loanApproved,
-      promoterContribution: toNum(conditions.promoterContribution) || Math.max(0, budgetApproved - loanApproved),
+      promoterContribution: approvedTotals.promoterContribution,
       totalDisbursed,
       availableToDisburse: loanApproved - totalDisbursed,
       totalAmortized,
@@ -363,8 +401,7 @@ function buildFinanceControlAlerts(control, commercialUnits = []) {
   const financeByUnit = new Set((control.unitAmortizations || []).map(u => String(u.unitId || '')).filter(Boolean));
   for (const unit of commercialUnits || []) {
     if (!String(unit.clientName || '').trim()) continue;
-    const soldLike = ['con_cpp', 'tramite_legal_activado', 'escriturado_traspasado', 'vivienda_entregada'].includes(String(unit.commercialStatus || '').toLowerCase());
-    if (soldLike && !financeByUnit.has(String(unit.unitId))) {
+    if (isFinanceSoldLikeStatus(unit.commercialStatus) && !financeByUnit.has(String(unit.unitId))) {
       alerts.push({ type: 'sold_without_finance', message: `Unidad ${unit.unitLabel}: vendida o con CPP sin informacion financiera.` });
     }
   }
@@ -377,6 +414,11 @@ function buildFinanceControlAlerts(control, commercialUnits = []) {
   }
 
   return alerts;
+}
+
+function isFinanceSoldLikeStatus(status) {
+  return ['reservado', 'con_cpp', 'tramite_legal_activado', 'escriturado_traspasado', 'vivienda_entregada']
+    .includes(String(status || '').toLowerCase());
 }
 
 function resolveLogoPath() {
@@ -498,9 +540,25 @@ router.get('/projects/:projectId/finance', async (req, res) => {
       }
     }
 
-    const project = await Project.findById(projectId).lean();
+    const projectRaw = await Project.findById(projectId).lean();
     const kpis = doc.kpis();
     const commercialUnits = await getFinanceCommercialUnits(projectId, req.tenantKey);
+    const approvedTotals = financeApprovedTotals(doc, projectRaw || {});
+    const commercialUnitsTotal = commercialUnits.length;
+    const commercialUnitsSold = commercialUnits.filter(unit => isFinanceSoldLikeStatus(unit.commercialStatus)).length;
+    const project = projectRaw ? {
+      ...projectRaw,
+      loanApproved: approvedTotals.loanApproved,
+      budgetApproved: approvedTotals.budgetApproved,
+      unitsTotal: toNum(projectRaw.unitsTotal) || commercialUnitsTotal,
+      unitsSold: toNum(projectRaw.unitsSold) || commercialUnitsSold,
+      financialConditions: {
+        ...(projectRaw.financialConditions || {}),
+        projectTotal: approvedTotals.budgetApproved,
+        bankFinancedAmount: approvedTotals.loanApproved,
+        promoterContribution: approvedTotals.promoterContribution
+      }
+    } : null;
     const financeControl = buildFinanceControlSummary(doc, project || {});
     const financeControlAlerts = buildFinanceControlAlerts(financeControl, commercialUnits);
 
