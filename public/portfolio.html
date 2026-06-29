@@ -911,7 +911,11 @@
       <div class="create-finance-panel">
         <div class="create-section-title">Condiciones financieras <span class="create-section-kicker">Opcional</span></div>
         <div class="financial-conditions-form" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px;">
-          <label>Total del proyecto<input id="fc-projectTotal" type="text" inputmode="decimal"></label>
+          <section class="create-finance-section">
+            <h4>1) Total del proyecto</h4>
+            <p class="small muted" style="margin:0 0 10px;">Introduce el presupuesto total del proyecto. Este importe servira para comprobar que la suma de todas las fases coincide con el presupuesto global.</p>
+            <label>Total del proyecto<input id="fc-projectTotal" type="text" inputmode="decimal"></label>
+          </section>
           <label>Monto financiado por el banco<input id="fc-bankFinancedAmount" type="text" inputmode="decimal"></label>
           <label>% financiado por el banco<input id="fc-bankFinancedPct" type="text" inputmode="decimal"></label>
           <label>Aporte del promotor<input id="fc-promoterContribution" type="text" inputmode="decimal"></label>
@@ -924,8 +928,14 @@
           <label>Preventa requerida<input id="fc-requiredPresales"></label><label>Garantías<input id="fc-guarantees"></label>
           <label style="grid-column:1/-1">Seguros<input id="fc-insurance"></label>
           <section class="create-finance-section">
-            <h4>Usos y fuentes por fase</h4>
+            <h4>2) Usos y fuentes por fase</h4>
+            <p class="small muted" style="margin:0 0 10px;">En este apartado se define el presupuesto de cada fase y como se financia. Los usos indican en que se invertira el dinero. Las fuentes indican de donde saldra el dinero: banco, promotor u otras fuentes.</p>
             <div id="createFinancePhases"></div>
+          </section>
+          <section class="create-finance-section">
+            <h4>3) Lineas de financiacion aprobadas</h4>
+            <p class="small muted" style="margin:0 0 10px;">Aqui se detallan unicamente las lineas aprobadas por el banco. Estas lineas sirven para repartir la financiacion bancaria de cada fase entre conceptos como terreno, infraestructura, construccion u otros.</p>
+            <div id="createFinanceLines"></div>
           </section>
           <section class="create-finance-section">
             <h4>Condiciones precedentes</h4>
@@ -1025,6 +1035,6 @@
   <script src="/js/api.js"></script>
   <script src="/js/banks.js"></script>
   <script src="/js/theme-toggle.js"></script>
-  <script src="/js/portfolio.js?v=create-wizard-v2"></script>
+  <script src="/js/portfolio.js?v=create-finance-flow-v1"></script>
 </body>
 </html>

@@ -1669,7 +1669,7 @@ function renderHeaderKpis(project, hs = {}, kpis = {}) {
 
   const tiles = [
     { key:'budget-approved', label:'Presupuesto Total',   value: formatProjectMoney(budgetApproved) },
-    { key:'loan-approved',   label:'Cuantía Bancaría Aprobada',     value: formatProjectMoney(loanApproved) },
+    { key:'loan-approved',   label:'Cuantía Bancaria Aprobada',     value: formatProjectMoney(loanApproved) },
     { key:'disbursed',       label:'Desembolsado',      value: formatProjectMoney(loanDisbursed) },
     { key:'expense', label:'Gasto', value: formatProjectMoney(budgetSpent ?? 0) },
     { key:'units-total',     label:'Unidades totales',  value: (hs.unitsTotal ?? project.unitsTotal ?? 0) },
@@ -4248,7 +4248,7 @@ function semaphoreForRole(roleKey) {
     const gasto = window.FINANCE_KPIS?.real?.uses ?? FINANCE_KPIS?.real?.uses ?? project.budgetSpent ?? project.expense ?? 0;
     kpisDiv.innerHTML = [
       kpi('Presupuesto Total',   project.budgetApproved),
-      kpi('Cuantía Bancaría Aprobada',     project.loanApproved),
+      kpi('Cuantía Bancaria Aprobada',     project.loanApproved),
       kpi('Desembolsado',      project.loanDisbursed),
       kpi('Gasto',             gasto),
       kpi('Unidades totales',  project.unitsTotal),
@@ -5752,7 +5752,7 @@ function renderFinanceControlKpis(totals = null) {
   console.log('[Finance] calculo KPIs', totals);
   const cards = [
     ['Presupuesto Total', financeMoney(totals.budgetApproved), 'budget'],
-    ['Cuantía Bancaría Aprobada', financeMoney(totals.loanApproved), 'loan'],
+    ['Cuantía Bancaria Aprobada', financeMoney(totals.loanApproved), 'loan'],
     ['Aporte promotor', financeMoney(totals.promoterContribution), 'promoter'],
     ['Desembolsado total', financeMoney(totals.totalDisbursed), 'disbursed'],
     ['Disponible por desembolsar', financeMoney(totals.availableToDisburse), totals.availableToDisburse < 0 ? 'danger' : 'ok'],

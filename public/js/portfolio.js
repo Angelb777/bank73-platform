@@ -412,6 +412,7 @@
   const createShareholders = document.getElementById('createShareholders');
   const createHousingModels = document.getElementById('createHousingModels');
   const createFinancePhases = document.getElementById('createFinancePhases');
+  const createFinanceLines = document.getElementById('createFinanceLines');
   const CREATE_STEP_ORDER = ['general', 'legal', 'technical', 'models', 'financial', 'progress', 'team'];
   let activeCreateStep = 'general';
 
@@ -1078,20 +1079,7 @@
       if (type === 'textarea') return `<label style="grid-column:1/-1">${label}<textarea ${attrs} rows="2">${escapeHtml(value)}</textarea></label>`;
       return `<label>${label}<input ${attrs} value="${escapeHtml(value)}"></label>`;
     };
-    const financingRows = (Array.isArray(item.financingLines) && item.financingLines.length ? item.financingLines : DEFAULT_PHASE_FINANCING_LINES.map(name => ({ name }))).map(line => `
-      <div data-create-phase-financing-line style="${PHASE_FINANCING_GRID}margin-bottom:6px;">
-        <input data-create-phase-financing="name" placeholder="Terreno" value="${escapeHtml(line.name || '')}">
-        <input data-create-phase-financing="approvedAmount" data-bank-number type="text" inputmode="decimal" placeholder="Monto" value="${line.approvedAmount ? formatBankNumber(line.approvedAmount) : ''}">
-        <input data-create-phase-financing="interestRate" placeholder="SOFR + 3.50%" value="${escapeHtml(line.interestRate || '')}">
-        <input data-create-phase-financing="term" placeholder="24 meses" value="${escapeHtml(line.term || '')}">
-        <input data-create-phase-financing="paymentMethod" placeholder="Intereses y FECI mensuales, capital al vencimiento" value="${escapeHtml(line.paymentMethod || '')}">
-        <input data-create-phase-financing="disbursementMethod" placeholder="Contra avance certificado por inspector autorizado" value="${escapeHtml(line.disbursementMethod || '')}">
-        <input data-create-phase-financing="commission" placeholder="1% flat" value="${escapeHtml(line.commission || '')}">
-        <input data-create-phase-financing="observations" placeholder="Observaciones" value="${escapeHtml(line.observations || '')}">
-        <button class="btn ghost" type="button" data-remove-phase-financing-line style="width:76px;padding:7px 6px;">Quitar</button>
-      </div>
-    `).join('');
-    return `<details open class="create-phase-block" data-create-phase-row="${index}" style="border:1px solid #dbe2ea;border-radius:12px;padding:10px;margin-bottom:10px;background:#fff;">
+    return `<details class="create-phase-block" data-create-phase-row="${index}" style="border:1px solid #dbe2ea;border-radius:12px;padding:10px;margin-bottom:10px;background:#fff;">
       <summary><strong>${escapeHtml(item.name || `Fase ${index + 1}`)}</strong></summary>
       <div class="create-grid" style="margin-top:10px;">
         <label>Nombre<input data-create-phase="name" value="${escapeHtml(item.name || `Fase ${index + 1}`)}"></label>
@@ -1116,14 +1104,39 @@
           <strong>Fuentes estimadas automaticas</strong>
           <div class="small muted" style="margin-top:6px;">Total usos: <b data-phase-total-uses>0</b> · Banco: <b data-phase-bank-source>0</b> · Promotor: <b data-phase-promoter-source>0</b> · Total fuentes: <b data-phase-total-sources>0</b></div>
         </div>
-        <label style="grid-column:1/-1">Lineas de financiacion aprobadas
-          <div style="overflow-x:auto;padding-bottom:4px;">${PHASE_FINANCING_HEADER}<div data-create-phase-financing-lines>${financingRows}</div></div>
-          <div class="small" data-phase-financing-lines-summary style="margin-top:6px;color:#475569;"></div>
-          <button class="btn ghost" type="button" data-add-phase-financing-line>+ Linea</button>
-        </label>
         <div style="grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
           ${PHASE_CONDITION_FIELDS.map(conditionField).join('')}
         </div>
+      </div>
+    </details>`;
+  }
+
+  function createPhaseFinancingLinesBlock(index, item = {}) {
+    const financingRows = (Array.isArray(item.financingLines) && item.financingLines.length ? item.financingLines : DEFAULT_PHASE_FINANCING_LINES.map(name => ({ name }))).map(line => `
+      <div data-create-phase-financing-line style="${PHASE_FINANCING_GRID}margin-bottom:6px;">
+        <input data-create-phase-financing="name" placeholder="Terreno" value="${escapeHtml(line.name || '')}">
+        <input data-create-phase-financing="approvedAmount" data-bank-number type="text" inputmode="decimal" placeholder="Monto" value="${line.approvedAmount ? formatBankNumber(line.approvedAmount) : ''}">
+        <input data-create-phase-financing="interestRate" placeholder="SOFR + 3.50%" value="${escapeHtml(line.interestRate || '')}">
+        <input data-create-phase-financing="term" placeholder="24 meses" value="${escapeHtml(line.term || '')}">
+        <input data-create-phase-financing="paymentMethod" placeholder="Intereses y FECI mensuales, capital al vencimiento" value="${escapeHtml(line.paymentMethod || '')}">
+        <input data-create-phase-financing="disbursementMethod" placeholder="Contra avance certificado por inspector autorizado" value="${escapeHtml(line.disbursementMethod || '')}">
+        <input data-create-phase-financing="commission" placeholder="1% flat" value="${escapeHtml(line.commission || '')}">
+        <input data-create-phase-financing="observations" placeholder="Observaciones" value="${escapeHtml(line.observations || '')}">
+        <button class="btn ghost" type="button" data-remove-phase-financing-line style="width:76px;padding:7px 6px;">Quitar</button>
+      </div>
+    `).join('');
+    return `<details class="create-phase-block" data-create-phase-financing-row="${index}" style="border:1px solid #dbe2ea;border-radius:12px;padding:10px;margin-bottom:10px;background:#fff;">
+      <summary><strong data-line-phase-title>${escapeHtml(item.name || `Fase ${index + 1}`)}</strong></summary>
+      <div style="margin-top:10px;">
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px;">
+          <div class="small muted" style="border:1px solid #dbeafe;background:#f8fbff;border-radius:10px;padding:8px;">Financiacion bancaria prevista<br><b data-line-bank-amount>0</b></div>
+          <div class="small muted" style="border:1px solid #dbeafe;background:#f8fbff;border-radius:10px;padding:8px;">Total distribuido en lineas<br><b data-line-total>0</b></div>
+          <div class="small muted" style="border:1px solid #dbeafe;background:#f8fbff;border-radius:10px;padding:8px;">Pendiente por distribuir<br><b data-line-pending>0</b></div>
+          <div class="small muted" style="border:1px solid #dbeafe;background:#f8fbff;border-radius:10px;padding:8px;">Porcentaje distribuido<br><b data-line-percent>0%</b></div>
+        </div>
+        <div class="small" data-phase-financing-lines-summary style="margin-bottom:8px;color:#475569;"></div>
+        <div style="overflow-x:auto;padding-bottom:4px;">${PHASE_FINANCING_HEADER}<div data-create-phase-financing-lines>${financingRows}</div></div>
+        <button class="btn ghost" type="button" data-add-phase-financing-line>+ Linea</button>
       </div>
     </details>`;
   }
@@ -1210,7 +1223,7 @@
   function syncCreatePhaseSources() {
     const financial = currentCreateFinancialNumbers();
     let totalUsesAll = 0;
-    document.querySelectorAll('[data-create-phase-row]').forEach(row => {
+    document.querySelectorAll('[data-create-phase-row]').forEach((row, idx) => {
       const usesTotal = phaseUsesTotal(row);
       syncPhaseFinancialTriplet(row);
       const phaseFinancial = currentPhaseFinancialNumbers(row);
@@ -1218,8 +1231,11 @@
       const bank = sources.find(item => item.name === 'Banco')?.amount || 0;
       const promoter = sources.find(item => item.name === 'Promotor')?.amount || 0;
       const total = bank + promoter;
-      const linesTotal = phaseFinancingLinesTotal(row);
+      const lineRow = document.querySelector(`[data-create-phase-financing-row="${idx}"]`);
+      const linesTotal = phaseFinancingLinesTotal(lineRow);
       const linesDiff = bank - linesTotal;
+      const phaseTitle = lineRow?.querySelector('[data-line-phase-title]');
+      if (phaseTitle) phaseTitle.textContent = row.querySelector('[data-create-phase="name"]')?.value.trim() || `Fase ${idx + 1}`;
       totalUsesAll += numberFromCreate(phaseFinancial.phaseTotal);
       const setText = (selector, value) => {
         const el = row.querySelector(selector);
@@ -1230,11 +1246,24 @@
       setText('[data-phase-bank-source]', bank);
       setText('[data-phase-promoter-source]', promoter);
       setText('[data-phase-total-sources]', total);
-      const lineSummary = row.querySelector('[data-phase-financing-lines-summary]');
+      const lineSummary = lineRow?.querySelector('[data-phase-financing-lines-summary]');
+      const setLineText = (selector, value) => {
+        const el = lineRow?.querySelector(selector);
+        if (el) el.textContent = value;
+      };
+      setLineText('[data-line-bank-amount]', formatBankNumber(bank));
+      setLineText('[data-line-total]', formatBankNumber(linesTotal));
+      setLineText('[data-line-pending]', formatBankNumber(linesDiff));
+      setLineText('[data-line-percent]', bank ? `${Math.max(0, linesTotal / bank * 100).toFixed(1)}%` : '0.0%');
       if (lineSummary) {
-        const ok = Math.abs(linesDiff) <= 0.05 || (!bank && !linesTotal);
-        lineSummary.style.color = ok ? '#166534' : '#92400e';
-        lineSummary.innerHTML = `Banco fase: <b>${formatBankNumber(bank)}</b> &middot; Lineas aprobadas: <b>${formatBankNumber(linesTotal)}</b>${ok ? '' : ` &middot; Diferencia: <b>${formatBankNumber(linesDiff)}</b>`}`;
+        const over = linesTotal > bank + 0.05;
+        const pending = bank > linesTotal + 0.05;
+        lineSummary.style.color = over ? '#b91c1c' : (pending ? '#92400e' : '#166534');
+        lineSummary.innerHTML = over
+          ? 'Las lineas de financiacion superan la financiacion bancaria aprobada para esta fase.'
+          : pending
+            ? `Quedan B/. ${formatBankNumber(linesDiff)} pendientes de asignar a una linea de financiacion.`
+            : 'Las lineas estan dentro de la financiacion bancaria aprobada para esta fase.';
       }
     });
     renderCreatePhasesGlobalSummary({
@@ -1309,7 +1338,11 @@
     const count = Math.max(0, Math.round(numberFromCreate(document.getElementById('td-phasesCount')?.value)));
     const current = collectFinancePhases();
     createFinancePhases.innerHTML = Array.from({ length: count }, (_, idx) => createPhaseFinanceBlock(idx, current[idx] || {})).join('');
+    if (createFinanceLines) {
+      createFinanceLines.innerHTML = Array.from({ length: count }, (_, idx) => createPhaseFinancingLinesBlock(idx, current[idx] || {})).join('');
+    }
     bindBankNumberFormatting(createFinancePhases);
+    bindBankNumberFormatting(createFinanceLines || document);
     bindBankChoices(createFinancePhases);
     syncCreatePhaseSources();
   }
@@ -1351,13 +1384,16 @@
   }
 
   function collectFinancePhases() {
-    return Array.from(document.querySelectorAll('[data-create-phase-row]')).map((row, idx) => ({
-      name: row.querySelector('[data-create-phase="name"]')?.value.trim() || `Fase ${idx + 1}`,
-      planUses: collectPhaseLineItems(row, 'planUses'),
-      planSources: autoPhaseSourcesForUses(phaseUsesTotal(row), currentPhaseFinancialNumbers(row)),
-      financialConditions: collectPhaseFinancialConditions(row),
-      financingLines: collectPhaseFinancingLines(row)
-    }));
+    return Array.from(document.querySelectorAll('[data-create-phase-row]')).map((row, idx) => {
+      const lineRow = document.querySelector(`[data-create-phase-financing-row="${idx}"]`) || row;
+      return {
+        name: row.querySelector('[data-create-phase="name"]')?.value.trim() || `Fase ${idx + 1}`,
+        planUses: collectPhaseLineItems(row, 'planUses'),
+        planSources: autoPhaseSourcesForUses(phaseUsesTotal(row), currentPhaseFinancialNumbers(row)),
+        financialConditions: collectPhaseFinancialConditions(row),
+        financingLines: collectPhaseFinancingLines(lineRow)
+      };
+    });
   }
 
   function validateCreateFinancePhases({ alertOnError = false } = {}) {
@@ -1380,8 +1416,8 @@
       if (!close(uses, sources)) return fail(`En ${phase.name}, total usos (${formatBankNumber(uses)}) debe coincidir con total fuentes (${formatBankNumber(sources)}).`);
       const bankAmount = numberFromCreate(phase.financialConditions?.bankFinancedAmount);
       const financingLinesTotal = (phase.financingLines || []).reduce((sum, line) => sum + numberFromCreate(line.approvedAmount), 0);
-      if ((bankAmount > 0 || financingLinesTotal > 0) && !close(bankAmount, financingLinesTotal)) {
-        return fail(`En ${phase.name}, la suma de lineas aprobadas (${formatBankNumber(financingLinesTotal)}) debe coincidir con la financiacion bancaria de la fase (${formatBankNumber(bankAmount)}).`);
+      if (financingLinesTotal > bankAmount + 0.05) {
+        return fail('Las lineas de financiacion superan la financiacion bancaria aprobada para esta fase.');
       }
     }
     return true;
@@ -1424,10 +1460,23 @@
   });
   createFinancePhases?.addEventListener('click', event => {
     const addBtn = event.target.closest('[data-add-create-phase-line]');
+    if (!addBtn) return;
+    const kind = addBtn.dataset.addCreatePhaseLine;
+    const box = addBtn.closest('[data-create-phase-row]')?.querySelector(`[data-create-phase-lines-box="${kind}"]`);
+    box?.insertAdjacentHTML('beforeend', `
+      <div style="display:grid;grid-template-columns:1fr 140px;gap:8px;margin-bottom:6px;" data-create-phase-line="${kind}">
+        <input data-create-phase-line-name placeholder="Concepto">
+        <input data-create-phase-line-amount data-bank-number type="text" inputmode="decimal" placeholder="Monto">
+      </div>
+    `);
+    bindBankNumberFormatting(createFinancePhases);
+    syncCreatePhaseSources();
+  });
+  createFinanceLines?.addEventListener('click', event => {
     const addFinancingBtn = event.target.closest('[data-add-phase-financing-line]');
     const removeFinancingBtn = event.target.closest('[data-remove-phase-financing-line]');
     if (addFinancingBtn) {
-      const box = addFinancingBtn.closest('[data-create-phase-row]')?.querySelector('[data-create-phase-financing-lines]');
+      const box = addFinancingBtn.closest('[data-create-phase-financing-row]')?.querySelector('[data-create-phase-financing-lines]');
       box?.insertAdjacentHTML('beforeend', `
         <div data-create-phase-financing-line style="${PHASE_FINANCING_GRID}margin-bottom:6px;">
           <input data-create-phase-financing="name" placeholder="Terreno">
@@ -1441,24 +1490,14 @@
           <button class="btn ghost" type="button" data-remove-phase-financing-line style="width:76px;padding:7px 6px;">Quitar</button>
         </div>
       `);
-      bindBankNumberFormatting(createFinancePhases);
+      bindBankNumberFormatting(createFinanceLines);
+      syncCreatePhaseSources();
       return;
     }
     if (removeFinancingBtn) {
       removeFinancingBtn.closest('[data-create-phase-financing-line]')?.remove();
-      return;
+      syncCreatePhaseSources();
     }
-    if (!addBtn) return;
-    const kind = addBtn.dataset.addCreatePhaseLine;
-    const box = addBtn.closest('[data-create-phase-row]')?.querySelector(`[data-create-phase-lines-box="${kind}"]`);
-    box?.insertAdjacentHTML('beforeend', `
-      <div style="display:grid;grid-template-columns:1fr 140px;gap:8px;margin-bottom:6px;" data-create-phase-line="${kind}">
-        <input data-create-phase-line-name placeholder="Concepto">
-        <input data-create-phase-line-amount data-bank-number type="text" inputmode="decimal" placeholder="Monto">
-      </div>
-    `);
-    bindBankNumberFormatting(createFinancePhases);
-    syncCreatePhaseSources();
   });
   createFinancePhases?.addEventListener('input', event => {
     const financialInput = event.target?.closest?.('[data-create-phase-financial]');
@@ -1469,6 +1508,9 @@
   });
   createFinancePhases?.addEventListener('change', syncCreatePhaseSources);
   createFinancePhases?.addEventListener('keyup', syncCreatePhaseSources);
+  createFinanceLines?.addEventListener('input', syncCreatePhaseSources);
+  createFinanceLines?.addEventListener('change', syncCreatePhaseSources);
+  createFinanceLines?.addEventListener('keyup', syncCreatePhaseSources);
   document.getElementById('createDatoUnicoFile')?.addEventListener('change', event => {
     const name = event.target.files?.[0]?.name || 'Ningun archivo seleccionado';
     const label = document.getElementById('createDatoUnicoFileName');
@@ -1771,6 +1813,7 @@
           if (createShareholders) createShareholders.innerHTML = '';
           if (createHousingModels) createHousingModels.innerHTML = '';
           if (createFinancePhases) createFinancePhases.innerHTML = '';
+          if (createFinanceLines) createFinanceLines.innerHTML = '';
           document.querySelectorAll('[data-create-precedent]').forEach(input => { input.checked = false; });
           document.querySelectorAll('[data-create-checklist-key]').forEach(input => { input.checked = false; });
           const createPermitTemplate = document.getElementById('createPermitTemplate');
