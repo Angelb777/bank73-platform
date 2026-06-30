@@ -1569,6 +1569,29 @@ try {
 
 let __ALLOWED_ROLES = null; // null => sin filtro (ver todo)
 
+function isPartialProyectoRole() {
+  return ['tecnico','legal','commercial'].includes(myRole) && !FULL_ACCESS_ROLES.includes(myRole);
+}
+
+function syncPartialProyectoUI() {
+  const hideIt = isPartialProyectoRole();
+  const globalPhasePanel = document.querySelector('#tab-proyecto > .phase');
+  const asideRoles       = document.querySelector('#tab-proyecto aside.roles-panel');
+  const phaseActions     = globalPhasePanel?.querySelector('.phase-actions');
+
+  if (globalPhasePanel) globalPhasePanel.style.display = '';
+  if (phaseActions)     phaseActions.style.display     = hideIt ? 'none' : '';
+  if (asideRoles)       asideRoles.style.display       = '';
+
+  document.querySelectorAll('#tab-proyecto .js-add-cl').forEach(el => { el.style.display = hideIt ? 'none' : ''; });
+  document.querySelectorAll('#tab-proyecto .js-del-sub, #tab-proyecto .js-complete, #tab-proyecto .js-validate, #tab-proyecto .js-edit, #tab-proyecto .js-del-cl').forEach(el => {
+    el.style.display = hideIt ? 'none' : '';
+  });
+  ['verHistorialBtn','configProyectoBtn','toggleAllPhasesBtn'].forEach(id=>{
+    const b = document.getElementById(id); if (b) b.style.display = hideIt ? 'none' : '';
+  });
+}
+
 
 function applyRoleVisibility() {                                // ROLE-SEP
   const isAdminOrBank = (myRole === 'admin' || myRole === 'bank');
@@ -1599,21 +1622,13 @@ function applyRoleVisibility() {                                // ROLE-SEP
   if (disbRow)    disbRow.style.display    = isAdminOrBank ? '' : 'none';
 
   // === Header (descripción + KPIs) ===
-  const isPartial = ['tecnico','legal','commercial'].includes(myRole) && !isFull;
+  const isPartial = isPartialProyectoRole();
   if (pdesc)   pdesc.style.display   = isPartial ? 'none' : '';
   if (kpisDiv) kpisDiv.style.display = isPartial ? 'none' : '';
 
   // Utilidad para ocultar/mostrar piezas dentro de "Proyecto"
   const togglePartialUI = (hideIt) => {
-    const globalPhasePanel = document.querySelector('#tab-proyecto > .phase');
-    const asideRoles       = document.querySelector('#tab-proyecto aside.roles-panel');
-    if (globalPhasePanel) globalPhasePanel.style.display = hideIt ? 'none' : '';
-    if (asideRoles)       asideRoles.style.display       = hideIt ? 'none' : '';
-    document.querySelectorAll('#tab-proyecto .js-add-cl').forEach(el => { el.style.display = hideIt ? 'none' : ''; });
-    document.querySelectorAll('#tab-proyecto .cl-actions').forEach(el => { el.style.display = hideIt ? 'none' : ''; });
-    ['verHistorialBtn','configProyectoBtn','toggleAllPhasesBtn'].forEach(id=>{
-      const b = document.getElementById(id); if (b) b.style.display = hideIt ? 'none' : '';
-    });
+    syncPartialProyectoUI();
   };
 
   // === MATRIZ DE VISIBILIDAD DE CHECKLISTS ===
@@ -4175,11 +4190,11 @@ function wireInfoTooltips(){
     ['TECNICO','TECNICO'], ['TÉCNICO','TECNICO'], ['ARQUITECTO','TECNICO'], ['INGENIERIA','TECNICO'],
     ['LEGAL','LEGAL'], ['JURIDICO','LEGAL'], ['JURÍDICO','LEGAL'],
     ['GERENCIA','GERENCIA'], ['DIRECCION','GERENCIA'], ['DIRECCIÓN','GERENCIA'],
-    ['COMERCIAL','COMERCIAL'], ['VENTAS','COMERCIAL'], ['MARKETING','COMERCIAL'],
-    ['FINANCIERO','FINANCIERO'], ['FINANZAS','FINANCIERO'],
-    ['CONTABILIDAD','CONTABILIDAD'], ['CONTABLE','CONTABILIDAD'],
+    ['COMERCIAL','COMERCIAL'], ['COMMERCIAL','COMERCIAL'], ['VENTAS','COMERCIAL'], ['MARKETING','COMERCIAL'],
+    ['FINANCIERO','FINANCIERO'], ['FINANCIAL','FINANCIERO'], ['FINANZAS','FINANCIERO'],
+    ['CONTABILIDAD','CONTABILIDAD'], ['ACCOUNTING','CONTABILIDAD'], ['CONTABLE','CONTABILIDAD'],
     ['SOCIOS','SOCIOS'], ['ACREEDORES','SOCIOS'],
-    ['PROMOTOR','PROMOTOR_PM'], ['PROMOTOR_PM','PROMOTOR_PM'], ['PM','PROMOTOR_PM'],
+    ['PROMOTOR','PROMOTOR_PM'], ['PROMOTER','PROMOTOR_PM'], ['PROMOTOR_PM','PROMOTOR_PM'], ['PM','PROMOTOR_PM'],
     ['BANCO','BANCO'], ['ADMIN','ADMIN'], ['ADMIN/BANCO','ADMIN'], ['ADMON','ADMIN'],
   ]);
 
@@ -4524,7 +4539,8 @@ return {
     : 'Sin tareas activas pendientes';
 
    const cls = (state.filterRole === rk) ? 'role-row filter-on' : 'role-row';
-   return `<div class="${cls}" data-role="${rk}" style="--role-color:${rm.color}" title="${ttl}">
+   const readOnlyStyle = isPartialProyectoRole() ? ';cursor:default' : '';
+   return `<div class="${cls}" data-role="${rk}" style="--role-color:${rm.color}${readOnlyStyle}" title="${ttl}">
     <div class="row"><span class="role-badge" style="--role-color:${rm.color};--role-pale:${rm.pale}">${rm.label}</span></div>
     <div class="light" title="${ttl}">
     <span class="sem-dot ${semClassFromEmoji(sem)}" aria-hidden="true"></span>
@@ -4533,12 +4549,17 @@ return {
    }).join('');
 
    rolesList.querySelectorAll('.role-row').forEach(el=>{
-   el.onclick = () => { state.filterRole = el.dataset.role; renderProyecto(); };
+   el.onclick = () => {
+    if (isPartialProyectoRole()) return;
+    state.filterRole = el.dataset.role;
+    renderProyecto();
+   };
    });
 
     // Fases
     phasesHost.innerHTML = PHASES.map(ph => renderPhase(ph)).join('');
     wireDynamicHandlers();
+    syncPartialProyectoUI();
 
     // Texto del botón global
     if (toggleAllPhasesBtn) {
