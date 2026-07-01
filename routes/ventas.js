@@ -153,7 +153,7 @@ async function attachProjectByVenta(req, res, next) {
 async function attachProjectByUnitIdFromVenta(req, res, next) {
   try {
     const { unitId } = req.params;
-    const unit = await Unit.findById(unitId).lean();
+    const unit = await Unit.findOne({ _id: unitId, tenantKey: req.tenantKey }).lean();
     if (!unit) return res.status(404).json({ error: 'Unidad no existe' });
 
     const proj = await Project.findOne({ _id: unit.projectId, tenantKey: req.tenantKey }).lean();
@@ -252,7 +252,7 @@ router.post(
         base.checklist = sanitizeChecklist(req.body.checklist);
       }
 
-      const u = await Unit.findById(unitId).select('manzana lote').lean();
+      const u = await Unit.findOne({ _id: unitId, tenantKey: req.tenantKey, projectId }).select('manzana lote').lean();
       if (u) {
         base.manzana = base.manzana || u.manzana;
         base.lote = base.lote || u.lote;
@@ -305,7 +305,7 @@ router.post(
       }
 
       if (!set.manzana || !set.lote) {
-        const u = await Unit.findById(unitId).select('manzana lote').lean();
+        const u = await Unit.findOne({ _id: unitId, tenantKey: req.tenantKey, projectId }).select('manzana lote').lean();
         if (u) {
           if (!set.manzana) set.manzana = u.manzana;
           if (!set.lote) set.lote = u.lote;

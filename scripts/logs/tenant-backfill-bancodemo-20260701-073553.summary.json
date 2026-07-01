@@ -1,0 +1,174 @@
+{
+  "tenant": "bancodemo",
+  "mode": "dry-run",
+  "generatedAt": "2026-07-01T07:36:04.804Z",
+  "manifestPath": null,
+  "totals": {
+    "missingTenantKey": 0,
+    "modified": 0
+  },
+  "models": [
+    {
+      "model": "Project",
+      "collection": "projects",
+      "total": 4,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "User",
+      "collection": "users",
+      "total": 14,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "ProjectFinance",
+      "collection": "projectfinances",
+      "total": 43,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "ProjectChecklist",
+      "collection": "projectchecklists",
+      "total": 3403,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Cliente",
+      "collection": "clientes",
+      "total": 0,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Unit",
+      "collection": "units",
+      "total": 4459,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Venta",
+      "collection": "ventas",
+      "total": 3851,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Document",
+      "collection": "documents",
+      "total": 47,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "ChatMessage",
+      "collection": "chatmessages",
+      "total": 9,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "CommercialFolder",
+      "collection": "commercialfolders",
+      "total": 5,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "UnitDocFolder",
+      "collection": "unitdocfolders",
+      "total": 12,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "ProjectPermit",
+      "collection": "projectpermits",
+      "total": 4,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Budget",
+      "collection": "budgets",
+      "total": 0,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Loan",
+      "collection": "loans",
+      "total": 0,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Milestone",
+      "collection": "milestones",
+      "total": 0,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "AuditLog",
+      "collection": "auditlogs",
+      "total": 5018,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "PermitTemplate",
+      "collection": "permittemplates",
+      "total": 2,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "ProjectDocFolderPermission",
+      "collection": "projectdocfolderpermissions",
+      "total": 6,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    }
+  ]
+}

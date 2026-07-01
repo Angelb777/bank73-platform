@@ -193,11 +193,20 @@ router.post('/projects/:projectId/init', async (req, res, next) => {
 
   try {
     // 1) Proyecto y tenant
-    const proj = await Project.findById(req.params.projectId).select('tenantKey').lean();
-    if (!proj) return res.status(404).json({ error: 'project_not_found' });
-
-    const tenantKey = String(proj.tenantKey || '').trim();
+    const tenantKey = String(
+      req?.user?.tenantKey ||
+      req.tenantKey ||
+      req?.tenant?.tenantKey ||
+      req?.tenant?.key ||
+      ''
+    ).trim();
     if (!tenantKey) return res.status(401).json({ error: 'unauthorized' });
+
+    const proj = await Project.findOne({
+      _id: req.params.projectId,
+      tenantKey
+    }).select('tenantKey').lean();
+    if (!proj) return res.status(404).json({ error: 'project_not_found' });
 
     // 2) Validaciones
     const { templateId } = req.body || {};

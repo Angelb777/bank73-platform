@@ -1,0 +1,174 @@
+{
+  "tenant": "bancodemo",
+  "mode": "apply",
+  "generatedAt": "2026-07-01T07:33:55.081Z",
+  "manifestPath": "C:\\Users\\angel\\WORK\\TRUSTFORBANKS\\PLATFORM_GITHUB\\scripts\\logs\\tenant-backfill-bancodemo-20260701-073333.jsonl",
+  "totals": {
+    "missingTenantKey": 3511,
+    "modified": 3511
+  },
+  "models": [
+    {
+      "model": "Project",
+      "collection": "projects",
+      "total": 4,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "User",
+      "collection": "users",
+      "total": 14,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "ProjectFinance",
+      "collection": "projectfinances",
+      "total": 43,
+      "missingTenantKey": 43,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 43
+    },
+    {
+      "model": "ProjectChecklist",
+      "collection": "projectchecklists",
+      "total": 3403,
+      "missingTenantKey": 3403,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 3403
+    },
+    {
+      "model": "Cliente",
+      "collection": "clientes",
+      "total": 0,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Unit",
+      "collection": "units",
+      "total": 4459,
+      "missingTenantKey": 64,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 64
+    },
+    {
+      "model": "Venta",
+      "collection": "ventas",
+      "total": 3851,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Document",
+      "collection": "documents",
+      "total": 47,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "ChatMessage",
+      "collection": "chatmessages",
+      "total": 9,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "CommercialFolder",
+      "collection": "commercialfolders",
+      "total": 5,
+      "missingTenantKey": 1,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 1
+    },
+    {
+      "model": "UnitDocFolder",
+      "collection": "unitdocfolders",
+      "total": 12,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "ProjectPermit",
+      "collection": "projectpermits",
+      "total": 4,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Budget",
+      "collection": "budgets",
+      "total": 0,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Loan",
+      "collection": "loans",
+      "total": 0,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Milestone",
+      "collection": "milestones",
+      "total": 0,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "AuditLog",
+      "collection": "auditlogs",
+      "total": 5018,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "PermitTemplate",
+      "collection": "permittemplates",
+      "total": 2,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "ProjectDocFolderPermission",
+      "collection": "projectdocfolderpermissions",
+      "total": 6,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    }
+  ]
+}

@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 
 let Unit;
+const Project = require('../models/Project');
 try {
   Unit = require('../models/Unit'); // usará tu modelo si existe
 } catch {
@@ -21,7 +22,7 @@ router.get('/:projectId', async (req, res) => {
   if (!Unit) return res.json([]);
 
   try {
-    const docs = await Unit.find({ projectId, deletedAt: null }).select('_id code status price').sort({ code: 1 });
+    const docs = await Unit.find({ tenantKey: req.tenantKey, projectId, deletedAt: null }).select('_id code status price').sort({ code: 1 });
     res.json(docs || []);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -39,9 +40,12 @@ router.post('/seed', async (req, res) => {
   try {
     const { projectId, manzana = 'A', cantidad = 5, precio = 100000 } = req.body || {};
     if (!projectId) return res.status(400).json({ error: 'projectId requerido' });
+    const project = await Project.findOne({ _id: projectId, tenantKey: req.tenantKey }).select('_id').lean();
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
 
     const loteNums = Array.from({ length: Number(cantidad) || 0 }, (_, i) => i + 1);
     const docs = loteNums.map(n => ({
+      tenantKey: req.tenantKey,
       projectId,
       manzana,
       lote: String(n),

@@ -37,7 +37,10 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'projectId y name requeridos' });
   }
 
-  const count = await CommercialFolder.countDocuments({ projectId });
+  const project = await Project.findOne({ _id: projectId, tenantKey: req.tenantKey }).select('_id').lean();
+  if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+  const count = await CommercialFolder.countDocuments({ tenantKey: req.tenantKey, projectId });
 
   const folder = await CommercialFolder.create({
     tenantKey: req.tenantKey,
@@ -98,11 +101,13 @@ router.patch('/:id', async (req, res) => {
     update.color = String(req.body.color || '#0f172a').trim();
   }
 
-  const folder = await CommercialFolder.findByIdAndUpdate(
-    req.params.id,
+  const folder = await CommercialFolder.findOneAndUpdate(
+    { _id: req.params.id, tenantKey: req.tenantKey },
     update,
     { new: true }
   );
+
+  if (!folder) return res.status(404).json({ error: 'Carpeta no encontrada' });
 
   res.json(folder);
 });
@@ -110,12 +115,15 @@ router.patch('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const folderId = req.params.id;
 
+  const folder = await CommercialFolder.findOne({ _id: folderId, tenantKey: req.tenantKey }).lean();
+  if (!folder) return res.status(404).json({ error: 'Carpeta no encontrada' });
+
   await Unit.updateMany(
-    { folderId },
+    { tenantKey: req.tenantKey, folderId },
     { $set: { folderId: null, folderOrder: 0 } }
   );
 
-  await CommercialFolder.findByIdAndDelete(folderId);
+  await CommercialFolder.deleteOne({ _id: folderId, tenantKey: req.tenantKey });
 
   res.json({ ok: true });
 });
@@ -160,11 +168,14 @@ router.patch('/:id/units', async (req, res) => {
     return res.status(400).json({ error: 'unitIds debe ser array' });
   }
 
+  const folder = await CommercialFolder.findOne({ _id: folderId, tenantKey: req.tenantKey }).lean();
+  if (!folder) return res.status(404).json({ error: 'Carpeta no encontrada' });
+
   await Promise.all(unitIds.map((unitId, index) =>
-    Unit.findByIdAndUpdate(unitId, {
-      folderId,
-      folderOrder: index
-    })
+    Unit.findOneAndUpdate(
+      { _id: unitId, tenantKey: req.tenantKey, projectId: folder.projectId },
+      { folderId, folderOrder: index }
+    )
   ));
 
   res.json({ ok: true });

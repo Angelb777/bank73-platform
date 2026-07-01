@@ -1,0 +1,194 @@
+{
+  "tenant": "bancodemo",
+  "mode": "dry-run",
+  "generatedAt": "2026-07-01T07:33:27.535Z",
+  "manifestPath": null,
+  "totals": {
+    "missingTenantKey": 3511,
+    "modified": 0
+  },
+  "models": [
+    {
+      "model": "Project",
+      "collection": "projects",
+      "total": 4,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "User",
+      "collection": "users",
+      "total": 14,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "ProjectFinance",
+      "collection": "projectfinances",
+      "total": 43,
+      "missingTenantKey": 43,
+      "sampleIds": [
+        "698dcf486d6b49d5f8767234",
+        "698dcf4f6d6b49d5f876727b",
+        "698dd6b24ca58cdb06b2b6ae",
+        "698f0bd64df6f24a3a67d947",
+        "698f0bf44df6f24a3a67da1f"
+      ],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "ProjectChecklist",
+      "collection": "projectchecklists",
+      "total": 3403,
+      "missingTenantKey": 3403,
+      "sampleIds": [
+        "698eebe3d7a833f3a06aea67",
+        "698eebe4d7a833f3a06aea68",
+        "698eebe4d7a833f3a06aea69",
+        "698eebe4d7a833f3a06aea6a",
+        "698eebe4d7a833f3a06aea6b"
+      ],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Cliente",
+      "collection": "clientes",
+      "total": 0,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Unit",
+      "collection": "units",
+      "total": 4459,
+      "missingTenantKey": 64,
+      "sampleIds": [
+        "698f0cb94df6f24a3a67dfc0",
+        "698f0cb94df6f24a3a67dfc1",
+        "698f0cb94df6f24a3a67dfc2",
+        "698f0cb94df6f24a3a67dfc3",
+        "698f0cb94df6f24a3a67dfc4"
+      ],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Venta",
+      "collection": "ventas",
+      "total": 3851,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Document",
+      "collection": "documents",
+      "total": 47,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "ChatMessage",
+      "collection": "chatmessages",
+      "total": 9,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "CommercialFolder",
+      "collection": "commercialfolders",
+      "total": 5,
+      "missingTenantKey": 1,
+      "sampleIds": [
+        "69fb801018964ab8ae508234"
+      ],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "UnitDocFolder",
+      "collection": "unitdocfolders",
+      "total": 12,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "ProjectPermit",
+      "collection": "projectpermits",
+      "total": 4,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Budget",
+      "collection": "budgets",
+      "total": 0,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Loan",
+      "collection": "loans",
+      "total": 0,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "Milestone",
+      "collection": "milestones",
+      "total": 0,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "AuditLog",
+      "collection": "auditlogs",
+      "total": 5018,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "PermitTemplate",
+      "collection": "permittemplates",
+      "total": 2,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    },
+    {
+      "model": "ProjectDocFolderPermission",
+      "collection": "projectdocfolderpermissions",
+      "total": 6,
+      "missingTenantKey": 0,
+      "sampleIds": [],
+      "warnings": [],
+      "modified": 0
+    }
+  ]
+}

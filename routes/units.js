@@ -178,7 +178,7 @@ async function attachProjectByUnitId(req, res, next) {
   try {
     const { id } = req.params;
 
-    const unit = await Unit.findById(id).lean();
+    const unit = await Unit.findOne({ _id: id, tenantKey: req.tenantKey }).lean();
     if (!unit) return res.status(404).json({ error: 'Unidad no encontrada' });
 
     const proj = await Project.findOne({ _id: unit.projectId, tenantKey: req.tenantKey }).lean();
@@ -437,7 +437,11 @@ router.get(
   requireProjectAccess(),
   async (req, res) => {
     try {
-      const u = await Unit.findById(req.params.id).populate('clienteId');
+      const u = await Unit.findOne({
+        _id: req.params.id,
+        tenantKey: req.tenantKey,
+        projectId: req.project._id
+      }).populate('clienteId');
       if (!u || u.deletedAt) return res.status(404).json({ error: 'No encontrada' });
       res.json(u);
     } catch {
@@ -469,14 +473,14 @@ router.patch(
       }
 
       if (update.manzana || update.lote) {
-        const curr = await Unit.findById(req.params.id).select('manzana lote');
+        const curr = await Unit.findOne({ _id: req.params.id, tenantKey: req.tenantKey, projectId: req.project._id }).select('manzana lote');
         const m = update.manzana ?? curr?.manzana ?? '';
         const l = update.lote ?? curr?.lote ?? '';
         update.code = `${m}-${l}`;
       }
 
-      const u = await Unit.findByIdAndUpdate(
-        req.params.id,
+      const u = await Unit.findOneAndUpdate(
+        { _id: req.params.id, tenantKey: req.tenantKey, projectId: req.project._id },
         { $set: update },
         { new: true }
       );

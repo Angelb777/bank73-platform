@@ -675,7 +675,7 @@ async function attachProjectByUnitId(req, res, next) {
   try {
     const { unitId } = req.params;
 
-    const unit = await Unit.findById(unitId).lean();
+    const unit = await Unit.findOne({ _id: unitId, tenantKey: req.tenantKey }).lean();
     if (!unit) return res.status(404).json({ error: 'Unidad no existe' });
 
     const projectId = unit.projectId;

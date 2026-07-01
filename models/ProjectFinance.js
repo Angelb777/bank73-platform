@@ -141,6 +141,7 @@ const UnitAmortizationSchema = new Schema({
 }, { _id: true, timestamps: true });
 
 const ProjectFinanceSchema = new Schema({
+  tenantKey: { type: String, index: true },
   project: { type: Schema.Types.ObjectId, ref: 'Project', index: true, unique: true, required: true },
 
   // ==========================================================
@@ -163,6 +164,8 @@ const ProjectFinanceSchema = new Schema({
   unitAmortizations: { type: [UnitAmortizationSchema], default: [] },
 
 }, { timestamps: true });
+
+ProjectFinanceSchema.index({ tenantKey: 1, project: 1 });
 
 // -------------------- helpers --------------------
 ProjectFinanceSchema.methods.sumItems = function(items = []) {

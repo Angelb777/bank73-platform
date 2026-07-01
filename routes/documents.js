@@ -801,7 +801,7 @@ router.post(
         if (!unitOid) return res.status(400).json({ error: 'unitId inválido' });
 
         const u = await Unit
-          .findOne({ _id: unitOid, projectId: projectOid })
+          .findOne({ _id: unitOid, tenantKey, projectId: projectOid })
           .select('manzana lote')
           .lean();
 
@@ -858,7 +858,16 @@ router.post(
 
       if (checklistId && (!acl || !acl.length)) {
         const cl = await ProjectChecklist
-          .findOne({ _id: checklistId, projectId: projectOid })
+          .findOne({
+            _id: checklistId,
+            projectId: projectOid,
+            $or: [
+              { tenantKey },
+              { tenantKey: { $exists: false } },
+              { tenantKey: null },
+              { tenantKey: '' }
+            ]
+          })
           .select('roleOwner visibleToRoles')
           .lean();
 

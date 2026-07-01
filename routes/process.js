@@ -8,6 +8,8 @@ router.use((req, _res, next) => {
 const mongoose = require('mongoose');
 
 const ProjectChecklist = require('../models/ProjectChecklist');
+const Project = require('../models/Project');
+const { requireRole } = require('../middleware/rbac');
 
 // ===== Helpers generales =====
 const DELETE_PIN = process.env.PROCESS_DELETE_PIN || '2580';
@@ -23,6 +25,73 @@ function userName(req) {
   return (req.user?.name || req.user?.email || 'usuario');
 }
 function norm(s) { return (s || '').toString().toLowerCase(); }
+
+function getTenantKey(req) {
+  return req.tenantKey || req.user?.tenantKey || req.tenant?.tenantKey || req.tenant?.key || null;
+}
+
+function legacyTenantQuery(tenantKey) {
+  return {
+    $or: [
+      { tenantKey },
+      { tenantKey: { $exists: false } },
+      { tenantKey: null },
+      { tenantKey: '' }
+    ]
+  };
+}
+
+async function loadTenantProject(req, res, projectId = req.params.projectId) {
+  if (!mongoose.Types.ObjectId.isValid(projectId)) {
+    res.status(400).json({ error: 'projectId invalido' });
+    return null;
+  }
+  const tenantKey = getTenantKey(req);
+  if (!tenantKey) {
+    res.status(403).json({ error: 'Falta tenantKey' });
+    return null;
+  }
+  const project = await Project.findOne({ _id: projectId, tenantKey }).lean();
+  if (!project) {
+    res.status(404).json({ error: 'Proyecto no encontrado' });
+    return null;
+  }
+  return project;
+}
+
+async function loadTenantChecklist(req, res, id) {
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    res.status(400).json({ error: 'checklistId invalido' });
+    return null;
+  }
+  const tenantKey = getTenantKey(req);
+  if (!tenantKey) {
+    res.status(403).json({ error: 'Falta tenantKey' });
+    return null;
+  }
+
+  let cl = await ProjectChecklist.findOne({ _id: id, tenantKey });
+  if (cl) return cl;
+
+  cl = await ProjectChecklist.findOne({
+    _id: id,
+    $or: [{ tenantKey: { $exists: false } }, { tenantKey: null }, { tenantKey: '' }]
+  });
+  if (!cl) {
+    res.status(404).json({ error: 'Checklist no encontrado' });
+    return null;
+  }
+
+  const project = await Project.findOne({ _id: cl.projectId, tenantKey }).select('_id').lean();
+  if (!project) {
+    res.status(404).json({ error: 'Checklist no encontrado' });
+    return null;
+  }
+
+  cl.tenantKey = tenantKey;
+  await cl.save();
+  return cl;
+}
 
 // Roles de comportamiento
 const FULL_ACCESS_ROLES = [
@@ -57,7 +126,7 @@ function buildChecklistVisibilityQuery(req, base = {}) {
 }
 
 // DEBUG SOLO PARA TI (borralo luego)
-router.get('/process/debug-templates', async (req, res) => {
+router.get('/process/debug-templates', requireRole('admin', 'superadmin'), async (req, res) => {
   const dbName = mongoose.connection?.db?.databaseName;
   const col = mongoose.connection?.db?.collection('processTemplates');
   const count = col ? await col.countDocuments({}) : -1;
@@ -80,11 +149,11 @@ router.get('/process/templates/active', async (req, res) => {
 
 
 // (Opcional admin) activar plantilla por versión
-router.post('/process/templates/:version/activate', async (req, res) => {
+router.post('/process/templates/:version/activate', requireRole('admin', 'superadmin'), async (req, res) => {
   const { version } = req.params;
   const col = mongoose.connection.db.collection('processTemplates');
 
-  await col.updateMany({}, { $set: { active: false } });
+  await col.updateMany({ active: true }, { $set: { active: false } });
   const r = await col.findOneAndUpdate(
     { version: Number(version) },
     { $set: { active: true } },
@@ -106,6 +175,8 @@ router.post('/process/templates/:version/activate', async (req, res) => {
 router.post('/projects/:projectId/process/apply-template', async (req, res) => {
   const { projectId } = req.params;
   const version = req.query.version ? Number(req.query.version) : null;
+  const project = await loadTenantProject(req, res, projectId);
+  if (!project) return;
 
   // ✅ 1) Validar ObjectId
   if (!mongoose.Types.ObjectId.isValid(projectId)) {
@@ -135,7 +206,7 @@ if (!tpl) {
 
 
 const existing = await ProjectChecklist
-  .find({ projectId: projectIdObj }, { templateKey: 1, title: 1 }).lean();
+  .find({ projectId: projectIdObj, ...legacyTenantQuery(project.tenantKey) }, { templateKey: 1, title: 1 }).lean();
 
 
   const existingKeys = new Set(existing.map(e => e.templateKey).filter(Boolean));
@@ -150,6 +221,7 @@ const existing = await ProjectChecklist
       : [];
 
     toInsert.push({
+      tenantKey: project.tenantKey,
       projectId: projectIdObj,               // ✅ ObjectId real
       templateKey: step.key,
       title: step.title,
@@ -179,13 +251,15 @@ const existing = await ProjectChecklist
 // GET /api/projects/:projectId/checklists
 router.get('/projects/:projectId/checklists', async (req, res) => {
   const { projectId } = req.params;
+  const project = await loadTenantProject(req, res, projectId);
+  if (!project) return;
 
   if (!mongoose.Types.ObjectId.isValid(projectId)) {
     return res.status(400).json({ error: 'projectId inválido' });
   }
   const projectIdObj = new mongoose.Types.ObjectId(projectId);
 
-  const base = { projectId: projectIdObj };
+  const base = { projectId: projectIdObj, ...legacyTenantQuery(project.tenantKey) };
 
   const q = buildChecklistVisibilityQuery(req, base);
 
@@ -201,6 +275,8 @@ router.get('/projects/:projectId/checklists', async (req, res) => {
 // acepta roleOwner y visibleToRoles; mantiene "role" legacy para compat
 router.post('/projects/:projectId/checklists', async (req, res) => {
   const { projectId } = req.params;
+  const project = await loadTenantProject(req, res, projectId);
+  if (!project) return;
     if (!mongoose.Types.ObjectId.isValid(projectId)) {
     return res.status(400).json({ error: 'projectId inválido' });
   }
@@ -224,6 +300,7 @@ router.post('/projects/:projectId/checklists', async (req, res) => {
         : []);
 
     const doc = await ProjectChecklist.create({
+    tenantKey: project.tenantKey,
     projectId: projectIdObj,
     title,
     phase,
@@ -252,8 +329,10 @@ router.put('/checklists/:id', async (req, res) => {
     patch.visibleToRoles = patch.visibleToRoles.split(',').map(s => norm(s.trim()));
   }
 
-  const cl = await ProjectChecklist.findByIdAndUpdate(id, patch, { new: true });
-  if (!cl) return res.status(404).json({ error: 'Checklist no encontrado' });
+  const cl = await loadTenantChecklist(req, res, id);
+  if (!cl) return;
+  Object.assign(cl, patch);
+  await cl.save();
   res.json(cl);
 });
 
@@ -261,8 +340,9 @@ router.put('/checklists/:id', async (req, res) => {
 router.delete('/checklists/:id', async (req, res) => {
   const pinErr = requirePin(req, res); if (pinErr) return;
   const { id } = req.params;
-  const cl = await ProjectChecklist.findByIdAndDelete(id);
-  if (!cl) return res.status(404).json({ error: 'Checklist no encontrado' });
+  const cl = await loadTenantChecklist(req, res, id);
+  if (!cl) return;
+  await ProjectChecklist.deleteOne({ _id: cl._id, tenantKey: cl.tenantKey });
   res.json({ ok: true });
 });
 
@@ -272,10 +352,12 @@ router.delete('/checklists/:id', async (req, res) => {
 
 // helper: ¿está activo un checklist?
 async function isActiveChecklist(cl) {
+  const tenantKey = cl.tenantKey;
   // Regla 1: todos los checklists del nivel anterior (misma fase) deben estar COMPLETADO
   const prevLevel = cl.level - 1;
   if (prevLevel >= 1) {
     const prev = await ProjectChecklist.find({
+      tenantKey,
       projectId: cl.projectId,
       phase: cl.phase,
       level: prevLevel
@@ -286,6 +368,7 @@ async function isActiveChecklist(cl) {
   // Regla 2: prerrequisitos explícitos (por templateKey) deben estar COMPLETADO
   if (cl.prerequisitesKeys?.length) {
     const prereq = await ProjectChecklist.find({
+      tenantKey,
       projectId: cl.projectId,
       templateKey: { $in: cl.prerequisitesKeys }
     }).select('status').lean();
@@ -298,8 +381,8 @@ async function isActiveChecklist(cl) {
 router.post('/checklists/:id/complete', async (req, res) => {
   const { id } = req.params;
   const { force } = req.body || {};
-  const cl = await ProjectChecklist.findById(id);
-  if (!cl) return res.status(404).json({ error: 'Checklist no encontrado' });
+  const cl = await loadTenantChecklist(req, res, id);
+  if (!cl) return;
 
   const active = await isActiveChecklist(cl);
   if (!active && !force) {
@@ -319,16 +402,12 @@ router.post('/checklists/:id/complete', async (req, res) => {
 router.post('/checklists/:id/validate', async (req, res) => {
   const { id } = req.params;
   const { validated } = req.body;
-  const cl = await ProjectChecklist.findByIdAndUpdate(
-    id,
-    {
-      validated: !!validated,
-      validatedBy: userName(req),
-      validatedAt: validated ? new Date() : null
-    },
-    { new: true }
-  );
-  if (!cl) return res.status(404).json({ error: 'Checklist no encontrado' });
+  const cl = await loadTenantChecklist(req, res, id);
+  if (!cl) return;
+  cl.validated = !!validated;
+  cl.validatedBy = userName(req);
+  cl.validatedAt = validated ? new Date() : null;
+  await cl.save();
   res.json({ ok: true, checklist: cl });
 });
 
@@ -337,8 +416,8 @@ router.post('/checklists/:id/notes', async (req, res) => {
   const { id } = req.params;
   const { text } = req.body || {};
   if (!text) return res.status(400).json({ error: 'Texto requerido' });
-  const cl = await ProjectChecklist.findById(id);
-  if (!cl) return res.status(404).json({ error: 'Checklist no encontrado' });
+  const cl = await loadTenantChecklist(req, res, id);
+  if (!cl) return;
   cl.notes.push({ text, author: userName(req), userId: req.user?._id });
   await cl.save();
   res.json({ ok: true });
@@ -353,8 +432,8 @@ router.post('/checklists/:id/subtasks', async (req, res) => {
   const { id } = req.params;
   const { title } = req.body || {};
   if (!title) return res.status(400).json({ error: 'Título requerido' });
-  const cl = await ProjectChecklist.findById(id);
-  if (!cl) return res.status(404).json({ error: 'Checklist no encontrado' });
+  const cl = await loadTenantChecklist(req, res, id);
+  if (!cl) return;
   cl.subtasks.push({ title });
   await cl.save();
   res.json({ ok: true, checklist: cl });
@@ -363,8 +442,8 @@ router.post('/checklists/:id/subtasks', async (req, res) => {
 // PUT /api/checklists/:id/subtasks/:sid  { completed?, title?, dueDate? }
 router.put('/checklists/:id/subtasks/:sid', async (req, res) => {
   const { id, sid } = req.params;
-  const cl = await ProjectChecklist.findById(id);
-  if (!cl) return res.status(404).json({ error: 'Checklist no encontrado' });
+  const cl = await loadTenantChecklist(req, res, id);
+  if (!cl) return;
   const st = cl.subtasks.id(sid);
   if (!st) return res.status(404).json({ error: 'Subtarea no encontrada' });
   if (typeof req.body.completed === 'boolean') st.completed = req.body.completed;
@@ -377,8 +456,8 @@ router.put('/checklists/:id/subtasks/:sid', async (req, res) => {
 // DELETE /api/checklists/:id/subtasks/:sid
 router.delete('/checklists/:id/subtasks/:sid', async (req, res) => {
   const { id, sid } = req.params;
-  const cl = await ProjectChecklist.findById(id);
-  if (!cl) return res.status(404).json({ error: 'Checklist no encontrado' });
+  const cl = await loadTenantChecklist(req, res, id);
+  if (!cl) return;
   const st = cl.subtasks.id(sid);
   if (!st) return res.status(404).json({ error: 'Subtarea no encontrada' });
   st.deleteOne();
@@ -416,7 +495,7 @@ const LegacyChecklistModel = mongoose.model(
 );
 
 // Normaliza un doc legacy -> shape de ProjectChecklist
-function normalizeLegacyToProjectChecklist(lc, projectId) {
+function normalizeLegacyToProjectChecklist(lc, projectId, tenantKey) {
   const status =
     lc.status === 'COMPLETADO' || lc.status === 'DONE' ? 'COMPLETADO' :
     lc.status === 'EN_PROCESO' || lc.status === 'IN_PROGRESS' ? 'EN_PROCESO' :
@@ -425,6 +504,7 @@ function normalizeLegacyToProjectChecklist(lc, projectId) {
   const owner = lc.role ? norm(lc.role) : 'tecnico';
 
   return {
+    tenantKey,
     projectId,
     templateKey: lc.key || undefined,
     title: lc.title || 'Checklist',
@@ -451,6 +531,8 @@ function normalizeLegacyToProjectChecklist(lc, projectId) {
 // POST /api/projects/:projectId/checklists/migrate-legacy
 router.post('/projects/:projectId/checklists/migrate-legacy', async (req, res) => {
   const { projectId } = req.params;
+  const project = await loadTenantProject(req, res, projectId);
+  if (!project) return;
 
   // 1) Traer todos los legacy de ese proyecto
   const legacy = await LegacyChecklistModel.find({
@@ -467,7 +549,7 @@ router.post('/projects/:projectId/checklists/migrate-legacy', async (req, res) =
 
   // 2) Evitar duplicados por (templateKey|title)
   const existing = await ProjectChecklist
-    .find({ projectId }, { templateKey: 1, title: 1 }).lean();
+    .find({ projectId, ...legacyTenantQuery(project.tenantKey) }, { templateKey: 1, title: 1 }).lean();
   const existingKeys = new Set(
     existing.map(x => (x.templateKey || '') + '|' + (x.title || ''))
   );
@@ -477,7 +559,7 @@ router.post('/projects/:projectId/checklists/migrate-legacy', async (req, res) =
   for (const lc of legacy) {
     const sig = (lc.key || '') + '|' + (lc.title || '');
     if (existingKeys.has(sig)) continue;
-    toInsert.push(normalizeLegacyToProjectChecklist(lc, projectId));
+    toInsert.push(normalizeLegacyToProjectChecklist(lc, projectId, project.tenantKey));
   }
 
   // 4) Insertar en ProjectChecklist

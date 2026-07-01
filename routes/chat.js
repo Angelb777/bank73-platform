@@ -81,7 +81,8 @@ router.get(
       const limit = Math.min(Number(req.query.limit) || 50, 200);
       const before = req.query.before ? new Date(req.query.before) : null;
 
-      const q = { projectId };
+      const tenantKey = await getTenantKey(req);
+      const q = { tenantKey, projectId };
       if (before && !isNaN(before.getTime())) q.createdAt = { $lt: before };
 
       const messages = await ChatMessage
@@ -139,7 +140,8 @@ router.delete(
         return res.status(400).json({ ok:false, error:'bad_message_id' });
       }
 
-      const msg = await ChatMessage.findById(messageId);
+      const tenantKey = await getTenantKey(req);
+      const msg = await ChatMessage.findOne({ _id: messageId, tenantKey });
       if (!msg) return res.status(404).json({ ok:false, error:'not_found' });
 
       // Reutiliza ensureProjectReadable con el projectId del mensaje
@@ -148,7 +150,7 @@ router.delete(
         ensureProjectReadable(req, res, (err) => (err ? reject(err) : resolve()))
       );
 
-      await ChatMessage.deleteOne({ _id: messageId });
+      await ChatMessage.deleteOne({ _id: messageId, tenantKey });
       console.log('[CHAT] DELETE ok ->', messageId);
       res.json({ ok: true, deletedId: messageId });
     } catch (err) { next(err); }

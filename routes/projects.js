@@ -503,7 +503,15 @@ async function applyInitialChecklists({ req, projectId, completedKeys }) {
   if (!tpl?.steps?.length) return 0;
 
   const projectIdObj = toObjectId(projectId);
-  const existing = await ProjectChecklist.find({ projectId: projectIdObj }, { templateKey: 1 }).lean();
+  const checklistTenantQuery = {
+    $or: [
+      { tenantKey: req.tenantKey },
+      { tenantKey: { $exists: false } },
+      { tenantKey: null },
+      { tenantKey: '' }
+    ]
+  };
+  const existing = await ProjectChecklist.find({ projectId: projectIdObj, ...checklistTenantQuery }, { templateKey: 1 }).lean();
   const existingKeys = new Set(existing.map(e => e.templateKey).filter(Boolean));
   const now = new Date();
   const docs = [];
@@ -540,9 +548,10 @@ async function applyInitialChecklists({ req, projectId, completedKeys }) {
   if (docs.length) await ProjectChecklist.insertMany(docs);
   if (!docs.length) {
     await ProjectChecklist.updateMany(
-      { projectId: projectIdObj, templateKey: { $in: Array.from(completedKeys) } },
+      { projectId: projectIdObj, ...checklistTenantQuery, templateKey: { $in: Array.from(completedKeys) } },
       {
         $set: {
+          tenantKey: req.tenantKey,
           status: 'COMPLETADO',
           validated: true,
           completedAt: now,
@@ -720,11 +729,21 @@ function defaultPhaseDates(index = 0) {
   return { startDate: start, endDate: end };
 }
 
-async function syncInitialFinanceStructure({ projectId, phases = [], financialConditions = {}, appendOnly = false }) {
+async function syncInitialFinanceStructure({ tenantKey, projectId, phases = [], financialConditions = {}, appendOnly = false }) {
   const desired = applyAutomaticPhaseSources(Array.isArray(phases) ? phases : [], financialConditions || {});
   if (!desired.length) return null;
-  let doc = await ProjectFinance.findOne({ project: projectId });
-  if (!doc) doc = await ProjectFinance.create({ project: projectId, phases: [] });
+  let doc = await ProjectFinance.findOne({ project: projectId, tenantKey });
+  if (!doc) {
+    doc = await ProjectFinance.findOne({
+      project: projectId,
+      $or: [{ tenantKey: { $exists: false } }, { tenantKey: null }, { tenantKey: '' }]
+    });
+    if (doc) {
+      doc.tenantKey = tenantKey;
+      await doc.save();
+    }
+  }
+  if (!doc) doc = await ProjectFinance.create({ tenantKey, project: projectId, phases: [] });
 
   const existingNames = new Set((doc.phases || []).map(ph => String(ph.name || '').trim().toLowerCase()));
   desired.forEach((phase, idx) => {
@@ -1401,6 +1420,7 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
     await applyInitialChecklists({ req, projectId: p._id, completedKeys: initialChecklistKeys });
     await applyInitialPermits({ tenantKey, projectId: p._id, initialPermits });
     await syncInitialFinanceStructure({
+      tenantKey,
       projectId: p._id,
       phases: body.financePhases,
       financialConditions: body.financialConditions
@@ -1654,6 +1674,7 @@ router.put('/:id', requireRole('admin','bank'), async (req, res) => {
     if (!updated) return res.status(404).json({ error: 'Proyecto no encontrado' });
     if (payload.financePhases || payload.financialConditions) {
       await syncInitialFinanceStructure({
+        tenantKey,
         projectId: updated._id,
         phases: payload.financePhases || updated.financePhases || [],
         financialConditions: payload.financialConditions || updated.financialConditions || {},
@@ -1795,7 +1816,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       : [];
     const primaryPromoter = projectPromoters[0] || null;
 
-    const financeDoc = await ProjectFinance.findOne({ project: id }).lean();
+    const financeDoc = await ProjectFinance.findOne({ project: id, tenantKey }).lean();
     let financePhases = Array.isArray(financeDoc?.phases) ? financeDoc.phases : [];
 
     let [checklists, documents, ventasRaw, units, permits] = await Promise.all([
@@ -3073,7 +3094,7 @@ router.post('/:id/summary/export', requireProjectAccess(), async (req, res) => {
       })(),
 
       (async () => {
-        const financeDoc = await ProjectFinance.findOne({ project: id }).lean();
+        const financeDoc = await ProjectFinance.findOne({ project: id, tenantKey }).lean();
         return Array.isArray(financeDoc?.phases) ? financeDoc.phases : [];
       })()
     ]);

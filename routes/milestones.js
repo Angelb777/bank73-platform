@@ -1,5 +1,6 @@
 const express = require('express');
 const Milestone = require('../models/Milestone');
+const Project = require('../models/Project');
 const { requireRoles } = require('../middleware/rbac');
 
 const router = express.Router();
@@ -13,7 +14,13 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/milestones
-router.post('/', requireRoles('BANK_EXEC','PROMOTOR_PM'), async (req, res) => {
+router.post('/', requireRoles('bank', 'promoter'), async (req, res) => {
+  const { projectId } = req.body || {};
+  if (!projectId) return res.status(400).json({ error: 'projectId requerido' });
+
+  const project = await Project.findOne({ _id: projectId, tenantKey: req.tenantKey }).select('_id').lean();
+  if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
   const data = { ...req.body, tenantKey: req.tenantKey };
   const m = await Milestone.create(data);
   res.status(201).json(m);

@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const ClienteSchema = new mongoose.Schema({
+  tenantKey: { type: String, index: true },
   nombre:   { type: String, required: true },
   cedula:   { type: String },
   empresa:  { type: String },

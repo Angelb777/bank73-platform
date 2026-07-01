@@ -20,10 +20,50 @@ const { formatProjectMoney } = require('../utils/currency');
    Helpers base
    ========================================================================= */
 
-async function getOrCreate(projectId) {
-  let doc = await ProjectFinance.findOne({ project: projectId });
+function getTenantKey(req) {
+  return req.tenantKey || req.user?.tenantKey || req.tenant?.tenantKey || req.tenant?.key || null;
+}
+
+async function loadTenantProject(req, res) {
+  const { projectId } = req.params;
+  if (!mongoose.isValidObjectId(projectId)) {
+    res.status(400).json({ error: 'projectId inválido' });
+    return null;
+  }
+
+  const tenantKey = getTenantKey(req);
+  if (!tenantKey) {
+    res.status(403).json({ error: 'Falta tenantKey' });
+    return null;
+  }
+
+  const project = await Project.findOne({ _id: projectId, tenantKey });
+  if (!project) {
+    res.status(404).json({ error: 'Proyecto no encontrado' });
+    return null;
+  }
+
+  return project;
+}
+
+async function getOrCreate(projectId, tenantKey) {
+  let doc = await ProjectFinance.findOne({ project: projectId, tenantKey });
   if (!doc) {
-    doc = await ProjectFinance.create({ project: projectId, phases: [] });
+    doc = await ProjectFinance.findOne({
+      project: projectId,
+      $or: [
+        { tenantKey: { $exists: false } },
+        { tenantKey: null },
+        { tenantKey: '' }
+      ]
+    });
+    if (doc) {
+      doc.tenantKey = tenantKey;
+      await doc.save();
+    }
+  }
+  if (!doc) {
+    doc = await ProjectFinance.create({ tenantKey, project: projectId, phases: [] });
   }
   return doc;
 }
@@ -446,8 +486,8 @@ async function updateProjectKpis(req, res) {
       return res.status(400).json({ error: 'projectId inválido' });
     }
 
-    const p = await Project.findById(projectId);
-    if (!p) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    const p = await loadTenantProject(req, res);
+    if (!p) return;
 
     const body = req.body || {};
 
@@ -522,7 +562,10 @@ router.get('/projects/:projectId/finance', async (req, res) => {
       return res.status(400).json({ error: 'projectId inválido' });
     }
 
-    const doc = await getOrCreate(projectId);
+    const projectRaw = await loadTenantProject(req, res);
+    if (!projectRaw) return;
+
+    const doc = await getOrCreate(projectId, projectRaw.tenantKey);
 
     // alertas por fin de fase
     const today = new Date();
@@ -540,20 +583,20 @@ router.get('/projects/:projectId/finance', async (req, res) => {
       }
     }
 
-    const projectRaw = await Project.findById(projectId).lean();
     const kpis = doc.kpis();
-    const commercialUnits = await getFinanceCommercialUnits(projectId, req.tenantKey);
-    const approvedTotals = financeApprovedTotals(doc, projectRaw || {});
+    const commercialUnits = await getFinanceCommercialUnits(projectId, projectRaw.tenantKey);
+    const projectPlain = projectRaw?.toObject ? projectRaw.toObject() : projectRaw;
+    const approvedTotals = financeApprovedTotals(doc, projectPlain || {});
     const commercialUnitsTotal = commercialUnits.length;
     const commercialUnitsSold = commercialUnits.filter(unit => isFinanceSoldLikeStatus(unit.commercialStatus)).length;
-    const project = projectRaw ? {
-      ...projectRaw,
+    const project = projectPlain ? {
+      ...projectPlain,
       loanApproved: approvedTotals.loanApproved,
       budgetApproved: approvedTotals.budgetApproved,
-      unitsTotal: toNum(projectRaw.unitsTotal) || commercialUnitsTotal,
-      unitsSold: toNum(projectRaw.unitsSold) || commercialUnitsSold,
+      unitsTotal: toNum(projectPlain.unitsTotal) || commercialUnitsTotal,
+      unitsSold: toNum(projectPlain.unitsSold) || commercialUnitsSold,
       financialConditions: {
-        ...(projectRaw.financialConditions || {}),
+        ...(projectPlain.financialConditions || {}),
         projectTotal: approvedTotals.budgetApproved,
         bankFinancedAmount: approvedTotals.loanApproved,
         promoterContribution: approvedTotals.promoterContribution
@@ -583,14 +626,16 @@ router.put('/projects/:projectId/finance/loan-lines', async (req, res) => {
       return res.status(400).json({ error: 'projectId invalido' });
     }
 
-    const doc = await getOrCreate(projectId);
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+
+    const doc = await getOrCreate(projectId, project.tenantKey);
     const lines = Array.isArray(req.body?.loanLines) ? req.body.loanLines : [];
     doc.loanLines = lines.map(normalizeLoanLine);
     await doc.save();
 
-    const project = await Project.findById(projectId).lean();
     const control = buildFinanceControlSummary(doc, project || {});
-    const commercialUnits = await getFinanceCommercialUnits(projectId, req.tenantKey);
+    const commercialUnits = await getFinanceCommercialUnits(projectId, project.tenantKey);
     console.log('[FINANCE] loan lines saved', { projectId, count: doc.loanLines.length });
     res.json({ ok: true, financeControl: control, alerts: buildFinanceControlAlerts(control, commercialUnits) });
   } catch (err) {
@@ -606,14 +651,16 @@ router.put('/projects/:projectId/finance/unit-amortizations', async (req, res) =
       return res.status(400).json({ error: 'projectId invalido' });
     }
 
-    const doc = await getOrCreate(projectId);
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+
+    const doc = await getOrCreate(projectId, project.tenantKey);
     const items = Array.isArray(req.body?.unitAmortizations) ? req.body.unitAmortizations : [];
     doc.unitAmortizations = items.map(normalizeUnitAmortization);
     await doc.save();
 
-    const project = await Project.findById(projectId).lean();
     const control = buildFinanceControlSummary(doc, project || {});
-    const commercialUnits = await getFinanceCommercialUnits(projectId, req.tenantKey);
+    const commercialUnits = await getFinanceCommercialUnits(projectId, project.tenantKey);
     console.log('[FINANCE] unit amortizations saved', { projectId, count: doc.unitAmortizations.length });
     res.json({ ok: true, financeControl: control, alerts: buildFinanceControlAlerts(control, commercialUnits) });
   } catch (err) {
@@ -655,7 +702,10 @@ router.post('/projects/:projectId/finance/phases', async (req, res) => {
       return res.status(400).json({ error: 'Faltan campos requeridos (name, startDate, endDate)' });
     }
 
-    const doc = await getOrCreate(projectId);
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+
+    const doc = await getOrCreate(projectId, project.tenantKey);
     doc.phases.push({
       name, startDate, endDate,
       actualStartDate, actualEndDate, isCompleted, completedAt,
@@ -679,7 +729,10 @@ router.post('/projects/:projectId/finance/phases', async (req, res) => {
 router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
   try {
     const { projectId, phaseId } = req.params;
-    const doc = await getOrCreate(projectId);
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+
+    const doc = await getOrCreate(projectId, project.tenantKey);
     const ph = doc.phases.id(phaseId);
     if (!ph) return res.status(404).json({ error: 'Fase no encontrada' });
     const hadActualDisbursement = toNum(ph.disbActual) > 0;
@@ -724,7 +777,10 @@ router.delete('/projects/:projectId/finance/phases/:phaseId', async (req, res) =
       return res.status(400).json({ error: 'IDs inválidos' });
     }
 
-    const doc = await getOrCreate(projectId);
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+
+    const doc = await getOrCreate(projectId, project.tenantKey);
     const exists = doc.phases.id(phaseId);
     if (!exists) return res.status(404).json({ error: 'Fase no encontrada' });
 
@@ -742,7 +798,10 @@ router.patch('/projects/:projectId/finance/phases/:phaseId/preventas', async (re
   try {
     const { projectId, phaseId } = req.params;
     const { delta = 0 } = req.body || {};
-    const doc = await getOrCreate(projectId);
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+
+    const doc = await getOrCreate(projectId, project.tenantKey);
     const ph = doc.phases.id(phaseId);
     if (!ph) return res.status(404).json({ error: 'Fase no encontrada' });
 
@@ -1393,10 +1452,12 @@ async function handleFinanceExport(req, res) {
 
     const { format, chart, charts } = normalizeExportBody(req);
 
-    const doc = await getOrCreate(projectId);
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+
+    const doc = await getOrCreate(projectId, project.tenantKey);
     const kpis = doc.kpis ? doc.kpis() : {};
 
-    const project = await Project.findById(projectId).lean().catch(() => null);
     const projectName = project?.name || 'Proyecto';
     const projectCurrency = project?.currency || 'PAB';
     const updatedAt = project?.updatedAt || doc?.updatedAt || new Date();

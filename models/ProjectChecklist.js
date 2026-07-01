@@ -99,6 +99,7 @@ function normalizeRole(v) {
    Schema principal
    ========================= */
 const ProjectChecklistSchema = new mongoose.Schema({
+  tenantKey:        { type: String, index: true },
   projectId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Project', index: true, required: true },
   templateKey:      { type: String }, // de qué casilla del PDF viene (trazabilidad)
   title:            { type: String, required: true },

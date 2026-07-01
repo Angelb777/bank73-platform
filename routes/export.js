@@ -6,6 +6,7 @@ const ExcelJS = require('exceljs');
 
 const Unit  = require('../models/Unit');
 const Venta = require('../models/Venta');
+const Project = require('../models/Project');
 
 // =========================
 // CSV (Excel ES) helpers
@@ -197,6 +198,11 @@ async function loadComercialData({ projectId, tenantKey }) {
   return rows;
 }
 
+async function validateTenantProject(projectId, tenantKey) {
+  if (!mongoose.Types.ObjectId.isValid(String(projectId || ''))) return null;
+  return Project.findOne({ _id: projectId, tenantKey }).select('_id').lean();
+}
+
 // =========================
 // ✅ CSV: /api/export/comercial.csv
 // =========================
@@ -206,6 +212,9 @@ router.get('/comercial.csv', async (req, res) => {
     if (!projectId) return res.status(400).json({ error: 'projectId requerido' });
 
     const tenantKey = req.tenantKey;
+    const project = await validateTenantProject(projectId, tenantKey);
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
     const rows = await loadComercialData({ projectId, tenantKey });
 
     // CSV: fechas a dd/mm/yyyy
@@ -255,6 +264,9 @@ router.get('/comercial.xlsx', async (req, res) => {
     if (!projectId) return res.status(400).json({ error: 'projectId requerido' });
 
     const tenantKey = req.tenantKey;
+    const project = await validateTenantProject(projectId, tenantKey);
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
     const rows = await loadComercialData({ projectId, tenantKey });
 
     const wb = new ExcelJS.Workbook();

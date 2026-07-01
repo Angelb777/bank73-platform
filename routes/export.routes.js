@@ -43,14 +43,14 @@ function boolText(v) {
   return v ? 'Sí' : 'No';
 }
 
-async function getUnitVenta(unitId) {
-  const unit = await Unit.findById(unitId).lean();
+async function getUnitVenta(unitId, tenantKey) {
+  const unit = await Unit.findOne({ _id: unitId, tenantKey }).lean();
   if (!unit) return { error: 'Unidad no encontrada' };
 
-  const venta = await Venta.findOne({ unitId: unit._id }).lean();
+  const venta = await Venta.findOne({ tenantKey, unitId: unit._id }).lean();
   if (!venta) return { error: 'Venta no encontrada' };
 
-  const project = unit.projectId ? await Project.findById(unit.projectId).select('currency').lean() : null;
+  const project = unit.projectId ? await Project.findOne({ _id: unit.projectId, tenantKey }).select('currency').lean() : null;
 
   return { unit, venta, currency: project?.currency || 'PAB' };
 }
@@ -211,7 +211,7 @@ function signatureArea(doc) {
    ========================================================================= */
 router.get('/ficha-cliente/:unitId', async (req, res) => {
   try {
-    const result = await getUnitVenta(req.params.unitId);
+    const result = await getUnitVenta(req.params.unitId, req.tenantKey);
     if (result.error) return res.status(404).json({ error: result.error });
 
     const { unit, venta, currency } = result;
@@ -391,7 +391,7 @@ for (let i = 0; i < range.count; i++) {
    ========================================================================= */
 router.get('/proforma/:unitId', async (req, res) => {
   try {
-    const result = await getUnitVenta(req.params.unitId);
+    const result = await getUnitVenta(req.params.unitId, req.tenantKey);
     if (result.error) return res.status(404).json({ error: result.error });
 
     const { unit, venta, currency } = result;
