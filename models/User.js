@@ -137,6 +137,7 @@ function calculatePromoterCategory(profile = {}) {
 const userSchema = new mongoose.Schema(
   {
     tenantKey: { type: String, index: true },
+    tenantKeys: [{ type: String, trim: true }],
 
     name: String,
     email: { type: String, index: true, unique: false },
@@ -168,6 +169,14 @@ const userSchema = new mongoose.Schema(
 
 // Normaliza a minúsculas por seguridad
 userSchema.pre('validate', function (next) {
+  if (this.tenantKey) {
+    const values = Array.isArray(this.tenantKeys) ? this.tenantKeys : [];
+    this.tenantKeys = Array.from(new Set([
+      String(this.tenantKey).trim(),
+      ...values.map(v => String(v || '').trim())
+    ].filter(Boolean)));
+  }
+
   if (this.role) this.role = String(this.role).toLowerCase();
   if (this.roleRequested) this.roleRequested = String(this.roleRequested).toLowerCase();
 

@@ -14,7 +14,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/milestones
-router.post('/', requireRoles('bank', 'promoter'), async (req, res) => {
+router.post('/', requireRoles('admin', 'promoter'), async (req, res) => {
   const { projectId } = req.body || {};
   if (!projectId) return res.status(400).json({ error: 'projectId requerido' });
 

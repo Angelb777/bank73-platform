@@ -203,6 +203,20 @@ body.light-theme .btn-ghost {
   transform: translateY(1px);
 }
 
+.dashboard-nav-button {
+  --dashboard-button-size: 46px;
+  --dashboard-icon-size: 40px;
+  width: var(--dashboard-button-size);
+  min-width: var(--dashboard-button-size);
+  height: var(--dashboard-button-size);
+}
+
+.dashboard-nav-button svg {
+  width: var(--dashboard-icon-size);
+  height: var(--dashboard-icon-size);
+  display: block;
+}
+
 .alert-toggle {
   position: relative;
 }
@@ -694,6 +708,10 @@ body.light-theme .tabs .tab.active {
     padding: 0;
     font-size: 15px;
     flex-shrink: 0;
+  }
+  .dashboard-nav-button {
+    --dashboard-button-size: 42px;
+    --dashboard-icon-size: 27px;
   }
 }
 

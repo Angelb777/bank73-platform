@@ -108,7 +108,7 @@ function renderRoleOptions(selected = '') {
     location.href = '/pending.html';
     return;
   }
-  if (roleL !== 'admin') {
+  if (roleL !== 'admin' && roleL !== 'bank') {
     location.href = '/portfolio';
     return;
   }
@@ -218,6 +218,137 @@ if (roleSelectDefault) {
     return data;
   }
 
+  if (roleL === 'bank') {
+    await initBankDashboard();
+    return;
+  }
+
+  async function initBankDashboard() {
+    const workspace = document.getElementById('adminWorkspace');
+    const notAdmin = document.getElementById('notAdmin');
+    if (workspace) workspace.style.display = '';
+    if (notAdmin) notAdmin.style.display = 'none';
+
+    document.querySelector('[data-admin-tab="pending"]')?.remove();
+    document.querySelector('[data-admin-tab="payments"]')?.remove();
+    document.querySelector('[data-admin-panel="pending"]')?.remove();
+    document.querySelector('[data-admin-panel="payments"]')?.remove();
+
+    const tabs = Array.from(document.querySelectorAll('[data-admin-tab]'));
+    const panels = Array.from(document.querySelectorAll('[data-admin-panel]'));
+    tabs.forEach(btn => btn.classList.toggle('active', btn.dataset.adminTab === 'projects'));
+    panels.forEach(panel => panel.classList.toggle('active', panel.dataset.adminPanel === 'projects'));
+
+    const who = document.getElementById('whoami');
+    if (who) who.textContent = `BANK · ${tenant}`;
+    const brand = document.querySelector('.brand');
+    if (brand) brand.textContent = 'Dashboard banco · Bank73';
+
+    document.querySelectorAll('[data-project-assign], [data-project-edit], [data-project-delete], [data-project-approve], [data-project-reject]')
+      .forEach(el => el.remove());
+
+    if (usersStatusFilter) usersStatusFilter.style.display = 'none';
+    if (usersSearch) usersSearch.placeholder = 'Buscar usuarios del banco...';
+    if (refreshAllProjectsBtn) refreshAllProjectsBtn.textContent = 'Refrescar';
+
+    const usersHead = document.querySelector('#usersTable thead tr');
+    if (usersHead) {
+      usersHead.innerHTML = '<th>Nombre</th><th>Email</th><th>Rol</th><th>Estado</th><th>Bancos</th>';
+    }
+    const projectsHead = document.querySelector('#allProjectsTable thead tr');
+    if (projectsHead) {
+      projectsHead.innerHTML = '<th>Proyecto</th><th>Descripcion</th><th>Publicacion</th><th>Promotores</th><th>Comercial</th><th>Acciones</th>';
+    }
+
+    function renderBankUsers(list = []) {
+      if (!usersTbody) return;
+      const q = String(usersSearch?.value || '').toLowerCase().trim();
+      const rows = list.filter(u => !q || `${u.name || ''} ${u.email || ''} ${u.role || ''}`.toLowerCase().includes(q));
+      usersLastTotal = rows.length;
+      if (usersPagerInfo) usersPagerInfo.textContent = pagerText(1, rows.length, rows.length || 1, 'usuarios');
+      if (usersPrev) usersPrev.disabled = true;
+      if (usersNext) usersNext.disabled = true;
+      usersTbody.innerHTML = rows.length ? rows.map(u => {
+        const st = userStatus(u);
+        const banks = Array.isArray(u.tenantKeys) && u.tenantKeys.length ? u.tenantKeys : [u.tenantKey || tenant];
+        return `
+          <tr>
+            <td>${escapeHtml(u.name || '-')}</td>
+            <td>${escapeHtml(u.email || '-')}</td>
+            <td><code>${escapeHtml(u.role || '-')}</code></td>
+            <td><span class="badge ${escapeHtml(st)}">${escapeHtml(st.toUpperCase())}</span></td>
+            <td>${escapeHtml(banks.join(', '))}</td>
+          </tr>
+        `;
+      }).join('') : '<tr><td class="muted" colspan="5">No hay usuarios relacionados.</td></tr>';
+    }
+
+    function renderBankProjects(list = [], users = []) {
+      if (!allProjectsTbody) return;
+      const userMap = new Map(users.map(u => [String(u._id), u.name || u.email || String(u._id)]));
+      const q = String(allProjectsSearch?.value || '').toLowerCase().trim();
+      const filtered = list.filter(p => !q || `${p.name || ''} ${p.description || ''}`.toLowerCase().includes(q));
+      allProjectsLastTotal = filtered.length;
+      if (allProjectsPagerInfo) allProjectsPagerInfo.textContent = pagerText(1, filtered.length, filtered.length || 1, 'proyectos');
+      if (allProjectsPrev) allProjectsPrev.disabled = true;
+      if (allProjectsNext) allProjectsNext.disabled = true;
+      allProjectsTbody.innerHTML = filtered.length ? filtered.map(p => {
+        const st = String(p.publishStatus || 'approved').toLowerCase();
+        const proms = (p.assignedPromoters || []).map(id => userMap.get(String(id))).filter(Boolean);
+        const comms = (p.assignedCommercials || []).map(id => userMap.get(String(id))).filter(Boolean);
+        return `
+          <tr>
+            <td>${escapeHtml(p.name || '-')}</td>
+            <td>${escapeHtml(p.description || '-')}</td>
+            <td><span class="badge ${escapeHtml(st)}">${escapeHtml(st.toUpperCase())}</span></td>
+            <td>${proms.length ? escapeHtml(proms.join(', ')) : '<span class="muted">-</span>'}</td>
+            <td>${comms.length ? escapeHtml(comms.join(', ')) : '<span class="muted">-</span>'}</td>
+            <td><a class="btn small" href="/project?id=${encodeURIComponent(p._id)}&ref=bank">Abrir</a></td>
+          </tr>
+        `;
+      }).join('') : '<tr><td class="muted" colspan="6">No hay proyectos aprobados para este banco.</td></tr>';
+    }
+
+    function renderBankLogs(logs = [], metrics = {}) {
+      if (auditTotal) auditTotal.textContent = String(metrics.projects || 0);
+      if (auditFailures) auditFailures.textContent = String(metrics.users || 0);
+      if (auditDocs) auditDocs.textContent = String(metrics.documents || 0);
+      if (auditLatest) auditLatest.textContent = logs[0]?.createdAt ? formatTimeAgo(logs[0].createdAt) : '-';
+      if (!auditTbody) return;
+      auditTbody.innerHTML = logs.length ? logs.map(log => {
+        const status = String(log.status || 'success').toLowerCase();
+        return `
+          <tr>
+            <td>${escapeHtml(formatShortDate(log.createdAt))}</td>
+            <td>${escapeHtml(log.action || '-')}</td>
+            <td>${escapeHtml(log.actorEmail || '-')}</td>
+            <td><span class="badge audit-status ${escapeHtml(status)}">${escapeHtml(status)}</span></td>
+            <td>${escapeHtml(targetText(log))}</td>
+            <td>${escapeHtml(log.ip || '-')}</td>
+            <td class="audit-detail">${escapeHtml(detailText(log))}</td>
+          </tr>
+        `;
+      }).join('') : '<tr><td colspan="7" class="muted">No hay actividad reciente.</td></tr>';
+    }
+
+    async function loadBankDashboard() {
+      const data = await xfetch('/api/bank/dashboard');
+      renderBankUsers(data.users || []);
+      renderBankProjects(data.projects || [], data.users || []);
+      renderBankLogs(data.logs || [], data.metrics || {});
+      window.__bankDashboard = data;
+    }
+
+    refreshUsers?.addEventListener('click', loadBankDashboard);
+    refreshAllProjectsBtn?.addEventListener('click', loadBankDashboard);
+    refreshAuditLogsBtn?.addEventListener('click', loadBankDashboard);
+    usersSearch?.addEventListener('input', () => renderBankUsers(window.__bankDashboard?.users || []));
+    allProjectsSearch?.addEventListener('input', () => renderBankProjects(window.__bankDashboard?.projects || [], window.__bankDashboard?.users || []));
+    allProjectsFilter?.addEventListener('change', () => renderBankProjects(window.__bankDashboard?.projects || [], window.__bankDashboard?.users || []));
+
+    await loadBankDashboard();
+  }
+
   // ---------- Normalizadores ----------
   function userStatus(u) {
     const s = (u.status || '').toLowerCase();
@@ -254,6 +385,12 @@ if (roleSelectDefault) {
     return xfetch(`/api/admin/users/${id}/promoter-profile`, {
       method: 'PATCH',
       body: JSON.stringify({ promoterProfile })
+    });
+  }
+  async function apiUpdateUserTenants(id, tenantKeys) {
+    return xfetch(`/api/admin/users/${id}/tenants`, {
+      method: 'PATCH',
+      body: JSON.stringify({ banks: tenantKeys })
     });
   }
 
@@ -334,6 +471,76 @@ async function apiAssignProject(id, assignmentsOrLegacy, modoFlexible = false) {
   }
   function normalize(s) { return (s || '').toString().toLowerCase(); }
 
+  function bankTenantKey(value = '') {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80);
+  }
+
+  function bankOptionList() {
+    const banks = Array.isArray(window.BANKS_PANAMA) ? window.BANKS_PANAMA : [];
+    return ['bancodemo', ...banks];
+  }
+
+  function bankItemForTenant(value = '') {
+    const key = bankTenantKey(value);
+    const known = bankOptionList().find(bank => bankTenantKey(bank) === key);
+    return {
+      key,
+      value: known || value,
+      label: known || value
+    };
+  }
+
+  function renderBankTenantOptions() {
+    return [
+      '<option value="">Seleccionar banco...</option>',
+      ...bankOptionList().map(bank => `<option value="${escapeHtml(bank)}">${escapeHtml(bank)}</option>`)
+    ].join('');
+  }
+
+  function renderBankTenantChips(selected = []) {
+    const seen = new Set();
+    return (selected || []).map(bankItemForTenant).filter(item => {
+      if (!item.key || seen.has(item.key)) return false;
+      seen.add(item.key);
+      return true;
+    }).map(item => `
+      <span class="bank-chip" data-bank-key="${escapeHtml(item.key)}" data-bank-value="${escapeHtml(item.value)}">
+        <span title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
+        <button type="button" data-user-tenants-remove aria-label="Quitar ${escapeHtml(item.label)}">×</button>
+      </span>
+    `).join('');
+  }
+
+  function selectedBankValues(id) {
+    const picker = document.querySelector(`[data-user-tenants-picker="${CSS.escape(id)}"]`);
+    return Array.from(picker?.querySelectorAll('[data-bank-value]') || [])
+      .map(el => el.getAttribute('data-bank-value'))
+      .filter(Boolean);
+  }
+
+  function addBankValue(id, value) {
+    const picker = document.querySelector(`[data-user-tenants-picker="${CSS.escape(id)}"]`);
+    const chips = picker?.querySelector('[data-bank-chips]');
+    if (!chips || !value) return;
+    const item = bankItemForTenant(value);
+    if (!item.key || chips.querySelector(`[data-bank-key="${CSS.escape(item.key)}"]`)) return;
+    const chip = document.createElement('span');
+    chip.className = 'bank-chip';
+    chip.setAttribute('data-bank-key', item.key);
+    chip.setAttribute('data-bank-value', item.value);
+    chip.innerHTML = `
+      <span title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
+      <button type="button" data-user-tenants-remove aria-label="Quitar ${escapeHtml(item.label)}">×</button>
+    `;
+    chips.appendChild(chip);
+  }
+
   function maxPageFor(total, pageSize) {
     return Math.max(1, Math.ceil(Number(total || 0) / pageSize));
   }
@@ -386,6 +593,16 @@ function promoterProfileCell(u = {}) {
     <div class="promoter-profile-cell">
       ${lines ? `<div>${lines}</div>` : ''}
       <button class="btn small promoter-profile-action" data-user-promoter-profile="${u._id}">Ver/editar perfil</button>
+    </div>
+  `;
+}
+
+function userRoleCell(u = {}) {
+  const profile = isPromoterLikeUser(u) ? promoterProfileCell(u) : '';
+  return `
+    <div class="user-role-cell">
+      <code>${escapeHtml(u.role || '-')}</code>
+      ${profile}
     </div>
   `;
 }
@@ -577,7 +794,7 @@ function applyProjectsFilters(list) {
     if (usersNext) usersNext.disabled = usersPage >= maxPageFor(usersLastTotal, usersPageSize);
 
     if (!list.length) {
-      usersTbody.innerHTML = `<tr><td class="muted" colspan="8">No hay usuarios.</td></tr>`;
+      usersTbody.innerHTML = `<tr><td class="muted" colspan="6">No hay usuarios.</td></tr>`;
       return;
     }
     let myId = null;
@@ -585,15 +802,34 @@ function applyProjectsFilters(list) {
 
     slicePage(list, usersPage, usersPageSize).forEach((u) => {
       const st = userStatus(u);
+      const banks = Array.isArray(u.tenantKeys) && u.tenantKeys.length ? u.tenantKeys : [u.tenantKey || tenant];
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${u.name || '-'}</td>
-        <td>${u.email}</td>
-        <td><code>${u.role || '-'}</code></td>
-        <td>${u.requestedAt ? new Date(u.requestedAt).toLocaleString() : '-'}</td>
+        <td>
+          <div class="user-main-cell">
+            <strong>${escapeHtml(u.name || '-')}</strong>
+            <span>${escapeHtml(u.email || '-')}</span>
+          </div>
+        </td>
+        <td>${userRoleCell(u)}</td>
         <td><span class="badge ${st}">${st.toUpperCase()}</span></td>
         <td>${u.createdAt ? new Date(u.createdAt).toLocaleString() : '-'}</td>
-        <td>${promoterProfileCell(u)}</td>
+        <td>
+          <div class="bank-picker" data-user-tenants-picker="${u._id}">
+            <div class="bank-picker-row">
+              <select class="input" data-user-tenants-input="${u._id}" title="Añadir banco">
+                ${renderBankTenantOptions()}
+              </select>
+            </div>
+            <div class="bank-chips" data-bank-chips>
+              ${renderBankTenantChips(banks)}
+            </div>
+            <div class="bank-picker-actions">
+              <button class="btn small" data-user-tenants-add="${u._id}" type="button" title="Añadir banco" aria-label="Añadir banco">+</button>
+              <button class="btn small bank-picker-save" data-user-tenants-save="${u._id}" type="button">Guardar</button>
+            </div>
+          </div>
+        </td>
         <td>
           <div class="actions">
             ${st==='pending'
@@ -1868,6 +2104,36 @@ function applyProjectsFilters(list) {
       return;
     }
 
+    const tenantsAddBtn = e.target.closest?.('button[data-user-tenants-add]');
+    if (tenantsAddBtn) {
+      const id = tenantsAddBtn.getAttribute('data-user-tenants-add');
+      const input = document.querySelector(`[data-user-tenants-input="${CSS.escape(id)}"]`);
+      addBankValue(id, input?.value || '');
+      if (input) input.value = '';
+      return;
+    }
+
+    const tenantsRemoveBtn = e.target.closest?.('button[data-user-tenants-remove]');
+    if (tenantsRemoveBtn) {
+      tenantsRemoveBtn.closest('[data-bank-key]')?.remove();
+      return;
+    }
+
+    const tenantsSaveBtn = e.target.closest?.('button[data-user-tenants-save]');
+    if (tenantsSaveBtn) {
+      const id = tenantsSaveBtn.getAttribute('data-user-tenants-save');
+      const tenantKeys = selectedBankValues(id);
+      tenantsSaveBtn.disabled = true;
+      try {
+        await apiUpdateUserTenants(id, tenantKeys);
+        await loadUsers();
+      } catch (err) {
+        tenantsSaveBtn.disabled = false;
+        alert(err.message || 'No se pudieron guardar los bancos');
+      }
+      return;
+    }
+
     // ---- Usuarios: aprobar ----
     const approveBtn = e.target.closest?.('button.approve');
     if (approveBtn) {
@@ -2192,6 +2458,14 @@ if (pAssign && assignModal && assignProjectNameEl) {
 
   // Cambio de rol inline en listado general (usuarios activos)
   document.addEventListener('change', async (e) => {
+    const bankSel = e.target.closest?.('select[data-user-tenants-input]');
+    if (bankSel) {
+      const id = bankSel.getAttribute('data-user-tenants-input');
+      addBankValue(id, bankSel.value || '');
+      bankSel.value = '';
+      return;
+    }
+
     const sel = e.target.closest?.('select.role-inline');
     if (!sel) return;
     const id = sel.getAttribute('data-id');

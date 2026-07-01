@@ -1,12 +1,15 @@
 // routes/finance.js
 const express = require('express');
 const router = express.Router();
+const bankReadOnly = require('../middleware/bankReadOnly');
 const mongoose = require('mongoose');
 
 const ProjectFinance = require('../models/ProjectFinance');
 const Project = require('../models/Project');
 const Unit = require('../models/Unit');
 const Venta = require('../models/Venta');
+
+router.use(bankReadOnly);
 
 const fs   = require('fs');
 const path = require('path');

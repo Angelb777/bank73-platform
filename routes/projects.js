@@ -1345,7 +1345,7 @@ router.get('/assignees', requireRole('admin','bank'), async (req, res) => {
    ========================================================================= */
 
 // POST /api/projects
-router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
+router.post('/', requireRole('admin','promoter'), async (req, res) => {
   try {
     const tenantKey = req.tenantKey;
     const body = { ...req.body, tenantKey };
@@ -1524,7 +1524,7 @@ router.get('/:id/checklists', requireProjectAccess({ commercialOnlySales: false 
 // PUT /api/projects/:id
 // - admin: puede editar nombre, descripción, KPIs y status (como antes)
 // - bank:  solo puede cambiar el status del proyecto
-router.put('/:id', requireRole('admin','bank'), async (req, res) => {
+router.put('/:id', requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
     const tenantKey = req.tenantKey;
@@ -1708,7 +1708,7 @@ router.put('/:id', requireRole('admin','bank'), async (req, res) => {
   }
 });
 
-router.delete('/:id', requireRole('admin','bank'), async (req, res) => {
+router.delete('/:id', requireRole('admin'), async (req, res) => {
   const del = await Project.findOneAndDelete({ _id: req.params.id, tenantKey: req.tenantKey });
   if (!del) return res.status(404).json({ error: 'Proyecto no encontrado' });
   await audit(req, 'project.deleted', {
@@ -1725,7 +1725,7 @@ router.delete('/:id', requireRole('admin','bank'), async (req, res) => {
 // Body admite:
 // 1) genérico: { assignments: { promoter:[], commercial:[], legal:[], tecnico:[], gerencia:[], socios:[], financiero:[], contable:[] } }
 // 2) legacy:   { promoters, commercials, legal, tecnico, gerencia, socios, financiero, contable }
-router.put('/:id/assign', requireRole('admin','bank'), async (req, res) => {
+router.put('/:id/assign', requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
     const tenantKey = req.tenantKey;
@@ -4998,7 +4998,7 @@ const upload = multer({
 // POST /api/projects/:id/import-dato-unico
 router.post(
   '/:id/import-dato-unico',
-  requireRole('admin', 'bank'),
+  requireRole('admin'),
   requireProjectAccess(),
   upload.single('file'),
   async (req, res) => {

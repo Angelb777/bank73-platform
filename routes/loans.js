@@ -34,7 +34,7 @@ router.get('/:projectId', async (req, res) => {
 });
 
 // POST /api/loans/:projectId/disburse  { amount }
-router.post('/:projectId/disburse', requireRoles('bank'), async (req, res) => {
+router.post('/:projectId/disburse', requireRoles('admin'), async (req, res) => {
   const amount = Number(req.body?.amount || 0);
   if (!amount || amount <= 0) return res.status(400).json({ error: 'Monto invalido' });
 

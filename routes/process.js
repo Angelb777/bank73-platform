@@ -10,6 +10,9 @@ const mongoose = require('mongoose');
 const ProjectChecklist = require('../models/ProjectChecklist');
 const Project = require('../models/Project');
 const { requireRole } = require('../middleware/rbac');
+const bankReadOnly = require('../middleware/bankReadOnly');
+
+router.use(bankReadOnly);
 
 // ===== Helpers generales =====
 const DELETE_PIN = process.env.PROCESS_DELETE_PIN || '2580';

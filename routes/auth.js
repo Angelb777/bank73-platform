@@ -109,7 +109,8 @@ router.post('/login', async (req, res) => {
               name: 'Administrador',
               password: hashPassword(admPass),
               role: 'admin',
-              status: 'active'
+              status: 'active',
+              tenantKeys: [tenantKey]
             },
             $setOnInsert: { tenantKey, email: admEmail }
           },
@@ -157,7 +158,13 @@ router.post('/login', async (req, res) => {
 
     // 👇 FIRMA el token con el mismo tenantKey calculado
     const token = jwt.sign(
-      { userId: user._id.toString(), role: user.role, status: user.status, tenantKey },
+      {
+        userId: user._id.toString(),
+        role: user.role,
+        status: user.status,
+        tenantKey,
+        tenantKeys: user.tenantKeys || (tenantKey ? [tenantKey] : [])
+      },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
@@ -176,6 +183,9 @@ router.post('/login', async (req, res) => {
       token,
       role: user.role,
       status: user.status,
+      userId: user._id.toString(),
+      tenantKey,
+      tenantKeys: user.tenantKeys || (tenantKey ? [tenantKey] : []),
       name: user.name,
       email: user.email
     });
@@ -218,7 +228,8 @@ if (!allowedRequested.includes(requested)) {
       password: hashPassword(password),
       role: 'bank',               // ROLE-SEP: valor por defecto del schema, no habilita acceso
       status: 'pending',          // ROLE-SEP: pendiente hasta aprobación de admin
-      roleRequested: requested    // ROLE-SEP
+      roleRequested: requested,    // ROLE-SEP
+      tenantKeys: [req.tenantKey]
     };
 
     if (requested === 'promoter' && (req.body?.promoterProfile || req.body?.perfilPromotor)) {
@@ -268,6 +279,7 @@ router.get('/me', auth, async (req, res) => {
       role: user.role,       // ROLE-SEP
       status: user.status,   // ROLE-SEP
       tenantKey: user.tenantKey,
+      tenantKeys: user.tenantKeys || (user.tenantKey ? [user.tenantKey] : []),
       promoterProfile: user.promoterProfile || null,
       promoterCategory: user.promoterCategory || 'No definido',
       promoterProfileCompletion: promoterProfileCompletion(user.promoterProfile || {})

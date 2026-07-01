@@ -14,6 +14,7 @@ const jwt = require('jsonwebtoken');
 const authMw = require('./middleware/auth');
 const { requireActiveUser } = require('./middleware/auth');
 const errorMw = require('./middleware/error');
+const bankReadOnly = require('./middleware/bankReadOnly');
 const audit = require('./utils/audit');
 
 // Rutas
@@ -37,6 +38,7 @@ const importWordRoutes = require('./routes/import-word.routes');
 
 const permitRoutes = require('./routes/permits');
 const chatRoutes = require('./routes/chat');
+const bankRoutes = require('./routes/bank');
 
 const app = express();
 
@@ -218,25 +220,28 @@ app.use('/api/auth', authLimiter, authRoutes);
 const guard = [authMw, requireActiveUser];
 
 // ✅ 1) Projects primero
-app.use('/api/projects', ...guard, projectRoutes);
+app.use('/api/projects', ...guard, bankReadOnly, projectRoutes);
 
 // ✅ 2) IMPORTANTÍSIMO: monta processRoutes también bajo /api/projects
 //    para que /api/projects/:id/process/apply-template NO se quede atrapado en projectRoutes
 app.use('/api/projects', ...guard, processRoutes);
 
 // Resto igual
-app.use('/api/milestones', ...guard, milestoneRoutes);
+app.use('/api/milestones', ...guard, bankReadOnly, milestoneRoutes);
 app.use('/api/documents/upload', uploadLimiter);
-app.use('/api/documents', ...guard, documentRoutes);
-app.use('/api/loans', ...guard, loanRoutes);
+app.use('/api/documents', ...guard, bankReadOnly, documentRoutes);
+app.use('/api/loans', ...guard, bankReadOnly, loanRoutes);
 app.use('/api/budget', ...guard, budgetRoutes);
-app.use('/api/inventory', ...guard, inventoryRoutes);
+app.use('/api/inventory', ...guard, bankReadOnly, inventoryRoutes);
 
 // Finanzas
 app.use('/api', ...guard, financeRoutes);
 
 // Admin
 app.use('/api/admin', ...guard, adminRoutes);
+
+// Bank dashboard read-only
+app.use('/api/bank', ...guard, bankRoutes);
 
 if (!isProd) console.log('[MOUNT] /api/permits routes mounted ✅');
 
@@ -247,22 +252,22 @@ app.use('/api/permits', (req, _res, next) => {
 });
 
 // Permisos
-app.use('/api/permits', ...guard, permitRoutes);
+app.use('/api/permits', ...guard, bankReadOnly, permitRoutes);
 
 // ✅ 3) Mantén processRoutes también en /api para /api/process/templates/active
 app.use('/api', ...guard, processRoutes);
 
 // Comercial
-app.use('/api/units', ...guard, unitsRoutes);
-app.use('/api/commercial-folders', ...guard, commercialFolderRoutes);
+app.use('/api/units', ...guard, bankReadOnly, unitsRoutes);
+app.use('/api/commercial-folders', ...guard, bankReadOnly, commercialFolderRoutes);
 
 // ✅ NUEVO: subcarpetas documentales por unidad
-app.use('/api/unit-doc-folders', ...guard, unitDocFolderRoutes);
+app.use('/api/unit-doc-folders', ...guard, bankReadOnly, unitDocFolderRoutes);
 
-app.use('/api/export', ...guard, exportRoutes);
+app.use('/api/export', ...guard, bankReadOnly, exportRoutes);
 app.use('/api/export-pdf', ...guard, exportPdfRoutes);
-app.use('/api/ventas', ...guard, ventasRoutes);
-app.use('/api/import-word', uploadLimiter, ...guard, importWordRoutes);
+app.use('/api/ventas', ...guard, bankReadOnly, ventasRoutes);
+app.use('/api/import-word', uploadLimiter, ...guard, bankReadOnly, importWordRoutes);
 
 // Chat
 app.use('/api/chat', ...guard, chatRoutes);

@@ -42,7 +42,7 @@
     const r = String(role || '').toLowerCase();
     const s = String(status || '').toLowerCase();
     if (s && s !== 'active') { location.href = '/pending.html'; return; } // ROLE-SEP
-    location.href = (r === 'admin') ? '/dashboard' : '/portfolio';        // ROLE-SEP
+    location.href = (r === 'admin' || r === 'bank') ? '/dashboard' : '/portfolio';        // ROLE-SEP
   }
 
   // 👁️ Mostrar/ocultar contraseña
@@ -86,7 +86,10 @@
         if (!resp.ok || out.error) throw new Error(out.error || 'Credenciales inválidas');
 
         // Esperamos: { token, role: 'admin'|'bank'|'promoter'|'commercial', status: 'active' }
-        setAuth(out.token, out.role, out.status);                         // ROLE-SEP
+        setAuth(out.token, out.role, out.status, {
+          userId: out.userId,
+          tenantKeys: out.tenantKeys || (out.tenantKey ? [out.tenantKey] : [])
+        });                         // ROLE-SEP
         go(out.role, out.status);                                         // ROLE-SEP
       } catch (e) {
         if (msg) { msg.textContent = e.message || 'Credenciales inválidas'; msg.style.color = 'salmon'; }

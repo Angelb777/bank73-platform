@@ -33,6 +33,11 @@ const currentUser = {
   role:   (localStorage.getItem('role')   || '').toLowerCase().trim(),
   status: (localStorage.getItem('status') || '').toLowerCase().trim()
 };
+const projectDashboardBtn = document.getElementById('projectDashboardBtn');
+if (projectDashboardBtn && ['admin', 'bank'].includes(currentUser.role)) {
+  projectDashboardBtn.style.display = '';
+  projectDashboardBtn.addEventListener('click', () => { location.href = '/dashboard'; });
+}
 
 // Flag global (se setea tras cargar el proyecto)
 window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no aprobado
@@ -1594,7 +1599,7 @@ function syncPartialProyectoUI() {
 
 
 function applyRoleVisibility() {                                // ROLE-SEP
-  const isAdminOrBank = (myRole === 'admin' || myRole === 'bank');
+  const isAdminOrBank = (myRole === 'admin');
   const isFull = FULL_ACCESS_ROLES.includes(myRole);            // <- clave
 
   // Mapas de tabs (botones y panes)
@@ -4373,6 +4378,7 @@ function semaphoreForRole(roleKey) {
   }
 
   async function saveProjectSettingsAuto() {
+    if (myRole === 'bank') return;
     if (isProjectSettingsSaving) return;
     isProjectSettingsSaving = true;
     const previousCurrency = currentProjectCurrency;
@@ -4777,7 +4783,7 @@ return {
         alert('Este checklist está bloqueado hasta validar los anteriores de la fase (o desbloquéalo manualmente tocando la tarjeta).');
         return;
       }
-      const canValidate = (myRole === 'admin' || myRole === 'bank' || myRole === 'gerencia');
+      const canValidate = (myRole === 'admin' || myRole === 'gerencia');
       if (!canValidate) return alert('Solo Banco/Admin/Gerencia pueden validar.');
       await API.post(`/api/checklists/${idCL}/validate`, { validated: true })
         .catch(() => API.put(`/api/checklists/${idCL}`, { validated: true }));

@@ -7,15 +7,34 @@ const API = (() => {
   'bancodemo';
 
 
-  function setAuth(token, role) {
+  function setAuth(token, role, status, extra = {}) {
     localStorage.setItem(tokenKey, token);
     localStorage.setItem(roleKey, role);
+    if (status) localStorage.setItem('status', String(status).toLowerCase());
+    if (extra.userId) localStorage.setItem('userId', extra.userId);
+    if (Array.isArray(extra.tenantKeys)) localStorage.setItem('tenantKeys', JSON.stringify(extra.tenantKeys));
   }
   function getToken() { return localStorage.getItem(tokenKey); }
   function getRole()  { return localStorage.getItem(roleKey); }
+  function getAuth() {
+    let tenantKeys = [];
+    try { tenantKeys = JSON.parse(localStorage.getItem('tenantKeys') || '[]'); } catch (_) {}
+    return {
+      token: getToken(),
+      role: getRole(),
+      status: localStorage.getItem('status'),
+      tenant: localStorage.getItem('tenantKey') || TENANT,
+      tenantKey: localStorage.getItem('tenantKey') || TENANT,
+      tenantKeys,
+      userId: localStorage.getItem('userId')
+    };
+  }
   function clearAuth() {
     localStorage.removeItem(tokenKey);
     localStorage.removeItem(roleKey);
+    localStorage.removeItem('status');
+    localStorage.removeItem('userId');
+    localStorage.removeItem('tenantKeys');
   }
   function setTenant(t) { localStorage.setItem('tenantKey', t); }
 
@@ -63,7 +82,7 @@ const API = (() => {
   const delSilent  = (p, opts)         => request(p, { method:'DELETE', silent:true, ...opts });
 
   return {
-    setAuth, getToken, getRole, clearAuth,
+    setAuth, getAuth, getToken, getRole, clearAuth,
     get, post, put, patch, del, upload, setTenant,
     getSilent, postSilent, putSilent, patchSilent, delSilent,
     logout: () => clearAuth()

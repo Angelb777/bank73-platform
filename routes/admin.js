@@ -2,6 +2,7 @@
 const express = require('express');
 const User = require('../models/User');
 const Project = require('../models/Project'); // ROLE-SEP
+const Tenant = require('../models/Tenant');
 const AuditLog = require('../models/AuditLog');
 const { requireRole } = require('../middleware/rbac'); // ROLE-SEP
 const audit = require('../utils/audit');
@@ -64,6 +65,48 @@ function sanitizePromoterProfile(input = {}) {
   };
 }
 
+function sanitizeTenantKeys(input, fallbackTenantKey) {
+  const raw = Array.isArray(input)
+    ? input
+    : String(input || '').split(/\r?\n|,/);
+  return Array.from(new Set([
+    fallbackTenantKey,
+    ...raw
+  ].map(v => String(v || '').trim()).filter(Boolean))).slice(0, 50);
+}
+
+function tenantKeyFromBankName(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+}
+
+async function ensureBankTenants(input = []) {
+  const raw = Array.isArray(input) ? input : [];
+  const out = [];
+  const seen = new Set();
+
+  for (const item of raw) {
+    const name = String(item?.name || item?.label || item || '').trim();
+    const tenantKey = String(item?.tenantKey || tenantKeyFromBankName(name)).trim();
+    if (!tenantKey || seen.has(tenantKey)) continue;
+    seen.add(tenantKey);
+
+    await Tenant.findOneAndUpdate(
+      { tenantKey },
+      { $setOnInsert: { tenantKey, name: name || tenantKey } },
+      { upsert: true, new: true }
+    );
+    out.push(tenantKey);
+  }
+
+  return out;
+}
+
 // ROLE-SEP: Todas estas rutas requieren rol admin (además de auth y tenant previos en server.js)
 router.use(requireRole('admin')); // ROLE-SEP
 
@@ -115,7 +158,7 @@ router.get('/audit-logs', async (req, res) => {
 // ROLE-SEP: GET /api/admin/users?status=pending   -> lista de usuarios del tenant (filtrable por status)
 router.get('/users', async (req, res) => {
   try {
-    const q = { tenantKey: req.tenantKey };
+    const q = { $or: [{ tenantKey: req.tenantKey }, { tenantKeys: req.tenantKey }] };
     if (req.query.status) q.status = req.query.status; // e.g., pending, active, blocked
     const users = await User.find(q, { password: 0 }).sort({ createdAt: -1 });
     res.json({ users });
@@ -144,6 +187,7 @@ router.post('/users/:id/approve', async (req, res) => {
     user.status = 'active';
     user.verified = true;          // (opcional si lo usas)
     user.roleRequested = null;     // limpiar para evitar confusiones
+    user.tenantKeys = sanitizeTenantKeys(user.tenantKeys, user.tenantKey);
     await user.save();
 
     await audit(req, 'user.approved', {
@@ -161,7 +205,8 @@ router.post('/users/:id/approve', async (req, res) => {
         email: user.email,
         role: user.role,
         status: user.status,
-        tenantKey: user.tenantKey
+        tenantKey: user.tenantKey,
+        tenantKeys: user.tenantKeys || []
       }
     });
   } catch (e) {
@@ -172,7 +217,10 @@ router.post('/users/:id/approve', async (req, res) => {
 router.patch('/users/:id/promoter-profile', async (req, res) => {
   try {
     const { id } = req.params;
-    const user = await User.findOne({ _id: id, tenantKey: req.tenantKey });
+    const user = await User.findOne({
+      _id: id,
+      $or: [{ tenantKey: req.tenantKey }, { tenantKeys: req.tenantKey }]
+    });
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
     user.promoterProfile = sanitizePromoterProfile(req.body?.promoterProfile || req.body?.perfilPromotor || req.body || {});
@@ -202,6 +250,46 @@ router.patch('/users/:id/promoter-profile', async (req, res) => {
     });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
+  }
+});
+
+router.patch('/users/:id/tenants', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findOne({
+      _id: id,
+      $or: [{ tenantKey: req.tenantKey }, { tenantKeys: req.tenantKey }]
+    });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    const bankTenantKeys = await ensureBankTenants(req.body?.banks || req.body?.bankTenants || []);
+    const tenantKeys = bankTenantKeys.length
+      ? Array.from(new Set(bankTenantKeys))
+      : sanitizeTenantKeys(req.body?.tenantKeys, user.tenantKey);
+    user.tenantKeys = tenantKeys;
+    await user.save();
+
+    await audit(req, 'user.tenants_updated', {
+      targetType: 'user',
+      targetId: user._id,
+      message: 'Bancos/tenants asignados al usuario',
+      metadata: { email: user.email, role: user.role, tenantKeys }
+    });
+
+    res.json({
+      ok: true,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        tenantKey: user.tenantKey,
+        tenantKeys: user.tenantKeys || []
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -272,7 +360,8 @@ router.post('/users/:id/unblock', async (req, res) => {
         email: user.email,
         role: user.role,
         status: user.status,
-        tenantKey: user.tenantKey
+        tenantKey: user.tenantKey,
+        tenantKeys: user.tenantKeys || []
       }
     });
   } catch (e) {

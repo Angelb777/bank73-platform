@@ -13,6 +13,13 @@ function readReqTenantKey(req) {
   );
 }
 
+function tenantList(primary, list) {
+  return Array.from(new Set([
+    primary,
+    ...(Array.isArray(list) ? list : [])
+  ].map(v => String(v || '').trim()).filter(Boolean)));
+}
+
 function auth(req, res, next) {
   const authHeader = req.header('Authorization') || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -21,10 +28,8 @@ function auth(req, res, next) {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // 1) Determina tenant de la petición o del token
     let reqTenantKey = readReqTenantKey(req);
 
-    // Fallback: si no vino tenant en headers/query/body, usa el del token
     if (!reqTenantKey && decoded.tenantKey) {
       reqTenantKey = decoded.tenantKey;
       req.tenantKey = decoded.tenantKey;
@@ -33,11 +38,15 @@ function auth(req, res, next) {
 
     if (!reqTenantKey) {
       console.warn('[auth] 403 falta tenant', { path: req.originalUrl });
-      return res.status(403).json({ error: 'Falta tenant en la petición' });
+      return res.status(403).json({ error: 'Falta tenant en la peticion' });
     }
 
-    // Si vino distinto al del token, normaliza en vez de bloquear
-    if (decoded.tenantKey && String(decoded.tenantKey) !== String(reqTenantKey)) {
+    const allowedTenants = tenantList(decoded.tenantKey, decoded.tenantKeys);
+    if (
+      decoded.tenantKey &&
+      String(decoded.tenantKey) !== String(reqTenantKey) &&
+      !allowedTenants.includes(String(reqTenantKey))
+    ) {
       console.warn('[auth] tenant mismatch - normalizing to token', {
         tokenTenant: decoded.tenantKey,
         reqTenantKey,
@@ -48,12 +57,12 @@ function auth(req, res, next) {
       req.tenant = { key: decoded.tenantKey, tenantKey: decoded.tenantKey };
     }
 
-    req.user = { ...decoded, tenantKey: decoded.tenantKey };
+    req.user = { ...decoded, tenantKey: reqTenantKey, tenantKeys: allowedTenants };
     if (!req.tenantKey) req.tenantKey = reqTenantKey;
 
     next();
   } catch (_e) {
-    return res.status(401).json({ error: 'Token inválido' });
+    return res.status(401).json({ error: 'Token invalido' });
   }
 }
 
@@ -66,40 +75,42 @@ async function requireActiveUser(req, res, next) {
     const user = await User.findById(req.user.userId).lean();
     if (!user) return res.status(401).json({ error: 'Usuario no encontrado' });
 
-    // 2) Normaliza también aquí: si difiere, ajusta al tenant del usuario
     const reqTenantKey = readReqTenantKey(req) || req.user?.tenantKey;
-    if (String(user.tenantKey) !== String(reqTenantKey)) {
+    const allowedTenants = tenantList(user.tenantKey, user.tenantKeys);
+    const isAllowedTenant = allowedTenants.includes(String(reqTenantKey));
+    const activeTenant = isAllowedTenant ? reqTenantKey : user.tenantKey;
+
+    if (!isAllowedTenant) {
       console.warn('[auth] user/tenant mismatch - normalizing', {
         userTenant: user.tenantKey,
         reqTenantKey,
         path: req.originalUrl
       });
-      req.tenantKey = user.tenantKey;
-      req.tenant = { key: user.tenantKey, tenantKey: user.tenantKey };
     }
+
+    req.tenantKey = activeTenant;
+    req.tenant = { key: activeTenant, tenantKey: activeTenant };
 
     if (user.status !== 'active') {
       return res.status(403).json({
-        error: 'Cuenta pendiente de aprobación o bloqueada. Contacta con un administrador.'
+        error: 'Cuenta pendiente de aprobacion o bloqueada. Contacta con un administrador.'
       });
     }
 
-    // Enriquecer req.user para RBAC
     req.user = {
       ...req.user,
       role: user.role,
       status: user.status,
-      tenantKey: user.tenantKey,
+      tenantKey: activeTenant,
+      tenantKeys: allowedTenants,
       email: user.email,
       name: user.name
     };
 
-    if (!req.tenantKey) req.tenantKey = user.tenantKey;
-
     next();
   } catch (err) {
     console.error('[auth] requireActiveUser error:', err);
-    return res.status(500).json({ error: 'Error de autenticación' });
+    return res.status(500).json({ error: 'Error de autenticacion' });
   }
 }
 

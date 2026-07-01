@@ -203,6 +203,45 @@
     .actions { display:flex; gap:.5rem; flex-wrap:wrap; }
     .btn.small { padding:.35rem .6rem; font-size:.85rem; }
     .input[disabled] { opacity:.7; }
+    .user-role-cell { display:grid; gap:8px; align-items:start; }
+    .user-main-cell { display:grid; gap:4px; min-width:0; }
+    .user-main-cell strong { font-weight:700; overflow-wrap:normal; }
+    .user-main-cell span { color:var(--muted); overflow-wrap:anywhere; }
+    .user-role-cell .promoter-profile-cell { gap:6px; }
+    .user-role-cell .promoter-profile-action { width:max-content; max-width:100%; }
+    .bank-picker { display:grid; gap:7px; min-width:0; max-width:100%; }
+    .bank-picker-row,
+    .bank-picker-actions { display:flex; gap:6px; align-items:center; }
+    .bank-picker-row .input { min-width:0; width:100%; }
+    .bank-picker-actions .btn.small { flex:0 0 auto; white-space:nowrap; }
+    .bank-picker-save { padding-inline:12px !important; }
+    .bank-chips { display:flex; flex-wrap:wrap; gap:6px; }
+    .bank-chip {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      max-width:240px;
+      padding:4px 9px;
+      border-radius:999px;
+      border:1px solid rgba(148,163,184,.35);
+      background:rgba(148,163,184,.14);
+      color:var(--text);
+      font-size:12px;
+      line-height:1.3;
+    }
+    .bank-chip span {
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .bank-chip button {
+      border:0;
+      background:transparent;
+      color:inherit;
+      cursor:pointer;
+      font:inherit;
+      padding:0 1px;
+    }
 
     .admin-card-head {
       display:flex;
@@ -247,8 +286,13 @@
 
 .table th,
 .table td{
-    word-break:break-word;
+    word-break:normal;
+    overflow-wrap:anywhere;
     white-space:normal;
+}
+.table th{
+    overflow-wrap:normal;
+    white-space:nowrap;
 }
 
     .admin-subcard .toolbar{ margin-bottom:0; }
@@ -451,8 +495,43 @@
 #pendingUsersTable td:last-child,
 #usersTable th:last-child,
 #usersTable td:last-child{
-    width:150px;
-    min-width:150px;
+    width:12%;
+}
+#usersTable{
+    width:100%;
+    min-width:0;
+    table-layout:fixed;
+}
+#usersTable th:nth-child(1),
+#usersTable td:nth-child(1){
+    width:21%;
+}
+#usersTable th:nth-child(2),
+#usersTable td:nth-child(2){
+    width:18%;
+}
+#usersTable th:nth-child(3),
+#usersTable td:nth-child(3){
+    width:9%;
+}
+#usersTable th:nth-child(4),
+#usersTable td:nth-child(4){
+    width:12%;
+}
+#usersTable th:nth-child(5),
+#usersTable td:nth-child(5){
+    width:27%;
+}
+#usersTable th:nth-child(6),
+#usersTable td:nth-child(6){
+    width:15%;
+}
+#usersTable .actions {
+    gap:7px;
+}
+#usersTable .actions .btn,
+#usersTable .actions .input {
+    max-width:100%;
 }
 
     #pendingUsersTable .actions, #usersTable .actions, #allProjectsTable .actions{ flex-direction:column; align-items:flex-start; gap:6px; }
@@ -605,14 +684,12 @@
               <table class="table" id="usersTable">
               <thead>
                 <tr>
-                  <th>Nombre</th>
-                  <th>Email</th>
+                  <th>Usuario</th>
                   <th>Rol</th>
-                  <th>Solicitado</th>
                   <th>Estado</th>
                   <th>Creado</th>
-                  <th>Perfil promotor</th>
-                  <th style="width:150px;">Acciones</th>
+                  <th>Bancos</th>
+                  <th>Acciones</th>
                 </tr>
               </thead>
                 <tbody id="usersTbody"></tbody>
@@ -873,7 +950,7 @@
       try {
         const role = (localStorage.getItem('role') || '').toLowerCase();
         const status = (localStorage.getItem('status') || '').toLowerCase();
-        if (role !== 'admin') {
+        if (role !== 'admin' && role !== 'bank') {
           const workspace = document.getElementById('adminWorkspace');
           const approvals = document.getElementById('approvalsCard');
           if (workspace) workspace.style.display = 'none';
@@ -1129,6 +1206,7 @@
   </script>
 
   <script src="/js/api.js"></script>
+  <script src="/js/banks.js"></script>
   <script src="/js/dashboard.js?v=finance-conditions-v2"></script>
 </body>
 </html>

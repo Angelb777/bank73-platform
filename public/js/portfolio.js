@@ -29,9 +29,14 @@
     userId: localStorage.getItem('userId')
   };
   const role = (auth.role || '').toLowerCase();
+  const dashboardBtn = document.getElementById('portfolioDashboardBtn');
+  if (dashboardBtn && ['admin', 'bank'].includes(role)) {
+    dashboardBtn.style.display = '';
+    dashboardBtn.addEventListener('click', () => { location.href = '/dashboard'; });
+  }
 
   // ✅ Solo admin, bank y promoter pueden crear
-  const CAN_CREATE = role === 'admin' || role === 'bank' || role === 'promoter';
+  const CAN_CREATE = role === 'admin' || role === 'promoter';
   let promoterProfileState = null;
 
   // Roles
@@ -428,7 +433,7 @@
   async function loadCreatePromoterProfiles() {
     const select = document.getElementById('ld-promoterProfileSelect');
     if (!select || createPromoterProfilesLoaded) return;
-    if (!(role === 'admin' || role === 'bank')) {
+    if (role !== 'admin') {
       select.closest('label')?.setAttribute('hidden', '');
       return;
     }

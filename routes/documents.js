@@ -631,7 +631,7 @@ router.patch(
 router.post(
   '/folder-permissions/:folder/subfolders',
   attachProjectIdParam,
-  requireRole('admin', 'bank', 'promoter', 'gerencia', 'socios', 'financiero', 'contable', 'legal', 'tecnico', 'commercial'),
+  requireRole('admin', 'promoter', 'gerencia', 'socios', 'financiero', 'contable', 'legal', 'tecnico', 'commercial'),
   requireProjectAccess({ commercialOnlySales: false }),
   async (req, res) => {
     try {
@@ -679,7 +679,7 @@ router.post(
 router.delete(
   '/folder-permissions/:folder/subfolders',
   attachProjectIdParam,
-  requireRole('admin', 'bank', 'promoter'),
+  requireRole('admin', 'promoter'),
   requireProjectAccess({ commercialOnlySales: false }),
   async (req, res) => {
     try {
@@ -1096,7 +1096,7 @@ router.patch(
 
 router.patch(
   '/:id/location',
-  requireRole('admin', 'bank', 'promoter'),
+  requireRole('admin', 'promoter'),
   loadDocAndAttachProject,
   requireProjectAccess({ commercialOnlySales: false }),
   async (req, res) => {
