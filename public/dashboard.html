@@ -585,6 +585,7 @@
         <button class="admin-tab active" type="button" data-admin-tab="pending"><span class="dot"></span>Pendientes</button>
         <button class="admin-tab" type="button" data-admin-tab="users"><span class="dot"></span>Usuarios</button>
         <button class="admin-tab" type="button" data-admin-tab="projects"><span class="dot"></span>Proyectos</button>
+        <button class="admin-tab" type="button" data-admin-tab="multiTenant"><span class="dot"></span>Multi-tenant</button>
         <button class="admin-tab" type="button" data-admin-tab="activity"><span class="dot"></span>Actividad</button>
         <button class="admin-tab" type="button" data-admin-tab="payments"><span class="dot"></span>Pagos recibidos</button>
       </nav>
@@ -760,6 +761,42 @@
       </section>
 
       <!-- ACTIVIDAD / AUDITORÍA -->
+      <!-- MULTI-TENANT -->
+      <section class="admin-panel-section" data-admin-panel="multiTenant">
+        <section class="card" id="multiTenantCard">
+          <div class="section-head">
+            <div>
+              <h2>Multi-tenant</h2>
+              <p class="muted">Gestiona bancos/tenants y prepara exportaciones JSON filtradas por tenant.</p>
+            </div>
+            <button id="refreshTenants" class="btn small" type="button">Refrescar</button>
+          </div>
+
+          <div id="tenantMsg" class="msg"></div>
+
+          <div class="table-scroll">
+            <table class="table" id="tenantsTable">
+              <thead>
+                <tr>
+                  <th>Banco</th>
+                  <th>TenantKey</th>
+                  <th>Usuarios</th>
+                  <th>Proyectos</th>
+                  <th>Creado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tenantsTbody"></tbody>
+            </table>
+          </div>
+
+          <div class="admin-subcard" style="margin-top:14px;">
+            <h3 id="tenantDetailTitle">Detalle</h3>
+            <div id="tenantDetail" class="muted">Selecciona una acciÃ³n para ver usuarios, proyectos o comprobar aislamiento.</div>
+          </div>
+        </section>
+      </section>
+
       <section class="admin-panel-section" data-admin-panel="activity">
         <section class="card" id="activityCard">
           <div class="admin-card-head">

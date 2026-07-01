@@ -4,6 +4,13 @@ const User = require('../models/User');
 const Project = require('../models/Project'); // ROLE-SEP
 const Tenant = require('../models/Tenant');
 const AuditLog = require('../models/AuditLog');
+const ProjectFinance = require('../models/ProjectFinance');
+const Unit = require('../models/Unit');
+const Venta = require('../models/Venta');
+const Document = require('../models/Document');
+const ProjectChecklist = require('../models/ProjectChecklist');
+const ProjectPermit = require('../models/ProjectPermit');
+const ChatMessage = require('../models/ChatMessage');
 const { requireRole } = require('../middleware/rbac'); // ROLE-SEP
 const audit = require('../utils/audit');
 const router = express.Router();
@@ -107,6 +114,140 @@ async function ensureBankTenants(input = []) {
   return out;
 }
 
+function safeTenantKey(value) {
+  return String(value || '').trim().slice(0, 120);
+}
+
+function projectAssignedUserIds(projects = []) {
+  const ids = new Set();
+  const fields = [
+    'createdBy',
+    'assignedPromoters',
+    'assignedCommercials',
+    'assignedLegal',
+    'assignedTecnicos',
+    'assignedGerencia',
+    'assignedSocios',
+    'assignedFinanciero',
+    'assignedContable'
+  ];
+  for (const project of projects) {
+    for (const field of fields) {
+      const value = project[field];
+      const values = Array.isArray(value) ? value : [value];
+      values.filter(Boolean).forEach(id => ids.add(String(id)));
+    }
+  }
+  return Array.from(ids);
+}
+
+function sanitizeExportUser(user, tenantKey) {
+  return {
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    status: user.status,
+    tenantKey: user.tenantKey === tenantKey ? user.tenantKey : undefined,
+    tenantKeys: Array.isArray(user.tenantKeys) && user.tenantKeys.includes(tenantKey) ? [tenantKey] : [],
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    promoterCategory: user.promoterCategory,
+    promoterProfile: user.promoterProfile || undefined
+  };
+}
+
+async function collectTenantExport(tenantKey, actor = {}) {
+  const tenant = await Tenant.findOne({ tenantKey }).lean();
+  const projects = await Project.find({ tenantKey }).sort({ createdAt: -1 }).lean();
+  const projectIds = projects.map(p => p._id);
+  const projectFilter = { tenantKey, projectId: { $in: projectIds } };
+
+  const [
+    projectFinance,
+    units,
+    ventas,
+    documents,
+    checklists,
+    permits,
+    chatMessages,
+    auditLogs
+  ] = await Promise.all([
+    ProjectFinance.find({ tenantKey, project: { $in: projectIds } }).lean(),
+    Unit.find(projectFilter).lean(),
+    Venta.find(projectFilter).lean(),
+    Document.find(projectFilter).lean(),
+    ProjectChecklist.find(projectFilter).lean(),
+    ProjectPermit.find(projectFilter).lean(),
+    ChatMessage.find(projectFilter).lean(),
+    AuditLog.find({
+      tenantKey,
+      $or: [
+        { projectId: { $in: projectIds } },
+        { targetType: 'project', targetId: { $in: projectIds } }
+      ]
+    }).sort({ createdAt: -1 }).lean()
+  ]);
+
+  const userIds = new Set(projectAssignedUserIds(projects));
+  documents.forEach(d => { if (d.uploadedBy) userIds.add(String(d.uploadedBy)); });
+  checklists.forEach(c => (c.notes || []).forEach(n => { if (n.userId) userIds.add(String(n.userId)); }));
+  chatMessages.forEach(m => { if (m.userId) userIds.add(String(m.userId)); });
+  auditLogs.forEach(l => { if (l.actorUserId) userIds.add(String(l.actorUserId)); });
+
+  const users = await User.find({
+    $or: [
+      { tenantKey },
+      { tenantKeys: tenantKey },
+      { _id: { $in: Array.from(userIds) } }
+    ]
+  }, { password: 0 }).lean();
+
+  return {
+    manifest: {
+      exportType: 'tenant-json',
+      tenantKey,
+      tenantName: tenant?.name || tenantKey,
+      generatedAt: new Date().toISOString(),
+      generatedBy: {
+        userId: actor.userId || '',
+        email: actor.email || '',
+        role: actor.role || ''
+      },
+      security: {
+        source: `Project.find({ tenantKey: "${tenantKey}" })`,
+        tenantFilterApplied: true,
+        projectScopedCollectionsUseProjectIds: true,
+        legacyTenantlessIncluded: false,
+        physicalDocumentsIncluded: false
+      },
+      counts: {
+        projects: projects.length,
+        projectFinance: projectFinance.length,
+        units: units.length,
+        ventas: ventas.length,
+        documentsMetadata: documents.length,
+        checklists: checklists.length,
+        permits: permits.length,
+        chatMessages: chatMessages.length,
+        auditLogs: auditLogs.length,
+        users: users.length
+      }
+    },
+    tenant: tenant || { tenantKey },
+    projects,
+    projectFinance,
+    units,
+    ventas,
+    documentsMetadata: documents,
+    projectChecklists: checklists,
+    projectPermits: permits,
+    chatMessages,
+    auditLogs,
+    users: users.map(u => sanitizeExportUser(u, tenantKey))
+  };
+}
+
 // ROLE-SEP: Todas estas rutas requieren rol admin (además de auth y tenant previos en server.js)
 router.use(requireRole('admin')); // ROLE-SEP
 
@@ -154,6 +295,125 @@ router.get('/audit-logs', async (req, res) => {
 /* =========================================================================
    USUARIOS (Aprobación, bloqueo, listado)
    ========================================================================= */
+
+/* =========================================================================
+   MULTI-TENANT
+   ========================================================================= */
+
+router.get('/tenants', async (_req, res) => {
+  try {
+    const [tenantDocs, projectTenantKeys, userTenantKeys] = await Promise.all([
+      Tenant.find({}).sort({ name: 1, tenantKey: 1 }).lean(),
+      Project.distinct('tenantKey', { tenantKey: { $nin: [null, ''] } }),
+      User.distinct('tenantKeys', { tenantKeys: { $nin: [null, ''] } })
+    ]);
+
+    const map = new Map();
+    tenantDocs.forEach(t => map.set(t.tenantKey, {
+      tenantKey: t.tenantKey,
+      name: t.name || t.tenantKey,
+      createdAt: t.createdAt || null,
+      source: 'Tenant'
+    }));
+    [...projectTenantKeys, ...userTenantKeys].filter(Boolean).forEach(key => {
+      if (!map.has(key)) map.set(key, { tenantKey: key, name: key, createdAt: null, source: 'derived' });
+    });
+
+    const rows = await Promise.all(Array.from(map.values()).map(async t => {
+      const [usersCount, projectsCount] = await Promise.all([
+        User.countDocuments({ $or: [{ tenantKey: t.tenantKey }, { tenantKeys: t.tenantKey }] }),
+        Project.countDocuments({ tenantKey: t.tenantKey })
+      ]);
+      return { ...t, usersCount, projectsCount };
+    }));
+
+    res.json({ tenants: rows.sort((a, b) => String(a.name).localeCompare(String(b.name))) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/tenants/:tenantKey/users', async (req, res) => {
+  try {
+    const tenantKey = safeTenantKey(req.params.tenantKey);
+    const users = await User.find({ $or: [{ tenantKey }, { tenantKeys: tenantKey }] }, { password: 0 })
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json({ tenantKey, users: users.map(u => sanitizeExportUser(u, tenantKey)) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/tenants/:tenantKey/projects', async (req, res) => {
+  try {
+    const tenantKey = safeTenantKey(req.params.tenantKey);
+    const projects = await Project.find({ tenantKey }).sort({ createdAt: -1 }).lean();
+    res.json({ tenantKey, projects });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/tenants/:tenantKey/isolation', async (req, res) => {
+  try {
+    const tenantKey = safeTenantKey(req.params.tenantKey);
+    const projects = await Project.find({ tenantKey }).select('_id').lean();
+    const projectIds = projects.map(p => p._id);
+    const noTenant = [{ tenantKey: { $exists: false } }, { tenantKey: null }, { tenantKey: '' }];
+    const otherTenant = { $exists: true, $nin: [tenantKey, null, ''] };
+
+    const [financeLeaks, unitLeaks, ventaLeaks, documentLeaks, checklistLeaks, permitLeaks, chatLeaks, legacy] = await Promise.all([
+      ProjectFinance.countDocuments({ project: { $in: projectIds }, tenantKey: otherTenant }),
+      Unit.countDocuments({ projectId: { $in: projectIds }, tenantKey: otherTenant }),
+      Venta.countDocuments({ projectId: { $in: projectIds }, tenantKey: otherTenant }),
+      Document.countDocuments({ projectId: { $in: projectIds }, tenantKey: otherTenant }),
+      ProjectChecklist.countDocuments({ projectId: { $in: projectIds }, tenantKey: otherTenant }),
+      ProjectPermit.countDocuments({ projectId: { $in: projectIds }, tenantKey: otherTenant }),
+      ChatMessage.countDocuments({ projectId: { $in: projectIds }, tenantKey: otherTenant }),
+      Promise.all([
+        ProjectFinance.countDocuments({ project: { $in: projectIds }, $or: noTenant }),
+        Unit.countDocuments({ projectId: { $in: projectIds }, $or: noTenant }),
+        Venta.countDocuments({ projectId: { $in: projectIds }, $or: noTenant }),
+        Document.countDocuments({ projectId: { $in: projectIds }, $or: noTenant }),
+        ProjectChecklist.countDocuments({ projectId: { $in: projectIds }, $or: noTenant }),
+        ProjectPermit.countDocuments({ projectId: { $in: projectIds }, $or: noTenant }),
+        ChatMessage.countDocuments({ projectId: { $in: projectIds }, $or: noTenant })
+      ])
+    ]);
+
+    const crossTenantFindings = { projectFinance: financeLeaks, units: unitLeaks, ventas: ventaLeaks, documents: documentLeaks, checklists: checklistLeaks, permits: permitLeaks, chats: chatLeaks };
+    const legacyTenantlessFindings = { projectFinance: legacy[0], units: legacy[1], ventas: legacy[2], documents: legacy[3], checklists: legacy[4], permits: legacy[5], chats: legacy[6] };
+
+    res.json({
+      tenantKey,
+      projectsCount: projectIds.length,
+      ok: Object.values(crossTenantFindings).every(v => v === 0) && Object.values(legacyTenantlessFindings).every(v => v === 0),
+      crossTenantFindings,
+      legacyTenantlessFindings
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/tenants/:tenantKey/export', async (req, res) => {
+  try {
+    const tenantKey = safeTenantKey(req.params.tenantKey);
+    const data = await collectTenantExport(tenantKey, req.user || {});
+    await audit(req, 'tenant.export_json', {
+      targetType: 'tenant',
+      message: 'Exportacion JSON de tenant generada',
+      metadata: { exportedTenantKey: tenantKey, counts: data.manifest.counts, physicalDocumentsIncluded: false }
+    });
+    const filename = `bank73-export-${tenantKey}-${new Date().toISOString().slice(0, 10)}.json`;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(JSON.stringify(data, null, 2));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ROLE-SEP: GET /api/admin/users?status=pending   -> lista de usuarios del tenant (filtrable por status)
 router.get('/users', async (req, res) => {

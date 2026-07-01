@@ -186,6 +186,14 @@ if (roleSelectDefault) {
   const auditLimit = 50;
   let auditLastTotal = 0;
 
+  // Multi-tenant
+  const tenantsTbody = document.getElementById('tenantsTbody');
+  const refreshTenantsBtn = document.getElementById('refreshTenants');
+  const tenantMsg = document.getElementById('tenantMsg');
+  const tenantDetailTitle = document.getElementById('tenantDetailTitle');
+  const tenantDetail = document.getElementById('tenantDetail');
+  let tenantsCache = [];
+
   document.getElementById('logoutBtn')?.addEventListener('click', clearAuthAndGoHome);
 
   // ---------- Pequeño wrapper fetch ----------
@@ -231,8 +239,10 @@ if (roleSelectDefault) {
 
     document.querySelector('[data-admin-tab="pending"]')?.remove();
     document.querySelector('[data-admin-tab="payments"]')?.remove();
+    document.querySelector('[data-admin-tab="multiTenant"]')?.remove();
     document.querySelector('[data-admin-panel="pending"]')?.remove();
     document.querySelector('[data-admin-panel="payments"]')?.remove();
+    document.querySelector('[data-admin-panel="multiTenant"]')?.remove();
 
     const tabs = Array.from(document.querySelectorAll('[data-admin-tab]'));
     const panels = Array.from(document.querySelectorAll('[data-admin-panel]'));
@@ -392,6 +402,23 @@ if (roleSelectDefault) {
       method: 'PATCH',
       body: JSON.stringify({ banks: tenantKeys })
     });
+  }
+
+  async function apiGetTenants() {
+    const data = await xfetch('/api/admin/tenants');
+    return data.tenants || [];
+  }
+
+  async function apiGetTenantUsers(tenantKey) {
+    return xfetch(`/api/admin/tenants/${encodeURIComponent(tenantKey)}/users`);
+  }
+
+  async function apiGetTenantProjects(tenantKey) {
+    return xfetch(`/api/admin/tenants/${encodeURIComponent(tenantKey)}/projects`);
+  }
+
+  async function apiCheckTenantIsolation(tenantKey) {
+    return xfetch(`/api/admin/tenants/${encodeURIComponent(tenantKey)}/isolation`);
   }
 
   // ---------- PROJECTS: API (pendientes admin) ----------
@@ -851,6 +878,94 @@ function applyProjectsFilters(list) {
     });
   }
 
+  function renderTenants(list = []) {
+    if (!tenantsTbody) return;
+    tenantsTbody.innerHTML = '';
+    if (!list.length) {
+      tenantsTbody.innerHTML = '<tr><td class="muted" colspan="6">No hay tenants registrados.</td></tr>';
+      return;
+    }
+    tenantsTbody.innerHTML = list.map(t => `
+      <tr>
+        <td>${escapeHtml(t.name || t.tenantKey || '-')}</td>
+        <td><code>${escapeHtml(t.tenantKey || '-')}</code></td>
+        <td>${Number(t.usersCount || 0)}</td>
+        <td>${Number(t.projectsCount || 0)}</td>
+        <td>${t.createdAt ? escapeHtml(new Date(t.createdAt).toLocaleString()) : '<span class="muted">-</span>'}</td>
+        <td>
+          <div class="actions">
+            <button class="btn small" type="button" data-tenant-users="${escapeHtml(t.tenantKey)}">Usuarios</button>
+            <button class="btn small" type="button" data-tenant-projects="${escapeHtml(t.tenantKey)}">Proyectos</button>
+            <button class="btn small" type="button" data-tenant-isolation="${escapeHtml(t.tenantKey)}">Aislamiento</button>
+            <button class="btn small" type="button" data-tenant-export="${escapeHtml(t.tenantKey)}">Exportar JSON</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function setTenantDetail(title, html) {
+    if (tenantDetailTitle) tenantDetailTitle.textContent = title;
+    if (tenantDetail) {
+      tenantDetail.classList.remove('muted');
+      tenantDetail.innerHTML = html;
+    }
+  }
+
+  function renderTenantUsersDetail(tenantKey, users = []) {
+    setTenantDetail(`Usuarios · ${tenantKey}`, users.length ? `
+      <table class="table">
+        <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Estado</th></tr></thead>
+        <tbody>
+          ${users.map(u => `
+            <tr>
+              <td>${escapeHtml(u.name || '-')}</td>
+              <td>${escapeHtml(u.email || '-')}</td>
+              <td><code>${escapeHtml(u.role || '-')}</code></td>
+              <td>${escapeHtml(u.status || '-')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    ` : '<p class="muted">No hay usuarios asociados.</p>');
+  }
+
+  function renderTenantProjectsDetail(tenantKey, projects = []) {
+    setTenantDetail(`Proyectos · ${tenantKey}`, projects.length ? `
+      <table class="table">
+        <thead><tr><th>Proyecto</th><th>Publicación</th><th>Creado</th></tr></thead>
+        <tbody>
+          ${projects.map(p => `
+            <tr>
+              <td>${escapeHtml(p.name || '-')}</td>
+              <td>${escapeHtml(p.publishStatus || '-')}</td>
+              <td>${p.createdAt ? escapeHtml(new Date(p.createdAt).toLocaleString()) : '-'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    ` : '<p class="muted">No hay proyectos asociados.</p>');
+  }
+
+  function renderTenantIsolationDetail(payload = {}) {
+    const cross = payload.crossTenantFindings || {};
+    const legacy = payload.legacyTenantlessFindings || {};
+    const row = (label, obj) => Object.entries(obj).map(([k, v]) => `
+      <tr><td>${escapeHtml(label)}</td><td>${escapeHtml(k)}</td><td>${Number(v || 0)}</td></tr>
+    `).join('');
+    setTenantDetail(`Aislamiento · ${payload.tenantKey || ''}`, `
+      <p><span class="badge ${payload.ok ? 'active' : 'blocked'}">${payload.ok ? 'OK' : 'REVISAR'}</span>
+      <span class="muted"> Proyectos base: ${Number(payload.projectsCount || 0)}</span></p>
+      <table class="table">
+        <thead><tr><th>Tipo</th><th>Colección</th><th>Hallazgos</th></tr></thead>
+        <tbody>
+          ${row('Otro tenant', cross)}
+          ${row('Sin tenantKey legacy', legacy)}
+        </tbody>
+      </table>
+    `);
+  }
+
   // ---------- RENDER: Proyectos Pendientes ----------
   function teamSuggestionHtml(s = {}) {
     const roles = ['promoter','commercial','legal','tecnico','gerencia','socios','financiero','contable'];
@@ -1075,6 +1190,47 @@ function applyProjectsFilters(list) {
   } catch (e) {
     auditTbody.innerHTML = `<tr><td colspan="7" class="muted">Error al cargar actividad: ${escapeHtml(e.message)}</td></tr>`;
   }
+ }
+
+ async function loadTenants() {
+  if (!tenantsTbody) return;
+  tenantsTbody.innerHTML = '<tr><td class="muted" colspan="6">Cargando tenants...</td></tr>';
+  try {
+    tenantsCache = await apiGetTenants();
+    renderTenants(tenantsCache);
+    if (tenantMsg) tenantMsg.textContent = '';
+  } catch (e) {
+    tenantsTbody.innerHTML = `<tr><td class="muted" colspan="6">Error al cargar tenants: ${escapeHtml(e.message)}</td></tr>`;
+    if (tenantMsg) {
+      tenantMsg.textContent = e.message || 'Error al cargar tenants';
+      tenantMsg.style.color = 'salmon';
+    }
+  }
+ }
+
+ async function downloadTenantExport(tenantKey) {
+  const resp = await fetch(`/api/admin/tenants/${encodeURIComponent(tenantKey)}/export`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'X-Tenant': tenant
+    }
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error || `Error ${resp.status}`);
+  }
+  const blob = await resp.blob();
+  const disposition = resp.headers.get('Content-Disposition') || '';
+  const match = disposition.match(/filename="([^"]+)"/i);
+  const filename = match?.[1] || `bank73-export-${tenantKey}.json`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
  }
 
  function createRoleSelect(role, candidates = [], preselectedIds = []) {
@@ -2089,6 +2245,51 @@ function applyProjectsFilters(list) {
   });
 
   // Delegación de eventos global
+  refreshTenantsBtn?.addEventListener('click', loadTenants);
+  tenantsTbody?.addEventListener('click', async (e) => {
+    const usersBtn = e.target.closest?.('button[data-tenant-users]');
+    const projectsBtn = e.target.closest?.('button[data-tenant-projects]');
+    const isolationBtn = e.target.closest?.('button[data-tenant-isolation]');
+    const exportBtn = e.target.closest?.('button[data-tenant-export]');
+    const btn = usersBtn || projectsBtn || isolationBtn || exportBtn;
+    if (!btn) return;
+
+    const tenantKey =
+      usersBtn?.getAttribute('data-tenant-users') ||
+      projectsBtn?.getAttribute('data-tenant-projects') ||
+      isolationBtn?.getAttribute('data-tenant-isolation') ||
+      exportBtn?.getAttribute('data-tenant-export');
+
+    btn.disabled = true;
+    try {
+      if (usersBtn) {
+        const payload = await apiGetTenantUsers(tenantKey);
+        renderTenantUsersDetail(tenantKey, payload.users || []);
+      } else if (projectsBtn) {
+        const payload = await apiGetTenantProjects(tenantKey);
+        renderTenantProjectsDetail(tenantKey, payload.projects || []);
+      } else if (isolationBtn) {
+        const payload = await apiCheckTenantIsolation(tenantKey);
+        renderTenantIsolationDetail(payload);
+      } else if (exportBtn) {
+        await downloadTenantExport(tenantKey);
+        if (tenantMsg) {
+          tenantMsg.textContent = `Exportacion JSON generada para ${tenantKey}.`;
+          tenantMsg.style.color = '';
+        }
+      }
+    } catch (err) {
+      if (tenantMsg) {
+        tenantMsg.textContent = err.message || 'Error en accion multi-tenant';
+        tenantMsg.style.color = 'salmon';
+      } else {
+        alert(err.message || 'Error en accion multi-tenant');
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
   document.addEventListener('click', async (e) => {
     const promoterProfileBtn = e.target.closest?.('button[data-user-promoter-profile]');
     if (promoterProfileBtn) {
@@ -2551,5 +2752,6 @@ allProjectsNext?.addEventListener('click', () => {
     loadPendingProjects(),
     loadUsers(),
     loadAllProjects(), // se ignora si no existe la UI de proyectos completos
+    loadTenants(),
   ]);
 })();
