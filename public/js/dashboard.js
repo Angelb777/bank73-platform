@@ -421,6 +421,21 @@ if (roleSelectDefault) {
     return xfetch(`/api/admin/tenants/${encodeURIComponent(tenantKey)}/isolation`);
   }
 
+  async function apiDeleteTenant(tenantKey, pin) {
+    const resp = await fetch(`/api/admin/tenants/${encodeURIComponent(tenantKey)}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'X-Tenant': tenant,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ pin })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || data.message || `Error ${resp.status}`);
+    return data;
+  }
+
   // ---------- PROJECTS: API (pendientes admin) ----------
   async function apiGetProjectsPending() {
     const data = await xfetch('/api/admin/projects?status=pending');
@@ -566,6 +581,22 @@ async function apiAssignProject(id, assignmentsOrLegacy, modoFlexible = false) {
       <button type="button" data-user-tenants-remove aria-label="Quitar ${escapeHtml(item.label)}">×</button>
     `;
     chips.appendChild(chip);
+  }
+
+  async function autoSaveUserTenants(id) {
+    const picker = document.querySelector(`[data-user-tenants-picker="${CSS.escape(id)}"]`);
+    if (!picker) return;
+    picker.classList.add('is-saving');
+    try {
+      await apiUpdateUserTenants(id, selectedBankValues(id));
+      await loadUsers();
+      await loadTenants();
+    } catch (err) {
+      alert(err.message || 'No se pudieron guardar los bancos');
+      await loadUsers();
+    } finally {
+      picker.classList.remove('is-saving');
+    }
   }
 
   function maxPageFor(total, pageSize) {
@@ -851,10 +882,6 @@ function applyProjectsFilters(list) {
             <div class="bank-chips" data-bank-chips>
               ${renderBankTenantChips(banks)}
             </div>
-            <div class="bank-picker-actions">
-              <button class="btn small" data-user-tenants-add="${u._id}" type="button" title="Añadir banco" aria-label="Añadir banco">+</button>
-              <button class="btn small bank-picker-save" data-user-tenants-save="${u._id}" type="button">Guardar</button>
-            </div>
           </div>
         </td>
         <td>
@@ -885,7 +912,10 @@ function applyProjectsFilters(list) {
       tenantsTbody.innerHTML = '<tr><td class="muted" colspan="6">No hay tenants registrados.</td></tr>';
       return;
     }
-    tenantsTbody.innerHTML = list.map(t => `
+    tenantsTbody.innerHTML = list.map(t => {
+      const tenantKey = String(t.tenantKey || '');
+      const isDemo = tenantKey === 'bancodemo';
+      return `
       <tr>
         <td>${escapeHtml(t.name || t.tenantKey || '-')}</td>
         <td><code>${escapeHtml(t.tenantKey || '-')}</code></td>
@@ -898,10 +928,12 @@ function applyProjectsFilters(list) {
             <button class="btn small" type="button" data-tenant-projects="${escapeHtml(t.tenantKey)}">Proyectos</button>
             <button class="btn small" type="button" data-tenant-isolation="${escapeHtml(t.tenantKey)}">Aislamiento</button>
             <button class="btn small" type="button" data-tenant-export="${escapeHtml(t.tenantKey)}">Exportar JSON</button>
+            ${isDemo ? '' : `<button class="btn danger small" type="button" data-tenant-delete="${escapeHtml(t.tenantKey)}">Eliminar</button>`}
           </div>
         </td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
   }
 
   function setTenantDetail(title, html) {
@@ -2251,14 +2283,47 @@ function applyProjectsFilters(list) {
     const projectsBtn = e.target.closest?.('button[data-tenant-projects]');
     const isolationBtn = e.target.closest?.('button[data-tenant-isolation]');
     const exportBtn = e.target.closest?.('button[data-tenant-export]');
-    const btn = usersBtn || projectsBtn || isolationBtn || exportBtn;
+    const deleteBtn = e.target.closest?.('button[data-tenant-delete]');
+    const btn = usersBtn || projectsBtn || isolationBtn || exportBtn || deleteBtn;
     if (!btn) return;
+    if (btn.disabled) return;
 
     const tenantKey =
       usersBtn?.getAttribute('data-tenant-users') ||
       projectsBtn?.getAttribute('data-tenant-projects') ||
       isolationBtn?.getAttribute('data-tenant-isolation') ||
-      exportBtn?.getAttribute('data-tenant-export');
+      exportBtn?.getAttribute('data-tenant-export') ||
+      deleteBtn?.getAttribute('data-tenant-delete');
+
+    if (deleteBtn) {
+      if (tenantKey === 'bancodemo') return;
+      const pin = prompt(`PIN para eliminar tenant ${tenantKey}`);
+      if (pin === null) return;
+      btn.disabled = true;
+      try {
+        await apiDeleteTenant(tenantKey, pin);
+        if (tenantMsg) {
+          tenantMsg.textContent = `Tenant ${tenantKey} eliminado.`;
+          tenantMsg.style.color = '';
+        }
+        if (tenantDetailTitle) tenantDetailTitle.textContent = 'Detalle';
+        if (tenantDetail) {
+          tenantDetail.classList.add('muted');
+          tenantDetail.textContent = 'Selecciona una accion para ver usuarios, proyectos o comprobar aislamiento.';
+        }
+        await loadTenants();
+      } catch (err) {
+        if (tenantMsg) {
+          tenantMsg.textContent = err.message || 'No se pudo eliminar el tenant';
+          tenantMsg.style.color = 'salmon';
+        } else {
+          alert(err.message || 'No se pudo eliminar el tenant');
+        }
+      } finally {
+        btn.disabled = false;
+      }
+      return;
+    }
 
     btn.disabled = true;
     try {
@@ -2305,33 +2370,12 @@ function applyProjectsFilters(list) {
       return;
     }
 
-    const tenantsAddBtn = e.target.closest?.('button[data-user-tenants-add]');
-    if (tenantsAddBtn) {
-      const id = tenantsAddBtn.getAttribute('data-user-tenants-add');
-      const input = document.querySelector(`[data-user-tenants-input="${CSS.escape(id)}"]`);
-      addBankValue(id, input?.value || '');
-      if (input) input.value = '';
-      return;
-    }
-
     const tenantsRemoveBtn = e.target.closest?.('button[data-user-tenants-remove]');
     if (tenantsRemoveBtn) {
+      const picker = tenantsRemoveBtn.closest('[data-user-tenants-picker]');
+      const id = picker?.getAttribute('data-user-tenants-picker');
       tenantsRemoveBtn.closest('[data-bank-key]')?.remove();
-      return;
-    }
-
-    const tenantsSaveBtn = e.target.closest?.('button[data-user-tenants-save]');
-    if (tenantsSaveBtn) {
-      const id = tenantsSaveBtn.getAttribute('data-user-tenants-save');
-      const tenantKeys = selectedBankValues(id);
-      tenantsSaveBtn.disabled = true;
-      try {
-        await apiUpdateUserTenants(id, tenantKeys);
-        await loadUsers();
-      } catch (err) {
-        tenantsSaveBtn.disabled = false;
-        alert(err.message || 'No se pudieron guardar los bancos');
-      }
+      if (id) await autoSaveUserTenants(id);
       return;
     }
 
@@ -2664,6 +2708,7 @@ if (pAssign && assignModal && assignProjectNameEl) {
       const id = bankSel.getAttribute('data-user-tenants-input');
       addBankValue(id, bankSel.value || '');
       bankSel.value = '';
+      await autoSaveUserTenants(id);
       return;
     }
 

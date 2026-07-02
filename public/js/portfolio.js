@@ -1034,6 +1034,7 @@
     ['generalObservations', 'Observaciones generales', 'textarea', 'Condiciones sujetas a contrato definitivo y aprobaciones internas']
   ];
 
+  const DEFAULT_PHASE_PLAN_USES = ['Terreno', 'Infraestructura', 'Construcción', 'Costes directos', 'Costes indirectos', 'Honorarios', 'Licencias', 'Comercialización', 'Imprevistos'];
   const DEFAULT_PHASE_FINANCING_LINES = ['Terreno', 'Infraestructura', 'Construccion', 'Costos directos', 'Costos indirectos', 'Otra'];
   const PHASE_FINANCING_GRID = 'display:grid;grid-template-columns:minmax(150px,1.1fr) 120px 110px 110px minmax(180px,1fr) minmax(200px,1fr) 110px minmax(180px,1fr) 76px;gap:6px;align-items:start;min-width:1250px;';
   const PHASE_FINANCING_HEADER = `
@@ -1062,7 +1063,8 @@
 
   function createPhaseFinanceBlock(index, item = {}) {
     const itemRows = (items = [], kind) => {
-      const rows = items.length ? items : [{ name: '', amount: '' }];
+      const defaults = kind === 'planUses' ? DEFAULT_PHASE_PLAN_USES.map(name => ({ name })) : [{ name: '', amount: '' }];
+      const rows = items.length ? items : defaults;
       return rows.map(row => `
         <div style="display:grid;grid-template-columns:1fr 140px;gap:8px;margin-bottom:6px;" data-create-phase-line="${kind}">
           <input data-create-phase-line-name placeholder="Concepto" value="${escapeHtml(row.name || '')}">
@@ -1738,6 +1740,8 @@
 
     if (btnCreate) {
       btnCreate.addEventListener('click', async () => {
+        if (btnCreate.disabled) return;
+        btnCreate.disabled = true;
         try {
           const name = document.getElementById('pName')?.value?.trim() || '';
           const description = document.getElementById('pDesc')?.value?.trim() || '';
@@ -1850,6 +1854,8 @@
           await loadList();
         } catch (e) {
           alert('Error al crear proyecto: ' + (e.message || e));
+        } finally {
+          btnCreate.disabled = false;
         }
       });
     }

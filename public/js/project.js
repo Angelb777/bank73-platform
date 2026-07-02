@@ -8497,6 +8497,126 @@ function estadoLabel(v) {
     }).join('');
   }
 
+  function commercialModelsHtml() {
+    const models = projectHousingModels();
+    const attr = value => escapeHtml(value ?? '');
+    return `
+      <details class="commercial-models-manager" style="border:1px solid #dbe2ea;border-radius:12px;background:#fff;padding:10px;">
+        <summary style="cursor:pointer;font-weight:800;">Modelos (${models.length})</summary>
+        <div style="display:grid;gap:8px;margin-top:10px;max-width:760px;">
+          ${models.map((model, idx) => `
+            <div style="display:grid;grid-template-columns:1.1fr 80px 80px 100px 100px 110px auto;gap:6px;align-items:center;" data-commercial-model-row="${idx}">
+              <input data-commercial-model="name" placeholder="Modelo" value="${attr(model.name || '')}">
+              <input data-commercial-model="bedrooms" type="number" min="0" step="1" placeholder="Rec." value="${attr(model.bedrooms ?? '')}">
+              <input data-commercial-model="bathrooms" type="number" min="0" step="any" placeholder="Baños" value="${attr(model.bathrooms ?? '')}">
+              <input data-commercial-model="openAreaM2" type="number" min="0" step="any" placeholder="Área abierta" value="${attr(model.openAreaM2 ?? '')}">
+              <input data-commercial-model="closedAreaM2" type="number" min="0" step="any" placeholder="Área cerrada" value="${attr(model.closedAreaM2 ?? '')}">
+              <input data-commercial-model="price" type="number" min="0" step="any" placeholder="Precio" value="${attr(model.price ?? '')}">
+              <button type="button" class="btn mini" data-delete-commercial-model="${idx}">Eliminar</button>
+            </div>
+          `).join('') || '<div class="small muted">Aún no hay modelos guardados.</div>'}
+          <div style="display:grid;grid-template-columns:1.1fr 80px 80px 100px 100px 110px auto;gap:6px;align-items:center;">
+            <input id="cm-name" placeholder="Nuevo modelo">
+            <input id="cm-bedrooms" type="number" min="0" step="1" placeholder="Rec.">
+            <input id="cm-bathrooms" type="number" min="0" step="any" placeholder="Baños">
+            <input id="cm-openAreaM2" type="number" min="0" step="any" placeholder="Área abierta">
+            <input id="cm-closedAreaM2" type="number" min="0" step="any" placeholder="Área cerrada">
+            <input id="cm-price" type="number" min="0" step="any" placeholder="Precio">
+            <button type="button" class="btn mini primary" id="btnAddCommercialModel">Añadir</button>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button type="button" class="btn mini" id="btnSaveCommercialModels">Guardar modelos</button>
+            <span class="small muted" id="commercialModelsMsg"></span>
+          </div>
+        </div>
+      </details>
+    `;
+  }
+
+  function readCommercialModelRow(row, base = {}) {
+    const val = key => row.querySelector(`[data-commercial-model="${key}"]`)?.value?.trim() || '';
+    const num = key => {
+      const value = val(key);
+      return value === '' ? 0 : Number(value || 0);
+    };
+    return {
+      ...base,
+      name: val('name'),
+      bedrooms: num('bedrooms'),
+      bathrooms: num('bathrooms'),
+      openAreaM2: num('openAreaM2'),
+      closedAreaM2: num('closedAreaM2'),
+      price: num('price')
+    };
+  }
+
+  function currentCommercialModelsFromUi() {
+    return Array.from(document.querySelectorAll('[data-commercial-model-row]')).map(row => {
+      const idx = Number(row.dataset.commercialModelRow);
+      return readCommercialModelRow(row, projectHousingModels()[idx] || {});
+    }).filter(model => String(model.name || '').trim());
+  }
+
+  async function saveProjectHousingModels(models) {
+    await apiPatch(`/api/projects/${id}`, { housingModels: models });
+    state.project.housingModels = models;
+    const modelSelect = document.getElementById('cl-modeloSelect');
+    if (modelSelect) modelSelect.innerHTML = projectModelOptions(modelSelect.value, { includeEmpty: true });
+  }
+
+  async function bindCommercialModelsManager() {
+    const msg = document.getElementById('commercialModelsMsg');
+    const setMsg = (text, color = '') => {
+      if (!msg) return;
+      msg.textContent = text;
+      msg.style.color = color;
+    };
+    document.getElementById('btnAddCommercialModel')?.addEventListener('click', async () => {
+      const name = document.getElementById('cm-name')?.value?.trim() || '';
+      if (!name) return setMsg('Indica el nombre del modelo.', '#b91c1c');
+      const models = currentCommercialModelsFromUi();
+      if (models.some(model => String(model.name || '').trim().toLowerCase() === name.toLowerCase())) {
+        return setMsg('Ya existe un modelo con ese nombre.', '#b91c1c');
+      }
+      models.push({
+        name,
+        bedrooms: Number(document.getElementById('cm-bedrooms')?.value || 0),
+        bathrooms: Number(document.getElementById('cm-bathrooms')?.value || 0),
+        openAreaM2: Number(document.getElementById('cm-openAreaM2')?.value || 0),
+        closedAreaM2: Number(document.getElementById('cm-closedAreaM2')?.value || 0),
+        price: Number(document.getElementById('cm-price')?.value || 0),
+        observations: 'Creado desde Comercial'
+      });
+      try {
+        await saveProjectHousingModels(models);
+        await loadUnits();
+      } catch (e) {
+        setMsg(e.message || 'No se pudo añadir el modelo.', '#b91c1c');
+      }
+    });
+    document.getElementById('btnSaveCommercialModels')?.addEventListener('click', async () => {
+      try {
+        await saveProjectHousingModels(currentCommercialModelsFromUi());
+        setMsg('Modelos guardados.', '#166534');
+      } catch (e) {
+        setMsg(e.message || 'No se pudieron guardar los modelos.', '#b91c1c');
+      }
+    });
+    document.querySelectorAll('[data-delete-commercial-model]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const idx = Number(btn.dataset.deleteCommercialModel);
+        if (!confirm('¿Eliminar este modelo?')) return;
+        try {
+          const models = currentCommercialModelsFromUi().filter((_, i) => i !== idx);
+          await saveProjectHousingModels(models);
+          await loadUnits();
+        } catch (e) {
+          setMsg(e.message || 'No se pudo eliminar el modelo.', '#b91c1c');
+        }
+      });
+    });
+  }
+
   function modelToUnitDefaults(model) {
     if (!model) return {};
     return {
@@ -8522,6 +8642,10 @@ function estadoLabel(v) {
     setValue('cl-modelo', defaults.modelo);
     setValue('cl-m2', formatInputNumber('cl-m2', defaults.m2));
     setValue('cl-precio', formatInputNumber('cl-precio', defaults.precioLista));
+    setValue('cl-areaAbierta', formatInputNumber('cl-areaAbierta', defaults.areaAbierta));
+    setValue('cl-areaCerrada', formatInputNumber('cl-areaCerrada', defaults.areaCerrada));
+    setValue('cl-recamaras', formatInputNumber('cl-recamaras', defaults.recamaras));
+    setValue('cl-banos', formatInputNumber('cl-banos', defaults.banos));
     const loc = document.getElementById('cl-ubicacion');
     if (loc && !loc.value) loc.value = state?.project?.location || state?.project?.address || '';
   }
@@ -9022,6 +9146,7 @@ grid.innerHTML = `
     <button type="button" class="btn primary" id="btnCrearCarpetaComercial">
       + Crear carpeta
     </button>
+    ${commercialModelsHtml()}
   </div>
 
   <div
@@ -9100,6 +9225,7 @@ grid.innerHTML = `
     `;
   }).join('')}
 `;
+bindCommercialModelsManager();
 
 const cppAlerts = units
   .map(u => getCppExpiryAlert(u, ventasMap.get(String(u._id))))

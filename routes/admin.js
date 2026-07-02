@@ -118,6 +118,36 @@ function safeTenantKey(value) {
   return String(value || '').trim().slice(0, 120);
 }
 
+function tenantUserFilter(tenantKey) {
+  return { $or: [{ tenantKey }, { tenantKeys: tenantKey }] };
+}
+
+function projectAssignedToUsersFilter(userIds = []) {
+  return {
+    $or: [
+      { assignedPromoters: { $in: userIds } },
+      { assignedCommercials: { $in: userIds } },
+      { assignedLegal: { $in: userIds } },
+      { assignedTecnicos: { $in: userIds } },
+      { assignedGerencia: { $in: userIds } },
+      { assignedSocios: { $in: userIds } },
+      { assignedFinanciero: { $in: userIds } },
+      { assignedContable: { $in: userIds } }
+    ]
+  };
+}
+
+async function tenantAssignedProjects(tenantKey, projection = null) {
+  const users = await User.find(tenantUserFilter(tenantKey)).select('_id').lean();
+  const userIds = users.map(u => u._id);
+  if (!userIds.length) return { usersCount: 0, projects: [] };
+
+  const query = Project.find(projectAssignedToUsersFilter(userIds)).sort({ createdAt: -1 });
+  if (projection) query.select(projection);
+  const projects = await query.lean();
+  return { usersCount: userIds.length, projects };
+}
+
 function projectAssignedUserIds(projects = []) {
   const ids = new Set();
   const fields = [
@@ -302,9 +332,9 @@ router.get('/audit-logs', async (req, res) => {
 
 router.get('/tenants', async (_req, res) => {
   try {
-    const [tenantDocs, projectTenantKeys, userTenantKeys] = await Promise.all([
+    const [tenantDocs, primaryTenantKeys, userTenantKeys] = await Promise.all([
       Tenant.find({}).sort({ name: 1, tenantKey: 1 }).lean(),
-      Project.distinct('tenantKey', { tenantKey: { $nin: [null, ''] } }),
+      User.distinct('tenantKey', { tenantKey: { $nin: [null, ''] } }),
       User.distinct('tenantKeys', { tenantKeys: { $nin: [null, ''] } })
     ]);
 
@@ -315,16 +345,13 @@ router.get('/tenants', async (_req, res) => {
       createdAt: t.createdAt || null,
       source: 'Tenant'
     }));
-    [...projectTenantKeys, ...userTenantKeys].filter(Boolean).forEach(key => {
+    [...primaryTenantKeys, ...userTenantKeys].filter(Boolean).forEach(key => {
       if (!map.has(key)) map.set(key, { tenantKey: key, name: key, createdAt: null, source: 'derived' });
     });
 
     const rows = await Promise.all(Array.from(map.values()).map(async t => {
-      const [usersCount, projectsCount] = await Promise.all([
-        User.countDocuments({ $or: [{ tenantKey: t.tenantKey }, { tenantKeys: t.tenantKey }] }),
-        Project.countDocuments({ tenantKey: t.tenantKey })
-      ]);
-      return { ...t, usersCount, projectsCount };
+      const { usersCount, projects } = await tenantAssignedProjects(t.tenantKey, '_id');
+      return { ...t, usersCount, projectsCount: projects.length };
     }));
 
     res.json({ tenants: rows.sort((a, b) => String(a.name).localeCompare(String(b.name))) });
@@ -336,7 +363,7 @@ router.get('/tenants', async (_req, res) => {
 router.get('/tenants/:tenantKey/users', async (req, res) => {
   try {
     const tenantKey = safeTenantKey(req.params.tenantKey);
-    const users = await User.find({ $or: [{ tenantKey }, { tenantKeys: tenantKey }] }, { password: 0 })
+    const users = await User.find(tenantUserFilter(tenantKey), { password: 0 })
       .sort({ createdAt: -1 })
       .lean();
     res.json({ tenantKey, users: users.map(u => sanitizeExportUser(u, tenantKey)) });
@@ -348,7 +375,7 @@ router.get('/tenants/:tenantKey/users', async (req, res) => {
 router.get('/tenants/:tenantKey/projects', async (req, res) => {
   try {
     const tenantKey = safeTenantKey(req.params.tenantKey);
-    const projects = await Project.find({ tenantKey }).sort({ createdAt: -1 }).lean();
+    const { projects } = await tenantAssignedProjects(tenantKey);
     res.json({ tenantKey, projects });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -358,7 +385,7 @@ router.get('/tenants/:tenantKey/projects', async (req, res) => {
 router.get('/tenants/:tenantKey/isolation', async (req, res) => {
   try {
     const tenantKey = safeTenantKey(req.params.tenantKey);
-    const projects = await Project.find({ tenantKey }).select('_id').lean();
+    const { projects } = await tenantAssignedProjects(tenantKey, '_id');
     const projectIds = projects.map(p => p._id);
     const noTenant = [{ tenantKey: { $exists: false } }, { tenantKey: null }, { tenantKey: '' }];
     const otherTenant = { $exists: true, $nin: [tenantKey, null, ''] };
@@ -410,6 +437,52 @@ router.get('/tenants/:tenantKey/export', async (req, res) => {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(JSON.stringify(data, null, 2));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/tenants/:tenantKey', async (req, res) => {
+  try {
+    const tenantKey = safeTenantKey(req.params.tenantKey);
+    const pin = String(req.body?.pin || '').trim();
+    if (!tenantKey) return res.status(400).json({ error: 'Tenant invalido' });
+    if (tenantKey === 'bancodemo') return res.status(403).json({ error: 'No se puede eliminar bancodemo.' });
+    if (pin !== '258025') return res.status(403).json({ error: 'PIN incorrecto.' });
+
+    const [primaryUsers, primaryProjects] = await Promise.all([
+      User.countDocuments({ tenantKey }),
+      Project.countDocuments({ tenantKey })
+    ]);
+    if (primaryUsers || primaryProjects) {
+      return res.status(409).json({
+        error: 'No se puede eliminar un tenant con usuarios o proyectos primarios. Migra esos registros antes.',
+        primaryUsers,
+        primaryProjects
+      });
+    }
+
+    const [deleted, usersUpdated] = await Promise.all([
+      Tenant.deleteOne({ tenantKey }),
+      User.updateMany({ tenantKeys: tenantKey }, { $pull: { tenantKeys: tenantKey } })
+    ]);
+
+    await audit(req, 'tenant.delete', {
+      targetType: 'tenant',
+      message: 'Tenant eliminado',
+      metadata: {
+        deletedTenantKey: tenantKey,
+        tenantDeleted: deleted.deletedCount || 0,
+        usersUpdated: usersUpdated.modifiedCount || 0
+      }
+    });
+
+    res.json({
+      ok: true,
+      tenantKey,
+      tenantDeleted: deleted.deletedCount || 0,
+      usersUpdated: usersUpdated.modifiedCount || 0
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
