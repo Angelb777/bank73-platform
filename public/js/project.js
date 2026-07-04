@@ -83,7 +83,9 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
   }
 
   function formatPanamaNumber(value, decimals = 2) {
-    return Number(value || 0).toLocaleString('en-US', {
+    const n = typeof value === 'number' ? value : parsePanamaNumber(value);
+    const safe = Number.isFinite(n) ? n : 0;
+    return safe.toLocaleString('en-US', {
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals
     });
@@ -8202,20 +8204,48 @@ function refreshFinanciamientoAuto(changedField = '') {
   const precio = parsePanamaNumber(precioEl.value);
   let monto = parsePanamaNumber(montoEl.value);
   let pct = parsePanamaNumber(pctEl.value);
+  let abono = abonoEl ? parsePanamaNumber(abonoEl.value) : Math.max(precio - monto, 0);
 
-  if (precio > 0) {
-    if (changedField === 'pct') {
-      monto = precio * (pct / 100);
-      montoEl.value = formatPanamaNumber(monto);
-    } else {
-      pct = (monto / precio) * 100;
-      pctEl.value = formatPanamaNumber(pct);
-    }
-
-    if (abonoEl) {
-      abonoEl.value = formatPanamaNumber(Math.max(precio - monto, 0));
-    }
+  if (precio <= 0) {
+    montoEl.value = formatPanamaNumber(0);
+    pctEl.value = formatPanamaNumber(0);
+    if (abonoEl) abonoEl.value = formatPanamaNumber(0);
+    return;
   }
+
+  if (changedField === 'init') {
+    if (abono > 0) {
+      monto = Math.max(precio - abono, 0);
+      pct = (monto / precio) * 100;
+    } else if (monto > 0) {
+      abono = Math.max(precio - monto, 0);
+      pct = (monto / precio) * 100;
+    } else if (pct > 0) {
+      monto = precio * (pct / 100);
+      abono = Math.max(precio - monto, 0);
+    } else {
+      monto = 0;
+      pct = 0;
+      abono = precio;
+    }
+  } else if (changedField === 'pct') {
+    monto = precio * (pct / 100);
+    abono = Math.max(precio - monto, 0);
+  } else if (changedField === 'monto') {
+    abono = Math.max(precio - monto, 0);
+    pct = (monto / precio) * 100;
+  } else {
+    monto = Math.max(precio - abono, 0);
+    pct = (monto / precio) * 100;
+  }
+
+  monto = Number.isFinite(monto) ? monto : 0;
+  pct = Number.isFinite(pct) ? pct : 0;
+  abono = Number.isFinite(abono) ? abono : 0;
+
+  montoEl.value = formatPanamaNumber(monto);
+  pctEl.value = formatPanamaNumber(pct);
+  if (abonoEl) abonoEl.value = formatPanamaNumber(abono);
 }
 
 function refreshAreaTotalConstruccion() {
@@ -8501,11 +8531,23 @@ function estadoLabel(v) {
     const models = projectHousingModels();
     const attr = value => escapeHtml(value ?? '');
     return `
-      <details class="commercial-models-manager" style="border:1px solid #dbe2ea;border-radius:12px;background:#fff;padding:10px;">
-        <summary style="cursor:pointer;font-weight:800;">Modelos (${models.length})</summary>
-        <div style="display:grid;gap:8px;margin-top:10px;max-width:760px;">
+      <details class="commercial-models-manager" open>
+        <summary>
+          <span>Modelos guardados</span>
+          <small>${models.length} guardados</small>
+        </summary>
+        <div class="commercial-models-content">
+          <div class="commercial-models-head" aria-hidden="true">
+            <span>Modelo</span>
+            <span>Rec.</span>
+            <span>Banos</span>
+            <span>Abierta</span>
+            <span>Cerrada</span>
+            <span>Precio</span>
+            <span></span>
+          </div>
           ${models.map((model, idx) => `
-            <div style="display:grid;grid-template-columns:1.1fr 80px 80px 100px 100px 110px auto;gap:6px;align-items:center;" data-commercial-model-row="${idx}">
+            <div class="commercial-model-row" data-commercial-model-row="${idx}">
               <input data-commercial-model="name" placeholder="Modelo" value="${attr(model.name || '')}">
               <input data-commercial-model="bedrooms" type="number" min="0" step="1" placeholder="Rec." value="${attr(model.bedrooms ?? '')}">
               <input data-commercial-model="bathrooms" type="number" min="0" step="any" placeholder="Baños" value="${attr(model.bathrooms ?? '')}">
@@ -8515,7 +8557,7 @@ function estadoLabel(v) {
               <button type="button" class="btn mini" data-delete-commercial-model="${idx}">Eliminar</button>
             </div>
           `).join('') || '<div class="small muted">Aún no hay modelos guardados.</div>'}
-          <div style="display:grid;grid-template-columns:1.1fr 80px 80px 100px 100px 110px auto;gap:6px;align-items:center;">
+          <div class="commercial-model-row commercial-model-row-new">
             <input id="cm-name" placeholder="Nuevo modelo">
             <input id="cm-bedrooms" type="number" min="0" step="1" placeholder="Rec.">
             <input id="cm-bathrooms" type="number" min="0" step="any" placeholder="Baños">
@@ -8524,7 +8566,7 @@ function estadoLabel(v) {
             <input id="cm-price" type="number" min="0" step="any" placeholder="Precio">
             <button type="button" class="btn mini primary" id="btnAddCommercialModel">Añadir</button>
           </div>
-          <div style="display:flex;gap:8px;align-items:center;">
+          <div class="commercial-model-actions">
             <button type="button" class="btn mini" id="btnSaveCommercialModels">Guardar modelos</button>
             <span class="small muted" id="commercialModelsMsg"></span>
           </div>
@@ -8564,6 +8606,102 @@ function estadoLabel(v) {
     if (modelSelect) modelSelect.innerHTML = projectModelOptions(modelSelect.value, { includeEmpty: true });
   }
 
+  function setCommercialModelsMsg(text, color = '') {
+    const msg = document.getElementById('commercialModelsMsg');
+    if (!msg) return;
+    msg.textContent = text;
+    msg.style.color = color;
+  }
+
+  function renderCommercialModelsManagerInCreateModal() {
+    const wrap = document.getElementById('cl-modelsManager');
+    if (!wrap) return;
+    wrap.innerHTML = commercialModelsHtml();
+    bindCommercialModelsManager();
+  }
+
+  function renderCreateBatchModalLayout() {
+    const body = modalCrear?.querySelector('.modal-body');
+    if (!body || body.dataset.commercialCreateLayout === 'split') return;
+    body.dataset.commercialCreateLayout = 'split';
+    body.innerHTML = `
+      <section class="commercial-modal-section commercial-lots-section">
+        <div class="commercial-modal-section-head">
+          <h3>CREAR LOTES</h3>
+        </div>
+        <div class="commercial-lots-grid">
+          <label>
+            <span>Manzana</span>
+            <input id="cl-manzana" placeholder="A" />
+          </label>
+          <label>
+            <span>Cantidad</span>
+            <input id="cl-cantidad" type="number" min="1" value="10" />
+          </label>
+          <label class="commercial-field-wide">
+            <span>Modelo definido</span>
+            <select id="cl-modeloSelect">
+              <option value="">Sin modelo / manual</option>
+            </select>
+          </label>
+          <label>
+            <span>Modelo</span>
+            <input id="cl-modelo" placeholder="Modelo" />
+          </label>
+          <label>
+            <span>m2</span>
+            <input id="cl-m2" type="number" min="0" value="60" />
+          </label>
+          <label>
+            <span>Area abierta m2</span>
+            <input id="cl-areaAbierta" type="number" min="0" value="0" />
+          </label>
+          <label>
+            <span>Area cerrada m2</span>
+            <input id="cl-areaCerrada" type="number" min="0" value="0" />
+          </label>
+          <label>
+            <span>Recamaras</span>
+            <input id="cl-recamaras" type="number" min="0" value="0" />
+          </label>
+          <label>
+            <span>Banos</span>
+            <input id="cl-banos" type="number" min="0" value="0" />
+          </label>
+          <label>
+            <span>Precio lista</span>
+            <input id="cl-precio" type="text" inputmode="decimal" value="100,000.00" />
+          </label>
+          <label class="commercial-field-wide">
+            <span>Ubicacion</span>
+            <input id="cl-ubicacion" type="text" />
+          </label>
+          <label class="commercial-field-wide">
+            <span>Estado inicial</span>
+            <select id="cl-estado">
+              <option value="disponible">Disponible</option>
+              <option value="inventario">Inventario</option>
+              <option value="reservado">Reservado</option>
+              <option value="con_cpp">Con CPP o venta al contado</option>
+              <option value="tramite_legal_activado">Tramite legal activado</option>
+              <option value="escriturado_traspasado">Escriturado / Traspasado</option>
+              <option value="vivienda_entregada">Vivienda entregada</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="commercial-modal-section commercial-library-section">
+        <div class="commercial-modal-section-head">
+          <h3>BIBLIOTECA DE MODELOS</h3>
+          <p>Guarda tipologias para reutilizarlas al crear nuevos lotes.</p>
+        </div>
+        <div id="cl-modelsManager"></div>
+      </section>
+    `;
+    document.getElementById('cl-modeloSelect')?.addEventListener('change', (event) => applyProjectModelToOpenUnitForm(event.target.value));
+  }
+
   async function bindCommercialModelsManager() {
     const msg = document.getElementById('commercialModelsMsg');
     const setMsg = (text, color = '') => {
@@ -8589,6 +8727,8 @@ function estadoLabel(v) {
       });
       try {
         await saveProjectHousingModels(models);
+        renderCommercialModelsManagerInCreateModal();
+        setCommercialModelsMsg('Modelo anadido.', '#166534');
         await loadUnits();
       } catch (e) {
         setMsg(e.message || 'No se pudo añadir el modelo.', '#b91c1c');
@@ -8609,6 +8749,8 @@ function estadoLabel(v) {
         try {
           const models = currentCommercialModelsFromUi().filter((_, i) => i !== idx);
           await saveProjectHousingModels(models);
+          renderCommercialModelsManagerInCreateModal();
+          setCommercialModelsMsg('Modelo eliminado.', '#166534');
           await loadUnits();
         } catch (e) {
           setMsg(e.message || 'No se pudo eliminar el modelo.', '#b91c1c');
@@ -9146,7 +9288,6 @@ grid.innerHTML = `
     <button type="button" class="btn primary" id="btnCrearCarpetaComercial">
       + Crear carpeta
     </button>
-    ${commercialModelsHtml()}
   </div>
 
   <div
@@ -9225,7 +9366,6 @@ grid.innerHTML = `
     `;
   }).join('')}
 `;
-bindCommercialModelsManager();
 
 const cppAlerts = units
   .map(u => getCppExpiryAlert(u, ventasMap.get(String(u._id))))
@@ -10308,7 +10448,7 @@ const htmlFinanciamiento = seccion('Financiamiento / Proforma', `
 ${inputNum('fv-precioVenta', `Precio de venta ${info('Precio comercial de venta de la unidad. Según el modelo, es un dato principalmente administrativo.')}`, v.precioVenta || u.precioLista || 0)}
 ${inputDate('fv-fechaProbableEntrega', `Fecha probable de entrega ${info('Fecha estimada de entrega de la vivienda. Se mueve a financiamiento por seguimiento de crédito/desembolsos.')}`, v.fechaProbableEntrega)}
 ${inputNum('fv-montoFinanciamientoCPP', `Monto financiamiento CPP / hipoteca ${info('Monto financiado mediante Carta Promesa de Pago o hipoteca aprobada.')}`, v.montoFinanciamientoCPP || v.valor || 0)}
-${inputNum('fv-abonoInicial', `Abono inicial ${info('Se calcula automáticamente como precio de venta menos monto de financiamiento.')}`, v.abonoInicial || 0, { readonly: true })}
+${inputNum('fv-abonoInicial', `Abono inicial ${info('Se usa para calcular automáticamente el monto de financiamiento como precio de venta menos abono inicial.')}`, v.abonoInicial || 0)}
 ${inputNum('fv-porcentajeFinanciamiento', `% financiamiento ${info('Porcentaje del precio de venta cubierto por financiamiento bancario.')}`, v.porcentajeFinanciamiento || 0)}
 ${input('fv-cesionAFavorDe', `Cesión a favor de ${info('Entidad o banco a favor de quien se realiza la cesión de la CPP, si aplica.')}`, v.cesionAFavorDe || '')}
 
@@ -10574,12 +10714,13 @@ const viewExports = document.createElement('div');
 
   document.getElementById('fv-precioVenta')?.addEventListener('input', () => refreshFinanciamientoAuto('precio'));
 document.getElementById('fv-montoFinanciamientoCPP')?.addEventListener('input', () => refreshFinanciamientoAuto('monto'));
+document.getElementById('fv-abonoInicial')?.addEventListener('input', () => refreshFinanciamientoAuto('abono'));
 document.getElementById('fv-porcentajeFinanciamiento')?.addEventListener('input', () => refreshFinanciamientoAuto('pct'));
 document.getElementById('fv-areaAbierta')?.addEventListener('input', refreshAreaTotalConstruccion);
 document.getElementById('fv-areaCerrada')?.addEventListener('input', refreshAreaTotalConstruccion);
 document.getElementById('fu-modeloSelect')?.addEventListener('change', (event) => applyProjectModelToFicha(event.target.value));
 
-refreshFinanciamientoAuto('monto');
+refreshFinanciamientoAuto('init');
 refreshAreaTotalConstruccion();
   installSectionToggles();
 
@@ -10699,6 +10840,14 @@ const uBody = {
     await apiPatch(`/api/units/${fichaUnitId}`, uBody);
 
     // 2) Upsert de la venta
+    refreshFinanciamientoAuto('init');
+    const precioVentaFin = parsePanamaNumber(vVal('fv-precioVenta'));
+    const abonoInicialFin = parsePanamaNumber(vVal('fv-abonoInicial'));
+    const montoFinanciamientoFin = Math.max(precioVentaFin - abonoInicialFin, 0);
+    const porcentajeFinanciamientoFin = precioVentaFin > 0
+      ? (montoFinanciamientoFin / precioVentaFin) * 100
+      : 0;
+
     const vBody = {
       projectId: id,
       unitId: fichaUnitId,
@@ -10807,15 +10956,15 @@ const uBody = {
       estatusCPP: vVal('fv-estatusCPP'),
       numCPP: vVal('fv-numCPP'),
 
-      precioVenta: vNum('fv-precioVenta'),
-      montoFinanciamientoCPP: vNum('fv-montoFinanciamientoCPP'),
+      precioVenta: precioVentaFin,
+      montoFinanciamientoCPP: montoFinanciamientoFin,
 
       // legacy
-      valor: vNum('fv-montoFinanciamientoCPP'),
+      valor: montoFinanciamientoFin,
 
       abonoCliente: vNum('fv-abonoCliente'),
-      abonoInicial: Math.max(parsePanamaNumber(vVal('fv-precioVenta')) - parsePanamaNumber(vVal('fv-montoFinanciamientoCPP')), 0),
-      porcentajeFinanciamiento: vNum('fv-porcentajeFinanciamiento'),
+      abonoInicial: abonoInicialFin,
+      porcentajeFinanciamiento: porcentajeFinanciamientoFin,
       cesionAFavorDe: vVal('fv-cesionAFavorDe'),
 
       entregaExpedienteBanco: vDate('fv-entregaExpedienteBanco'),
@@ -11243,8 +11392,10 @@ if (btnExportarExcel) {
 }
 
   if (btnCrear) btnCrear.addEventListener('click', () => {
+    renderCreateBatchModalLayout();
     const modelSelect = document.getElementById('cl-modeloSelect');
     if (modelSelect) modelSelect.innerHTML = projectModelOptions('', { includeEmpty: true });
+    renderCommercialModelsManagerInCreateModal();
     const loc = document.getElementById('cl-ubicacion');
     if (loc) loc.value = state?.project?.location || state?.project?.address || '';
     modalCrear.style.display='flex';
@@ -11282,27 +11433,6 @@ if (btnExportarExcel) {
         estado: document.getElementById('cl-estado').value || 'disponible'
       };
       try {
-        if (document.getElementById('cl-guardarModelo')?.checked && body.modelo) {
-          const models = Array.isArray(state?.project?.housingModels) ? [...state.project.housingModels] : [];
-          const exists = models.some(model => String(model.name || '').trim().toLowerCase() === String(body.modelo || '').trim().toLowerCase());
-          if (!exists) {
-            const initialStatuses = { disponible: 0, inventario: 0, reservado: 0, con_cpp: 0, tramite_legal_activado: 0, escriturado_traspasado: 0, vivienda_entregada: 0 };
-            initialStatuses[body.estado] = body.cantidad;
-            models.push({
-              name: body.modelo,
-              bedrooms: body.recamaras,
-              bathrooms: body.banos,
-              openAreaM2: body.areaAbierta || body.m2,
-              closedAreaM2: body.areaCerrada,
-              price: body.precioLista,
-              unitsCount: body.cantidad,
-              initialStatuses,
-              observations: 'Creado desde Comercial'
-            });
-            await apiPatch(`/api/projects/${id}`, { housingModels: models });
-            state.project.housingModels = models;
-          }
-        }
         await apiPost('/api/units/batch', body);
         modalCrear.style.display = 'none';
         await loadUnits();

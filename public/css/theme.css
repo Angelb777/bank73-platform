@@ -644,6 +644,26 @@ body.light-theme #tab-comercial .commercial-filter-bar input {
   border-color: #d7dfec;
 }
 
+body.light-theme #modalCrearLote .commercial-create-check,
+body.light-theme #modalCrearLote .commercial-models-manager {
+  background: #f8fafc;
+  border-color: #d7dfec;
+}
+
+body.light-theme #modalCrearLote .commercial-modal-section {
+  background: #ffffff;
+  border-color: #d7dfec;
+  box-shadow: 0 10px 24px rgba(31, 45, 74, .08);
+}
+
+body.light-theme #modalCrearLote .commercial-library-section {
+  background: #f8fafc;
+}
+
+body.light-theme #modalCrearLote .commercial-model-row-new {
+  border-top-color: #d7dfec;
+}
+
 body.light-theme #tab-comercial .commercial-action-label {
   color: #647089;
 }
@@ -4810,6 +4830,230 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
   background: rgba(15, 23, 42, .28);
 }
 
+/* COMERCIAL: modal crear lote + modelos */
+#modalCrearLote {
+  overflow-x: hidden;
+}
+
+#modalCrearLote .commercial-create-modal {
+  width: min(1040px, calc(100vw - 28px));
+  max-height: min(88vh, 860px);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+#modalCrearLote .modal-head {
+  flex: 0 0 auto;
+}
+
+#modalCrearLote .modal-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  max-height: calc(88vh - 140px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  box-sizing: border-box;
+}
+
+#modalCrearLote .commercial-modal-section {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, .22);
+  border-radius: 16px;
+  background: rgba(255,255,255,.035);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+#modalCrearLote .commercial-library-section {
+  border-style: dashed;
+  background: rgba(15, 23, 42, .20);
+}
+
+#modalCrearLote .commercial-modal-section-head {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+#modalCrearLote .commercial-modal-section-head h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: .08em;
+  line-height: 1.2;
+}
+
+#modalCrearLote .commercial-modal-section-head p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+#modalCrearLote .commercial-lots-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+#modalCrearLote .commercial-lots-grid label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+
+#modalCrearLote .commercial-lots-grid label span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+#modalCrearLote .commercial-lots-grid input,
+#modalCrearLote .commercial-lots-grid select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  box-sizing: border-box;
+  border-radius: 12px;
+}
+
+#modalCrearLote .commercial-field-wide {
+  grid-column: span 2;
+}
+
+#modalCrearLote .modal-body > label {
+  min-width: 0;
+  margin: 0;
+  align-self: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+#modalCrearLote .modal-body > input,
+#modalCrearLote .modal-body > select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  box-sizing: border-box;
+  border-radius: 12px;
+}
+
+#modalCrearLote .commercial-create-check,
+#modalCrearLote #cl-modelsManager {
+  grid-column: 1 / -1;
+}
+
+#modalCrearLote .commercial-create-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, .18);
+  border-radius: 12px;
+  background: rgba(255,255,255,.04);
+  color: var(--text);
+}
+
+#modalCrearLote .commercial-create-check input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+#modalCrearLote .commercial-models-manager {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  overflow: hidden;
+}
+
+#modalCrearLote .commercial-models-manager summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 0 10px;
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 900;
+}
+
+#modalCrearLote .commercial-models-manager summary small {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+#modalCrearLote .commercial-models-content {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+#modalCrearLote .commercial-models-head,
+#modalCrearLote .commercial-model-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.3fr) minmax(66px, .55fr) minmax(72px, .6fr) minmax(92px, .8fr) minmax(92px, .8fr) minmax(108px, .9fr) minmax(82px, auto);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+#modalCrearLote .commercial-models-head {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+#modalCrearLote .commercial-model-row input {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  box-sizing: border-box;
+  border-radius: 10px;
+}
+
+#modalCrearLote .commercial-model-row .btn {
+  width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+#modalCrearLote .commercial-model-row-new {
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, .18);
+}
+
+#modalCrearLote .commercial-model-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+#modalCrearLote .commercial-create-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+#modalCrearLote #cl-crear {
+  min-width: 150px;
+}
+
 /* COMERCIAL: resumen de estados en tarjetas */
 #tab-comercial #kpisComercial {
   display: grid !important;
@@ -4890,23 +5134,120 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
 @media (max-width: 720px) {
   #tab-comercial .commercial-control-panel {
     padding: 12px;
+    overflow: hidden;
+  }
+
+  #tab-comercial .commercial-actions-bar {
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
 
   #tab-comercial .commercial-action-group {
     display: grid;
     grid-template-columns: 1fr;
+    justify-items: stretch;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
   }
 
   #tab-comercial .commercial-action-label {
     padding: 0 2px 2px;
   }
 
+  #tab-comercial .commercial-action-controls,
+  #tab-comercial #commercialImportDatoUnicoSlot .summary-import-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+    min-width: 0;
+  }
+
   #tab-comercial .commercial-btn {
     width: 100%;
+    min-width: 0;
+    white-space: normal;
   }
 
   #tab-comercial .commercial-filter-bar {
     grid-template-columns: 1fr;
+  }
+
+  #tab-comercial #commercialImportDatoUnicoSlot .summary-file-picker,
+  #tab-comercial #commercialImportDatoUnicoSlot #importDatoUnicoBtn {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  #tab-comercial #commercialImportDatoUnicoSlot .summary-file-picker {
+    flex-basis: auto;
+  }
+
+  #tab-comercial #commercialImportDatoUnicoSlot .summary-file-picker-label {
+    flex: 0 0 auto;
+  }
+
+  .commercial-folders-toolbar {
+    justify-content: stretch;
+  }
+
+  .commercial-folders-toolbar .btn {
+    width: 100%;
+  }
+
+  #modalCrearLote .commercial-create-modal {
+    width: min(100vw - 16px, 680px);
+    max-height: calc(100dvh - 20px);
+  }
+
+  #modalCrearLote .modal-body {
+    grid-template-columns: 1fr;
+    max-height: calc(100dvh - 140px);
+    gap: 8px;
+    padding-right: 0;
+  }
+
+  #modalCrearLote .commercial-modal-section {
+    padding: 12px;
+  }
+
+  #modalCrearLote .commercial-lots-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #modalCrearLote .commercial-field-wide {
+    grid-column: auto;
+  }
+
+  #modalCrearLote .modal-body > label {
+    margin-top: 4px;
+  }
+
+  #modalCrearLote .commercial-models-head {
+    display: none;
+  }
+
+  #modalCrearLote .commercial-model-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 10px;
+    border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 12px;
+  }
+
+  #modalCrearLote .commercial-model-row input:first-child,
+  #modalCrearLote .commercial-model-row .btn {
+    grid-column: 1 / -1;
+  }
+
+  #modalCrearLote .commercial-model-actions,
+  #modalCrearLote .commercial-create-footer {
+    justify-content: stretch;
+  }
+
+  #modalCrearLote .commercial-model-actions .btn,
+  #modalCrearLote .commercial-create-footer .btn {
+    width: 100%;
   }
 }
 
@@ -6156,4 +6497,62 @@ body {
 .promoter-profile-action {
   justify-self: start;
   width: max-content;
+}
+
+@media (max-width: 768px) {
+  #tab-comercial,
+  #tab-comercial * {
+    box-sizing: border-box;
+  }
+
+  #tab-comercial .commercial-control-panel,
+  #tab-comercial .commercial-actions-bar,
+  #tab-comercial .commercial-action-group {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: hidden !important;
+  }
+
+  #tab-comercial .commercial-actions-bar,
+  #tab-comercial .commercial-action-controls,
+  #tab-comercial .commercial-action-selection,
+  #tab-comercial .commercial-action-export,
+  #tab-comercial #commercialImportDatoUnicoSlot,
+  #tab-comercial #commercialImportDatoUnicoSlot .summary-import-actions {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    justify-items: stretch !important;
+  }
+
+  #tab-comercial .commercial-action-group > .btn,
+  #tab-comercial .commercial-action-group > .commercial-btn,
+  #tab-comercial .commercial-action-controls > .btn,
+  #tab-comercial #btnSelectAll,
+  #tab-comercial #btnEditarSel,
+  #tab-comercial #btnEliminarSel,
+  #tab-comercial #btnCrearLote,
+  #tab-comercial #btnExportarCsv,
+  #tab-comercial #btnExportarExcel,
+  #tab-comercial #importDatoUnicoBtn {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    white-space: normal !important;
+  }
+
+  #tab-comercial #commercialImportDatoUnicoSlot .summary-file-picker {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  #modalCrearLote,
+  #modalCrearLote .commercial-create-modal,
+  #modalCrearLote .modal-body,
+  #modalCrearLote .commercial-models-manager,
+  #modalCrearLote .commercial-models-content {
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
 }

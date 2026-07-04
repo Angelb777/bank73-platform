@@ -4994,12 +4994,37 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 }
 });
 
+async function requireDatoUnicoImportAccess(req, res, next) {
+  try {
+    const role = String(req.user?.role || '').toLowerCase();
+    if (role === 'admin') return next();
+    if (role !== 'promoter') return res.status(403).json({ error: 'Acceso denegado' });
+
+    const project = await Project.findOne({ _id: req.params.id, tenantKey: req.tenantKey }).lean();
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+    const userId = String(req.user?.userId || req.user?._id || '');
+    const isCreator = userId && String(project.createdBy || '') === userId;
+    const isAssigned = Array.isArray(project.assignedPromoters) &&
+      project.assignedPromoters.some(id => String(id) === userId);
+
+    if (!isCreator && !isAssigned) {
+      return res.status(403).json({ error: 'Proyecto no asignado al promotor' });
+    }
+
+    req.project = project;
+    return next();
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
 // POST /api/projects/:id/import-dato-unico
 // POST /api/projects/:id/import-dato-unico
 router.post(
   '/:id/import-dato-unico',
-  requireRole('admin'),
-  requireProjectAccess(),
+  requireRole('admin', 'promoter'),
+  requireDatoUnicoImportAccess,
   upload.single('file'),
   async (req, res) => {
     try {

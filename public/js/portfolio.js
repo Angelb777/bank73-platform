@@ -418,8 +418,18 @@
   const createHousingModels = document.getElementById('createHousingModels');
   const createFinancePhases = document.getElementById('createFinancePhases');
   const createFinanceLines = document.getElementById('createFinanceLines');
-  const CREATE_STEP_ORDER = ['general', 'legal', 'technical', 'models', 'financial', 'progress', 'team'];
+  const createDatoUnicoFileInput = document.getElementById('createDatoUnicoFile');
+  const createDatoUnicoFileName = document.getElementById('createDatoUnicoFileName');
+  const clearCreateDatoUnicoFileBtn = document.getElementById('clearCreateDatoUnicoFile');
+  const createDatoUnicoWarning = document.getElementById('createDatoUnicoWarning');
+  const createImportModeNotice = document.getElementById('createImportModeNotice');
+  const createManualModelsPanel = document.getElementById('createManualModelsPanel');
+  const CREATE_STEP_ORDER = ['general', 'legal', 'technical', 'progress', 'financial', 'team'];
   let activeCreateStep = 'general';
+  let createDatoUnicoFileState = null;
+  let isCreatingProject = false;
+  let createTotalUnitsManuallyEdited = false;
+  let createLastSuggestedUnitsTotal = 0;
 
   function setCreateStep(step) {
     activeCreateStep = CREATE_STEP_ORDER.includes(step) ? step : 'general';
@@ -761,7 +771,38 @@
     };
   }
 
+  function hasCreateDatoUnicoFile() {
+    return !!createDatoUnicoFileState;
+  }
+
+  function updateCreateDatoUnicoMode() {
+    const file = createDatoUnicoFileState;
+    const fileName = file?.name || 'Ningun archivo seleccionado';
+    if (createDatoUnicoFileName) createDatoUnicoFileName.textContent = fileName;
+    if (clearCreateDatoUnicoFileBtn) clearCreateDatoUnicoFileBtn.style.display = file ? '' : 'none';
+    if (createDatoUnicoWarning) createDatoUnicoWarning.style.display = file ? '' : 'none';
+    if (createImportModeNotice) {
+      createImportModeNotice.classList.toggle('is-excel', !!file);
+      createImportModeNotice.classList.toggle('is-manual', !file);
+      createImportModeNotice.textContent = file
+        ? `Modo actual: importacion Excel (${fileName}). Las unidades se crearán desde el archivo.`
+        : 'Modo actual: manual. Se crearán unidades desde los modelos indicados abajo.';
+    }
+    if (createManualModelsPanel) createManualModelsPanel.classList.toggle('is-disabled', !!file);
+    createManualModelsPanel?.querySelectorAll('input, select, textarea, button').forEach(el => {
+      el.disabled = !!file;
+    });
+  }
+
+  function clearCreateDatoUnicoFile() {
+    createDatoUnicoFileState = null;
+    if (createDatoUnicoFileInput) createDatoUnicoFileInput.value = '';
+    updateCreateDatoUnicoMode();
+    syncTechnicalUnitsFromModels();
+  }
+
   function collectHousingModels() {
+    if (hasCreateDatoUnicoFile()) return [];
     return Array.from(document.querySelectorAll('[data-create-model-row]')).map(row => ({
       name: row.querySelector('[data-create-model="name"]')?.value.trim() || '',
       bedrooms: numberFromCreate(row.querySelector('[data-create-model="bedrooms"]')?.value),
@@ -885,6 +926,7 @@
   }
 
   function collectInitialUnits() {
+    if (hasCreateDatoUnicoFile()) return [];
     return Array.from(document.querySelectorAll('[data-create-model-row]')).flatMap(row =>
       Array.from(row.querySelectorAll('[data-create-unit-row]')).map(unitRow => {
         const item = { ...modelDefaultsFromRow(row), ...readCreateUnitRow(unitRow) };
@@ -941,6 +983,7 @@
   }
 
   function validateCreateModelStatuses({ alertOnError = false } = {}) {
+    if (hasCreateDatoUnicoFile()) return true;
     for (const row of Array.from(document.querySelectorAll('[data-create-model-row]'))) {
       syncCreateModelStatusRow(row);
       const total = numberFromCreate(row.querySelector('[data-create-model="unitsCount"]')?.value);
@@ -958,10 +1001,18 @@
   }
 
   function syncTechnicalUnitsFromModels() {
+    if (hasCreateDatoUnicoFile()) return;
     const totalEl = document.getElementById('td-totalUnits');
-    if (!totalEl || String(totalEl.value || '').trim()) return;
-    const total = collectHousingModels().reduce((sum, item) => sum + numberFromCreate(item.unitsCount), 0);
-    if (total) totalEl.value = total;
+    if (!totalEl) return;
+    const total = Array.from(document.querySelectorAll('[data-create-model-row]'))
+      .reduce((sum, row) => sum + numberFromCreate(row.querySelector('[data-create-model="unitsCount"]')?.value), 0);
+    const currentValue = String(totalEl.value || '').trim();
+    const canSuggest = !createTotalUnitsManuallyEdited || !currentValue || numberFromCreate(currentValue) === createLastSuggestedUnitsTotal;
+    createLastSuggestedUnitsTotal = total;
+    if (canSuggest) {
+      totalEl.value = total ? Math.round(total) : '';
+      createTotalUnitsManuallyEdited = false;
+    }
   }
 
   function syncFinancialTriplet(sourceId = '') {
@@ -1437,6 +1488,7 @@
     bindBankNumberFormatting(createHousingModels || document);
     const row = createHousingModels?.lastElementChild;
     if (row) syncCreateUnitsPreview(row);
+    syncTechnicalUnitsFromModels();
   });
   [createBoardMembers, createShareholders, createHousingModels].forEach(container => {
     container?.addEventListener('click', event => {
@@ -1462,6 +1514,10 @@
     if (unitLocation) unitLocation.closest('[data-create-unit-row]')?.setAttribute('data-location-manual', '1');
   });
   document.getElementById('td-phasesCount')?.addEventListener('input', syncCreateFinancePhases);
+  document.getElementById('td-totalUnits')?.addEventListener('input', event => {
+    const raw = String(event.target.value || '').trim();
+    createTotalUnitsManuallyEdited = !!raw && numberFromCreate(raw) !== createLastSuggestedUnitsTotal;
+  });
   document.getElementById('pLocation')?.addEventListener('input', () => {
     createHousingModels?.querySelectorAll('[data-create-model-row]').forEach(row => syncCreateUnitsPreview(row));
   });
@@ -1518,11 +1574,11 @@
   createFinanceLines?.addEventListener('input', syncCreatePhaseSources);
   createFinanceLines?.addEventListener('change', syncCreatePhaseSources);
   createFinanceLines?.addEventListener('keyup', syncCreatePhaseSources);
-  document.getElementById('createDatoUnicoFile')?.addEventListener('change', event => {
-    const name = event.target.files?.[0]?.name || 'Ningun archivo seleccionado';
-    const label = document.getElementById('createDatoUnicoFileName');
-    if (label) label.textContent = name;
+  createDatoUnicoFileInput?.addEventListener('change', event => {
+    createDatoUnicoFileState = event.target.files?.[0] || null;
+    updateCreateDatoUnicoMode();
   });
+  clearCreateDatoUnicoFileBtn?.addEventListener('click', clearCreateDatoUnicoFile);
   document.addEventListener('input', event => {
     if (event.target?.matches?.('[data-create-phase-line-amount], [data-create-phase-line-name]')) syncCreatePhaseSources();
   }, true);
@@ -1657,6 +1713,8 @@
     bindBankNumberFormatting(modal);
     bindBankChoices(modal);
     createHousingModels?.querySelectorAll('[data-create-model-row]').forEach(row => syncCreateUnitsPreview(row));
+    syncTechnicalUnitsFromModels();
+    updateCreateDatoUnicoMode();
     hideGlobalCreateFinancialConditionFields();
     await loadCreatePromoterProfiles();
     await loadCreateProgressChecks();
@@ -1740,8 +1798,11 @@
 
     if (btnCreate) {
       btnCreate.addEventListener('click', async () => {
-        if (btnCreate.disabled) return;
+        if (isCreatingProject || btnCreate.disabled) return;
+        isCreatingProject = true;
         btnCreate.disabled = true;
+        const originalCreateText = btnCreate.textContent;
+        btnCreate.textContent = 'Creando...';
         try {
           const name = document.getElementById('pName')?.value?.trim() || '';
           const description = document.getElementById('pDesc')?.value?.trim() || '';
@@ -1773,6 +1834,7 @@
           if (!validateCreateModelStatuses({ alertOnError: true })) return;
           if (!validateCreateFinancePhases({ alertOnError: true })) return;
           const legalData = collectLegalData();
+          const importFile = createDatoUnicoFileState;
 
           const payload = {
             name,
@@ -1795,12 +1857,12 @@
           };
 
           const createdProject = await API.post('/api/projects', payload);
-          const importFile = document.getElementById('createDatoUnicoFile')?.files?.[0];
           if (importFile && createdProject?._id) {
             const fd = new FormData();
             fd.append('file', importFile);
             try {
               await API.upload(`/api/projects/${createdProject._id}/import-dato-unico`, fd);
+              createDatoUnicoFileState = null;
             } catch (importErr) {
               console.error(importErr);
               alert('Proyecto creado, pero no se pudo importar el Excel Dato Unico.');
@@ -1823,6 +1885,8 @@
           if (createHousingModels) createHousingModels.innerHTML = '';
           if (createFinancePhases) createFinancePhases.innerHTML = '';
           if (createFinanceLines) createFinanceLines.innerHTML = '';
+          createTotalUnitsManuallyEdited = false;
+          createLastSuggestedUnitsTotal = 0;
           document.querySelectorAll('[data-create-precedent]').forEach(input => { input.checked = false; });
           document.querySelectorAll('[data-create-checklist-key]').forEach(input => { input.checked = false; });
           const createPermitTemplate = document.getElementById('createPermitTemplate');
@@ -1831,10 +1895,7 @@
           ['fc-otherRequirements','fc-trustee','fc-trustType','fc-technicalInspector','fc-financialInspector','ld-promoterLegalName','ld-interimBank','ld-interimBankOther','ld-trustName','td-phasesCount','td-totalUnits','td-notes'].forEach(fieldId => {
             const field = document.getElementById(fieldId); if (field) field.value = '';
           });
-          const createDatoFile = document.getElementById('createDatoUnicoFile');
-          const createDatoFileName = document.getElementById('createDatoUnicoFileName');
-          if (createDatoFile) createDatoFile.value = '';
-          if (createDatoFileName) createDatoFileName.textContent = 'Ningun archivo seleccionado';
+          clearCreateDatoUnicoFile();
           const trustApplies = document.getElementById('ld-trustApplies');
           if (trustApplies) trustApplies.value = 'false';
           setCreateStep('general');
@@ -1855,7 +1916,9 @@
         } catch (e) {
           alert('Error al crear proyecto: ' + (e.message || e));
         } finally {
+          isCreatingProject = false;
           btnCreate.disabled = false;
+          btnCreate.textContent = originalCreateText || 'Crear';
         }
       });
     }

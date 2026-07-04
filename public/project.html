@@ -2214,7 +2214,7 @@
 
   <!-- Modal crear en lote (simple) -->
   <div id="modalCrearLote" class="modal-backdrop" style="display:none;">
-    <div class="modal">
+    <div class="modal commercial-create-modal">
       <div class="modal-head">
         <b>Crear unidades en lote</b>
         <button class="btn btn-ghost btn-xs" id="modalCrearCerrar">Cerrar</button>
@@ -2230,7 +2230,7 @@
         </select>
         <label>Modelo</label>
         <input id="cl-modelo" placeholder="Modelo" />
-        <label><input id="cl-guardarModelo" type="checkbox" /> Guardar como nuevo modelo del proyecto</label>
+        <div id="cl-modelsManager"></div>
         <label>m²</label>
         <input id="cl-m2" type="number" min="0" value="60" />
         <label>Area abierta m2</label>
@@ -2256,7 +2256,7 @@
   <option value="vivienda_entregada">Vivienda entregada</option>
 </select>
       </div>
-      <div class="row" style="justify-content:flex-end; gap:8px;">
+      <div class="commercial-create-footer">
         <button class="btn" id="cl-crear">Crear</button>
       </div>
     </div>
