@@ -1,6 +1,10 @@
 // public/js/project.js
 (async function () {
-  if (!API.getToken()) location.href = '/';
+  if (!API.getToken()) {
+    API.logout?.();
+    location.replace('/login');
+    return;
+  }
 
   // ====== Parámetros URL y navegación ======
   const params = new URLSearchParams(location.search);
@@ -12517,5 +12521,5 @@ if (['tecnico','legal'].includes(myRole)) {
 
   // logout
   const logoutBtn = document.getElementById('logoutBtn');
-  if (logoutBtn) logoutBtn.addEventListener('click', () => { API.logout(); location.href = '/'; });
+  if (logoutBtn) logoutBtn.addEventListener('click', () => { API.logout(); location.href = '/login'; });
 })();

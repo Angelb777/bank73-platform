@@ -18,7 +18,7 @@
     } catch (_) {}
     localStorage.removeItem('tkn');
     localStorage.removeItem('role');
-    location.href = '/';
+    location.href = '/login';
   }
 
   const { token, role, tenant } = getAuth();

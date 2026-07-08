@@ -1,5 +1,9 @@
 (async function () {
-  if (!API.getToken()) location.href = '/';
+  if (!API.getToken()) {
+    API.logout?.();
+    location.replace('/login');
+    return;
+  }
 
   const container = document.getElementById('cards');
   const banner = document.getElementById('noProjectsBanner');
@@ -1965,7 +1969,7 @@
   if (logoutBtn) {
     logoutBtn.addEventListener('click', () => {
       API.logout();
-      location.href = '/';
+      location.href = '/login';
     });
   }
 })();

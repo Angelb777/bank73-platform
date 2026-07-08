@@ -8,14 +8,16 @@
   const toggle = document.getElementById('togglePwd');
 
   // === Storage helpers ===
-  function setAuth(token, role, status) {                // ROLE-SEP
+  function setAuth(token, role, status, extra = {}) {                // ROLE-SEP
     try {
-      if (window.API && API.setAuth) API.setAuth(token, role, status);
+      if (window.API && API.setAuth) API.setAuth(token, role, status, extra);
       else {
         localStorage.setItem('tkn', token);
         localStorage.setItem('token', token); 
         localStorage.setItem('role', String(role || '').toLowerCase());     // ROLE-SEP
         localStorage.setItem('status', String(status || 'active').toLowerCase()); // ROLE-SEP
+        if (extra.userId) localStorage.setItem('userId', extra.userId);
+        if (Array.isArray(extra.tenantKeys)) localStorage.setItem('tenantKeys', JSON.stringify(extra.tenantKeys));
       }
       // Exponer para UI condicional
       window.currentUser = { role: String(role||'').toLowerCase(), status: String(status||'').toLowerCase() }; // ROLE-SEP
@@ -56,9 +58,22 @@
   }
 
   // Autoredirect si ya hay sesión
-  (function () {
+  (async function () {
     const { token, role, status } = getAuth();
-    if (token && role) go(role, status);                                 // ROLE-SEP
+    if (!token || !role) return;
+    try {
+      const resp = await fetch('/api/auth/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!resp.ok) {
+        clearAuth();
+        return;
+      }
+      const me = await resp.json();
+      go(me.role || role, me.status || status);                          // ROLE-SEP
+    } catch (_) {
+      clearAuth();
+    }
   })();
 
   if (form) {
@@ -101,6 +116,6 @@
 
   // Logout global
   document.getElementById('logoutBtn')?.addEventListener('click', () => {
-    clearAuth(); location.href = '/';
+    clearAuth(); location.href = '/login';
   });
 })();
