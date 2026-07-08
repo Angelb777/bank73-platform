@@ -4,10 +4,24 @@ const API = (() => {
   const tokenAliases = ['tkn', 'token', 'authToken', 'jwt', 'accessToken'];
   const LOGIN_PATH = '/login';
   const publicPaths = new Set(['/', '/login', '/register', '/pending.html']);
-  const TENANT =
-  new URLSearchParams(location.search).get('tenant') ||
-  localStorage.getItem('tenantKey') ||
-  'bancodemo';
+  function storedTenantKeys() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('tenantKeys') || '[]');
+      return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function effectiveTenant() {
+    const qsTenant = new URLSearchParams(location.search).get('tenant');
+    const savedTenant = localStorage.getItem('tenantKey');
+    const keys = storedTenantKeys();
+    if (qsTenant && (!keys.length || keys.includes(qsTenant))) return qsTenant;
+    if (savedTenant && (!keys.length || keys.includes(savedTenant))) return savedTenant;
+    if (keys.length) return keys[0];
+    return 'bancodemo';
+  }
 
   let redirectingToLogin = false;
 
@@ -56,6 +70,7 @@ const API = (() => {
     localStorage.removeItem('status');
     localStorage.removeItem('userId');
     localStorage.removeItem('tenantKeys');
+    localStorage.removeItem('tenantKey');
     delete window.currentUser;
   }
 
@@ -72,7 +87,17 @@ const API = (() => {
     localStorage.setItem(roleKey, role);
     if (status) localStorage.setItem('status', String(status).toLowerCase());
     if (extra.userId) localStorage.setItem('userId', extra.userId);
-    if (Array.isArray(extra.tenantKeys)) localStorage.setItem('tenantKeys', JSON.stringify(extra.tenantKeys));
+    if (Array.isArray(extra.tenantKeys)) {
+      const keys = extra.tenantKeys.map(String).filter(Boolean);
+      localStorage.setItem('tenantKeys', JSON.stringify(keys));
+      const nextTenant = extra.tenantKey && keys.includes(String(extra.tenantKey))
+        ? String(extra.tenantKey)
+        : keys[0];
+      if (nextTenant) localStorage.setItem('tenantKey', nextTenant);
+      else localStorage.removeItem('tenantKey');
+    } else if (extra.tenantKey) {
+      localStorage.setItem('tenantKey', String(extra.tenantKey));
+    }
   }
   function getToken() {
     for (const key of tokenAliases) {
@@ -83,14 +108,14 @@ const API = (() => {
   }
   function getRole()  { return localStorage.getItem(roleKey); }
   function getAuth() {
-    let tenantKeys = [];
-    try { tenantKeys = JSON.parse(localStorage.getItem('tenantKeys') || '[]'); } catch (_) {}
+    const tenantKeys = storedTenantKeys();
+    const tenant = effectiveTenant();
     return {
       token: getToken(),
       role: getRole(),
       status: localStorage.getItem('status'),
-      tenant: localStorage.getItem('tenantKey') || TENANT,
-      tenantKey: localStorage.getItem('tenantKey') || TENANT,
+      tenant,
+      tenantKey: tenant,
       tenantKeys,
       userId: localStorage.getItem('userId')
     };
@@ -132,7 +157,7 @@ const API = (() => {
    * - silent=true: no lanza alert ni throw, devuelve { ok:false, error }
    */
   async function request(path, { method='GET', headers={}, body=null, isForm=false, silent=false } = {}) {
-    const h = { 'x-tenant': TENANT, ...headers };        
+    const h = { 'x-tenant': effectiveTenant(), ...headers };
     const token = getToken();
     if (token) h['Authorization'] = 'Bearer ' + token;
     if (!isForm) h['Content-Type'] = 'application/json';

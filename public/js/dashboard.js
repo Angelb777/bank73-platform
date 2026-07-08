@@ -8,7 +8,7 @@
     return {
       token: localStorage.getItem('tkn'),
       role: localStorage.getItem('role'),
-      tenant: localStorage.getItem('tenant') || 'bancodemo'
+      tenant: localStorage.getItem('tenantKey') || 'bancodemo'
     };
   }
   function clearAuthAndGoHome() {
@@ -43,6 +43,7 @@ const ALL_ROLES = [
 
 // Solo los roles que el endpoint /api/projects/assignees admite
 const ASSIGNABLE_ROLES = [
+  'bank',
   'promoter',
   'commercial',
   'legal',
@@ -91,6 +92,10 @@ const ROLE_LABEL = (r) => ({
   legal: 'Legal',
   tecnico: 'Técnico'
 }[String(r).toLowerCase()] || r);
+
+const ASSIGNMENT_ROLE_LABEL = (r) => ({
+  bank: 'Usuarios banco'
+}[String(r).toLowerCase()] || ROLE_LABEL(r));
 
 function renderRoleOptions(selected = '') {
   const sel = String(selected || '').toLowerCase();
@@ -280,7 +285,7 @@ if (roleSelectDefault) {
       if (usersNext) usersNext.disabled = true;
       usersTbody.innerHTML = rows.length ? rows.map(u => {
         const st = userStatus(u);
-        const banks = Array.isArray(u.tenantKeys) && u.tenantKeys.length ? u.tenantKeys : [u.tenantKey || tenant];
+        const banks = Array.isArray(u.tenantKeys) ? u.tenantKeys : [];
         return `
           <tr>
             <td>${escapeHtml(u.name || '-')}</td>
@@ -313,10 +318,10 @@ if (roleSelectDefault) {
             <td><span class="badge ${escapeHtml(st)}">${escapeHtml(st.toUpperCase())}</span></td>
             <td>${proms.length ? escapeHtml(proms.join(', ')) : '<span class="muted">-</span>'}</td>
             <td>${comms.length ? escapeHtml(comms.join(', ')) : '<span class="muted">-</span>'}</td>
-            <td><a class="btn small" href="/project?id=${encodeURIComponent(p._id)}&ref=bank">Abrir</a></td>
+            <td><a class="btn small" href="/project?id=${encodeURIComponent(p._id)}&tenant=${encodeURIComponent(p.tenantKey || tenant)}&ref=bank">Abrir</a></td>
           </tr>
         `;
-      }).join('') : '<tr><td class="muted" colspan="6">No hay proyectos aprobados para este banco.</td></tr>';
+      }).join('') : '<tr><td class="muted" colspan="6">No hay proyectos para este banco.</td></tr>';
     }
 
     function renderBankLogs(logs = [], metrics = {}) {
@@ -343,8 +348,9 @@ if (roleSelectDefault) {
 
     async function loadBankDashboard() {
       const data = await xfetch('/api/bank/dashboard');
+      const projectUsers = Array.isArray(data.projectUsers) ? data.projectUsers : (data.users || []);
       renderBankUsers(data.users || []);
-      renderBankProjects(data.projects || [], data.users || []);
+      renderBankProjects(data.projects || [], projectUsers);
       renderBankLogs(data.logs || [], data.metrics || {});
       window.__bankDashboard = data;
     }
@@ -353,8 +359,8 @@ if (roleSelectDefault) {
     refreshAllProjectsBtn?.addEventListener('click', loadBankDashboard);
     refreshAuditLogsBtn?.addEventListener('click', loadBankDashboard);
     usersSearch?.addEventListener('input', () => renderBankUsers(window.__bankDashboard?.users || []));
-    allProjectsSearch?.addEventListener('input', () => renderBankProjects(window.__bankDashboard?.projects || [], window.__bankDashboard?.users || []));
-    allProjectsFilter?.addEventListener('change', () => renderBankProjects(window.__bankDashboard?.projects || [], window.__bankDashboard?.users || []));
+    allProjectsSearch?.addEventListener('input', () => renderBankProjects(window.__bankDashboard?.projects || [], window.__bankDashboard?.projectUsers || window.__bankDashboard?.users || []));
+    allProjectsFilter?.addEventListener('change', () => renderBankProjects(window.__bankDashboard?.projects || [], window.__bankDashboard?.projectUsers || window.__bankDashboard?.users || []));
 
     await loadBankDashboard();
   }
@@ -539,9 +545,10 @@ async function apiAssignProject(id, assignmentsOrLegacy, modoFlexible = false) {
   }
 
   function renderBankTenantOptions() {
+    const assignableBanks = bankOptionList().filter(bank => bankTenantKey(bank) !== 'bancodemo');
     return [
       '<option value="">Seleccionar banco...</option>',
-      ...bankOptionList().map(bank => `<option value="${escapeHtml(bank)}">${escapeHtml(bank)}</option>`)
+      ...assignableBanks.map(bank => `<option value="${escapeHtml(bank)}">${escapeHtml(bank)}</option>`)
     ].join('');
   }
 
@@ -559,6 +566,24 @@ async function apiAssignProject(id, assignmentsOrLegacy, modoFlexible = false) {
     `).join('');
   }
 
+  function renderReferenceTenantChips(user = {}, editableValues = []) {
+    const editableKeys = new Set((editableValues || []).map(bankTenantKey).filter(Boolean));
+    const refs = [
+      user.tenantKey,
+      ...(Array.isArray(user.tenantKeys) ? user.tenantKeys.filter(value => bankTenantKey(value) === 'bancodemo') : [])
+    ];
+    const seen = new Set();
+    return refs.map(bankItemForTenant).filter(item => {
+      if (!item.key || editableKeys.has(item.key) || seen.has(item.key)) return false;
+      seen.add(item.key);
+      return true;
+    }).map(item => `
+      <span class="bank-chip" data-bank-key="${escapeHtml(item.key)}" data-primary-tenant="1">
+        <span title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
+      </span>
+    `).join('');
+  }
+
   function selectedBankValues(id) {
     const picker = document.querySelector(`[data-user-tenants-picker="${CSS.escape(id)}"]`);
     return Array.from(picker?.querySelectorAll('[data-bank-value]') || [])
@@ -571,6 +596,7 @@ async function apiAssignProject(id, assignmentsOrLegacy, modoFlexible = false) {
     const chips = picker?.querySelector('[data-bank-chips]');
     if (!chips || !value) return;
     const item = bankItemForTenant(value);
+    if (item.key === 'bancodemo') return;
     if (!item.key || chips.querySelector(`[data-bank-key="${CSS.escape(item.key)}"]`)) return;
     const chip = document.createElement('span');
     chip.className = 'bank-chip';
@@ -635,6 +661,15 @@ function renderProjectTypeOptions(selected = '') {
 function isPromoterLikeUser(u = {}) {
   return String(u.role || '').toLowerCase() === 'promoter' ||
     String(u.roleRequested || u.requestedRole || '').toLowerCase() === 'promoter';
+}
+
+function bankProfileCell(u = {}) {
+  const isBank = String(u.role || '').toLowerCase() === 'bank' ||
+    String(u.roleRequested || u.requestedRole || '').toLowerCase() === 'bank';
+  if (!isBank) return '<span class="muted">-</span>';
+  return u.bankName
+    ? `<strong>${escapeHtml(u.bankName)}</strong>`
+    : '<span class="muted">Sin banco</span>';
 }
 
 function promoterProfileCell(u = {}) {
@@ -805,7 +840,7 @@ function applyProjectsFilters(list) {
     if (!pendingUsersTbody) return;
     pendingUsersTbody.innerHTML = '';
     if (!list.length) {
-      pendingUsersTbody.innerHTML = `<tr><td colspan="6" class="muted">No hay usuarios pendientes.</td></tr>`;
+      pendingUsersTbody.innerHTML = `<tr><td colspan="7" class="muted">No hay usuarios pendientes.</td></tr>`;
       return;
     }
     list.forEach((u) => {
@@ -821,6 +856,7 @@ function applyProjectsFilters(list) {
   <td>${u.email}</td>
   <td>${requestedAt ? new Date(requestedAt).toLocaleString() : '-'}</td>
   <td><span class="badge ${st}">${st.toUpperCase()}</span></td>
+  <td>${bankProfileCell(u)}</td>
   <td>${promoterProfileCell(u)}</td>
   <td>
     <div class="actions">
@@ -860,7 +896,9 @@ function applyProjectsFilters(list) {
 
     slicePage(list, usersPage, usersPageSize).forEach((u) => {
       const st = userStatus(u);
-      const banks = Array.isArray(u.tenantKeys) && u.tenantKeys.length ? u.tenantKeys : [u.tenantKey || tenant];
+      const banks = Array.isArray(u.tenantKeys)
+        ? u.tenantKeys.filter(value => bankTenantKey(value) !== 'bancodemo')
+        : [];
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>
@@ -881,6 +919,7 @@ function applyProjectsFilters(list) {
             </div>
             <div class="bank-chips" data-bank-chips>
               ${renderBankTenantChips(banks)}
+              ${renderReferenceTenantChips(u, banks)}
             </div>
           </div>
         </td>
@@ -1270,13 +1309,13 @@ function applyProjectsFilters(list) {
 
   const label = document.createElement('label');
   label.className = 'small muted';
-  label.textContent = ROLE_LABEL(role);
+  label.textContent = ASSIGNMENT_ROLE_LABEL(role);
 
   // ✅ NUEVO: buscador por rol
   const search = document.createElement('input');
   search.type = 'search';
   search.className = 'input small';
-  search.placeholder = `Buscar ${ROLE_LABEL(role)}...`;
+  search.placeholder = `Buscar ${ASSIGNMENT_ROLE_LABEL(role)}...`;
   search.style.width = '100%';
   search.style.margin = '6px 0 8px 0';
 
@@ -2664,6 +2703,7 @@ if (pAssign && assignModal && assignProjectNameEl) {
       // Fallback a los antiguos nombres
       if (role === 'promoter' && Array.isArray(project.assignedPromoters)) return project.assignedPromoters;
       if (role === 'commercial' && Array.isArray(project.assignedCommercials)) return project.assignedCommercials;
+      if (role === 'bank' && Array.isArray(project.assignedBanks)) return project.assignedBanks;
       return [];
     }
 

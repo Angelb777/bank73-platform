@@ -56,6 +56,7 @@ const projectSchema = new Schema({
   // Asignaciones (legacy + nuevos roles)
   assignedPromoters:   [{ type: Schema.Types.ObjectId, ref: 'User', index: true }],
   assignedCommercials: [{ type: Schema.Types.ObjectId, ref: 'User', index: true }],
+  assignedBanks:       [{ type: Schema.Types.ObjectId, ref: 'User', index: true }],
 
   // NUEVOS CAMPOS
   assignedLegal:       [{ type: Schema.Types.ObjectId, ref: 'User', index: true }],

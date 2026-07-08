@@ -7,6 +7,9 @@
   const btn    = document.getElementById('submitBtn');
   const pwd    = document.getElementById('password');
   const toggle = document.getElementById('togglePwd');
+  const roleSelect = document.getElementById('roleRequested');
+  const bankPickerWrap = document.getElementById('bankPickerWrap');
+  const bankNameSelect = document.getElementById('bankName');
 
   // Roles solicitables (todos menos admin). Deben coincidir con models/User.js (roleRequested enum)
   const REQUESTABLE_ROLES = [
@@ -36,7 +39,7 @@
 
   // Rellenar <select id="roleRequested"> si existe
   (function populateRoleSelect() {
-    const sel = document.getElementById('roleRequested');
+    const sel = roleSelect;
     if (!sel) return; // si usas radios, omitimos
     // limpia y añade placeholder
     sel.innerHTML = '';
@@ -54,6 +57,28 @@
       sel.appendChild(opt);
     });
   })();
+
+  (function populateBankSelect() {
+    if (!bankNameSelect) return;
+    const banks = Array.isArray(window.BANKS_PANAMA) ? window.BANKS_PANAMA : [];
+    bankNameSelect.innerHTML = '<option value="">Selecciona banco</option>' +
+      banks.map(bank => `<option value="${escapeHtml(bank)}">${escapeHtml(bank)}</option>`).join('');
+  })();
+
+  function escapeHtml(value = '') {
+    return String(value).replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+  }
+
+  function syncBankPicker() {
+    const isBank = getRequestedRole() === 'bank';
+    if (bankPickerWrap) bankPickerWrap.style.display = isBank ? '' : 'none';
+    if (bankNameSelect) bankNameSelect.required = isBank;
+  }
+
+  roleSelect?.addEventListener('change', syncBankPicker);
+  syncBankPicker();
 
   // 👁️ Mostrar/ocultar contraseña
   if (toggle && pwd) {
@@ -102,11 +127,19 @@
     const email    = document.getElementById('email')?.value.trim();
     const password = document.getElementById('password')?.value;
     const roleReq  = getRequestedRole(); // uno de REQUESTABLE_ROLES
+    const bankName = bankNameSelect?.value?.trim() || '';
 
     // Validación mínima de rol (evita valores raros si tocan el DOM)
     if (!REQUESTABLE_ROLES.includes(roleReq)) {
       if (msg) { msg.textContent = 'Selecciona un rol válido.'; msg.style.color = 'salmon'; }
       btn && btn.classList.remove('loading');
+      return;
+    }
+
+    if (roleReq === 'bank' && !bankName) {
+      if (msg) { msg.textContent = 'Selecciona el banco.'; msg.style.color = 'salmon'; }
+      btn && btn.classList.remove('loading');
+      bankNameSelect?.focus();
       return;
     }
 
@@ -119,7 +152,8 @@
         },
         body: JSON.stringify({
           name, email, password,
-          roleRequested: roleReq
+          roleRequested: roleReq,
+          bankName: roleReq === 'bank' ? bankName : ''
         })
       });
 

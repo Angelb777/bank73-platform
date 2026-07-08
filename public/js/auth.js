@@ -18,6 +18,7 @@
         localStorage.setItem('status', String(status || 'active').toLowerCase()); // ROLE-SEP
         if (extra.userId) localStorage.setItem('userId', extra.userId);
         if (Array.isArray(extra.tenantKeys)) localStorage.setItem('tenantKeys', JSON.stringify(extra.tenantKeys));
+        if (extra.tenantKey) localStorage.setItem('tenantKey', String(extra.tenantKey));
       }
       // Exponer para UI condicional
       window.currentUser = { role: String(role||'').toLowerCase(), status: String(status||'').toLowerCase() }; // ROLE-SEP
@@ -36,6 +37,8 @@
     localStorage.removeItem('tkn');
     localStorage.removeItem('role');
     localStorage.removeItem('status'); // ROLE-SEP
+    localStorage.removeItem('tenantKey');
+    localStorage.removeItem('tenantKeys');
     delete window.currentUser;
   }
 
@@ -103,6 +106,7 @@
         // Esperamos: { token, role: 'admin'|'bank'|'promoter'|'commercial', status: 'active' }
         setAuth(out.token, out.role, out.status, {
           userId: out.userId,
+          tenantKey: out.tenantKey,
           tenantKeys: out.tenantKeys || (out.tenantKey ? [out.tenantKey] : [])
         });                         // ROLE-SEP
         go(out.role, out.status);                                         // ROLE-SEP

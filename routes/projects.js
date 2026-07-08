@@ -831,6 +831,7 @@ function anyAssignedFilter(userId) {
       { members:             { $in: [uid] } },
       { assignedPromoters:   { $in: [uid] } },
       { assignedCommercials: { $in: [uid] } },
+      { assignedBanks:       { $in: [uid] } },
       { assignedLegal:       { $in: [uid] } },
       { assignedTecnicos:    { $in: [uid] } },
       { assignedGerencia:    { $in: [uid] } },
@@ -841,6 +842,7 @@ function anyAssignedFilter(userId) {
       // NUEVO: por si guardas en un mapa genérico
       { 'assignees.promoter':   { $in: [uid] } },
       { 'assignees.commercial': { $in: [uid] } },
+      { 'assignees.bank':       { $in: [uid] } },
       { 'assignees.legal':      { $in: [uid] } },
       { 'assignees.tecnico':    { $in: [uid] } },
       { 'assignees.gerencia':   { $in: [uid] } },
@@ -891,14 +893,17 @@ function buildPortfolioQuery(req) {
 async function validateAssignees({ tenantKey, role, ids }) {
   const uniq = Array.from(new Set((ids || []).filter(Boolean)));
   if (!uniq.length) return [];
+  const tenantMembership = role === 'bank'
+    ? { tenantKeys: tenantKey }
+    : { tenantKey };
   const users = await User.find({
-    tenantKey, role, status: 'active', _id: { $in: uniq.map(toObjectId) }
+    ...tenantMembership, role, status: 'active', _id: { $in: uniq.map(toObjectId) }
   }).select('_id').lean();
   return users.map(u => u._id);
 }
 
 function sanitizeTeamSuggestion(input) {
-  const allowed = ['promoter','commercial','legal','tecnico','gerencia','socios','financiero','contable'];
+  const allowed = ['promoter','commercial','bank','legal','tecnico','gerencia','socios','financiero','contable'];
   const out = {};
 
   for (const role of allowed) {
@@ -1321,16 +1326,19 @@ console.log('[DEBUG PORTFOLIO ESTADOS]', JSON.stringify(debugEstados, null, 2));
   }
 });
 
-// GET /api/projects/assignees?role=promoter|commercial|legal|tecnico|gerencia|socios|financiero|contable
+// GET /api/projects/assignees?role=bank|promoter|commercial|legal|tecnico|gerencia|socios|financiero|contable
 router.get('/assignees', requireRole('admin','bank'), async (req, res) => {
   try {
     const role = (req.query.role || '').toLowerCase();
-    const allowed = ['promoter','commercial','legal','tecnico','gerencia','socios','financiero','contable'];
+    const allowed = ['bank','promoter','commercial','legal','tecnico','gerencia','socios','financiero','contable'];
     if (!allowed.includes(role)) {
       return res.status(400).json({ error: `role inválido. Usa ${allowed.join('|')}` });
     }
+    const tenantMembership = role === 'bank'
+      ? { tenantKeys: req.tenantKey }
+      : { tenantKey: req.tenantKey };
     const users = await User.find(
-      { tenantKey: req.tenantKey, role, status: 'active' },
+      { ...tenantMembership, role, status: 'active' },
       { password: 0 }
     ).sort({ name: 1 }).lean();
     res.json({ users });
@@ -1738,6 +1746,7 @@ router.put('/:id/assign', requireRole('admin'), async (req, res) => {
     } else {
       // compat con payload legacy
       const legacyMap = {
+        bank:       body.banks,
         promoter:   body.promoters,
         commercial: body.commercials,
         legal:      body.legal,
@@ -1757,7 +1766,7 @@ router.put('/:id/assign', requireRole('admin'), async (req, res) => {
     }
 
     // --- VALIDACIÓN POR ROL ---
-    const roles = ['promoter','commercial','legal','tecnico','gerencia','socios','financiero','contable'];
+    const roles = ['bank','promoter','commercial','legal','tecnico','gerencia','socios','financiero','contable'];
     const validated = {};
     for (const r of roles) {
       if (Array.isArray(assignments[r])) {
@@ -1767,6 +1776,7 @@ router.put('/:id/assign', requireRole('admin'), async (req, res) => {
 
     // --- MAPEA a tus campos del Project (legacy) ---
     const update = {};
+    if (validated.bank)       update.assignedBanks       = validated.bank;
     if (validated.promoter)   update.assignedPromoters   = validated.promoter;
     if (validated.commercial) update.assignedCommercials = validated.commercial;
     if (validated.legal)      update.assignedLegal       = validated.legal;

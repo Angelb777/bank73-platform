@@ -162,7 +162,11 @@ const userSchema = new mongoose.Schema(
 
     // Perfil opcional para usuarios promotores. No bloquea registro ni uso.
     promoterProfile: { type: PromoterProfileSchema, default: undefined },
-    promoterCategory: { type: String, enum: PROMOTER_CATEGORIES, default: 'No definido' }
+    promoterCategory: { type: String, enum: PROMOTER_CATEGORIES, default: 'No definido' },
+
+    // Banco seleccionado por usuarios que solicitan rol bank durante el registro.
+    bankName: { type: String, trim: true, default: '' },
+    bankTenantKey: { type: String, trim: true, default: '' }
   },
   { timestamps: true }
 );
@@ -171,10 +175,7 @@ const userSchema = new mongoose.Schema(
 userSchema.pre('validate', function (next) {
   if (this.tenantKey) {
     const values = Array.isArray(this.tenantKeys) ? this.tenantKeys : [];
-    this.tenantKeys = Array.from(new Set([
-      String(this.tenantKey).trim(),
-      ...values.map(v => String(v || '').trim())
-    ].filter(Boolean)));
+    this.tenantKeys = Array.from(new Set(values.map(v => String(v || '').trim()).filter(Boolean)));
   }
 
   if (this.role) this.role = String(this.role).toLowerCase();

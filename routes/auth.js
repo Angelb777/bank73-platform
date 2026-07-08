@@ -66,6 +66,32 @@ function sanitizePromoterProfile(input = {}) {
   };
 }
 
+function tenantKeyFromBankName(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+}
+
+function tenantList(primary, list) {
+  return Array.from(new Set([
+    primary,
+    ...(Array.isArray(list) ? list : [])
+  ].map(v => String(v || '').trim()).filter(Boolean)));
+}
+
+function assignedTenantList(user = {}) {
+  const role = String(user.role || '').toLowerCase();
+  const assigned = Array.isArray(user.tenantKeys)
+    ? Array.from(new Set(user.tenantKeys.map(v => String(v || '').trim()).filter(Boolean)))
+    : [];
+  if (role === 'bank') return assigned;
+  return tenantList(user.tenantKey, assigned);
+}
+
 // ROLE-SEP: helper para firmar tokens incluyendo status
 function signToken(user) {
   return jwt.sign(
@@ -157,20 +183,29 @@ router.post('/login', async (req, res) => {
     }
 
     // 👇 FIRMA el token con el mismo tenantKey calculado
+    const allowedTenantKeys = assignedTenantList(user);
+    const activeTenantKey = allowedTenantKeys.includes(String(tenantKey))
+      ? tenantKey
+      : allowedTenantKeys[0];
+
+    if (!activeTenantKey) {
+      return res.status(403).json({ error: 'No tienes tenants asignados.' });
+    }
+
     const token = jwt.sign(
       {
         userId: user._id.toString(),
         role: user.role,
         status: user.status,
-        tenantKey,
-        tenantKeys: user.tenantKeys || (tenantKey ? [tenantKey] : [])
+        tenantKey: activeTenantKey,
+        tenantKeys: allowedTenantKeys
       },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
 
     await audit(req, 'auth.login_success', {
-      tenantKey,
+      tenantKey: activeTenantKey,
       actorUserId: user._id,
       actorEmail: user.email,
       actorRole: user.role,
@@ -184,8 +219,8 @@ router.post('/login', async (req, res) => {
       role: user.role,
       status: user.status,
       userId: user._id.toString(),
-      tenantKey,
-      tenantKeys: user.tenantKeys || (tenantKey ? [tenantKey] : []),
+      tenantKey: activeTenantKey,
+      tenantKeys: allowedTenantKeys,
       name: user.name,
       email: user.email
     });
@@ -217,6 +252,11 @@ if (!allowedRequested.includes(requested)) {
   return res.status(400).json({ error: 'roleRequested inválido' });
 }
 
+    const bankName = String(req.body?.bankName || req.body?.banco || '').trim().slice(0, 180);
+    if (requested === 'bank' && !bankName) {
+      return res.status(400).json({ error: 'Selecciona el banco.' });
+    }
+
     const normEmail = String(email).trim().toLowerCase();
     const exists = await User.findOne({ tenantKey: req.tenantKey, email: normEmail });
     if (exists) return res.status(409).json({ error: 'El email ya está registrado' });
@@ -229,7 +269,9 @@ if (!allowedRequested.includes(requested)) {
       role: 'bank',               // ROLE-SEP: valor por defecto del schema, no habilita acceso
       status: 'pending',          // ROLE-SEP: pendiente hasta aprobación de admin
       roleRequested: requested,    // ROLE-SEP
-      tenantKeys: [req.tenantKey]
+      tenantKeys: [req.tenantKey],
+      bankName: requested === 'bank' ? bankName : '',
+      bankTenantKey: requested === 'bank' ? tenantKeyFromBankName(bankName) : ''
     };
 
     if (requested === 'promoter' && (req.body?.promoterProfile || req.body?.perfilPromotor)) {
@@ -268,18 +310,22 @@ router.get('/roles', (_req, res) => res.json({ roles: ROLES })); // ROLE-SEP
 router.get('/me', auth, async (req, res) => {
   try {
     const user = await User.findOne(
-      { _id: req.user.userId, tenantKey: req.user.tenantKey },
+      { _id: req.user.userId },
       { password: 0 }
     );
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    const allowedTenantKeys = assignedTenantList(user);
+    const activeTenantKey = allowedTenantKeys.includes(String(req.user.tenantKey))
+      ? req.user.tenantKey
+      : allowedTenantKeys[0];
     res.json({
       userId: user._id.toString(),
       name: user.name,
       email: user.email,
       role: user.role,       // ROLE-SEP
       status: user.status,   // ROLE-SEP
-      tenantKey: user.tenantKey,
-      tenantKeys: user.tenantKeys || (user.tenantKey ? [user.tenantKey] : []),
+      tenantKey: activeTenantKey,
+      tenantKeys: allowedTenantKeys,
       promoterProfile: user.promoterProfile || null,
       promoterCategory: user.promoterCategory || 'No definido',
       promoterProfileCompletion: promoterProfileCompletion(user.promoterProfile || {})

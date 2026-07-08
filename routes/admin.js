@@ -72,14 +72,12 @@ function sanitizePromoterProfile(input = {}) {
   };
 }
 
-function sanitizeTenantKeys(input, fallbackTenantKey) {
+function sanitizeTenantKeys(input, fallbackTenantKey, options = {}) {
   const raw = Array.isArray(input)
     ? input
     : String(input || '').split(/\r?\n|,/);
-  return Array.from(new Set([
-    fallbackTenantKey,
-    ...raw
-  ].map(v => String(v || '').trim()).filter(Boolean))).slice(0, 50);
+  const values = options.includeFallback ? [fallbackTenantKey, ...raw] : raw;
+  return Array.from(new Set(values.map(v => String(v || '').trim()).filter(Boolean))).slice(0, 50);
 }
 
 function tenantKeyFromBankName(value) {
@@ -127,6 +125,7 @@ function projectAssignedToUsersFilter(userIds = []) {
     $or: [
       { assignedPromoters: { $in: userIds } },
       { assignedCommercials: { $in: userIds } },
+      { assignedBanks: { $in: userIds } },
       { assignedLegal: { $in: userIds } },
       { assignedTecnicos: { $in: userIds } },
       { assignedGerencia: { $in: userIds } },
@@ -140,6 +139,14 @@ function projectAssignedToUsersFilter(userIds = []) {
 async function tenantAssignedProjects(tenantKey, projection = null) {
   const users = await User.find(tenantUserFilter(tenantKey)).select('_id').lean();
   const userIds = users.map(u => u._id);
+
+  if (tenantKey === 'bancodemo') {
+    const query = Project.find({}).sort({ createdAt: -1 });
+    if (projection) query.select(projection);
+    const projects = await query.lean();
+    return { usersCount: users.length, projects };
+  }
+
   if (!userIds.length) return { usersCount: 0, projects: [] };
 
   const query = Project.find(projectAssignedToUsersFilter(userIds)).sort({ createdAt: -1 });
@@ -154,6 +161,7 @@ function projectAssignedUserIds(projects = []) {
     'createdBy',
     'assignedPromoters',
     'assignedCommercials',
+    'assignedBanks',
     'assignedLegal',
     'assignedTecnicos',
     'assignedGerencia',
@@ -511,6 +519,7 @@ router.post('/users/:id/approve', async (req, res) => {
 
     // Si no se manda role, usamos el roleRequested; ambos normalizados
     const finalRole = desiredRole || String(user.roleRequested || '').toLowerCase() || 'bank';
+    const wasPending = user.status !== 'active';
 
     if (!VALID_ROLES.includes(finalRole)) {
       return res.status(400).json({ error: 'Rol inválido' });
@@ -520,7 +529,7 @@ router.post('/users/:id/approve', async (req, res) => {
     user.status = 'active';
     user.verified = true;          // (opcional si lo usas)
     user.roleRequested = null;     // limpiar para evitar confusiones
-    user.tenantKeys = sanitizeTenantKeys(user.tenantKeys, user.tenantKey);
+    user.tenantKeys = sanitizeTenantKeys(user.tenantKeys, user.tenantKey, { includeFallback: wasPending });
     await user.save();
 
     await audit(req, 'user.approved', {
@@ -595,10 +604,12 @@ router.patch('/users/:id/tenants', async (req, res) => {
     });
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
+    const hasBankPayload = Array.isArray(req.body?.banks) || Array.isArray(req.body?.bankTenants);
     const bankTenantKeys = await ensureBankTenants(req.body?.banks || req.body?.bankTenants || []);
-    const tenantKeys = bankTenantKeys.length
+    const tenantKeysRaw = hasBankPayload
       ? Array.from(new Set(bankTenantKeys))
       : sanitizeTenantKeys(req.body?.tenantKeys, user.tenantKey);
+    const tenantKeys = tenantKeysRaw.filter(key => String(key || '').trim() !== 'bancodemo');
     user.tenantKeys = tenantKeys;
     await user.save();
 

@@ -20,6 +20,15 @@ function tenantList(primary, list) {
   ].map(v => String(v || '').trim()).filter(Boolean)));
 }
 
+function assignedTenantList(user = {}) {
+  const role = String(user.role || '').toLowerCase();
+  const assigned = Array.isArray(user.tenantKeys)
+    ? Array.from(new Set(user.tenantKeys.map(v => String(v || '').trim()).filter(Boolean)))
+    : [];
+  if (role === 'bank') return assigned;
+  return tenantList(user.tenantKey, assigned);
+}
+
 function auth(req, res, next) {
   const authHeader = req.header('Authorization') || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -76,16 +85,21 @@ async function requireActiveUser(req, res, next) {
     if (!user) return res.status(401).json({ error: 'Usuario no encontrado' });
 
     const reqTenantKey = readReqTenantKey(req) || req.user?.tenantKey;
-    const allowedTenants = tenantList(user.tenantKey, user.tenantKeys);
+    const allowedTenants = assignedTenantList(user);
     const isAllowedTenant = allowedTenants.includes(String(reqTenantKey));
-    const activeTenant = isAllowedTenant ? reqTenantKey : user.tenantKey;
+    const activeTenant = isAllowedTenant ? reqTenantKey : allowedTenants[0];
 
     if (!isAllowedTenant) {
       console.warn('[auth] user/tenant mismatch - normalizing', {
         userTenant: user.tenantKey,
+        allowedTenants,
         reqTenantKey,
         path: req.originalUrl
       });
+    }
+
+    if (!activeTenant) {
+      return res.status(403).json({ error: 'No tienes tenants asignados.' });
     }
 
     req.tenantKey = activeTenant;
