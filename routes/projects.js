@@ -863,7 +863,19 @@ function buildProjectVisibilityQuery(req) {
   if (role === 'admin') return base;
 
   // Bank: solo aprobados en cualquier listado genérico
-  if (role === 'bank') return { ...base, publishStatus: 'approved' };
+  if (role === 'bank') {
+    const tenantKeys = Array.isArray(req.user?.tenantKeys)
+      ? Array.from(new Set(req.user.tenantKeys.map(v => String(v || '').trim()).filter(Boolean)))
+      : [];
+    const tenantScope = tenantKeys.length ? { tenantKey: { $in: tenantKeys } } : base;
+    return {
+      publishStatus: 'approved',
+      $or: [
+        tenantScope,
+        anyAssignedFilter(uid)
+      ]
+    };
+  }
 
   // Asignados (promoter, gerencia, etc.) -> solo aprobados y donde esté asignado
   const seeAssignedRoles = [
@@ -1220,6 +1232,8 @@ router.get('/portfolio', async (req, res) => {
     if (!projects.length) return res.json([]);
 
     const pids = projects.map(p => p._id);
+    const projectTenantKeys = Array.from(new Set(projects.map(p => String(p.tenantKey || '').trim()).filter(Boolean)));
+    const unitTenantScope = projectTenantKeys.length ? { $in: projectTenantKeys } : req.tenantKey;
 
     const debugEstados = await Unit.aggregate([
   { $match: { projectId: { $in: pids } } },
@@ -1263,7 +1277,7 @@ router.get('/portfolio', async (req, res) => {
             },
             {
               $or: [
-                { tenantKey: req.tenantKey },
+                { tenantKey: unitTenantScope },
                 { tenantKey: { $exists: false } },
                 { tenantKey: null }
               ]
@@ -1351,7 +1365,7 @@ router.get('/assignees', requireRole('admin','bank'), async (req, res) => {
    ========================================================================= */
 
 // POST /api/projects
-router.post('/', requireRole('admin','promoter'), async (req, res) => {
+router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
   try {
     const tenantKey = req.tenantKey;
     const body = { ...req.body, tenantKey };
@@ -1392,16 +1406,23 @@ router.post('/', requireRole('admin','promoter'), async (req, res) => {
 
     // Crear proyecto ya no requiere exponer/asignar usuarios en el alta.
     // Si llegan asignaciones legacy, se validan contra el tenant, pero son opcionales.
-    const isPromoterCreator = String(req.user?.role || '').toLowerCase() === 'promoter';
+    const creatorRole = String(req.user?.role || '').toLowerCase();
+    const isPromoterCreator = creatorRole === 'promoter';
+    const isBankCreator = creatorRole === 'bank';
     const promotersRaw   = Array.isArray(body.assignedPromoters)   ? body.assignedPromoters   : [];
+    const banksRaw       = Array.isArray(body.assignedBanks)       ? body.assignedBanks       : [];
     const commercialsRaw = Array.isArray(body.assignedCommercials) ? body.assignedCommercials : [];
 
     const validPromoters   = await validateAssignees({ tenantKey, role:'promoter',   ids: promotersRaw });
+    const validBanks       = await validateAssignees({ tenantKey, role:'bank',       ids: banksRaw });
     const validCommercials = await validateAssignees({ tenantKey, role:'commercial', ids: commercialsRaw });
 
     body.assignedPromoters   = isPromoterCreator
       ? Array.from(new Set([...validPromoters.map(String), String(req.user.userId)])).map(toObjectId)
       : validPromoters;
+    body.assignedBanks       = isBankCreator
+      ? Array.from(new Set([...validBanks.map(String), String(req.user.userId)])).map(toObjectId)
+      : validBanks;
     body.assignedCommercials = validCommercials;
 
     // Si envías más asignaciones en el body y existen esos campos en Project, las dejamos pasar:

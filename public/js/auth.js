@@ -47,7 +47,7 @@
     const r = String(role || '').toLowerCase();
     const s = String(status || '').toLowerCase();
     if (s && s !== 'active') { location.href = '/pending.html'; return; } // ROLE-SEP
-    location.href = (r === 'admin' || r === 'bank') ? '/dashboard' : '/portfolio';        // ROLE-SEP
+    location.href = (r === 'admin') ? '/dashboard' : '/portfolio';        // ROLE-SEP
   }
 
   // 👁️ Mostrar/ocultar contraseña

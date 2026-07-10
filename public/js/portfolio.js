@@ -40,7 +40,7 @@
   }
 
   // ✅ Solo admin, bank y promoter pueden crear
-  const CAN_CREATE = role === 'admin' || role === 'promoter';
+  const CAN_CREATE = role === 'admin' || role === 'bank' || role === 'promoter';
   let promoterProfileState = null;
 
   // Roles
@@ -325,9 +325,9 @@
 
   function renderList(list) {
     if (!Array.isArray(list) || list.length === 0) {
-      const showPromoterPlaceholder = role === 'promoter' && CAN_CREATE && FULL_LIST.length === 0;
-      container.innerHTML = showPromoterPlaceholder ? placeholderCard() : '';
-      if (banner) banner.style.display = showPromoterPlaceholder ? 'none' : 'block';
+      const showPlaceholder = FULL_LIST.length === 0;
+      container.innerHTML = showPlaceholder ? placeholderCard() : '';
+      if (banner) banner.style.display = showPlaceholder ? 'none' : 'block';
       return;
     }
     if (banner) banner.style.display = 'none';
@@ -1388,9 +1388,11 @@
         </div>
         <div class="progress portfolio-card-progress"><div style="width:0%"></div></div>
         <p class="small muted portfolio-card-sales">0/0 unidades vendidas (0%)</p>
-        <div class="row">
-          <button class="btn" type="button" data-create-project-placeholder>Crear proyecto</button>
-        </div>
+        ${CAN_CREATE ? `
+          <div class="row">
+            <button class="btn" type="button" data-create-project-placeholder>Crear proyecto</button>
+          </div>
+        ` : ''}
       </div>
     `;
   }

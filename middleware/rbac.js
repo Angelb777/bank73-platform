@@ -93,6 +93,7 @@ function isUserAssignedToProject(project, userId) {
     project.members,
     project.assignedPromoters,
     project.assignedCommercials,
+    project.assignedBanks,
     project.assignedLegal,
     project.assignedTecnicos,
     project.assignedGerencia,
@@ -107,6 +108,7 @@ function isUserAssignedToProject(project, userId) {
   const assigneeArrays = [
     ass.promoter,
     ass.commercial,
+    ass.bank,
     ass.legal,
     ass.tecnico,
     ass.gerencia,
@@ -222,6 +224,17 @@ function requireProjectAccess(options = {}) {
 
       // Rutas que no operan sobre proyecto concreto
       if (!project) return next();
+
+      if (role === 'bank') {
+        const projectTenant = String(project.tenantKey || '');
+        const tenantKeys = Array.isArray(req.user?.tenantKeys)
+          ? req.user.tenantKeys.map(String)
+          : [];
+        const assigned = isUserAssignedToProject(project, getUserId(req));
+        if (sameTenant(req, project) || tenantKeys.includes(projectTenant) || assigned) {
+          return next();
+        }
+      }
 
       // Tenant must match
       if (!sameTenant(req, project)) {
