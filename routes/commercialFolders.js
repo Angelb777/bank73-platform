@@ -3,8 +3,40 @@ const router = express.Router();
 const CommercialFolder = require('../models/CommercialFolder');
 const Unit = require('../models/Unit');
 const Project = require('../models/Project');
+const { requireProjectAccess } = require('../middleware/rbac');
 
-router.get('/', async (req, res) => {
+async function attachProjectFromRequest(req, res, next) {
+  try {
+    const projectId = req.body?.projectId || req.query?.projectId;
+    if (!projectId) return res.status(400).json({ error: 'projectId requerido' });
+
+    const project = await Project.findOne({ _id: projectId, tenantKey: req.tenantKey }).lean();
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+    req.project = project;
+    next();
+  } catch {
+    res.status(400).json({ error: 'projectId invalido' });
+  }
+}
+
+async function attachProjectFromFolder(req, res, next) {
+  try {
+    const folder = await CommercialFolder.findOne({ _id: req.params.id, tenantKey: req.tenantKey }).lean();
+    if (!folder) return res.status(404).json({ error: 'Carpeta no encontrada' });
+
+    const project = await Project.findOne({ _id: folder.projectId, tenantKey: req.tenantKey }).lean();
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+    req.project = project;
+    req.folder = folder;
+    next();
+  } catch {
+    res.status(400).json({ error: 'folderId invalido' });
+  }
+}
+
+router.get('/', attachProjectFromRequest, requireProjectAccess(), async (req, res) => {
   const { projectId } = req.query;
 
   const filter = { projectId };
@@ -30,7 +62,7 @@ router.get('/', async (req, res) => {
   });
 });
 
-router.post('/', async (req, res) => {
+router.post('/', attachProjectFromRequest, requireProjectAccess({ promoterCanEditAssigned: true }), async (req, res) => {
   const { projectId, name, color } = req.body;
 
   if (!projectId || !name) {
@@ -53,7 +85,7 @@ router.post('/', async (req, res) => {
   res.json(folder);
 });
 
-router.patch('/unassigned/settings', async (req, res) => {
+router.patch('/unassigned/settings', attachProjectFromRequest, requireProjectAccess({ promoterCanEditAssigned: true }), async (req, res) => {
   const { projectId, name, color } = req.body;
 
   if (!projectId) {
@@ -90,7 +122,7 @@ router.patch('/unassigned/settings', async (req, res) => {
   });
 });
 
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', attachProjectFromFolder, requireProjectAccess({ promoterCanEditAssigned: true }), async (req, res) => {
   const update = {};
 
   if (req.body.name != null) {
@@ -112,10 +144,10 @@ router.patch('/:id', async (req, res) => {
   res.json(folder);
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', attachProjectFromFolder, requireProjectAccess({ promoterCanEditAssigned: true }), async (req, res) => {
   const folderId = req.params.id;
 
-  const folder = await CommercialFolder.findOne({ _id: folderId, tenantKey: req.tenantKey }).lean();
+  const folder = req.folder || await CommercialFolder.findOne({ _id: folderId, tenantKey: req.tenantKey }).lean();
   if (!folder) return res.status(404).json({ error: 'Carpeta no encontrada' });
 
   await Unit.updateMany(
@@ -128,7 +160,7 @@ router.delete('/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
-router.patch('/unassigned/units', async (req, res) => {
+router.patch('/unassigned/units', attachProjectFromRequest, requireProjectAccess({ promoterCanEditAssigned: true }), async (req, res) => {
   const { unitIds, projectId } = req.body;
 
   if (!Array.isArray(unitIds) || !unitIds.length) {
@@ -160,7 +192,7 @@ router.patch('/unassigned/units', async (req, res) => {
   res.json({ ok: true });
 });
 
-router.patch('/:id/units', async (req, res) => {
+router.patch('/:id/units', attachProjectFromFolder, requireProjectAccess({ promoterCanEditAssigned: true }), async (req, res) => {
   const { unitIds } = req.body;
   const folderId = req.params.id;
 
@@ -168,7 +200,7 @@ router.patch('/:id/units', async (req, res) => {
     return res.status(400).json({ error: 'unitIds debe ser array' });
   }
 
-  const folder = await CommercialFolder.findOne({ _id: folderId, tenantKey: req.tenantKey }).lean();
+  const folder = req.folder || await CommercialFolder.findOne({ _id: folderId, tenantKey: req.tenantKey }).lean();
   if (!folder) return res.status(404).json({ error: 'Carpeta no encontrada' });
 
   await Promise.all(unitIds.map((unitId, index) =>

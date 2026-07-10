@@ -4,6 +4,7 @@ const router = express.Router();
 
 let Unit;
 const Project = require('../models/Project');
+const { requireProjectAccess } = require('../middleware/rbac');
 try {
   Unit = require('../models/Unit'); // usará tu modelo si existe
 } catch {
@@ -14,7 +15,7 @@ try {
  * GET /api/inventory/:projectId
  * Respuesta legada: array de { _id, code, status, price }
  */
-router.get('/:projectId', async (req, res) => {
+router.get('/:projectId', requireProjectAccess(), async (req, res) => {
   const { projectId } = req.params;
   if (!projectId) return res.status(400).json({ error: 'projectId requerido' });
 
@@ -34,7 +35,7 @@ router.get('/:projectId', async (req, res) => {
  * Body: { projectId, manzana="A", cantidad=5, precio=100000 }
  * Crea unidades rápidas de prueba (solo para recuperar la vista).
  */
-router.post('/seed', async (req, res) => {
+router.post('/seed', requireProjectAccess({ promoterCanEditAssigned: true }), async (req, res) => {
   if (!Unit) return res.status(500).json({ error: 'Modelo Unit no encontrado' });
 
   try {

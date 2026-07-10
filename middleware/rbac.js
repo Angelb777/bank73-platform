@@ -1,25 +1,12 @@
 // middleware/rbac.js
 // Control de acceso por rol + acceso a proyectos asignados
 const Project = require('../models/Project');
-
-// ------- Config de roles/áreas --------
-const FULL_ACCESS_ROLES = [
-  'admin',
-  'bank',
-  'promoter',
-  'gerencia',
-  'socios',
-  'financiero',
-  'contable'
-];
-
-const LIMITED_AREA_ROLES = [
-  'commercial', // ventas/units/docs commercial
-  'legal',      // checklists/docs
-  'tecnico'     // checklists/docs
-];
-
-const DOC_DEPARTMENTS = ['commercial', 'tecnico', 'legal'];
+const {
+  FULL_ACCESS_ROLES,
+  LIMITED_AREA_ROLES,
+  DOC_DEPARTMENTS,
+  visibleDocDepartments
+} = require('../utils/roles');
 
 // ------- Helpers de rol/tenant --------
 function norm(s) {
@@ -167,36 +154,6 @@ function detectArea(req) {
 // =======================================================
 // ✅ NUEVO: permisos de carpetas documentales por área
 // =======================================================
-
-function visibleDocDepartments(roleRaw) {
-  const role = norm(roleRaw);
-
-  // Admin / banco / dirección / financiero ven todo
-  if ([
-    'admin',
-    'bank',
-    'promoter',
-    'gerencia',
-    'socios',
-    'financiero',
-    'contable',
-    'legal'
-  ].includes(role)) {
-    return ['commercial', 'tecnico', 'legal'];
-  }
-
-  // Comercial sólo ve Comercial
-  if (role === 'commercial') {
-    return ['commercial'];
-  }
-
-  // Técnico sólo ve Técnico
-  if (role === 'tecnico') {
-    return ['tecnico'];
-  }
-
-  return [];
-}
 
 function canAccessDocDepartment(req, department) {
   const dep = norm(department);

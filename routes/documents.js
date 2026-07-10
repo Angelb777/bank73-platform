@@ -21,6 +21,12 @@ const User = require('../models/User');
 const ProjectDocFolderPermission = require('../models/ProjectDocFolderPermission');
 const { PROJECT_DOC_FOLDERS } = ProjectDocFolderPermission;
 const audit = require('../utils/audit');
+const { FULL_ACCESS_ROLES } = require('../utils/roles');
+const {
+  MAX_DOCUMENT_FILE_SIZE,
+  fileFilterFor,
+  handleMulterUpload
+} = require('../utils/uploadSecurity');
 
 const router = express.Router();
 
@@ -29,21 +35,26 @@ const router = express.Router();
    ========================= */
 const uploadDir = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+const uploadRoot = path.resolve(uploadDir);
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadDir),
   filename: (_req, file, cb) => {
     const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname || '');
+    const ext = path.extname(file.originalname || '').toLowerCase();
     cb(null, unique + ext);
   }
 });
 
-const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
-const multiUpload = upload.fields([
+const upload = multer({
+  storage,
+  limits: { fileSize: MAX_DOCUMENT_FILE_SIZE },
+  fileFilter: fileFilterFor()
+});
+const multiUpload = handleMulterUpload(upload.fields([
   { name: 'files', maxCount: 20 },
   { name: 'file', maxCount: 1 }
-]);
+]));
 
 /* =========================
    Helpers
@@ -51,16 +62,6 @@ const multiUpload = upload.fields([
 function norm(s) {
   return (s || '').toString().toLowerCase().trim();
 }
-
-const FULL_ACCESS_ROLES = [
-  'admin',
-  'bank',
-  'promoter',
-  'gerencia',
-  'socios',
-  'financiero',
-  'contable'
-];
 
 const LIMITED_ROLES = ['legal', 'tecnico', 'commercial'];
 
@@ -85,8 +86,11 @@ function escapeRegex(s = '') {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function getUserId(req) {
-  return req.user?.userId || req.user?._id || req.user?.id;
+function resolveStoredUploadPath(storedPath = '') {
+  const candidate = path.resolve(__dirname, '..', String(storedPath || ''));
+  const relative = path.relative(uploadRoot, candidate);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
+  return candidate;
 }
 
 function getTenantKey(req) {
@@ -1017,8 +1021,7 @@ router.post(
     } catch (e) {
       console.error('[documents.upload] error:', e);
       res.status(e.status || 500).json({
-        error: e.status ? e.message : 'upload_failed',
-        message: e.message
+        error: e.status ? 'bad_request' : 'upload_failed'
       });
     }
   }
@@ -1183,7 +1186,8 @@ router.get('/:id/download', async (req, res) => {
       }
     }
 
-    const absPath = path.isAbsolute(doc.path) ? doc.path : path.join(__dirname, '..', doc.path);
+    const absPath = resolveStoredUploadPath(doc.path);
+    if (!absPath) return res.status(400).json({ error: 'Ruta de archivo inválida' });
 
     if (!fs.existsSync(absPath)) {
       return res.status(404).json({ error: 'Archivo no existe en servidor' });
@@ -1255,9 +1259,9 @@ async function deleteDocHandler(req, res) {
       }
     });
 
-    const absPath = path.isAbsolute(doc.path) ? doc.path : path.join(__dirname, '..', doc.path);
+    const absPath = resolveStoredUploadPath(doc.path);
 
-    if (fs.existsSync(absPath)) {
+    if (absPath && fs.existsSync(absPath)) {
       try {
         fs.unlinkSync(absPath);
       } catch {}

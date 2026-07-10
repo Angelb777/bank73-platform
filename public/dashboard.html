@@ -446,6 +446,10 @@
       right:14px;
       width:34px;
       height:34px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:0;
       border-radius:999px;
       border:1px solid #d1d5db;
       background:#f8fafc;
@@ -475,6 +479,50 @@
       font-weight:700;
       color:#123B6D;
       margin-bottom:6px;
+    }
+    .assigned-team-summary {
+      border:1px solid #e5e7eb;
+      background:#f8fafc;
+      color:#0f172a;
+      border-radius:10px;
+      padding:12px 14px;
+      margin:10px 0 14px;
+      font-size:.9rem;
+    }
+    .assigned-team-summary .title {
+      font-weight:700;
+      color:#123B6D;
+      margin-bottom:8px;
+    }
+    .assigned-team-grid {
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:8px 14px;
+    }
+    .assigned-role {
+      min-width:0;
+    }
+    .assigned-role b {
+      display:block;
+      color:#64748b;
+      font-size:.82rem;
+      margin-bottom:4px;
+    }
+    .assigned-user-list {
+      display:flex;
+      flex-wrap:wrap;
+      gap:5px;
+    }
+    .assigned-user-chip {
+      max-width:100%;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+      border:1px solid #dbeafe;
+      background:#eff6ff;
+      border-radius:999px;
+      padding:3px 8px;
+      font-size:.82rem;
     }
     .modal-body{
       max-height: calc(100vh - 260px);
@@ -534,7 +582,23 @@
     max-width:100%;
 }
 
-    #pendingUsersTable .actions, #usersTable .actions, #allProjectsTable .actions{ flex-direction:column; align-items:flex-start; gap:6px; }
+    #pendingUsersTable .actions, #usersTable .actions{ flex-direction:column; align-items:flex-start; gap:6px; }
+    #allProjectsTable .actions{
+      display:grid;
+      grid-template-columns:max-content max-content;
+      align-items:center;
+      justify-content:start;
+      gap:8px;
+    }
+    #allProjectsTable .actions .btn{
+      width:100%;
+      min-width:72px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      white-space:nowrap;
+    }
     #pendingUsersTable select{ max-width:110px; }
     .section-head, .admin-card-head{ margin-bottom:18px; }
     .admin-panel-section[data-admin-panel="activity"] #activityCard{ display:block !important; }
@@ -549,6 +613,7 @@
     }
     @media (max-width: 860px){
       #assignRolesContainer{ grid-template-columns: 1fr; }
+      .assigned-team-grid{ grid-template-columns: 1fr; }
       .admin-card-head { flex-direction:column; }
       .section-head { align-items:center; }
       .audit-actions { justify-content:flex-start; }
@@ -971,6 +1036,7 @@
       <h3>Asignar equipo al proyecto</h3>
       <div class="muted" id="assignProjectName" style="margin-bottom:10px;"></div>
       <div id="assignTeamSuggestion" class="team-suggestion-note" style="display:none;"></div>
+      <div id="assignCurrentTeam" class="assigned-team-summary" style="display:none;"></div>
 
       <div class="modal-body">
         <div id="assignRolesContainer"></div>

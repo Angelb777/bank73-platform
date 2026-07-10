@@ -1,6 +1,7 @@
 // middleware/auth.js
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { tenantList, assignedTenantList } = require('../utils/tenants');
 
 function readReqTenantKey(req) {
   return (
@@ -11,22 +12,6 @@ function readReqTenantKey(req) {
     req.headers['x-tenant'] ||
     undefined
   );
-}
-
-function tenantList(primary, list) {
-  return Array.from(new Set([
-    primary,
-    ...(Array.isArray(list) ? list : [])
-  ].map(v => String(v || '').trim()).filter(Boolean)));
-}
-
-function assignedTenantList(user = {}) {
-  const role = String(user.role || '').toLowerCase();
-  const assigned = Array.isArray(user.tenantKeys)
-    ? Array.from(new Set(user.tenantKeys.map(v => String(v || '').trim()).filter(Boolean)))
-    : [];
-  if (role === 'bank') return assigned;
-  return tenantList(user.tenantKey, assigned);
 }
 
 function auth(req, res, next) {

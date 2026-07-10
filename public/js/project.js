@@ -236,7 +236,6 @@ document.addEventListener('click', (ev) => {
   const btn = ev.target.closest('.js-open-permits');
   if (!btn) return;
   ev.preventDefault();
-  console.log('[Permits] open');
   openPermitsModal().catch(err => {
     console.error('[Permits] error', err);
     alert('No se pudo abrir Permisos. Revisa la consola.');
@@ -514,17 +513,17 @@ async function openChecklistDocs(clId) {
   const docs = state.docsByChecklist[clId] || [];
 
   const listHTML = docs.length ? docs.map(d => `
-    <div class="row" data-doc="${d._id}" style="justify-content:space-between;border:1px solid #eef2f7;border-radius:8px;padding:6px 10px;margin-bottom:6px;">
+    <div class="row" data-doc="${escapeHtml(d._id)}" style="justify-content:space-between;border:1px solid #eef2f7;border-radius:8px;padding:6px 10px;margin-bottom:6px;">
       <div>
-        <b>${d.originalname || d.name}</b>
-        <div class="small muted">${d.mimetype || ''} — ${(d.size||0)} bytes</div>
+        <b>${escapeHtml(d.originalname || d.name || 'Documento')}</b>
+        <div class="small muted">${escapeHtml(d.mimetype || '')} — ${(d.size||0)} bytes</div>
         <div class="small ${d.expiryDate && new Date(d.expiryDate).getTime() < Date.now() ? 'warn' : ''}">
           Expira: ${d.expiryDate ? new Date(d.expiryDate).toISOString().slice(0,10) : '—'}
         </div>
       </div>
       <div class="row" style="gap:6px;">
         <a class="btn btn-ghost btn-xs js-secure-file" href="#" data-url="${secureDocUrl(d._id)}" data-filename="${escapeHtml(d.originalname || d.name || 'documento')}" data-action="view">Ver</a>
-        <button class="btn btn-danger btn-xs js-del-doc" data-doc="${d._id}" data-cl="${clId}">Eliminar</button>
+        <button class="btn btn-danger btn-xs js-del-doc" data-doc="${escapeHtml(d._id)}" data-cl="${escapeHtml(clId)}">Eliminar</button>
       </div>
     </div>
   `).join('') : '<div class="small muted">Sin documentos</div>';
@@ -619,7 +618,6 @@ async function apiPermitsGetTemplates() {
 
 async function apiPermitsInit(templateId) {
   const headers = { 'Content-Type': 'application/json', ...tenantHeaders(), ...authHeaders() };
-  console.log('[permits/init] headers=', headers, 'body=', { templateId });
 
   const res = await fetch(`/api/permits/projects/${id}/init`, {
     method: 'POST',
@@ -729,7 +727,6 @@ function permitProgress(pp) {
 }
 
 async function openPermitsModal() {
-  console.log('[Permits] click');
 
   // abre el modal ya con un “cargando…”
   openModal('Permisos del proyecto', `
@@ -782,8 +779,6 @@ applyBtn.onclick = async () => {
   const tplSel = document.getElementById('permTplSel');
   const tplId  = tplSel?.value;
   if (!tplId) return alert('Selecciona una plantilla');
-
-  console.log('[Permits] init click -> templateId', tplId);
   try {
     await apiPermitsInit(tplId);                // POST
     __permits = await apiPermitsGetProject();   // GET
@@ -1282,9 +1277,9 @@ async function renderPermitsModal() {
             </thead>
             <tbody>
               ${docs.map(d => `
-                <tr data-id="${d._id}">
-                  <td class="small">${d.originalname || d.filename || 'Documento'}</td>
-                  <td class="small">${d.mimetype || '—'}</td>
+                <tr data-id="${escapeHtml(d._id)}">
+                  <td class="small">${escapeHtml(d.originalname || d.filename || 'Documento')}</td>
+                  <td class="small">${escapeHtml(d.mimetype || '—')}</td>
                   <td class="small">${fmt(d.size)}</td>
                   <td class="small">${d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'}</td>
                   <td class="small">${d.expiryDate ? new Date(d.expiryDate).toLocaleDateString() : '—'}</td>
@@ -1447,17 +1442,17 @@ async function refreshDocsListInModal(clId) {
     if (!container) return;
     container.innerHTML = (docsList && docsList.length)
       ? docsList.map(d => `
-        <div class="row" data-doc="${d._id}" style="justify-content:space-between;border:1px solid #eef2f7;border-radius:8px;padding:6px 10px;margin-bottom:6px;">
+        <div class="row" data-doc="${escapeHtml(d._id)}" style="justify-content:space-between;border:1px solid #eef2f7;border-radius:8px;padding:6px 10px;margin-bottom:6px;">
           <div>
-            <b>${d.originalname || d.name}</b>
-            <div class="small muted">${d.mimetype || ''} — ${(d.size||0)} bytes</div>
+            <b>${escapeHtml(d.originalname || d.name || 'Documento')}</b>
+            <div class="small muted">${escapeHtml(d.mimetype || '')} — ${(d.size||0)} bytes</div>
             <div class="small ${d.expiryDate && new Date(d.expiryDate).getTime() < Date.now() ? 'warn' : ''}">
               Expira: ${d.expiryDate ? new Date(d.expiryDate).toISOString().slice(0,10) : '—'}
             </div>
           </div>
           <div class="row" style="gap:6px;">
             <a class="btn btn-ghost btn-xs js-secure-file" href="#" data-url="${secureDocUrl(d._id)}" data-filename="${escapeHtml(d.originalname || d.name || 'documento')}" data-action="view">Ver</a>
-            <button class="btn btn-danger btn-xs js-del-doc" data-doc="${d._id}" data-cl="${clId}">Eliminar</button>
+            <button class="btn btn-danger btn-xs js-del-doc" data-doc="${escapeHtml(d._id)}" data-cl="${escapeHtml(clId)}">Eliminar</button>
           </div>
         </div>
       `).join('')
@@ -1491,9 +1486,9 @@ async function loadPermitsDocsList(targetEl) {
           </thead>
           <tbody>
             ${docs.map(d => `
-              <tr data-id="${d._id}">
-                <td>${d.originalname || d.filename || 'Documento'}</td>
-                <td>${d.mimetype || '—'}</td>
+              <tr data-id="${escapeHtml(d._id)}">
+                <td>${escapeHtml(d.originalname || d.filename || 'Documento')}</td>
+                <td>${escapeHtml(d.mimetype || '—')}</td>
                 <td>${d.size ? (Math.round(d.size/1024))+' KB' : '—'}</td>
                 <td>${d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'}</td>
                 <td>${d.expiryDate ? new Date(d.expiryDate).toLocaleDateString() : '—'}</td>
@@ -1569,6 +1564,7 @@ function setDocsCount(clId, n) {
 
 
 // ====== Rol del usuario (para visibilidad/validación) ======  // ROLE-SEP
+// TECH DEBT: este espejo frontend debe mantenerse alineado con utils/roles.js hasta modularizar project.js.
 const FULL_ACCESS_ROLES = ['admin','bank','promoter','gerencia','socios','financiero','contable'];
 let myRole = (currentUser.role || 'promoter').toLowerCase().trim();
 
@@ -1753,6 +1749,7 @@ function kpiCard(label, value, sub=''){
 }
 
 const TOP_HEADER_KPI_LABELS = {
+  commercialValue: 'Valor total',
   budgetApproved: 'Presupuesto Total',
   loanApproved: 'Cuantía Bancaria Aprobada',
   loanDisbursed: 'Desembolsado',
@@ -1763,12 +1760,15 @@ const TOP_HEADER_KPI_LABELS = {
 
 function buildTopHeaderKpiTiles(project = {}, hs = {}, kpis = {}) {
   const financeKpis = window.FINANCE_KPIS || {};
+  const summaryKpis = Object.keys(kpis || {}).length ? kpis : (window.__PROJECT_SUMMARY_KPIS || {});
+  const commercialValue = summaryKpis.inventoryValue ?? project.inventoryValue ?? 0;
   const loanApproved = project.loanApproved ?? hs.loanApproved ?? kpis.loan?.approved ?? 0;
   const loanDisbursed = project.loanDisbursed ?? hs.loanDisbursed ?? kpis.loan?.disbursed ?? 0;
   const budgetApproved = project.budgetApproved ?? hs.budgetApproved ?? 0;
   const budgetSpent = financeKpis?.real?.uses ?? project.budgetSpent ?? project.expense ?? 0;
 
   return [
+    { key: 'commercial-value', label: TOP_HEADER_KPI_LABELS.commercialValue, value: formatProjectMoney(commercialValue) },
     { key: 'budget-approved', label: TOP_HEADER_KPI_LABELS.budgetApproved, value: formatProjectMoney(budgetApproved) },
     { key: 'loan-approved', label: TOP_HEADER_KPI_LABELS.loanApproved, value: formatProjectMoney(loanApproved) },
     { key: 'disbursed', label: TOP_HEADER_KPI_LABELS.loanDisbursed, value: formatProjectMoney(loanDisbursed) },
@@ -2023,11 +2023,6 @@ async function refreshBeforeAfter() {
         createdAt: d.createdAt || d.updatedAt || null
       }))
       .filter(d => d.src);
-
-    console.log('[BA] docs total:', docs.length);
-    console.log('[BA] imgDocs:', imgDocs.length);
-    console.log('[BA] export list len:', window.__BEFORE_AFTER__.length);
-    console.log('[BA] first:', window.__BEFORE_AFTER__[0]);
 
     // 3) En informe de periodo, mostrar solo evidencia subida en ese intervalo.
     const activePeriod = window.__ACTIVE_SUMMARY_PERIOD__;
@@ -2600,14 +2595,10 @@ async function renderSummaryUI(payload) {
     unitsSold:  isPeriodView ? (periodUnits.sold || 0) : (project.unitsSold  ?? headerKpis.unitsSold  ?? 0),
   };
 
-  if (!isPeriodView) renderHeaderKpis(project, headerKpisFixed);
-
     // 4) Texto unidades vendidas
   let sold = headerKpisFixed.unitsSold ?? 0;
   let total = headerKpisFixed.unitsTotal ?? 0;
   let pct = total ? Math.round(100 * sold / total) : 0;
-  const unitsTxt = document.getElementById('summaryUnits');
-  if (unitsTxt) unitsTxt.textContent = `${sold}/${total} unidades vendidas (${pct}%)`;
 
   // 5) KPIs
   let kpis = payload.kpis || {
@@ -2663,6 +2654,8 @@ async function renderSummaryUI(payload) {
     kpis.units.sold = sold;
     kpis.units.available = Math.max(0, total - sold);
 
+    kpis.inventoryValue = (unitsFix || []).reduce((sum, unit) => sum + Number(unit.precioLista || unit.price || 0), 0);
+
     const cppActive = (ventasFix || []).filter(isSummaryActiveCpp).length;
 
     kpis.cpp = kpis.cpp || {};
@@ -2676,6 +2669,15 @@ async function renderSummaryUI(payload) {
   if (!kpis.absorption3m || Number(kpis.absorption3m) === 0) {
     kpis.absorption3m = calcAbsorption3mFromSalesMonthly(salesMonthly);
   }
+
+  window.__PROJECT_SUMMARY_KPIS = kpis;
+
+  if (!isPeriodView) {
+    renderHeaderKpis(project, { ...headerKpisFixed, unitsTotal: total, unitsSold: sold }, kpis);
+  }
+
+  const unitsTxt = document.getElementById('summaryUnits');
+  if (unitsTxt) unitsTxt.textContent = `${sold}/${total} unidades vendidas (${pct}%)`;
 
   renderPhaseChart(financePhases, 'sumPhaseChart');
   renderPhaseSourceChart(financePhases, 'sumPhaseSourceChart');
@@ -3654,8 +3656,6 @@ async function loadSummary() {
 
   res.progress = res.progress || {};
   res.progress.globalPct = pct;
-
-  console.log('[Resumen] Progreso recalculado:', pct);
 } catch (e) {
   console.warn('Error recalculando progreso', e);
 }
@@ -5850,7 +5850,6 @@ function renderFinanceControlKpis(totals = null) {
   const box = document.getElementById('financeControlKpis');
   if (!box) return;
   totals = totals || FINANCE_CONTROL?.totals || computeFinanceControlTotals();
-  console.log('[Finance] calculo KPIs', totals);
   const cards = [
     ['Presupuesto Total', financeMoney(totals.budgetApproved), 'budget'],
     ['Cuantía Bancaria Aprobada', financeMoney(totals.loanApproved), 'loan'],
@@ -6170,7 +6169,6 @@ function renderFinanceUnitAmortizations() {
   const box = document.getElementById('financeUnitAmortizations');
   if (!box) return;
   const items = mergedFinanceUnitAmortizations();
-  console.log('[Finance] carga unidades comerciales', { count: items.length });
   renderFinanceUnitGlobalSummary(items);
   box.innerHTML = items.map(item => {
     const state = financeUnitState(item);
@@ -6276,7 +6274,6 @@ async function saveFinanceLoanLines(btn = null) {
       }),
       ...visibleLines
     ];
-    console.log('[Finance] guardado lineas', loanLines);
     await API.put(`/api/projects/${id}/finance/loan-lines`, { loanLines });
     setFinanceButtonState(btn, 'Guardado', true);
     if (btn) await waitFinanceFeedback();
@@ -6294,7 +6291,6 @@ async function saveFinanceLoanLines(btn = null) {
 async function saveFinanceUnitAmortizations() {
   try {
     const unitAmortizations = collectFinanceUnitAmortizations();
-    console.log('[Finance] guardado amortizaciones', unitAmortizations);
     await API.put(`/api/projects/${id}/finance/unit-amortizations`, { unitAmortizations });
     await loadFinance();
     await markProjectDataChanged();
@@ -6322,7 +6318,6 @@ async function saveFinanceSingleUnit(card, btn = null) {
   next.push(incoming);
   try {
     setFinanceButtonState(btn, 'Guardando...', true);
-    console.log('[Finance] guardado amortizacion unidad', incoming);
     await API.put(`/api/projects/${id}/finance/unit-amortizations`, { unitAmortizations: next });
     setFinanceButtonState(btn, 'Guardado', true);
     if (btn) await waitFinanceFeedback();
@@ -6374,7 +6369,6 @@ function getPhaseStatus(ph, { deviationPct = 0.10 } = {}) {
 // -------------------------
 async function loadFinance({ force = true } = {}) {
   try {
-    console.log('[Finance] carga de finanzas', { projectId: id });
     const res = await getProjectFinanceSnapshot({ force });
     FINANCE = res.finance;
     FINANCE_KPIS = res.kpis;
@@ -9962,26 +9956,26 @@ async function loadUnidadDocs(projectId, unitId) {
   listDiv.innerHTML = (list || []).map(d => `
     <div class="doc">
       <div>
-        <span class="doc-item-title">${d.originalname || d.name || d.title || 'Documento'}</span>
+        <span class="doc-item-title">${escapeHtml(d.originalname || d.name || d.title || 'Documento')}</span>
 
         <div class="doc-meta">
-          ${d.mimetype || ''} — ${(d.size || 0).toLocaleString()} bytes
+          ${escapeHtml(d.mimetype || '')} — ${(d.size || 0).toLocaleString()} bytes
         </div>
 
         <div class="doc-meta">
-          Carpeta: ${departmentLabel[d.department || 'commercial'] || d.department || 'Comercial'}
+          Carpeta: ${escapeHtml(departmentLabel[d.department || 'commercial'] || d.department || 'Comercial')}
         </div>
 
         <div class="doc-expiry ${d.expiryDate && new Date(d.expiryDate) < new Date(Date.now()+30*24*60*60*1000) ? 'warn' : ''}">
           Expira: ${d.expiryDate ? String(d.expiryDate).slice(0,10) : '—'}
         </div>
 
-        ${d.checklistId ? `<div class="doc-meta">Checklist: ${d.checklistTitle || ''}</div>` : ''}
+        ${d.checklistId ? `<div class="doc-meta">Checklist: ${escapeHtml(d.checklistTitle || '')}</div>` : ''}
       </div>
 
       <div class="doc-actions">
         <a class="btn js-secure-file" href="#" data-url="${secureDocUrl(d._id)}" data-filename="${escapeHtml(d.originalname || d.name || d.title || 'documento')}" data-action="view">Ver</a>
-        <button class="btn danger doc-del" data-id="${d._id}">Eliminar</button>
+        <button class="btn danger doc-del" data-id="${escapeHtml(d._id)}">Eliminar</button>
       </div>
     </div>
   `).join('') || '<div class="small muted">No hay documentos en esta carpeta.</div>';
@@ -10234,9 +10228,6 @@ async function aplicarImportWord(unitId) {
     const key = input.dataset.importField;
     data[key] = input.value;
   });
-
-  console.log('[IMPORT WORD] applying unitId:', unitId);
-  console.log('[IMPORT WORD] data:', data);
 
   let result;
 

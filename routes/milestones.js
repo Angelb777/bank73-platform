@@ -1,12 +1,12 @@
 const express = require('express');
 const Milestone = require('../models/Milestone');
 const Project = require('../models/Project');
-const { requireRoles } = require('../middleware/rbac');
+const { requireRoles, requireProjectAccess } = require('../middleware/rbac');
 
 const router = express.Router();
 
 // GET /api/milestones?projectId=...
-router.get('/', async (req, res) => {
+router.get('/', requireProjectAccess(), async (req, res) => {
   const q = { tenantKey: req.tenantKey };
   if (req.query.projectId) q.projectId = req.query.projectId;
   const list = await Milestone.find(q).sort({ createdAt: -1 }).lean();
@@ -14,7 +14,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/milestones
-router.post('/', requireRoles('admin', 'promoter'), async (req, res) => {
+router.post('/', requireRoles('admin', 'promoter'), requireProjectAccess({ promoterCanEditAssigned: true }), async (req, res) => {
   const { projectId } = req.body || {};
   if (!projectId) return res.status(400).json({ error: 'projectId requerido' });
 

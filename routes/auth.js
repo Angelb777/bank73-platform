@@ -3,94 +3,16 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { ROLES } = User;
-const { PROMOTER_TYPES = [] } = User;
 const { promoterProfileCompletion } = User;
 const auth = require('../middleware/auth');
 const { hashPassword, isHashedPassword, verifyPassword } = require('../utils/passwords');
 const audit = require('../utils/audit');
+const { assignedTenantList, tenantKeyFromBankName } = require('../utils/tenants');
+const { sanitizePromoterProfile } = require('../utils/promoterProfile');
 
 const router = express.Router();
 const esc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 const isProd = process.env.NODE_ENV === 'production';
-
-function sanitizePromoterProfile(input = {}) {
-  const hasAny = input && typeof input === 'object' && Object.values(input).some(v => {
-    if (Array.isArray(v)) return v.length > 0;
-    return v !== undefined && v !== null && String(v).trim() !== '';
-  });
-  if (!hasAny) return undefined;
-
-  const toNum = (v) => {
-    if (v === '' || v === null || v === undefined) return null;
-    const n = Number(String(v).replace(/,/g, ''));
-    return Number.isFinite(n) && n >= 0 ? n : null;
-  };
-  const countriesRaw = Array.isArray(input.countries)
-    ? input.countries
-    : String(input.countries || input.paisesOperacion || '').split(/\r?\n|,/);
-  const normalizePromoterType = (value) => {
-    const raw = String(value || '').trim();
-    if (!raw) return 'No definido';
-    const normalized = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-    const found = PROMOTER_TYPES.find(type =>
-      type.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() === normalized
-    );
-    return found || 'No definido';
-  };
-
-  return {
-    companyName: String(input.companyName ?? input.sociedad ?? input.nombreSociedad ?? '').trim().slice(0, 180),
-    promoterType: normalizePromoterType(input.promoterType ?? input.tipoPromotor ?? input.modeloPromotor),
-    yearsExperience: toNum(input.yearsExperience ?? input.aniosExperiencia),
-    deliveredProjects: toNum(input.deliveredProjects ?? input.proyectosEntregados),
-    activeProjects: toNum(input.activeProjects ?? input.proyectosActivos),
-    developedVolume: toNum(input.developedVolume ?? input.volumenDesarrollado ?? input.volumenTotalDesarrollado),
-    developedUnits: toNum(input.developedUnits ?? input.unidadesDesarrolladas),
-    averageProjectTicket: toNum(input.averageProjectTicket ?? input.ticketMedioProyecto),
-    bankFinancingExperience: String(input.bankFinancingExperience ?? input.experienciaFinanciacionBancaria ?? '').trim().slice(0, 240),
-    banksWorkedWith: Array.from(new Set((Array.isArray(input.banksWorkedWith)
-      ? input.banksWorkedWith
-      : String(input.banksWorkedWith || input.bancosTrabajados || '').split(/\r?\n|,/))
-      .map(x => String(x || '').trim()).filter(Boolean))).slice(0, 30),
-    onTimeDeliveryHistory: String(input.onTimeDeliveryHistory ?? input.historialEntregasTiempo ?? '').trim().slice(0, 240),
-    incidentHistory: String(input.incidentHistory ?? input.historialIncidencias ?? '').trim().slice(0, 240),
-    documentationLevel: String(input.documentationLevel ?? input.nivelDocumentacion ?? '').trim().slice(0, 120),
-    internalTeam: {
-      technical: !!(input.internalTeam?.technical ?? input.equipoTecnico),
-      financial: !!(input.internalTeam?.financial ?? input.equipoFinanciero),
-      commercial: !!(input.internalTeam?.commercial ?? input.equipoComercial),
-      legal: !!(input.internalTeam?.legal ?? input.equipoLegal)
-    },
-    countries: Array.from(new Set(countriesRaw.map(x => String(x || '').trim()).filter(Boolean))).slice(0, 20),
-    notes: String(input.notes ?? input.notas ?? '').trim().slice(0, 1000)
-  };
-}
-
-function tenantKeyFromBankName(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
-}
-
-function tenantList(primary, list) {
-  return Array.from(new Set([
-    primary,
-    ...(Array.isArray(list) ? list : [])
-  ].map(v => String(v || '').trim()).filter(Boolean)));
-}
-
-function assignedTenantList(user = {}) {
-  const role = String(user.role || '').toLowerCase();
-  const assigned = Array.isArray(user.tenantKeys)
-    ? Array.from(new Set(user.tenantKeys.map(v => String(v || '').trim()).filter(Boolean)))
-    : [];
-  if (role === 'bank') return assigned;
-  return tenantList(user.tenantKey, assigned);
-}
 
 // ROLE-SEP: helper para firmar tokens incluyendo status
 function signToken(user) {
@@ -275,7 +197,7 @@ if (!allowedRequested.includes(requested)) {
     };
 
     if (requested === 'promoter' && (req.body?.promoterProfile || req.body?.perfilPromotor)) {
-      userPayload.promoterProfile = sanitizePromoterProfile(req.body.promoterProfile || req.body.perfilPromotor);
+      userPayload.promoterProfile = sanitizePromoterProfile(req.body.promoterProfile || req.body.perfilPromotor, { requireAny: true });
     }
 
     const user = await User.create(userPayload);
@@ -356,7 +278,7 @@ router.patch('/promoter-profile', auth, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
     if (user.role !== 'promoter') return res.status(403).json({ error: 'Solo disponible para promotores.' });
 
-    user.promoterProfile = sanitizePromoterProfile(req.body?.promoterProfile || req.body?.perfilPromotor || req.body || {});
+    user.promoterProfile = sanitizePromoterProfile(req.body?.promoterProfile || req.body?.perfilPromotor || req.body || {}, { requireAny: true });
     await user.save();
 
     await audit(req, 'auth.promoter_profile_updated', {

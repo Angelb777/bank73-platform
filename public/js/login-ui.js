@@ -1,7 +1,6 @@
 // /public/js/login-ui.js
 (function () {
   function init() {
-    console.log('[login-ui] init');
 
     // Año footer
     var y = document.getElementById('y');
@@ -38,7 +37,6 @@
       applyState();
       // Mantener foco sin scroll
       try { pwd.focus({ preventScroll: true }); } catch (_) { pwd.focus(); }
-      console.log('[login-ui] toggled ->', next);
     }
 
     // Listeners robustos
@@ -61,8 +59,6 @@
         setTimeout(function () { btn.classList.remove('loading'); }, 4000);
       });
     }
-
-    console.log('[login-ui] listo');
   }
 
   if (document.readyState === 'loading') {

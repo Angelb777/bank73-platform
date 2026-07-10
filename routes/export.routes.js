@@ -7,6 +7,7 @@ const Venta = require('../models/Venta');
 const Unit = require('../models/Unit');
 const Project = require('../models/Project');
 const { formatProjectMoney } = require('../utils/currency');
+const { requireProjectAccess } = require('../middleware/rbac');
 
 const BRAND = {
   dark: '#0B1020',
@@ -53,6 +54,23 @@ async function getUnitVenta(unitId, tenantKey) {
   const project = unit.projectId ? await Project.findOne({ _id: unit.projectId, tenantKey }).select('currency').lean() : null;
 
   return { unit, venta, currency: project?.currency || 'PAB' };
+}
+
+async function attachProjectByUnitId(req, res, next) {
+  try {
+    const unit = await Unit.findOne({ _id: req.params.unitId, tenantKey: req.tenantKey }).select('projectId').lean();
+    if (!unit) return res.status(404).json({ error: 'Unidad no encontrada' });
+
+    const project = unit.projectId
+      ? await Project.findOne({ _id: unit.projectId, tenantKey: req.tenantKey }).lean()
+      : null;
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+    req.project = project;
+    next();
+  } catch {
+    res.status(400).json({ error: 'unitId invalido' });
+  }
 }
 
 function pageHeader(doc, title, subtitle = '') {
@@ -209,7 +227,7 @@ function signatureArea(doc) {
 /* =========================================================================
    FICHA CLIENTE
    ========================================================================= */
-router.get('/ficha-cliente/:unitId', async (req, res) => {
+router.get('/ficha-cliente/:unitId', attachProjectByUnitId, requireProjectAccess(), async (req, res) => {
   try {
     const result = await getUnitVenta(req.params.unitId, req.tenantKey);
     if (result.error) return res.status(404).json({ error: result.error });
@@ -389,7 +407,7 @@ for (let i = 0; i < range.count; i++) {
 /* =========================================================================
    PROFORMA
    ========================================================================= */
-router.get('/proforma/:unitId', async (req, res) => {
+router.get('/proforma/:unitId', attachProjectByUnitId, requireProjectAccess(), async (req, res) => {
   try {
     const result = await getUnitVenta(req.params.unitId, req.tenantKey);
     if (result.error) return res.status(404).json({ error: result.error });

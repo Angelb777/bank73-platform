@@ -1,7 +1,6 @@
 // server.js
 require('dotenv').config();
 const path = require('path');
-const fs = require('fs');
 const express = require('express');
 const mongoose = require('mongoose');
 const helmet = require('helmet');
@@ -86,6 +85,13 @@ app.use(express.urlencoded({ extended: true, limit: jsonLimit }));
 
 function rateLimit({ windowMs, max, message }) {
   const hits = new Map();
+  const cleanup = setInterval(() => {
+    const now = Date.now();
+    for (const [key, value] of hits) {
+      if (!value || value.resetAt <= now) hits.delete(key);
+    }
+  }, Math.max(60 * 1000, windowMs));
+  cleanup.unref?.();
 
   return (req, res, next) => {
     const now = Date.now();
@@ -243,14 +249,6 @@ app.use('/api/admin', ...guard, adminRoutes);
 // Bank dashboard read-only
 app.use('/api/bank', ...guard, bankRoutes);
 
-if (!isProd) console.log('[MOUNT] /api/permits routes mounted ✅');
-
-// TRACE permits
-app.use('/api/permits', (req, _res, next) => {
-  if (!isProd) console.log('[TRACE] /api/permits >>>', req.method, req.originalUrl);
-  next();
-});
-
 // Permisos
 app.use('/api/permits', ...guard, bankReadOnly, permitRoutes);
 
@@ -280,14 +278,6 @@ app.get('/login', (_req, res) => res.sendFile(path.join(__dirname, 'public/login
 
 app.get('/', (req, res) => {
   const file = path.join(__dirname, 'public/index.html');
-
-  let stamp = 'NOFILE';
-  try {
-    const html = fs.readFileSync(file, 'utf8');
-    stamp = (html.match(/INDEX_v\d+/)?.[0]) || 'NOSTAMP';
-  } catch (_) {}
-
-  console.log('[SERVE /] host=', req.headers.host, 'ip=', req.ip, 'file=', file, 'stamp=', stamp);
   res.sendFile(file);
 });
 
@@ -345,7 +335,7 @@ app.use((err, req, res, next) => {
 
 // 404 FINAL (después de rutas + error handlers)
 app.use((req, res) => {
-  console.log('[404 FINAL]', req.method, req.originalUrl);
+  if (!isProd) console.warn('[404]', req.method, req.originalUrl);
   res.status(404).send('Not Found');
 });
 

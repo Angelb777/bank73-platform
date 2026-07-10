@@ -6,6 +6,7 @@ const router = express.Router();
 
 const UnitDocFolder = require('../models/UnitDocFolder');
 const Document = require('../models/Document');
+const Project = require('../models/Project');
 
 const {
   requireProjectAccess,
@@ -24,6 +25,31 @@ function getUserId(req) {
 
 function getDeletePin(req) {
   return process.env.DELETE_PIN || process.env.ADMIN_PIN || '1234';
+}
+
+async function attachProjectFromFolder(req, res, next) {
+  try {
+    const { folderId } = req.params;
+    if (!isObjectId(folderId)) {
+      return res.status(400).json({ error: 'folderId invÃ¡lido' });
+    }
+
+    const tenantKey = getTenantKeyFromReq(req);
+    const query = { _id: folderId };
+    if (tenantKey) query.tenantKey = tenantKey;
+
+    const folder = await UnitDocFolder.findOne(query).lean();
+    if (!folder) return res.status(404).json({ error: 'Carpeta no encontrada' });
+
+    const project = await Project.findOne({ _id: folder.projectId, tenantKey }).lean();
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+    req.project = project;
+    req.unitDocFolder = folder;
+    next();
+  } catch {
+    res.status(400).json({ error: 'folderId invÃ¡lido' });
+  }
 }
 
 function assertIds(res, { projectId, unitId }) {
@@ -140,7 +166,7 @@ router.post('/', requireProjectAccess(), async (req, res, next) => {
 });
 
 // Renombrar carpeta
-router.patch('/:folderId', requireProjectAccess(), async (req, res, next) => {
+router.patch('/:folderId', attachProjectFromFolder, requireProjectAccess(), async (req, res, next) => {
   try {
     const { folderId } = req.params;
 
@@ -176,7 +202,7 @@ router.patch('/:folderId', requireProjectAccess(), async (req, res, next) => {
 });
 
 // Eliminar carpeta con PIN
-router.delete('/:folderId', requireProjectAccess(), async (req, res, next) => {
+router.delete('/:folderId', attachProjectFromFolder, requireProjectAccess(), async (req, res, next) => {
   try {
     const { folderId } = req.params;
     const { pin } = req.body || {};

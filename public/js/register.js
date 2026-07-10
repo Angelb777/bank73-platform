@@ -1,7 +1,5 @@
 // public/js/register.js
 (function () {
-  console.log("[register] script loaded");
-
   const form   = document.getElementById('registerForm');
   const msg    = document.getElementById('msg');
   const btn    = document.getElementById('submitBtn');

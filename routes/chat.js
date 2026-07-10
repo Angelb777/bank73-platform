@@ -5,14 +5,9 @@ const express = require('express');
 const mongoose = require('mongoose');
 const ChatMessage = require('../models/ChatMessage');
 const Project = require('../models/Project');
+const { requireProjectAccess, _helpers: rbacHelpers } = require('../middleware/rbac');
 
 const router = express.Router();
-
-// Trace mínimo
-router.use((req, _res, next) => {
-  console.log('[CHAT] hit ->', req.method, req.originalUrl);
-  next();
-});
 
 // Normaliza :id desde :projectId
 function normalizeProjectParam(req, _res, next) {
@@ -68,12 +63,20 @@ function sanitizeText(s) {
   return s;
 }
 
+function canUseProjectChat(req) {
+  const role = String(req.user?.role || '').toLowerCase();
+  if (role === 'admin' || role === 'bank') return true;
+  if (role === 'legal' || role === 'tecnico') return false;
+  return rbacHelpers.isUserAssignedToProject(req.project, rbacHelpers.getUserId(req));
+}
+
 /* ============== ENDPOINTS ============== */
 
 // GET lista (con paginación ?before & ?limit)
 router.get(
   '/projects/:projectId',
   normalizeProjectParam,
+  requireProjectAccess({ commercialOnlySales: false }),
   ensureProjectReadable,
   async (req, res, next) => {
     try {
@@ -92,7 +95,6 @@ router.get(
   .lean();
 
 res.set('Cache-Control', 'no-store'); // evita caches
-console.log('[CHAT] GET ok ->', messages.length);
 res.json({ ok: true, messages });
 
     } catch (err) { next(err); }
@@ -103,6 +105,7 @@ res.json({ ok: true, messages });
 router.post(
   '/projects/:projectId',
   normalizeProjectParam,
+  requireProjectAccess({ commercialOnlySales: false }),
   ensureProjectReadable,
   async (req, res, next) => {
     try {
@@ -123,8 +126,6 @@ router.post(
         userName: req?.user?.name || req?.user?.fullName || null,
         text
       });
-
-      console.log('[CHAT] POST ok ->', msg._id.toString());
       res.status(201).json({ ok: true, message: msg });
     } catch (err) { next(err); }
   }
@@ -149,9 +150,9 @@ router.delete(
       await new Promise((resolve, reject) =>
         ensureProjectReadable(req, res, (err) => (err ? reject(err) : resolve()))
       );
+      if (!canUseProjectChat(req)) return res.status(403).json({ ok:false, error:'forbidden' });
 
       await ChatMessage.deleteOne({ _id: messageId, tenantKey });
-      console.log('[CHAT] DELETE ok ->', messageId);
       res.json({ ok: true, deletedId: messageId });
     } catch (err) { next(err); }
   }

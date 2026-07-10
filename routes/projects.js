@@ -894,7 +894,7 @@ async function validateAssignees({ tenantKey, role, ids }) {
   const uniq = Array.from(new Set((ids || []).filter(Boolean)));
   if (!uniq.length) return [];
   const tenantMembership = role === 'bank'
-    ? { tenantKeys: tenantKey }
+    ? { $or: [{ tenantKey }, { tenantKeys: tenantKey }] }
     : { tenantKey };
   const users = await User.find({
     ...tenantMembership, role, status: 'active', _id: { $in: uniq.map(toObjectId) }
@@ -1236,8 +1236,6 @@ router.get('/portfolio', async (req, res) => {
   }
 ]);
 
-console.log('[DEBUG PORTFOLIO ESTADOS]', JSON.stringify(debugEstados, null, 2));
-
     const SOLD_ESTADOS = [
   // nuevos
   'reservado',
@@ -1335,7 +1333,7 @@ router.get('/assignees', requireRole('admin','bank'), async (req, res) => {
       return res.status(400).json({ error: `role inválido. Usa ${allowed.join('|')}` });
     }
     const tenantMembership = role === 'bank'
-      ? { tenantKeys: req.tenantKey }
+      ? { $or: [{ tenantKey: req.tenantKey }, { tenantKeys: req.tenantKey }] }
       : { tenantKey: req.tenantKey };
     const users = await User.find(
       { ...tenantMembership, role, status: 'active' },
@@ -3422,9 +3420,6 @@ if (isSoldLikeStatus(st)) U.sold++;
       Array.isArray(req.body?.datasets?.beforeAfter) ? req.body.datasets.beforeAfter :
       [];
 
-    console.log('[EXPORT] beforeAfter len:', (beforeAfter || []).length);
-    console.log('[EXPORT] beforeAfter first:', (beforeAfter || [])[0]);
-
     async function anyImageToBuffer(src) {
       if (!src || typeof src !== 'string') return null;
 
@@ -4998,11 +4993,19 @@ if (isSoldLikeStatus(st)) U.sold++;
 
 const multer = require('multer');
 const XLSX = require('xlsx');
+const {
+  MAX_EXCEL_IMPORT_FILE_SIZE,
+  EXCEL_IMPORT_EXTENSIONS,
+  fileFilterFor,
+  handleMulterUpload
+} = require('../utils/uploadSecurity');
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 }
+  limits: { fileSize: MAX_EXCEL_IMPORT_FILE_SIZE },
+  fileFilter: fileFilterFor(EXCEL_IMPORT_EXTENSIONS)
 });
+const uploadDatoUnicoFile = handleMulterUpload(upload.single('file'));
 
 async function requireDatoUnicoImportAccess(req, res, next) {
   try {
@@ -5035,7 +5038,7 @@ router.post(
   '/:id/import-dato-unico',
   requireRole('admin', 'promoter'),
   requireDatoUnicoImportAccess,
-  upload.single('file'),
+  uploadDatoUnicoFile,
   async (req, res) => {
     try {
       const { id } = req.params;

@@ -1,16 +1,13 @@
 // routes/process.js
 const express = require('express');
 const router = express.Router();
-router.use((req, _res, next) => {
-  console.log('[TRACE process.js]', req.method, req.originalUrl);
-  next();
-});
 const mongoose = require('mongoose');
 
 const ProjectChecklist = require('../models/ProjectChecklist');
 const Project = require('../models/Project');
-const { requireRole } = require('../middleware/rbac');
+const { requireRole, requireProjectAccess } = require('../middleware/rbac');
 const bankReadOnly = require('../middleware/bankReadOnly');
+const { isFullAccessRole, isLimitedAreaRole } = require('../utils/roles');
 
 router.use(bankReadOnly);
 
@@ -96,14 +93,34 @@ async function loadTenantChecklist(req, res, id) {
   return cl;
 }
 
-// Roles de comportamiento
-const FULL_ACCESS_ROLES = [
-  'admin', 'bank', 'promoter', 'gerencia', 'socios', 'financiero', 'contable'
-];
-const LIMITED_ROLES = ['legal', 'tecnico', 'commercial'];
+async function attachProjectFromChecklist(req, res, next) {
+  try {
+    const id = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'checklistId invalido' });
+    }
 
-function isFullAccess(role) { return FULL_ACCESS_ROLES.includes(norm(role)); }
-function isLimited(role) { return LIMITED_ROLES.includes(norm(role)); }
+    const tenantKey = getTenantKey(req);
+    if (!tenantKey) return res.status(403).json({ error: 'Falta tenantKey' });
+
+    const cl = await ProjectChecklist.findOne({
+      _id: id,
+      ...legacyTenantQuery(tenantKey)
+    }).select('projectId').lean();
+    if (!cl) return res.status(404).json({ error: 'Checklist no encontrado' });
+
+    const project = await Project.findOne({ _id: cl.projectId, tenantKey }).lean();
+    if (!project) return res.status(404).json({ error: 'Checklist no encontrado' });
+
+    req.project = project;
+    next();
+  } catch (e) {
+    next(e);
+  }
+}
+
+function isFullAccess(role) { return isFullAccessRole(role); }
+function isLimited(role) { return isLimitedAreaRole(role); }
 
 // Construye query de visibilidad de checklists según el rol del usuario
 function buildChecklistVisibilityQuery(req, base = {}) {
@@ -128,7 +145,6 @@ function buildChecklistVisibilityQuery(req, base = {}) {
   return { ...base, _id: { $exists: false } };
 }
 
-// DEBUG SOLO PARA TI (borralo luego)
 router.get('/process/debug-templates', requireRole('admin', 'superadmin'), async (req, res) => {
   const dbName = mongoose.connection?.db?.databaseName;
   const col = mongoose.connection?.db?.collection('processTemplates');
@@ -175,7 +191,7 @@ router.post('/process/templates/:version/activate', requireRole('admin', 'supera
 
 // POST /api/projects/:projectId/process/apply-template?version=1
 // POST /api/projects/:projectId/process/apply-template?version=1
-router.post('/projects/:projectId/process/apply-template', async (req, res) => {
+router.post('/projects/:projectId/process/apply-template', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   const { projectId } = req.params;
   const version = req.query.version ? Number(req.query.version) : null;
   const project = await loadTenantProject(req, res, projectId);
@@ -252,7 +268,7 @@ const existing = await ProjectChecklist
    ========================================================================= */
 
 // GET /api/projects/:projectId/checklists
-router.get('/projects/:projectId/checklists', async (req, res) => {
+router.get('/projects/:projectId/checklists', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   const { projectId } = req.params;
   const project = await loadTenantProject(req, res, projectId);
   if (!project) return;
@@ -276,7 +292,7 @@ router.get('/projects/:projectId/checklists', async (req, res) => {
 
 // POST /api/projects/:projectId/checklists (ad-hoc)
 // acepta roleOwner y visibleToRoles; mantiene "role" legacy para compat
-router.post('/projects/:projectId/checklists', async (req, res) => {
+router.post('/projects/:projectId/checklists', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   const { projectId } = req.params;
   const project = await loadTenantProject(req, res, projectId);
   if (!project) return;
@@ -320,7 +336,7 @@ router.post('/projects/:projectId/checklists', async (req, res) => {
 });
 
 // PUT /api/checklists/:id
-router.put('/checklists/:id', async (req, res) => {
+router.put('/checklists/:id', attachProjectFromChecklist, requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   const { id } = req.params;
   const patch = { ...req.body, updatedBy: userName(req) };
 
@@ -340,7 +356,7 @@ router.put('/checklists/:id', async (req, res) => {
 });
 
 // DELETE /api/checklists/:id (PIN)
-router.delete('/checklists/:id', async (req, res) => {
+router.delete('/checklists/:id', attachProjectFromChecklist, requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   const pinErr = requirePin(req, res); if (pinErr) return;
   const { id } = req.params;
   const cl = await loadTenantChecklist(req, res, id);
@@ -381,7 +397,7 @@ async function isActiveChecklist(cl) {
 }
 
 // POST /api/checklists/:id/complete  { force?: boolean }
-router.post('/checklists/:id/complete', async (req, res) => {
+router.post('/checklists/:id/complete', attachProjectFromChecklist, requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   const { id } = req.params;
   const { force } = req.body || {};
   const cl = await loadTenantChecklist(req, res, id);
@@ -402,7 +418,7 @@ router.post('/checklists/:id/complete', async (req, res) => {
 });
 
 // POST /api/checklists/:id/validate  { validated:true/false }
-router.post('/checklists/:id/validate', async (req, res) => {
+router.post('/checklists/:id/validate', attachProjectFromChecklist, requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   const { id } = req.params;
   const { validated } = req.body;
   const cl = await loadTenantChecklist(req, res, id);
@@ -415,7 +431,7 @@ router.post('/checklists/:id/validate', async (req, res) => {
 });
 
 // POST /api/checklists/:id/notes  { text }
-router.post('/checklists/:id/notes', async (req, res) => {
+router.post('/checklists/:id/notes', attachProjectFromChecklist, requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   const { id } = req.params;
   const { text } = req.body || {};
   if (!text) return res.status(400).json({ error: 'Texto requerido' });
@@ -431,7 +447,7 @@ router.post('/checklists/:id/notes', async (req, res) => {
    ========================================================================= */
 
 // POST /api/checklists/:id/subtasks  { title }
-router.post('/checklists/:id/subtasks', async (req, res) => {
+router.post('/checklists/:id/subtasks', attachProjectFromChecklist, requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   const { id } = req.params;
   const { title } = req.body || {};
   if (!title) return res.status(400).json({ error: 'Título requerido' });
@@ -443,7 +459,7 @@ router.post('/checklists/:id/subtasks', async (req, res) => {
 });
 
 // PUT /api/checklists/:id/subtasks/:sid  { completed?, title?, dueDate? }
-router.put('/checklists/:id/subtasks/:sid', async (req, res) => {
+router.put('/checklists/:id/subtasks/:sid', attachProjectFromChecklist, requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   const { id, sid } = req.params;
   const cl = await loadTenantChecklist(req, res, id);
   if (!cl) return;
@@ -457,7 +473,7 @@ router.put('/checklists/:id/subtasks/:sid', async (req, res) => {
 });
 
 // DELETE /api/checklists/:id/subtasks/:sid
-router.delete('/checklists/:id/subtasks/:sid', async (req, res) => {
+router.delete('/checklists/:id/subtasks/:sid', attachProjectFromChecklist, requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   const { id, sid } = req.params;
   const cl = await loadTenantChecklist(req, res, id);
   if (!cl) return;
@@ -532,7 +548,7 @@ function normalizeLegacyToProjectChecklist(lc, projectId, tenantKey) {
 }
 
 // POST /api/projects/:projectId/checklists/migrate-legacy
-router.post('/projects/:projectId/checklists/migrate-legacy', async (req, res) => {
+router.post('/projects/:projectId/checklists/migrate-legacy', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   const { projectId } = req.params;
   const project = await loadTenantProject(req, res, projectId);
   if (!project) return;

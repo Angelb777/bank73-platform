@@ -7,6 +7,7 @@ const ExcelJS = require('exceljs');
 const Unit  = require('../models/Unit');
 const Venta = require('../models/Venta');
 const Project = require('../models/Project');
+const { requireProjectAccess } = require('../middleware/rbac');
 
 // =========================
 // CSV (Excel ES) helpers
@@ -206,7 +207,7 @@ async function validateTenantProject(projectId, tenantKey) {
 // =========================
 // ✅ CSV: /api/export/comercial.csv
 // =========================
-router.get('/comercial.csv', async (req, res) => {
+router.get('/comercial.csv', requireProjectAccess(), async (req, res) => {
   try {
     const { projectId } = req.query;
     if (!projectId) return res.status(400).json({ error: 'projectId requerido' });
@@ -258,7 +259,7 @@ router.get('/comercial.csv', async (req, res) => {
 // =========================
 // ✅ XLSX: /api/export/comercial.xlsx
 // =========================
-router.get('/comercial.xlsx', async (req, res) => {
+router.get('/comercial.xlsx', requireProjectAccess(), async (req, res) => {
   try {
     const { projectId } = req.query;
     if (!projectId) return res.status(400).json({ error: 'projectId requerido' });

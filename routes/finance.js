@@ -8,8 +8,10 @@ const ProjectFinance = require('../models/ProjectFinance');
 const Project = require('../models/Project');
 const Unit = require('../models/Unit');
 const Venta = require('../models/Venta');
+const { requireProjectAccess } = require('../middleware/rbac');
 
 router.use(bankReadOnly);
+router.use('/projects/:projectId/finance', requireProjectAccess({ commercialOnlySales: false }));
 
 const fs   = require('fs');
 const path = require('path');
@@ -639,7 +641,6 @@ router.put('/projects/:projectId/finance/loan-lines', async (req, res) => {
 
     const control = buildFinanceControlSummary(doc, project || {});
     const commercialUnits = await getFinanceCommercialUnits(projectId, project.tenantKey);
-    console.log('[FINANCE] loan lines saved', { projectId, count: doc.loanLines.length });
     res.json({ ok: true, financeControl: control, alerts: buildFinanceControlAlerts(control, commercialUnits) });
   } catch (err) {
     console.error('PUT finance loan-lines error', err);
@@ -664,7 +665,6 @@ router.put('/projects/:projectId/finance/unit-amortizations', async (req, res) =
 
     const control = buildFinanceControlSummary(doc, project || {});
     const commercialUnits = await getFinanceCommercialUnits(projectId, project.tenantKey);
-    console.log('[FINANCE] unit amortizations saved', { projectId, count: doc.unitAmortizations.length });
     res.json({ ok: true, financeControl: control, alerts: buildFinanceControlAlerts(control, commercialUnits) });
   } catch (err) {
     console.error('PUT finance unit-amortizations error', err);

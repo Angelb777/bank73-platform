@@ -1,7 +1,7 @@
 const express = require('express');
 const Loan = require('../models/Loan');
 const Project = require('../models/Project');
-const { requireRoles } = require('../middleware/rbac');
+const { requireRoles, requireProjectAccess } = require('../middleware/rbac');
 
 const router = express.Router();
 
@@ -20,7 +20,7 @@ async function loadTenantProject(req, res) {
 }
 
 // GET /api/loans/:projectId
-router.get('/:projectId', async (req, res) => {
+router.get('/:projectId', requireProjectAccess(), async (req, res) => {
   const project = await loadTenantProject(req, res);
   if (!project) return;
 
@@ -34,7 +34,7 @@ router.get('/:projectId', async (req, res) => {
 });
 
 // POST /api/loans/:projectId/disburse  { amount }
-router.post('/:projectId/disburse', requireRoles('admin'), async (req, res) => {
+router.post('/:projectId/disburse', requireRoles('admin'), requireProjectAccess({ promoterCanEditAssigned: true }), async (req, res) => {
   const amount = Number(req.body?.amount || 0);
   if (!amount || amount <= 0) return res.status(400).json({ error: 'Monto invalido' });
 

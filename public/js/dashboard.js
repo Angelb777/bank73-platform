@@ -166,6 +166,7 @@ if (roleSelectDefault) {
   const assignModal = document.getElementById('assignModal');
   const assignProjectNameEl = document.getElementById('assignProjectName');
   const assignTeamSuggestionEl = document.getElementById('assignTeamSuggestion');
+  const assignCurrentTeamEl = document.getElementById('assignCurrentTeam');
   const assignCancelBtn = document.getElementById('assignCancel');
   const assignCloseBtn = document.getElementById('assignClose');
   const assignSaveBtn = document.getElementById('assignSave');
@@ -852,8 +853,8 @@ function applyProjectsFilters(list) {
       const initialRole = roleRequested || defaultRole;
 
       tr.innerHTML = `
-  <td>${u.name || '-'}</td>
-  <td>${u.email}</td>
+  <td>${escapeHtml(u.name || '-')}</td>
+  <td>${escapeHtml(u.email || '-')}</td>
   <td>${requestedAt ? new Date(requestedAt).toLocaleString() : '-'}</td>
   <td><span class="badge ${st}">${st.toUpperCase()}</span></td>
   <td>${bankProfileCell(u)}</td>
@@ -1075,6 +1076,85 @@ function applyProjectsFilters(list) {
     assignTeamSuggestionEl.style.display = '';
   }
 
+  const LEGACY_ASSIGNMENT_FIELDS = {
+    bank: 'assignedBanks',
+    promoter: 'assignedPromoters',
+    commercial: 'assignedCommercials',
+    legal: 'assignedLegal',
+    tecnico: 'assignedTecnicos',
+    gerencia: 'assignedGerencia',
+    socios: 'assignedSocios',
+    financiero: 'assignedFinanciero',
+    contable: 'assignedContable'
+  };
+
+  function assignmentItemId(item) {
+    return String(item?._id || item?.id || item || '');
+  }
+
+  function userDisplayName(user = {}) {
+    const name = String(user.name || '').trim();
+    const email = String(user.email || '').trim();
+    if (name && email) return `${name} - ${email}`;
+    return name || email || assignmentItemId(user);
+  }
+
+  function assignedIdsForRole(project = {}, role) {
+    const fromAssignees = project.assignees && project.assignees[role];
+    if (Array.isArray(fromAssignees)) return fromAssignees;
+    const legacyField = LEGACY_ASSIGNMENT_FIELDS[role];
+    const fromLegacy = legacyField ? project[legacyField] : null;
+    return Array.isArray(fromLegacy) ? fromLegacy : [];
+  }
+
+  function candidateMapForRole(candidatesByRole = {}, role) {
+    const map = new Map();
+    (candidatesByRole[role] || []).forEach(user => {
+      const id = assignmentItemId(user);
+      if (id) map.set(id, user);
+    });
+    return map;
+  }
+
+  function renderAssignCurrentTeam(project = {}, candidatesByRole = {}) {
+    if (!assignCurrentTeamEl) return;
+
+    const rows = ASSIGNABLE_ROLES.map(role => {
+      const selected = assignedIdsForRole(project, role).filter(Boolean);
+      if (!selected.length) return '';
+
+      const candidatesMap = candidateMapForRole(candidatesByRole, role);
+      const chips = selected.map(item => {
+        const id = assignmentItemId(item);
+        const candidate = candidatesMap.get(id);
+        const label = candidate ? userDisplayName(candidate) : userDisplayName(item);
+        return `<span class="assigned-user-chip" title="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+      }).join('');
+
+      return `
+        <div class="assigned-role">
+          <b>${escapeHtml(ASSIGNMENT_ROLE_LABEL(role))}</b>
+          <div class="assigned-user-list">${chips}</div>
+        </div>
+      `;
+    }).filter(Boolean);
+
+    assignCurrentTeamEl.innerHTML = `
+      <div class="title">Usuarios asignados al proyecto</div>
+      ${rows.length ? `<div class="assigned-team-grid">${rows.join('')}</div>` : '<div class="muted">Sin usuarios asignados.</div>'}
+    `;
+    assignCurrentTeamEl.style.display = '';
+  }
+
+  function projectWithCurrentAssignmentSelection(project = {}, container) {
+    const draft = { ...project, assignees: {} };
+    ASSIGNABLE_ROLES.forEach(role => {
+      const select = container?.querySelector(`select[data-role="${role}"]`);
+      draft.assignees[role] = select ? Array.from(select.selectedOptions).map(option => option.value) : [];
+    });
+    return draft;
+  }
+
   function renderPendingProjects(list) {
     if (!pendingProjectsTbody) return;
     pendingProjectsTbody.innerHTML = '';
@@ -1086,9 +1166,9 @@ function applyProjectsFilters(list) {
       const tr = document.createElement('tr');
       const st = (p.publishStatus || 'pending').toLowerCase();
       tr.innerHTML = `
-        <td>${p.name || '-'}</td>
+        <td>${escapeHtml(p.name || '-')}</td>
         <td>
-          <div>${p.description || '-'}</div>
+          <div>${escapeHtml(p.description || '-')}</div>
           <div class="muted" style="font-size:.82rem;">Tipo: ${escapeHtml(p.projectType || p.tipoProyecto || 'No definido')}</div>
           ${teamSuggestionHtml(p.teamSuggestion)}
         </td>
@@ -1127,18 +1207,18 @@ function applyProjectsFilters(list) {
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${p.name || '-'}</td>
+      <td>${escapeHtml(p.name || '-')}</td>
       <td>
-        <div>${p.description || '-'}</div>
+        <div>${escapeHtml(p.description || '-')}</div>
         <div class="muted" style="font-size:.82rem;">Tipo: ${escapeHtml(p.projectType || p.tipoProyecto || 'No definido')}</div>
       </td>
       <td><span class="badge ${st}">${st.toUpperCase()}</span></td>
-      <td>${proms.length ? proms.join(', ') : '<span class="muted">—</span>'}</td>
-      <td>${comms.length ? comms.join(', ') : '<span class="muted">—</span>'}</td>
+      <td>${proms.length ? escapeHtml(proms.join(', ')) : '<span class="muted">—</span>'}</td>
+      <td>${comms.length ? escapeHtml(comms.join(', ')) : '<span class="muted">—</span>'}</td>
       <td>
         <div class="actions">
           <a class="btn small" href="/project?id=${p._id}&ref=admin">Abrir</a>
-          <button class="btn small" data-project-assign="${p._id}" data-project-name="${p.name||''}">Asignar equipo</button>
+          <button class="btn small" data-project-assign="${escapeHtml(p._id)}" data-project-name="${escapeHtml(p.name||'')}">Asignar equipo</button>
           <button class="btn small" data-project-edit="${p._id}">Editar</button>
           ${st === 'pending' ? `
             <button class="btn small" data-project-approve="${p._id}">Aprobar</button>
@@ -1203,7 +1283,7 @@ function applyProjectsFilters(list) {
       );
       renderPendingUsers(list);
     } catch (e) {
-      pendingUsersTbody.innerHTML = `<tr><td colspan="6" class="muted">Error al cargar: ${e.message}</td></tr>`;
+      pendingUsersTbody.innerHTML = `<tr><td colspan="6" class="muted">Error al cargar: ${escapeHtml(e.message)}</td></tr>`;
     }
   }
   async function loadUsers() {
@@ -1236,7 +1316,7 @@ function applyProjectsFilters(list) {
       const list = await apiGetProjectsPending();
       renderPendingProjects(list);
     } catch (e) {
-      pendingProjectsTbody.innerHTML = `<tr><td colspan="4" class="muted">Error al cargar: ${e.message}</td></tr>`;
+      pendingProjectsTbody.innerHTML = `<tr><td colspan="4" class="muted">Error al cargar: ${escapeHtml(e.message)}</td></tr>`;
     }
   }
 
@@ -1248,7 +1328,7 @@ function applyProjectsFilters(list) {
     allProjectsCache = Array.isArray(list) ? list : []; // guardamos la última carga
     renderAllProjects(applyProjectsFilters(allProjectsCache)); // render con filtros (incluye búsqueda)
   } catch (e) {
-    allProjectsTbody.innerHTML = `<tr><td colspan="6" class="muted">Error al cargar: ${e.message}</td></tr>`;
+    allProjectsTbody.innerHTML = `<tr><td colspan="6" class="muted">Error al cargar: ${escapeHtml(e.message)}</td></tr>`;
   }
  }
 
@@ -2692,6 +2772,7 @@ if (pAssign && assignModal && assignProjectNameEl) {
     const candidatesByRole = {};
     candidatesByRoleArr.forEach(({ role, users }) => { candidatesByRole[role] = users || []; });
     renderAssignTeamSuggestion(project.teamSuggestion || {});
+    renderAssignCurrentTeam(project, candidatesByRole);
 
     // 2) Determinar preseleccionados por rol
     // Recomendado backend: project.assignees = { promoter:[ids], commercial:[ids], gerencia:[ids], ... }
@@ -2715,6 +2796,11 @@ if (pAssign && assignModal && assignProjectNameEl) {
       const pre = preselectedFor(role);
       container.appendChild(createRoleSelect(role, candidates, pre));
     });
+
+    container.onchange = (event) => {
+      if (!event.target?.matches?.('select[data-role]')) return;
+      renderAssignCurrentTeam(projectWithCurrentAssignmentSelection(project, container), candidatesByRole);
+    };
 
     assignModal.classList.add('show');
   } catch (err) {

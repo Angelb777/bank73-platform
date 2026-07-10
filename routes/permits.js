@@ -9,11 +9,6 @@ const { requireRole, requireProjectAccess } = require('../middleware/rbac');
 
 const router = express.Router();
 
-router.use((req, _res, next) => {
-  console.log('[TRACE permits.js]', req.method, req.originalUrl);
-  next();
-});
-
 /**
  * Copia req.params.projectId -> req.params.id para middlewares
  * que esperan "id" (p. ej. requireProjectAccess).
@@ -158,7 +153,7 @@ router.post('/templates', requireRole('admin', 'gerencia'), async (req, res, nex
    ============================ */
 
    // ✅ LEGACY: GET /api/permits?projectId=...
-router.get('/', async (req, res, next) => {
+router.get('/', normalizeProjectParam, requireProjectAccess({ commercialOnlySales: false }), async (req, res, next) => {
   try {
     const projectId = req.query.projectId;
     if (!projectId) return res.status(400).json({ error: 'projectId requerido' });
@@ -185,12 +180,12 @@ router.get('/', async (req, res, next) => {
 
 // Inicializar permisos en un proyecto desde plantilla (usa siempre el tenant del proyecto)
 // Inicializar/Agregar permisos desde plantilla
-router.post('/projects/:projectId/init', async (req, res, next) => {
-  console.log('[TRACE] /api/permits >>> POST init', {
-  projectId: req.params.projectId,
-  templateId: req.body?.templateId
-});
-
+router.post(
+  '/projects/:projectId/init',
+  normalizeProjectParam,
+  hydrateUserTenant,
+  requireProjectAccess({ commercialOnlySales: false }),
+  async (req, res, next) => {
   try {
     // 1) Proyecto y tenant
     const tenantKey = String(
@@ -287,7 +282,8 @@ router.post('/projects/:projectId/init', async (req, res, next) => {
     console.error('[permits:init] error', err);
     return res.status(400).json({ error: err.message || 'init_failed' });
   }
-});
+  }
+);
 
 
 // Obtener permisos de un proyecto
@@ -296,6 +292,7 @@ router.get(
   '/projects/:projectId',
   normalizeProjectParam,
   hydrateUserTenant,           // mantiene user.tenantKey si hace falta
+  requireProjectAccess({ commercialOnlySales: false }),
   async (req, res, next) => {
     try {
       const tenantKey = await getTenantKey(req);
@@ -331,6 +328,7 @@ router.patch(
   '/projects/:projectId/items/:code',
   normalizeProjectParam,
   hydrateUserTenant, // opcional, ya no dependemos de requireProjectAccess
+  requireProjectAccess({ commercialOnlySales: false }),
   async (req, res, next) => {
     try {
       const tenantKey = await getTenantKey(req);

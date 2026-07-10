@@ -3,12 +3,20 @@
 const express = require('express');
 const multer = require('multer');
 const mammoth = require('mammoth');
+const {
+  MAX_WORD_IMPORT_FILE_SIZE,
+  WORD_IMPORT_EXTENSIONS,
+  fileFilterFor,
+  handleMulterUpload
+} = require('../utils/uploadSecurity');
 
 const router = express.Router();
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }
+  limits: { fileSize: MAX_WORD_IMPORT_FILE_SIZE },
+  fileFilter: fileFilterFor(WORD_IMPORT_EXTENSIONS)
 });
+const uploadWordFile = handleMulterUpload(upload.single('file'));
 
 const Venta = require('../models/Venta');
 const Unit = require('../models/Unit');
@@ -713,7 +721,7 @@ async function syncProjectKpisSafe(req, projectId) {
    ========================================================================= */
 router.post(
   '/preview/:unitId',
-  upload.single('file'),
+  uploadWordFile,
   attachProjectByUnitId,
   requireProjectAccess({ promoterCanEditAssigned: true }),
   async (req, res) => {
