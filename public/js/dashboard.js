@@ -152,6 +152,31 @@ if (roleSelectDefault) {
   const allProjectsPrev = document.getElementById('allProjectsPrev');
   const allProjectsNext = document.getElementById('allProjectsNext');
 
+  // Proveedores
+  const providersTbody = document.getElementById('providersTbody');
+  const providerForm = document.getElementById('providerForm');
+  const providerId = document.getElementById('providerId');
+  const providerCommercialName = document.getElementById('providerCommercialName');
+  const providerStage = document.getElementById('providerStage');
+  const providerServiceType = document.getElementById('providerServiceType');
+  const providerDescription = document.getElementById('providerDescription');
+  const providerCountry = document.getElementById('providerCountry');
+  const providerCity = document.getElementById('providerCity');
+  const providerSpecialty = document.getElementById('providerSpecialty');
+  const providerExclusiveCondition = document.getElementById('providerExclusiveCondition');
+  const providerPhone = document.getElementById('providerPhone');
+  const providerEmail = document.getElementById('providerEmail');
+  const providerWebsite = document.getElementById('providerWebsite');
+  const providerIsActive = document.getElementById('providerIsActive');
+  const providerLogoFile = document.getElementById('providerLogoFile');
+  const providerLogoUrl = document.getElementById('providerLogoUrl');
+  const providersSearch = document.getElementById('providersSearch');
+  const providersStatusFilter = document.getElementById('providersStatusFilter');
+  const refreshProvidersBtn = document.getElementById('refreshProviders');
+  const clearProviderFormBtn = document.getElementById('clearProviderForm');
+  const providerRequestsBadge = document.getElementById('providerRequestsBadge');
+  const providersModuleToggle = document.getElementById('providersModuleToggle');
+
   // Caché de proyectos (última carga)
   let allProjectsCache = [];
   let usersCache = [];
@@ -159,6 +184,11 @@ if (roleSelectDefault) {
   let usersLastTotal = 0;
   let allProjectsPage = 1;
   let allProjectsLastTotal = 0;
+  let providersCache = [];
+  let providerRequestsCache = [];
+  let providerStageServices = {};
+  let openProviderRequestsFor = '';
+  let providersModuleEnabled = true;
   const usersPageSize = 10;
   const allProjectsPageSize = 10;
 
@@ -246,9 +276,11 @@ if (roleSelectDefault) {
     document.querySelector('[data-admin-tab="pending"]')?.remove();
     document.querySelector('[data-admin-tab="payments"]')?.remove();
     document.querySelector('[data-admin-tab="multiTenant"]')?.remove();
+    document.querySelector('[data-admin-tab="providers"]')?.remove();
     document.querySelector('[data-admin-panel="pending"]')?.remove();
     document.querySelector('[data-admin-panel="payments"]')?.remove();
     document.querySelector('[data-admin-panel="multiTenant"]')?.remove();
+    document.querySelector('[data-admin-panel="providers"]')?.remove();
 
     const tabs = Array.from(document.querySelectorAll('[data-admin-tab]'));
     const panels = Array.from(document.querySelectorAll('[data-admin-panel]'));
@@ -453,6 +485,50 @@ if (roleSelectDefault) {
   }
   async function apiRejectProject(id) {
     return xfetch(`/api/admin/projects/${id}/reject`, { method: 'POST' });
+  }
+
+  async function apiGetProviderOptions() {
+    return xfetch('/api/admin/providers/options');
+  }
+  async function apiGetProvidersModuleSettings() {
+    return xfetch('/api/admin/providers/module-settings');
+  }
+  async function apiUpdateProvidersModuleSettings(enabled) {
+    return xfetch('/api/admin/providers/module-settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled })
+    });
+  }
+  async function apiGetProviders() {
+    const data = await xfetch('/api/admin/providers');
+    return data.providers || [];
+  }
+  async function apiSaveProvider(payload) {
+    const id = payload._id || payload.id || '';
+    const body = JSON.stringify(payload);
+    if (id) {
+      return xfetch(`/api/admin/providers/${encodeURIComponent(id)}`, { method: 'PUT', body });
+    }
+    return xfetch('/api/admin/providers', { method: 'POST', body });
+  }
+  async function apiSetProviderActive(id, isActive) {
+    return xfetch(`/api/admin/providers/${encodeURIComponent(id)}/active`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive })
+    });
+  }
+  async function apiDeleteProvider(id) {
+    return xfetch(`/api/admin/providers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+  async function apiGetProviderRequests() {
+    const data = await xfetch('/api/admin/provider-requests?status=pending');
+    return data.requests || [];
+  }
+  async function apiMarkProviderRequestReviewed(id) {
+    return xfetch(`/api/admin/provider-requests/${encodeURIComponent(id)}/reviewed`, { method: 'PATCH' });
+  }
+  async function apiMarkProviderRequestsReviewed(providerId) {
+    return xfetch(`/api/admin/providers/${encodeURIComponent(providerId)}/requests/reviewed`, { method: 'PATCH' });
   }
 
   // ---------- PROJECTS: API (listado completo + asignaciones) ----------
@@ -1232,6 +1308,205 @@ function applyProjectsFilters(list) {
   });
 }
 
+  function providerInitials(name) {
+    return String(name || '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map(part => part[0])
+      .join('')
+      .toUpperCase() || 'B73';
+  }
+
+  function providerFallbackLogo(name) {
+    const initials = providerInitials(name);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="84" height="84" viewBox="0 0 84 84"><rect width="84" height="84" rx="18" fill="#2563eb"/><text x="42" y="50" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="800" fill="#fff">${initials}</text></svg>`;
+    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+  }
+
+  function updateProviderServiceOptions(selected = '') {
+    if (!providerServiceType || !providerStage) return;
+    const stage = providerStage.value || Object.keys(providerStageServices)[0] || '';
+    const services = providerStageServices[stage] || [];
+    providerServiceType.innerHTML = services.map(service => {
+      const s = selected === service ? ' selected' : '';
+      return `<option value="${escapeHtml(service)}"${s}>${escapeHtml(service)}</option>`;
+    }).join('');
+  }
+
+  function renderProviderStageOptions(selectedStage = '', selectedService = '') {
+    if (!providerStage) return;
+    const stages = Object.keys(providerStageServices);
+    providerStage.innerHTML = stages.map(stage => {
+      const s = selectedStage === stage ? ' selected' : '';
+      return `<option value="${escapeHtml(stage)}"${s}>${escapeHtml(stage)}</option>`;
+    }).join('');
+    if (selectedStage) providerStage.value = selectedStage;
+    updateProviderServiceOptions(selectedService);
+  }
+
+  function providerFormPayload() {
+    return {
+      _id: providerId?.value || '',
+      commercialName: providerCommercialName?.value.trim() || '',
+      logoUrl: providerLogoUrl?.value || '',
+      description: providerDescription?.value.trim() || '',
+      country: providerCountry?.value.trim() || '',
+      city: providerCity?.value.trim() || '',
+      stage: providerStage?.value || '',
+      serviceType: providerServiceType?.value || '',
+      specialty: providerSpecialty?.value.trim() || '',
+      exclusiveCondition: providerExclusiveCondition?.value.trim() || '',
+      phone: providerPhone?.value.trim() || '',
+      email: providerEmail?.value.trim() || '',
+      website: providerWebsite?.value.trim() || '',
+      isActive: providerIsActive?.value !== 'false'
+    };
+  }
+
+  function resetProviderForm() {
+    providerForm?.reset();
+    if (providerId) providerId.value = '';
+    if (providerLogoUrl) providerLogoUrl.value = '';
+    renderProviderStageOptions();
+    if (providerIsActive) providerIsActive.value = 'true';
+    const submit = document.getElementById('providerSubmit');
+    if (submit) submit.textContent = 'Guardar proveedor';
+  }
+
+  function fillProviderForm(provider) {
+    if (!provider) return;
+    if (providerId) providerId.value = provider._id || '';
+    if (providerCommercialName) providerCommercialName.value = provider.commercialName || '';
+    if (providerDescription) providerDescription.value = provider.description || '';
+    if (providerCountry) providerCountry.value = provider.country || '';
+    if (providerCity) providerCity.value = provider.city || '';
+    if (providerSpecialty) providerSpecialty.value = provider.specialty || '';
+    if (providerExclusiveCondition) providerExclusiveCondition.value = provider.exclusiveCondition || '';
+    if (providerPhone) providerPhone.value = provider.phone || '';
+    if (providerEmail) providerEmail.value = provider.email || '';
+    if (providerWebsite) providerWebsite.value = provider.website || '';
+    if (providerLogoUrl) providerLogoUrl.value = provider.logoUrl || '';
+    if (providerIsActive) providerIsActive.value = provider.isActive === false ? 'false' : 'true';
+    renderProviderStageOptions(provider.stage || '', provider.serviceType || '');
+    const submit = document.getElementById('providerSubmit');
+    if (submit) submit.textContent = 'Actualizar proveedor';
+    providerCommercialName?.focus();
+  }
+
+  function filteredProviders() {
+    const q = String(providersSearch?.value || '').toLowerCase().trim();
+    const status = providersStatusFilter?.value || '';
+    return providersCache
+      .filter(provider => {
+        if (status === 'active' && provider.isActive === false) return false;
+        if (status === 'inactive' && provider.isActive !== false) return false;
+        return true;
+      })
+      .filter(provider => {
+        if (!q) return true;
+        return [
+          provider.commercialName,
+          provider.description,
+          provider.country,
+          provider.city,
+          provider.stage,
+          provider.serviceType,
+          provider.specialty,
+          provider.exclusiveCondition,
+          provider.email
+        ].some(value => String(value || '').toLowerCase().includes(q));
+      });
+  }
+
+  function providerPendingRequests(providerId) {
+    return providerRequestsCache.filter(request => String(request.provider?._id || request.provider) === String(providerId));
+  }
+
+  function updateProviderRequestsBadge() {
+    const count = providerRequestsCache.length;
+    if (!providerRequestsBadge) return;
+    providerRequestsBadge.textContent = String(count);
+    providerRequestsBadge.classList.toggle('is-visible', count > 0);
+  }
+
+  function formatProviderRequestDate(value) {
+    if (!value) return '-';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString();
+  }
+
+  function renderProviderRequestsBox(providerId) {
+    const requests = providerPendingRequests(providerId);
+    if (!requests.length) return '<div class="provider-requests-box muted">Sin solicitudes pendientes.</div>';
+    return `
+      <div class="provider-requests-box">
+        ${requests.map(request => {
+          const user = request.requestedBy || {};
+          const project = request.project || {};
+          return `
+            <div class="provider-request-item">
+              <strong>${escapeHtml(user.name || user.email || 'Usuario')}</strong>
+              <span class="muted">${escapeHtml(user.email || '')}${user.role ? ` · ${escapeHtml(user.role)}` : ''}</span>
+              <span>Proyecto: <b>${escapeHtml(project.name || request.project || '-')}</b></span>
+              <span>Servicio: ${escapeHtml(request.serviceType || '-')} · Fecha: ${escapeHtml(formatProviderRequestDate(request.requestedAt || request.createdAt))}</span>
+              ${request.comments ? `<span>Comentarios: ${escapeHtml(request.comments)}</span>` : '<span class="muted">Sin comentarios.</span>'}
+              <div class="actions">
+                <button class="btn ghost small" type="button" data-provider-request-reviewed="${escapeHtml(request._id)}">Marcar revisada</button>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  function renderProvidersAdmin() {
+    if (!providersTbody) return;
+    const rows = filteredProviders();
+    if (!rows.length) {
+      providersTbody.innerHTML = '<tr><td colspan="8" class="muted">No hay proveedores registrados.</td></tr>';
+      return;
+    }
+
+    providersTbody.innerHTML = rows.map(provider => {
+      const active = provider.isActive !== false;
+      const pendingCount = providerPendingRequests(provider._id).length || Number(provider.pendingRequestsCount || 0);
+      return `
+        <tr>
+          <td><img class="provider-logo-preview" src="${escapeHtml(provider.logoUrl || providerFallbackLogo(provider.commercialName))}" alt="Logo de ${escapeHtml(provider.commercialName)}"></td>
+          <td>
+            <strong>${escapeHtml(provider.commercialName || '-')}</strong>
+            <div class="muted" style="font-size:.82rem;">${escapeHtml(provider.email || provider.website || provider.phone || '')}</div>
+          </td>
+          <td>${escapeHtml(provider.stage || '-')}</td>
+          <td>${escapeHtml(provider.serviceType || '-')}</td>
+          <td>${escapeHtml([provider.city, provider.country].filter(Boolean).join(', ') || '-')}</td>
+          <td>
+            <div>${escapeHtml(provider.exclusiveCondition || '-')}</div>
+            <div class="muted" style="font-size:.82rem;">${pendingCount} solicitudes pendientes</div>
+          </td>
+          <td><span class="provider-status ${active ? 'active' : 'inactive'}">${active ? 'Activo' : 'Inactivo'}</span></td>
+          <td>
+            <div class="actions">
+              <button class="btn small" type="button" data-provider-edit="${escapeHtml(provider._id)}">Editar</button>
+              <button class="btn ghost small" type="button" data-provider-requests="${escapeHtml(provider._id)}">Ver solicitudes</button>
+              ${pendingCount ? `<button class="btn ghost small" type="button" data-provider-reviewed-all="${escapeHtml(provider._id)}">Marcar atendidas</button>` : ''}
+              <button class="btn ghost small" type="button" data-provider-active="${escapeHtml(provider._id)}" data-active="${active ? 'false' : 'true'}">${active ? 'Desactivar' : 'Activar'}</button>
+              <button class="btn danger small" type="button" data-provider-delete="${escapeHtml(provider._id)}">Eliminar</button>
+            </div>
+          </td>
+        </tr>
+        ${openProviderRequestsFor === String(provider._id) ? `<tr><td colspan="8">${renderProviderRequestsBox(provider._id)}</td></tr>` : ''}
+      `;
+    }).join('');
+  }
+
+  function renderProvidersModuleToggle() {
+    if (!providersModuleToggle) return;
+    providersModuleToggle.checked = providersModuleEnabled;
+  }
+
   function renderAuditLogs(payload = {}) {
     if (!auditTbody) return;
 
@@ -1320,7 +1595,7 @@ function applyProjectsFilters(list) {
     }
   }
 
-  async function loadAllProjects() {
+ async function loadAllProjects() {
   if (!allProjectsTbody) return;
   try {
     await refreshAssigneesCaches(); // precarga nombres de equipo
@@ -1329,6 +1604,31 @@ function applyProjectsFilters(list) {
     renderAllProjects(applyProjectsFilters(allProjectsCache)); // render con filtros (incluye búsqueda)
   } catch (e) {
     allProjectsTbody.innerHTML = `<tr><td colspan="6" class="muted">Error al cargar: ${escapeHtml(e.message)}</td></tr>`;
+  }
+ }
+
+ async function loadProviders() {
+  if (!providersTbody) return;
+  providersTbody.innerHTML = '<tr><td colspan="8" class="muted">Cargando proveedores...</td></tr>';
+  try {
+    if (!Object.keys(providerStageServices).length) {
+      const options = await apiGetProviderOptions();
+      providerStageServices = options.stageServices || {};
+      renderProviderStageOptions();
+    }
+    const moduleSettings = await apiGetProvidersModuleSettings();
+    providersModuleEnabled = moduleSettings.enabled !== false;
+    renderProvidersModuleToggle();
+    const [providers, requests] = await Promise.all([
+      apiGetProviders(),
+      apiGetProviderRequests()
+    ]);
+    providersCache = providers;
+    providerRequestsCache = requests;
+    updateProviderRequestsBadge();
+    renderProvidersAdmin();
+  } catch (e) {
+    providersTbody.innerHTML = `<tr><td colspan="8" class="muted">Error al cargar proveedores: ${escapeHtml(e.message)}</td></tr>`;
   }
  }
 
@@ -2300,6 +2600,20 @@ function applyProjectsFilters(list) {
     wrap.style.display = 'flex';
   }
 
+  function readProviderLogoFile() {
+    const file = providerLogoFile?.files?.[0];
+    if (!file) return Promise.resolve(providerLogoUrl?.value || '');
+    if (!file.type || !file.type.startsWith('image/')) {
+      return Promise.reject(new Error('Selecciona un archivo de imagen válido.'));
+    }
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+      reader.readAsDataURL(file);
+    });
+  }
+
   // ---------- EVENTOS ----------
   // Usuarios pendientes
   document.getElementById('refreshPendingUsers')?.addEventListener('click', loadPendingUsers);
@@ -2342,6 +2656,47 @@ function applyProjectsFilters(list) {
 
   // Proyectos (admin)
   refreshAllProjectsBtn?.addEventListener('click', loadAllProjects);
+
+  // Proveedores
+  refreshProvidersBtn?.addEventListener('click', loadProviders);
+  clearProviderFormBtn?.addEventListener('click', resetProviderForm);
+  providerStage?.addEventListener('change', () => updateProviderServiceOptions());
+  providersSearch?.addEventListener('input', renderProvidersAdmin);
+  providersStatusFilter?.addEventListener('change', renderProvidersAdmin);
+  providersModuleToggle?.addEventListener('change', async () => {
+    const next = providersModuleToggle.checked;
+    providersModuleToggle.disabled = true;
+    try {
+      const res = await apiUpdateProvidersModuleSettings(next);
+      providersModuleEnabled = res.enabled !== false;
+      renderProvidersModuleToggle();
+    } catch (err) {
+      providersModuleToggle.checked = providersModuleEnabled;
+      alert(err.message || 'No se pudo actualizar la visibilidad del módulo.');
+    } finally {
+      providersModuleToggle.disabled = false;
+    }
+  });
+  providerForm?.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const submit = document.getElementById('providerSubmit');
+    if (submit) submit.disabled = true;
+    try {
+      const payload = providerFormPayload();
+      if (!payload.commercialName) {
+        alert('Indica el nombre comercial.');
+        return;
+      }
+      payload.logoUrl = await readProviderLogoFile();
+      await apiSaveProvider(payload);
+      resetProviderForm();
+      await loadProviders();
+    } catch (err) {
+      alert(err.message || 'No se pudo guardar el proveedor.');
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+  });
 
   openActivityBtn?.addEventListener('click', async () => {
     if (!activityCard) return;
@@ -2475,6 +2830,83 @@ function applyProjectsFilters(list) {
   });
 
   document.addEventListener('click', async (e) => {
+    const providerEditBtn = e.target.closest?.('button[data-provider-edit]');
+    if (providerEditBtn) {
+      const id = providerEditBtn.getAttribute('data-provider-edit');
+      const provider = providersCache.find(item => String(item._id) === String(id));
+      if (provider) fillProviderForm(provider);
+      return;
+    }
+
+    const providerActiveBtn = e.target.closest?.('button[data-provider-active]');
+    if (providerActiveBtn) {
+      const id = providerActiveBtn.getAttribute('data-provider-active');
+      const isActive = providerActiveBtn.getAttribute('data-active') === 'true';
+      providerActiveBtn.disabled = true;
+      try {
+        await apiSetProviderActive(id, isActive);
+        await loadProviders();
+      } catch (err) {
+        providerActiveBtn.disabled = false;
+        alert(err.message || 'No se pudo cambiar el estado del proveedor.');
+      }
+      return;
+    }
+
+    const providerRequestsBtn = e.target.closest?.('button[data-provider-requests]');
+    if (providerRequestsBtn) {
+      const id = providerRequestsBtn.getAttribute('data-provider-requests');
+      openProviderRequestsFor = openProviderRequestsFor === id ? '' : id;
+      renderProvidersAdmin();
+      return;
+    }
+
+    const providerRequestReviewedBtn = e.target.closest?.('button[data-provider-request-reviewed]');
+    if (providerRequestReviewedBtn) {
+      const requestId = providerRequestReviewedBtn.getAttribute('data-provider-request-reviewed');
+      providerRequestReviewedBtn.disabled = true;
+      try {
+        await apiMarkProviderRequestReviewed(requestId);
+        await loadProviders();
+      } catch (err) {
+        providerRequestReviewedBtn.disabled = false;
+        alert(err.message || 'No se pudo marcar la solicitud como revisada.');
+      }
+      return;
+    }
+
+    const providerReviewedAllBtn = e.target.closest?.('button[data-provider-reviewed-all]');
+    if (providerReviewedAllBtn) {
+      const providerId = providerReviewedAllBtn.getAttribute('data-provider-reviewed-all');
+      if (!confirm('¿Marcar todas las solicitudes pendientes de este proveedor como atendidas?')) return;
+      providerReviewedAllBtn.disabled = true;
+      try {
+        await apiMarkProviderRequestsReviewed(providerId);
+        openProviderRequestsFor = '';
+        await loadProviders();
+      } catch (err) {
+        providerReviewedAllBtn.disabled = false;
+        alert(err.message || 'No se pudieron marcar las solicitudes como atendidas.');
+      }
+      return;
+    }
+
+    const providerDeleteBtn = e.target.closest?.('button[data-provider-delete]');
+    if (providerDeleteBtn) {
+      const id = providerDeleteBtn.getAttribute('data-provider-delete');
+      if (!confirm('¿Seguro que deseas eliminar este proveedor?')) return;
+      providerDeleteBtn.disabled = true;
+      try {
+        await apiDeleteProvider(id);
+        resetProviderForm();
+        await loadProviders();
+      } catch (err) {
+        providerDeleteBtn.disabled = false;
+        alert(err.message || 'No se pudo eliminar el proveedor.');
+      }
+      return;
+    }
+
     const promoterProfileBtn = e.target.closest?.('button[data-user-promoter-profile]');
     if (promoterProfileBtn) {
       const id = promoterProfileBtn.getAttribute('data-user-promoter-profile');
@@ -2923,6 +3355,7 @@ allProjectsNext?.addEventListener('click', () => {
     loadPendingProjects(),
     loadUsers(),
     loadAllProjects(), // se ignora si no existe la UI de proyectos completos
+    loadProviders(),
     loadTenants(),
   ]);
 })();

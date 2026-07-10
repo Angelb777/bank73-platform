@@ -433,6 +433,127 @@
     .payment-status.pendiente{ color:#fbbf24; border-color:rgba(245,158,11,.45); }
     .payment-status.devuelto{ color:#fca5a5; border-color:rgba(239,68,68,.45); }
 
+    .provider-form{
+      display:grid;
+      grid-template-columns:repeat(4, minmax(0, 1fr));
+      gap:10px;
+      margin-top:12px;
+    }
+    .provider-form .wide-2{ grid-column:span 2; }
+    .provider-form .wide-4{ grid-column:1 / -1; }
+    .provider-form-actions{
+      grid-column:1 / -1;
+      display:flex;
+      justify-content:flex-end;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .provider-logo-preview{
+      width:42px;
+      height:42px;
+      border-radius:12px;
+      object-fit:cover;
+      border:1px solid rgba(148,163,184,.28);
+      background:#0f172a;
+    }
+    .provider-status{
+      display:inline-flex;
+      border-radius:999px;
+      padding:.25rem .55rem;
+      font-size:.78rem;
+      border:1px solid rgba(148,163,184,.24);
+      background:rgba(15,23,42,.60);
+      white-space:nowrap;
+    }
+    .provider-status.active{ color:#86efac; border-color:rgba(34,197,94,.45); }
+    .provider-status.inactive{ color:#fca5a5; border-color:rgba(239,68,68,.45); }
+    .admin-tab-alert{
+      min-width:18px;
+      height:18px;
+      padding:0 6px;
+      border-radius:999px;
+      background:#ef4444;
+      color:#fff;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      font-size:11px;
+      font-weight:900;
+    }
+    .admin-tab-alert.is-visible{ display:inline-flex; }
+    .provider-logo-field{
+      display:grid;
+      gap:6px;
+      color:#cbd5e1;
+      font-size:.9rem;
+      font-weight:700;
+    }
+    .provider-logo-field input{ width:100%; }
+    .provider-requests-box{
+      margin-top:10px;
+      border:1px solid rgba(148,163,184,.18);
+      border-radius:12px;
+      background:rgba(15,23,42,.42);
+      padding:10px;
+    }
+    .provider-request-item{
+      border-top:1px solid rgba(148,163,184,.14);
+      padding:10px 0;
+      display:grid;
+      gap:4px;
+    }
+    .provider-request-item:first-child{ border-top:0; padding-top:0; }
+    .provider-module-toggle{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+      border:1px solid rgba(148,163,184,.18);
+      background:rgba(15,23,42,.36);
+      border-radius:14px;
+      padding:12px 14px;
+      margin:12px 0 16px;
+    }
+    .provider-switch{
+      position:relative;
+      display:inline-flex;
+      width:52px;
+      height:30px;
+      flex:0 0 auto;
+    }
+    .provider-switch input{
+      opacity:0;
+      width:0;
+      height:0;
+    }
+    .provider-switch span{
+      position:absolute;
+      inset:0;
+      border-radius:999px;
+      background:#334155;
+      cursor:pointer;
+      transition:.18s ease;
+      border:1px solid rgba(148,163,184,.28);
+    }
+    .provider-switch span::before{
+      content:"";
+      position:absolute;
+      width:22px;
+      height:22px;
+      left:4px;
+      top:3px;
+      border-radius:999px;
+      background:#fff;
+      transition:.18s ease;
+    }
+    .provider-switch input:checked + span{
+      background:#2563eb;
+      border-color:#60a5fa;
+    }
+    .provider-switch input:checked + span::before{
+      transform:translateX(21px);
+    }
+
     /* Modal simple */
     .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index: 70; }
     .modal-backdrop.show { display:flex; }
@@ -618,10 +739,12 @@
       .section-head { align-items:center; }
       .audit-actions { justify-content:flex-start; }
       .audit-summary, .payment-summary { grid-template-columns: 1fr 1fr; }
+      .provider-form{ grid-template-columns:1fr 1fr; }
     }
     @media (max-width: 560px){
       .audit-summary, .payment-summary { grid-template-columns: 1fr; }
       .payment-form{ grid-template-columns:1fr; }
+      .provider-form{ grid-template-columns:1fr; }
       .admin-hero-main{ padding:18px; }
     }
   </style>
@@ -650,6 +773,7 @@
         <button class="admin-tab active" type="button" data-admin-tab="pending"><span class="dot"></span>Pendientes</button>
         <button class="admin-tab" type="button" data-admin-tab="users"><span class="dot"></span>Usuarios</button>
         <button class="admin-tab" type="button" data-admin-tab="projects"><span class="dot"></span>Proyectos</button>
+        <button class="admin-tab" type="button" data-admin-tab="providers"><span class="dot"></span>Proveedores <span id="providerRequestsBadge" class="admin-tab-alert">0</span></button>
         <button class="admin-tab" type="button" data-admin-tab="multiTenant"><span class="dot"></span>Multi-tenant</button>
         <button class="admin-tab" type="button" data-admin-tab="activity"><span class="dot"></span>Actividad</button>
         <button class="admin-tab" type="button" data-admin-tab="payments"><span class="dot"></span>Pagos recibidos</button>
@@ -942,6 +1066,87 @@
         </section>
       </section>
 
+      <!-- PROVEEDORES -->
+      <section class="admin-panel-section" data-admin-panel="providers">
+        <section class="card" id="providersAdminCard">
+          <div class="admin-card-head">
+            <div>
+              <h2>Proveedores</h2>
+              <p class="muted">Gestiona los proveedores generales de Bank73 disponibles dentro de los proyectos.</p>
+            </div>
+            <div class="audit-actions">
+              <button id="refreshProviders" class="btn ghost small" type="button">Refrescar</button>
+              <button id="clearProviderForm" class="btn ghost small" type="button">Limpiar</button>
+            </div>
+          </div>
+
+          <div class="provider-module-toggle">
+            <div>
+              <strong>Mostrar módulo Proveedores a los usuarios</strong>
+              <div class="muted" style="font-size:.86rem;">Controla si la pestaña Proveedores aparece dentro de los proyectos.</div>
+            </div>
+            <label class="provider-switch" title="Mostrar módulo Proveedores a los usuarios">
+              <input id="providersModuleToggle" type="checkbox" />
+              <span aria-hidden="true"></span>
+            </label>
+          </div>
+
+          <form id="providerForm" class="provider-form">
+            <input id="providerId" type="hidden" />
+            <input id="providerCommercialName" class="input wide-2" type="text" placeholder="Nombre comercial" required />
+            <select id="providerStage" class="input" required></select>
+            <select id="providerServiceType" class="input" required></select>
+            <textarea id="providerDescription" class="input wide-4" rows="2" placeholder="Descripción breve"></textarea>
+            <input id="providerCountry" class="input" type="text" placeholder="País" />
+            <input id="providerCity" class="input" type="text" placeholder="Ciudad" />
+            <input id="providerSpecialty" class="input wide-2" type="text" placeholder="Especialidad o experiencia" />
+            <input id="providerExclusiveCondition" class="input wide-2" type="text" placeholder="Condición exclusiva para clientes Bank73" />
+            <input id="providerPhone" class="input" type="tel" placeholder="Teléfono" />
+            <input id="providerEmail" class="input" type="email" placeholder="Correo electrónico" />
+            <input id="providerWebsite" class="input wide-2" type="url" placeholder="Página web" />
+            <select id="providerIsActive" class="input">
+              <option value="true">Activo</option>
+              <option value="false">Inactivo</option>
+            </select>
+            <label class="provider-logo-field wide-2">
+              <span>Logo del proveedor</span>
+              <input id="providerLogoFile" class="input" type="file" accept="image/*" />
+            </label>
+            <input id="providerLogoUrl" type="hidden" />
+            <div class="provider-form-actions">
+              <button id="providerSubmit" class="btn" type="submit">Guardar proveedor</button>
+            </div>
+          </form>
+
+          <div class="toolbar" style="margin-top:16px;">
+            <input id="providersSearch" class="input" type="search" placeholder="Buscar proveedor..." />
+            <select id="providersStatusFilter" class="input">
+              <option value="">Todos los estados</option>
+              <option value="active">Activos</option>
+              <option value="inactive">Inactivos</option>
+            </select>
+          </div>
+
+          <div class="table-scroll" style="margin-top:12px;">
+            <table class="table" id="providersTable">
+              <thead>
+                <tr>
+                  <th>Logo</th>
+                  <th>Proveedor</th>
+                  <th>Etapa</th>
+                  <th>Servicio</th>
+                  <th>Ubicación</th>
+                  <th>Condición</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="providersTbody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
       <!-- PAGOS RECIBIDOS -->
       <section class="admin-panel-section" data-admin-panel="payments">
         <section class="card" id="paymentsCard">
@@ -1080,6 +1285,7 @@
         pending: 'Pendientes',
         users: 'Usuarios',
         projects: 'Proyectos',
+        providers: 'Proveedores',
         activity: 'Actividad',
         payments: 'Pagos recibidos'
       };

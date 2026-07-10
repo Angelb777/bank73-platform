@@ -11,6 +11,10 @@ const Document = require('../models/Document');
 const ProjectChecklist = require('../models/ProjectChecklist');
 const ProjectPermit = require('../models/ProjectPermit');
 const ChatMessage = require('../models/ChatMessage');
+const Provider = require('../models/Provider');
+const { PROVIDER_STAGE_SERVICES } = require('../models/Provider');
+const ProviderRequest = require('../models/ProviderRequest');
+const AppSetting = require('../models/AppSetting');
 const { requireRole } = require('../middleware/rbac'); // ROLE-SEP
 const audit = require('../utils/audit');
 const { tenantKeyFromBankName: sharedTenantKeyFromBankName } = require('../utils/tenants');
@@ -20,6 +24,36 @@ const router = express.Router();
 const { ROLES: VALID_ROLES } = require('../models/User'); // usa la misma fuente que el modelo
 const { promoterProfileCompletion } = require('../models/User');
 const VALID_PUBLISH = ['draft','pending','approved','rejected']; // ROLE-SEP
+const PROVIDERS_MODULE_SETTING_KEY = 'providersModule';
+
+function cleanProviderBody(body = {}) {
+  const pick = (key, max = 500) => String(body[key] ?? '').trim().slice(0, max);
+  return {
+    commercialName: pick('commercialName', 160),
+    logoUrl: pick('logoUrl', 2000000),
+    description: pick('description', 700),
+    country: pick('country', 100),
+    city: pick('city', 100),
+    stage: pick('stage', 120),
+    serviceType: pick('serviceType', 120),
+    specialty: pick('specialty', 220),
+    exclusiveCondition: pick('exclusiveCondition', 220),
+    phone: pick('phone', 80),
+    email: pick('email', 180).toLowerCase(),
+    website: pick('website', 240),
+    isActive: body.isActive === undefined ? true : body.isActive === true || body.isActive === 'true'
+  };
+}
+
+function validateProviderPayload(payload) {
+  if (!payload.commercialName) return 'Falta el nombre comercial.';
+  if (!payload.stage || !PROVIDER_STAGE_SERVICES[payload.stage]) return 'Etapa inválida.';
+  if (!payload.serviceType || !PROVIDER_STAGE_SERVICES[payload.stage].includes(payload.serviceType)) {
+    return 'Tipo de servicio inválido para la etapa seleccionada.';
+  }
+  if (payload.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) return 'Correo electrónico inválido.';
+  return '';
+}
 
 function sanitizeTenantKeys(input, fallbackTenantKey, options = {}) {
   const raw = Array.isArray(input)
@@ -264,6 +298,221 @@ router.get('/audit-logs', async (req, res) => {
     ]);
 
     res.json({ logs, total, page, limit });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* =========================================================================
+   PROVEEDORES BANK73
+   ========================================================================= */
+
+router.get('/providers/options', (_req, res) => {
+  res.json({ stageServices: PROVIDER_STAGE_SERVICES });
+});
+
+router.get('/providers/module-settings', async (_req, res) => {
+  try {
+    const setting = await AppSetting.findOne({ key: PROVIDERS_MODULE_SETTING_KEY }).lean();
+    res.json({ enabled: setting?.value?.enabled !== false });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.patch('/providers/module-settings', async (req, res) => {
+  try {
+    const enabled = req.body?.enabled === true || req.body?.enabled === 'true';
+    const setting = await AppSetting.findOneAndUpdate(
+      { key: PROVIDERS_MODULE_SETTING_KEY },
+      { $set: { value: { enabled } } },
+      { upsert: true, new: true }
+    );
+
+    await audit(req, 'provider_module.visibility_updated', {
+      targetType: 'app_setting',
+      targetId: setting._id,
+      status: enabled ? 'success' : 'info',
+      message: enabled ? 'Módulo Proveedores activado' : 'Módulo Proveedores desactivado',
+      metadata: { enabled }
+    });
+
+    res.json({ ok: true, enabled });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/providers', async (_req, res) => {
+  try {
+    const providers = await Provider.find({})
+      .sort({ stage: 1, serviceType: 1, commercialName: 1 })
+      .lean();
+    const counts = await ProviderRequest.aggregate([
+      { $match: { status: 'pending' } },
+      { $group: { _id: '$provider', count: { $sum: 1 } } }
+    ]);
+    const countMap = new Map(counts.map(item => [String(item._id), item.count]));
+    res.json({
+      providers: providers.map(provider => ({
+        ...provider,
+        pendingRequestsCount: countMap.get(String(provider._id)) || 0
+      }))
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/provider-requests', async (req, res) => {
+  try {
+    const q = {};
+    const providerId = String(req.query.providerId || '').trim();
+    const status = String(req.query.status || '').trim();
+    if (providerId) q.provider = providerId;
+    if (status) q.status = status;
+
+    const requests = await ProviderRequest.find(q)
+      .sort({ requestedAt: -1 })
+      .populate('provider', 'commercialName stage serviceType')
+      .populate('project', 'name tenantKey')
+      .populate('requestedBy', 'name email role')
+      .lean();
+    res.json({ requests });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.patch('/provider-requests/:id/reviewed', async (req, res) => {
+  try {
+    const request = await ProviderRequest.findByIdAndUpdate(req.params.id, {
+      status: 'reviewed',
+      reviewedAt: new Date(),
+      reviewedBy: req.user?._id || req.user?.userId
+    }, { new: true });
+    if (!request) return res.status(404).json({ error: 'Solicitud no encontrada' });
+
+    await audit(req, 'provider_request.reviewed', {
+      targetType: 'provider_request',
+      targetId: request._id,
+      projectId: request.project,
+      message: 'Solicitud de proveedor marcada como revisada',
+      metadata: { provider: request.provider, serviceType: request.serviceType }
+    });
+
+    res.json({ ok: true, request });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.patch('/providers/:id/requests/reviewed', async (req, res) => {
+  try {
+    const provider = await Provider.findById(req.params.id).lean();
+    if (!provider) return res.status(404).json({ error: 'Proveedor no encontrado' });
+
+    const result = await ProviderRequest.updateMany(
+      { provider: req.params.id, status: 'pending' },
+      {
+        $set: {
+          status: 'reviewed',
+          reviewedAt: new Date(),
+          reviewedBy: req.user?._id || req.user?.userId
+        }
+      }
+    );
+
+    await audit(req, 'provider_request.reviewed_bulk', {
+      targetType: 'provider',
+      targetId: provider._id,
+      message: 'Solicitudes de proveedor marcadas como revisadas',
+      metadata: { commercialName: provider.commercialName, reviewedCount: result.modifiedCount || 0 }
+    });
+
+    res.json({ ok: true, reviewedCount: result.modifiedCount || 0 });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/providers', async (req, res) => {
+  try {
+    const payload = cleanProviderBody(req.body);
+    const validationError = validateProviderPayload(payload);
+    if (validationError) return res.status(400).json({ error: validationError });
+
+    const provider = await Provider.create(payload);
+    await audit(req, 'provider.created', {
+      targetType: 'provider',
+      targetId: provider._id,
+      message: 'Proveedor creado',
+      metadata: { commercialName: provider.commercialName, stage: provider.stage, serviceType: provider.serviceType }
+    });
+    res.status(201).json({ ok: true, provider });
+  } catch (e) {
+    res.status(e.name === 'ValidationError' ? 400 : 500).json({ error: e.message });
+  }
+});
+
+router.put('/providers/:id', async (req, res) => {
+  try {
+    const payload = cleanProviderBody(req.body);
+    const validationError = validateProviderPayload(payload);
+    if (validationError) return res.status(400).json({ error: validationError });
+
+    const provider = await Provider.findByIdAndUpdate(req.params.id, payload, {
+      new: true,
+      runValidators: true
+    });
+    if (!provider) return res.status(404).json({ error: 'Proveedor no encontrado' });
+
+    await audit(req, 'provider.updated', {
+      targetType: 'provider',
+      targetId: provider._id,
+      message: 'Proveedor actualizado',
+      metadata: { commercialName: provider.commercialName, stage: provider.stage, serviceType: provider.serviceType, isActive: provider.isActive }
+    });
+    res.json({ ok: true, provider });
+  } catch (e) {
+    res.status(e.name === 'ValidationError' ? 400 : 500).json({ error: e.message });
+  }
+});
+
+router.patch('/providers/:id/active', async (req, res) => {
+  try {
+    const isActive = req.body?.isActive === true || req.body?.isActive === 'true';
+    const provider = await Provider.findByIdAndUpdate(req.params.id, { isActive }, {
+      new: true,
+      runValidators: true
+    });
+    if (!provider) return res.status(404).json({ error: 'Proveedor no encontrado' });
+
+    await audit(req, isActive ? 'provider.activated' : 'provider.deactivated', {
+      targetType: 'provider',
+      targetId: provider._id,
+      status: isActive ? 'success' : 'info',
+      message: isActive ? 'Proveedor activado' : 'Proveedor desactivado',
+      metadata: { commercialName: provider.commercialName }
+    });
+    res.json({ ok: true, provider });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/providers/:id', async (req, res) => {
+  try {
+    const provider = await Provider.findByIdAndDelete(req.params.id);
+    if (!provider) return res.status(404).json({ error: 'Proveedor no encontrado' });
+
+    await audit(req, 'provider.deleted', {
+      targetType: 'provider',
+      targetId: provider._id,
+      message: 'Proveedor eliminado',
+      metadata: { commercialName: provider.commercialName, stage: provider.stage, serviceType: provider.serviceType }
+    });
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

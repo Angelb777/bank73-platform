@@ -34,6 +34,7 @@ const unitDocFolderRoutes = require('./routes/unitDocFolders');
 const exportRoutes = require('./routes/export');
 const ventasRoutes = require('./routes/ventas');
 const importWordRoutes = require('./routes/import-word.routes');
+const providerRoutes = require('./routes/providers');
 
 const permitRoutes = require('./routes/permits');
 const chatRoutes = require('./routes/chat');
@@ -245,6 +246,9 @@ app.use('/api', ...guard, financeRoutes);
 
 // Admin
 app.use('/api/admin', ...guard, adminRoutes);
+
+// Proveedores generales Bank73 (lectura autenticada)
+app.use('/api/providers', ...guard, providerRoutes);
 
 // Bank dashboard read-only
 app.use('/api/bank', ...guard, bankRoutes);

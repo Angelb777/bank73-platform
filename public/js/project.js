@@ -53,10 +53,34 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
     proyecto:  document.getElementById('tab-proyecto'),
     finanzas:  document.getElementById('tab-finanzas'),
     comercial: document.getElementById('tab-comercial'),
+    proveedores: document.getElementById('tab-proveedores'),
     docs:      document.getElementById('tab-docs'),
     chat:      document.getElementById('tab-chat'),
   };
   let __summaryDirty = false;
+  let providersModuleEnabled = true;
+
+  function applyProvidersModuleVisibility() {
+    const btn = document.getElementById('tabBtn-proveedores');
+    const pane = document.getElementById('tab-proveedores');
+    if (!providersModuleEnabled && btn) btn.style.display = 'none';
+    if (!providersModuleEnabled && pane) pane.style.display = 'none';
+    if (!providersModuleEnabled && pane?.classList.contains('active')) {
+      activateTab('resumen');
+    }
+  }
+
+  async function syncProvidersModuleVisibility() {
+    try {
+      const settings = await API.get('/api/providers/module-settings');
+      providersModuleEnabled = settings?.enabled !== false;
+    } catch (err) {
+      console.warn('[Providers] No se pudo cargar la visibilidad del módulo', err);
+      providersModuleEnabled = false;
+    }
+    applyProvidersModuleVisibility();
+  }
+
   const PROJECT_CURRENCIES = {
     PAB: { code: 'PAB', label: 'B/. Balboa', symbol: 'B/.' },
     USD: { code: 'USD', label: '$ Dolar estadounidense', symbol: '$' },
@@ -204,9 +228,206 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
     }
   }
 
+  const PROVIDER_STAGES = [
+    { title: 'Antes de comprar el suelo', accent: '#22c55e', services: ['Urbanista', 'Arquitecto', 'Estudio de viabilidad', 'Tasador', 'Abogado urbanístico'] },
+    { title: 'Desarrollo del proyecto', accent: '#3b82f6', services: ['Arquitecto', 'Ingeniero', 'Topógrafo', 'Geotécnico', 'Licencias', 'Consultores'] },
+    { title: 'Financiación', accent: '#a855f7', services: ['Bancos', 'Fideicomisos', 'Avales', 'Seguros', 'Due diligence'] },
+    { title: 'Construcción', accent: '#f59e0b', services: ['Constructora', 'Dirección facultativa', 'Project Manager', 'Seguridad y salud', 'Laboratorio de materiales', 'Organismo de control'] },
+    { title: 'Seguimiento', accent: '#06b6d4', services: ['Banco', 'Promotor', 'Avaluador', 'Inspector', 'Fotografías', 'Informes', 'Desembolsos'] },
+    { title: 'Comercialización', accent: '#ef4444', services: ['CRM', 'Comercializadora', 'Tour 3D', 'Marketing', 'Hipotecas para compradores'] },
+    { title: 'Entrega', accent: '#64748b', services: ['Notaría', 'Escrituración', 'Registro', 'Postventa'] },
+  ];
+  let activeProviderService = null;
+  let providersCache = null;
+  let providersLoading = null;
+
+  function providerInitials(name) {
+    return String(name || '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map(part => part[0])
+      .join('')
+      .toUpperCase() || 'B73';
+  }
+
+  function providerLogoSrc(name, color = '#2563eb') {
+    const initials = providerInitials(name);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="112" height="112" viewBox="0 0 112 112"><rect width="112" height="112" rx="24" fill="${color}"/><circle cx="88" cy="24" r="18" fill="rgba(255,255,255,.18)"/><text x="56" y="66" text-anchor="middle" font-family="Arial, sans-serif" font-size="30" font-weight="800" fill="#fff">${initials}</text></svg>`;
+    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+  }
+
+  function providerSlug(stageTitle, service) {
+    return `${stageTitle}::${service}`;
+  }
+
+  function findProviderService(slug) {
+    for (const stage of PROVIDER_STAGES) {
+      const service = stage.services.find(item => providerSlug(stage.title, item) === slug);
+      if (service) return { stage, service };
+    }
+    return null;
+  }
+
+  async function loadProviders({ force = false } = {}) {
+    if (!force && Array.isArray(providersCache)) return providersCache;
+    if (!force && providersLoading) return providersLoading;
+    providersLoading = API.get('/api/providers?active=true')
+      .then(data => {
+        providersCache = Array.isArray(data?.providers) ? data.providers : [];
+        providersLoading = null;
+        return providersCache;
+      })
+      .catch(err => {
+        providersLoading = null;
+        throw err;
+      });
+    return providersLoading;
+  }
+
+  function providerLocation(provider = {}) {
+    return [provider.city, provider.country].filter(Boolean).join(', ') || '—';
+  }
+
+  async function renderProvidersDetail(slug) {
+    const detail = document.getElementById('providersDetail');
+    if (!detail) return;
+    const match = findProviderService(slug);
+    if (!match) {
+      detail.classList.remove('active');
+      detail.innerHTML = '';
+      return;
+    }
+
+    activeProviderService = slug;
+    document.querySelectorAll('.providers-service-card').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.providerService === slug);
+    });
+
+    detail.classList.add('active');
+    detail.innerHTML = '<div class="small muted">Cargando proveedores...</div>';
+
+    let providers = [];
+    try {
+      const allProviders = await loadProviders();
+      providers = allProviders.filter(provider =>
+        provider?.isActive !== false &&
+        provider.stage === match.stage.title &&
+        provider.serviceType === match.service
+      );
+    } catch (err) {
+      console.error('[Providers] No se pudieron cargar proveedores', err);
+      detail.innerHTML = '<div class="small muted">No se pudieron cargar los proveedores.</div>';
+      return;
+    }
+
+    detail.innerHTML = `
+      <div class="providers-detail-head">
+        <div>
+          <h3>${escapeHtml(match.service)}</h3>
+          <div class="small muted">${escapeHtml(match.stage.title)}</div>
+        </div>
+        <button type="button" class="btn btn-ghost btn-xs" id="providersCloseDetail">Cerrar</button>
+      </div>
+      ${providers.length ? `
+      <div class="providers-detail-grid">
+        ${providers.map(provider => `
+          <article class="provider-card">
+            <div class="provider-card-head">
+              <img class="provider-logo" src="${escapeHtml(provider.logoUrl || providerLogoSrc(provider.commercialName))}" alt="Logo de ${escapeHtml(provider.commercialName)}">
+              <h4 class="provider-name">${escapeHtml(provider.commercialName)}</h4>
+            </div>
+            <p class="provider-description">${escapeHtml(provider.description)}</p>
+            <div class="provider-meta">
+              <div class="provider-meta-row"><span>Ubicación</span><strong>${escapeHtml(providerLocation(provider))}</strong></div>
+              <div class="provider-meta-row"><span>Experiencia</span><strong>${escapeHtml(provider.specialty)}</strong></div>
+            </div>
+            <div class="provider-exclusive">${escapeHtml(provider.exclusiveCondition)}</div>
+            <button type="button" class="btn provider-budget-btn" data-provider-id="${escapeHtml(provider._id)}">Solicitar presupuesto</button>
+          </article>
+        `).join('')}
+      </div>
+      ` : '<div class="small muted">Próximamente incorporaremos proveedores para este servicio.</div>'}
+    `;
+    detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function renderProvidersTab() {
+    const host = document.getElementById('providersStages');
+    if (!host || host.dataset.rendered === '1') return;
+    host.dataset.rendered = '1';
+    host.innerHTML = PROVIDER_STAGES.map(stage => `
+      <section class="providers-stage" style="--provider-accent:${stage.accent};">
+        <div class="providers-stage-head">
+          <h3 class="providers-stage-title">${escapeHtml(stage.title)}</h3>
+          <span class="providers-stage-count">${stage.services.length} servicios</span>
+        </div>
+        <div class="providers-service-grid">
+          ${stage.services.map(service => `
+            <button type="button" class="providers-service-card" data-provider-service="${escapeHtml(providerSlug(stage.title, service))}">
+              <strong>${escapeHtml(service)}</strong>
+              <span aria-hidden="true">+</span>
+            </button>
+          `).join('')}
+        </div>
+      </section>
+    `).join('');
+
+    if (!host.__providersBound) {
+      host.__providersBound = true;
+      document.getElementById('tab-proveedores')?.addEventListener('click', (ev) => {
+        const serviceBtn = ev.target.closest('.providers-service-card[data-provider-service]');
+        if (serviceBtn) {
+          renderProvidersDetail(serviceBtn.dataset.providerService).catch(err => console.error('[Providers] detail', err));
+          return;
+        }
+
+        const closeBtn = ev.target.closest('#providersCloseDetail');
+        if (closeBtn) {
+          activeProviderService = null;
+          document.querySelectorAll('.providers-service-card.active').forEach(btn => btn.classList.remove('active'));
+          const detail = document.getElementById('providersDetail');
+          if (detail) {
+            detail.classList.remove('active');
+            detail.innerHTML = '';
+          }
+          return;
+        }
+
+        const budgetBtn = ev.target.closest('.provider-budget-btn[data-provider-id]');
+        if (budgetBtn) {
+          const providerId = budgetBtn.dataset.providerId;
+          const comments = prompt('Comentarios para la solicitud (opcional):', '');
+          if (comments === null) return;
+          budgetBtn.disabled = true;
+          const originalText = budgetBtn.textContent;
+          budgetBtn.textContent = 'Enviando...';
+          API.post(`/api/providers/${encodeURIComponent(providerId)}/requests`, {
+            projectId: id,
+            comments: String(comments || '').trim()
+          }).then(() => {
+            budgetBtn.textContent = 'Solicitud enviada';
+            setTimeout(() => { budgetBtn.textContent = originalText; budgetBtn.disabled = false; }, 1600);
+          }).catch(err => {
+            console.error('[Providers] solicitud', err);
+            budgetBtn.textContent = originalText;
+            budgetBtn.disabled = false;
+            alert('No se pudo registrar la solicitud.');
+          });
+          return;
+        }
+
+      });
+    }
+
+    if (activeProviderService) renderProvidersDetail(activeProviderService).catch(err => console.error('[Providers] detail', err));
+  }
+
   function activateTab(key){
+    if (key === 'proveedores' && !providersModuleEnabled) key = 'resumen';
     document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === key));
     Object.entries(panes).forEach(([k,el]) => el && el.classList.toggle('active', k === key));
+    if (key === 'proveedores') renderProvidersTab();
     if (key === 'docs' && window.__docsModuleReady && typeof loadDocs === 'function') {
       invalidateProjectDocsCache();
       loadDocs({ q: (document.getElementById('docsSearch')?.value || '') }).catch(e => {
@@ -1610,6 +1831,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
     proyecto:  document.getElementById('tabBtn-proyecto'),
     finanzas:  document.getElementById('tabBtn-finanzas'),
     comercial: document.getElementById('tabBtn-comercial'),
+    proveedores: document.getElementById('tabBtn-proveedores'),
     docs:      document.getElementById('tabBtn-docs'),
     chat:      document.getElementById('tabBtn-chat'),
   };
@@ -1618,6 +1840,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
     proyecto:  document.getElementById('tab-proyecto'),
     finanzas:  document.getElementById('tab-finanzas'),
     comercial: document.getElementById('tab-comercial'),
+    proveedores: document.getElementById('tab-proveedores'),
     docs:      document.getElementById('tab-docs'),
     chat:      document.getElementById('tab-chat'), 
   };
@@ -1644,7 +1867,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
   if (typeof state !== 'undefined' && state) state.allowedChecklistRoles = null;
 
   if (isFull) {
-    ['resumen','proyecto','finanzas','comercial','docs','chat'].forEach(show);
+    ['resumen','proyecto','finanzas','comercial','proveedores','docs','chat'].forEach(show);
     activateTab('resumen');
     togglePartialUI(false);
     if (typeof renderProyecto === 'function') renderProyecto();
@@ -1656,7 +1879,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
   if (myRole === 'tecnico') {
     __ALLOWED_ROLES = ['TECNICO'];
     if (state) state.allowedChecklistRoles = __ALLOWED_ROLES;
-    ['resumen','finanzas','comercial'].forEach(hide);
+    ['resumen','finanzas','comercial','proveedores'].forEach(hide);
     ['proyecto','docs'].forEach(show);
     activateTab('proyecto');
     togglePartialUI(true);
@@ -1669,7 +1892,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
   if (myRole === 'legal') {
     __ALLOWED_ROLES = ['LEGAL'];
     if (state) state.allowedChecklistRoles = __ALLOWED_ROLES;
-    ['resumen','finanzas','comercial'].forEach(hide);
+    ['resumen','finanzas','comercial','proveedores'].forEach(hide);
     ['proyecto','docs'].forEach(show);
     activateTab('proyecto');
     togglePartialUI(true);
@@ -1683,7 +1906,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
     __ALLOWED_ROLES = ['COMERCIAL'];
     if (state) state.allowedChecklistRoles = __ALLOWED_ROLES;
     ['resumen','finanzas'].forEach(hide);
-    ['proyecto','comercial','docs'].forEach(show);
+    ['proyecto','comercial','proveedores','docs'].forEach(show);
     activateTab('proyecto');
     togglePartialUI(true);
     if (typeof renderProyecto === 'function') renderProyecto();
@@ -1692,7 +1915,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
   }
 
   // Fallback ultra-restringido
-  ['resumen','finanzas','comercial','docs'].forEach(hide);
+  ['resumen','finanzas','comercial','proveedores','docs'].forEach(hide);
   ['proyecto'].forEach(show);
   activateTab('proyecto');
   __ALLOWED_ROLES = null;
@@ -12478,6 +12701,7 @@ if (chatLoadMore) {
 
 // ====== Init ======
 applyRoleVisibility();
+await syncProvidersModuleVisibility();
 
 if (['tecnico','legal'].includes(myRole)) {
   // Estos roles SOLO pueden ver checklists y docs (RBAC)
