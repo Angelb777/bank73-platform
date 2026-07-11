@@ -114,14 +114,83 @@
     return el.type === 'checkbox' ? el.checked : el.value;
   }
 
+  function renderProfileCompanies(companies = []) {
+    const container = document.getElementById('pp-companies');
+    if (!container) return;
+    const rows = companies.length ? companies : [{ name: '', incorporationYear: '', isPrimary: true }];
+    container.innerHTML = '';
+    rows.forEach((company, index) => {
+      const row = document.createElement('div');
+      row.className = 'profile-company-row';
+      row.innerHTML = `
+        <label><span>Sociedad ${index + 1} · Nombre</span><input data-company-name type="text" placeholder="Razón social"></label>
+        <label><span>Año de constitución</span><input data-company-year type="number" min="1800" max="${new Date().getFullYear()}" step="1" placeholder="Ej: 2012"></label>
+        <label class="profile-company-primary" title="Usar esta sociedad por defecto"><input data-company-primary type="radio" name="pp-primary-company"> Sociedad principal</label>
+        <button class="btn ghost profile-company-remove" data-remove-company type="button" title="Eliminar sociedad" aria-label="Eliminar sociedad">×</button>`;
+      row.querySelector('[data-company-name]').value = company.name || '';
+      row.querySelector('[data-company-year]').value = company.incorporationYear ?? '';
+      row.querySelector('[data-company-primary]').checked = !!company.isPrimary || (!rows.some(item => item.isPrimary) && index === 0);
+      container.appendChild(row);
+    });
+  }
+
+  function collectProfileCompanies() {
+    const currentYear = new Date().getFullYear();
+    const companies = Array.from(document.querySelectorAll('#pp-companies .profile-company-row')).map(row => ({
+      name: row.querySelector('[data-company-name]')?.value.trim() || '',
+      incorporationYear: numberOrNull(row.querySelector('[data-company-year]')?.value),
+      isPrimary: !!row.querySelector('[data-company-primary]')?.checked
+    })).filter(company => company.name || company.incorporationYear !== null);
+    if (companies.some(company => !company.name || !Number.isInteger(company.incorporationYear) || company.incorporationYear < 1800 || company.incorporationYear > currentYear)) {
+      throw new Error(`Cada sociedad debe tener nombre y un año de constitución entre 1800 y ${currentYear}.`);
+    }
+    if (companies.length && !companies.some(company => company.isPrimary)) companies[0].isPrimary = true;
+    return companies;
+  }
+
+  const profileTeamAreas = [
+    ['technical', 'Área técnica'],
+    ['financial', 'Área financiera'],
+    ['commercial', 'Área comercial'],
+    ['legal', 'Área legal']
+  ];
+
+  function renderProfileTeam(internalTeam = {}, teamContacts = {}) {
+    const container = document.getElementById('pp-teamAreas');
+    if (!container) return;
+    container.innerHTML = profileTeamAreas.map(([key, label]) => {
+      const contact = teamContacts[key] || {};
+      const active = !!internalTeam[key];
+      return `<div class="profile-team-card${active ? ' is-active' : ''}" data-team-area="${key}">
+        <label class="profile-team-toggle"><input id="pp-team-${key}" data-team-toggle type="checkbox"${active ? ' checked' : ''}> ${label} cubierta</label>
+        <div class="profile-team-contact">
+          <label class="wide">Nombre y apellidos<input data-team-field="fullName" type="text" value="${escapeHtml(contact.fullName || '')}" placeholder="Responsable del área"></label>
+          <label>Cargo<input data-team-field="title" type="text" value="${escapeHtml(contact.title || '')}" placeholder="Ej: Director técnico"></label>
+          <label>Vinculación<select data-team-field="relationship"><option value="">No definida</option><option value="Interno"${contact.relationship === 'Interno' ? ' selected' : ''}>Equipo interno</option><option value="Externo"${contact.relationship === 'Externo' ? ' selected' : ''}>Colaborador externo</option></select></label>
+          <label>Correo profesional<input data-team-field="email" type="email" value="${escapeHtml(contact.email || '')}" placeholder="correo@empresa.com"></label>
+          <label>Teléfono<input data-team-field="phone" type="tel" value="${escapeHtml(contact.phone || '')}" placeholder="Teléfono profesional"></label>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function collectProfileTeamContacts() {
+    return Object.fromEntries(profileTeamAreas.map(([key]) => {
+      const card = document.querySelector(`[data-team-area="${key}"]`);
+      const value = field => card?.querySelector(`[data-team-field="${field}"]`)?.value.trim() || '';
+      return [key, { fullName: value('fullName'), title: value('title'), relationship: value('relationship'), email: value('email'), phone: value('phone') }];
+    }));
+  }
+
   function updateProfileButton(completion = {}) {
     if (!profileBtn || role !== 'promoter') return;
     profileBtn.style.display = '';
-    profileBtn.classList.toggle('is-complete', !!completion.sufficient);
-    profileBtn.classList.toggle('is-incomplete', !completion.sufficient);
-    profileBtn.title = completion.sufficient
-      ? 'Perfil de promotora completo'
-      : 'Completa el perfil de promotora';
+    const percent = Number(completion.percent) || 0;
+    const status = percent >= 90 ? 'complete' : percent >= 70 ? 'partial' : 'incomplete';
+    profileBtn.classList.toggle('is-complete', status === 'complete');
+    profileBtn.classList.toggle('is-partial', status === 'partial');
+    profileBtn.classList.toggle('is-incomplete', status === 'incomplete');
+    profileBtn.title = `Perfil de promotora: ${percent}% completado`;
     if (profileCompletionText) {
       profileCompletionText.textContent = `Completitud: ${completion.percent || 0}% · Scoring: ${promoterProfileState?.promoterCategory || 'No definido'}`;
     }
@@ -130,7 +199,9 @@
   function fillProfileModal(data = {}) {
     const p = data.promoterProfile || {};
     promoterProfileState = data;
-    setProfileField('pp-companyName', p.companyName);
+    renderProfileCompanies(Array.isArray(p.companies) && p.companies.length
+      ? p.companies
+      : [{ name: p.companyName || '', incorporationYear: p.incorporationYear ?? '', isPrimary: true }]);
     setProfileField('pp-promoterType', p.promoterType || 'No definido');
     setProfileField('pp-yearsExperience', p.yearsExperience);
     setProfileField('pp-deliveredProjects', p.deliveredProjects);
@@ -139,23 +210,25 @@
     setProfileField('pp-countries', (p.countries || []).join(', '));
     setProfileField('pp-developedVolume', formatProfileMoney(p.developedVolume));
     setProfileField('pp-averageProjectTicket', formatProfileMoney(p.averageProjectTicket));
-    setProfileField('pp-bankFinancingExperience', p.bankFinancingExperience);
+    const bankExperience = String(p.bankFinancingExperience || '').trim().toLowerCase();
+    setProfileField('pp-bankFinancingExperience', bankExperience === 'sí' || bankExperience === 'si' ? 'Sí' : bankExperience === 'no' ? 'No' : '');
     setProfileField('pp-banksWorkedWith', (p.banksWorkedWith || []).join(', '));
     setProfileField('pp-onTimeDeliveryHistory', p.onTimeDeliveryHistory);
     setProfileField('pp-incidentHistory', p.incidentHistory);
     setProfileField('pp-documentationLevel', p.documentationLevel);
-    setProfileField('pp-team-technical', p.internalTeam?.technical);
-    setProfileField('pp-team-financial', p.internalTeam?.financial);
-    setProfileField('pp-team-commercial', p.internalTeam?.commercial);
-    setProfileField('pp-team-legal', p.internalTeam?.legal);
+    renderProfileTeam(p.internalTeam || {}, p.teamContacts || {});
     setProfileField('pp-notes', p.notes);
     bindProfileMoneyInputs();
     updateProfileButton(data.promoterProfileCompletion || {});
   }
 
   function collectProfileModal() {
+    const companies = collectProfileCompanies();
+    const primaryCompany = companies.find(company => company.isPrimary) || companies[0] || {};
     return {
-      companyName: getProfileField('pp-companyName').trim(),
+      companyName: primaryCompany.name || '',
+      incorporationYear: primaryCompany.incorporationYear ?? null,
+      companies,
       promoterType: getProfileField('pp-promoterType') || 'No definido',
       yearsExperience: numberOrNull(getProfileField('pp-yearsExperience')),
       deliveredProjects: numberOrNull(getProfileField('pp-deliveredProjects')),
@@ -175,6 +248,7 @@
         commercial: getProfileField('pp-team-commercial'),
         legal: getProfileField('pp-team-legal')
       },
+      teamContacts: collectProfileTeamContacts(),
       notes: getProfileField('pp-notes').trim()
     };
   }
@@ -1942,6 +2016,29 @@
     profileBtn?.addEventListener('click', async () => {
       await loadPromoterProfile();
       profileModalBackdrop?.classList.add('show');
+    });
+    document.getElementById('pp-addCompany')?.addEventListener('click', () => {
+      const rows = Array.from(document.querySelectorAll('#pp-companies .profile-company-row')).map(row => ({
+        name: row.querySelector('[data-company-name]')?.value || '',
+        incorporationYear: row.querySelector('[data-company-year]')?.value || '',
+        isPrimary: !!row.querySelector('[data-company-primary]')?.checked
+      }));
+      renderProfileCompanies([...rows, { name: '', incorporationYear: '', isPrimary: rows.length === 0 }]);
+    });
+    document.getElementById('pp-companies')?.addEventListener('click', event => {
+      const removeButton = event.target.closest('[data-remove-company]');
+      if (!removeButton) return;
+      const container = document.getElementById('pp-companies');
+      removeButton.closest('.profile-company-row')?.remove();
+      const remaining = container?.querySelectorAll('.profile-company-row') || [];
+      if (!remaining.length) renderProfileCompanies();
+      else if (!container.querySelector('[data-company-primary]:checked')) {
+        remaining[0].querySelector('[data-company-primary]').checked = true;
+      }
+    });
+    document.getElementById('pp-teamAreas')?.addEventListener('change', event => {
+      if (!event.target.matches('[data-team-toggle]')) return;
+      event.target.closest('.profile-team-card')?.classList.toggle('is-active', event.target.checked);
     });
     const closeProfile = () => profileModalBackdrop?.classList.remove('show');
     closeProfileModalBtn?.addEventListener('click', closeProfile);

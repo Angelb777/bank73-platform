@@ -2432,6 +2432,70 @@ function applyProjectsFilters(list) {
     });
   }
 
+  function renderAdminPromoterCompanies(companies = []) {
+    const container = document.getElementById('pp-companies');
+    if (!container) return;
+    const rows = companies.length ? companies : [{ name: '', incorporationYear: '', isPrimary: true }];
+    container.innerHTML = '';
+    rows.forEach((company, index) => {
+      const row = document.createElement('div');
+      row.dataset.companyRow = '';
+      row.style.cssText = 'display:grid;grid-template-columns:minmax(220px,1fr) 145px auto auto;gap:8px;align-items:end;';
+      row.innerHTML = `
+        <label>Nombre<input class="input" data-company-name type="text"></label>
+        <label>Año de constitución<input class="input" data-company-year type="number" min="1800" max="${new Date().getFullYear()}" step="1"></label>
+        <label style="display:flex;align-items:center;gap:5px;min-height:38px;"><input data-company-primary type="radio" name="admin-primary-company"> Principal</label>
+        <button class="btn small" data-remove-company type="button">Eliminar</button>`;
+      row.querySelector('[data-company-name]').value = company.name || '';
+      row.querySelector('[data-company-year]').value = company.incorporationYear ?? '';
+      row.querySelector('[data-company-primary]').checked = !!company.isPrimary || (!rows.some(item => item.isPrimary) && index === 0);
+      container.appendChild(row);
+    });
+  }
+
+  function readAdminPromoterCompanies(validate = true) {
+    const currentYear = new Date().getFullYear();
+    const companies = Array.from(document.querySelectorAll('#pp-companies [data-company-row]')).map(row => ({
+      name: row.querySelector('[data-company-name]')?.value.trim() || '',
+      incorporationYear: parsePromoterNumber(row.querySelector('[data-company-year]')?.value),
+      isPrimary: !!row.querySelector('[data-company-primary]')?.checked
+    })).filter(company => company.name || company.incorporationYear !== null);
+    if (validate && companies.some(company => !company.name || !Number.isInteger(company.incorporationYear) || company.incorporationYear < 1800 || company.incorporationYear > currentYear)) {
+      throw new Error(`Cada sociedad debe tener nombre y un año de constitución entre 1800 y ${currentYear}.`);
+    }
+    if (companies.length && !companies.some(company => company.isPrimary)) companies[0].isPrimary = true;
+    return companies;
+  }
+
+  const adminTeamAreas = [['technical', 'Técnica'], ['financial', 'Financiera'], ['commercial', 'Comercial'], ['legal', 'Legal']];
+
+  function renderAdminPromoterTeam(internalTeam = {}, teamContacts = {}) {
+    const container = document.getElementById('pp-teamAreas');
+    if (!container) return;
+    container.innerHTML = adminTeamAreas.map(([key, label]) => {
+      const contact = teamContacts[key] || {};
+      const active = !!internalTeam[key];
+      return `<div data-team-area="${key}" style="border:1px solid #334155;border-radius:10px;padding:10px;background:#18212b;">
+        <label style="display:flex;align-items:center;gap:7px;color:#e6edf3;"><input id="pp-team-${key}" data-team-toggle type="checkbox"${active ? ' checked' : ''}> Área ${label.toLowerCase()} cubierta</label>
+        <div data-team-contact style="display:${active ? 'grid' : 'none'};grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
+          <label style="grid-column:1/-1;">Nombre y apellidos<input class="input" data-team-field="fullName" value="${escapeHtml(contact.fullName || '')}"></label>
+          <label>Cargo<input class="input" data-team-field="title" value="${escapeHtml(contact.title || '')}"></label>
+          <label>Vinculación<select class="input" data-team-field="relationship"><option value="">No definida</option><option value="Interno"${contact.relationship === 'Interno' ? ' selected' : ''}>Equipo interno</option><option value="Externo"${contact.relationship === 'Externo' ? ' selected' : ''}>Colaborador externo</option></select></label>
+          <label>Correo<input class="input" data-team-field="email" type="email" value="${escapeHtml(contact.email || '')}"></label>
+          <label>Teléfono<input class="input" data-team-field="phone" value="${escapeHtml(contact.phone || '')}"></label>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function readAdminPromoterTeamContacts() {
+    return Object.fromEntries(adminTeamAreas.map(([key]) => {
+      const card = document.querySelector(`#promoterProfileModal [data-team-area="${key}"]`);
+      const value = field => card?.querySelector(`[data-team-field="${field}"]`)?.value.trim() || '';
+      return [key, { fullName: value('fullName'), title: value('title'), relationship: value('relationship'), email: value('email'), phone: value('phone') }];
+    }));
+  }
+
   function ensurePromoterProfileModal() {
     if (document.getElementById('promoterProfileModal')) return;
 
@@ -2448,9 +2512,13 @@ function applyProjectsFilters(list) {
           <button id="promoterProfileClose" class="btn small" style="background:#2a323d;">Cerrar</button>
         </div>
 
-        <label class="small muted" style="display:block;margin-bottom:10px;">Nombre de la sociedad
-          <input id="pp-companyName" class="input" type="text" placeholder="Ej: Promotora Vista Azul, S.A." />
-        </label>
+        <div class="small muted" style="display:block;margin-bottom:10px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;">
+            <span>Sociedades promotoras</span>
+            <button id="pp-addCompany" class="btn small" type="button">Añadir sociedad</button>
+          </div>
+          <div id="pp-companies" style="display:grid;gap:8px;"></div>
+        </div>
 
         <label class="small muted" style="display:block;margin-bottom:10px;">Tipo de promotor
           <select id="pp-promoterType" class="input">
@@ -2483,7 +2551,11 @@ function applyProjectsFilters(list) {
           <input id="pp-countries" class="input" type="text" placeholder="Panamá, Colombia..." />
         </label>
         <label class="small muted" style="display:block;margin-top:10px;">Experiencia con financiacion bancaria
-          <input id="pp-bankFinancingExperience" class="input" type="text" />
+          <select id="pp-bankFinancingExperience" class="input">
+            <option value="">No definido</option>
+            <option value="Sí">Sí</option>
+            <option value="No">No</option>
+          </select>
         </label>
         <label class="small muted" style="display:block;margin-top:10px;">Bancos con los que ha trabajado
           <input id="pp-banksWorkedWith" class="input" type="text" placeholder="Banco General, Banistmo..." />
@@ -2503,14 +2575,7 @@ function applyProjectsFilters(list) {
               <option value="Alta">Alta</option>
             </select>
           </label>
-          <label class="small muted">Equipo interno propio
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">
-              <label><input id="pp-team-technical" type="checkbox"> Tecnico</label>
-              <label><input id="pp-team-financial" type="checkbox"> Financiero</label>
-              <label><input id="pp-team-commercial" type="checkbox"> Comercial</label>
-              <label><input id="pp-team-legal" type="checkbox"> Legal</label>
-            </div>
-          </label>
+          <div id="pp-teamAreas" style="grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
         </div>
         <label class="small muted" style="display:block;margin-top:10px;">Notas
           <textarea id="pp-notes" class="input" rows="4" style="resize:vertical;"></textarea>
@@ -2528,6 +2593,26 @@ function applyProjectsFilters(list) {
     const close = () => { wrap.style.display = 'none'; };
     document.getElementById('promoterProfileClose').addEventListener('click', close);
     document.getElementById('promoterProfileCancel').addEventListener('click', close);
+    document.getElementById('pp-addCompany').addEventListener('click', () => {
+      const companies = readAdminPromoterCompanies(false);
+      renderAdminPromoterCompanies([...companies, { name: '', incorporationYear: '', isPrimary: companies.length === 0 }]);
+    });
+    document.getElementById('pp-companies').addEventListener('click', event => {
+      const removeButton = event.target.closest('[data-remove-company]');
+      if (!removeButton) return;
+      const container = document.getElementById('pp-companies');
+      removeButton.closest('[data-company-row]')?.remove();
+      const remaining = container.querySelectorAll('[data-company-row]');
+      if (!remaining.length) renderAdminPromoterCompanies([]);
+      else if (!container.querySelector('[data-company-primary]:checked')) {
+        remaining[0].querySelector('[data-company-primary]').checked = true;
+      }
+    });
+    document.getElementById('pp-teamAreas').addEventListener('change', event => {
+      if (!event.target.matches('[data-team-toggle]')) return;
+      const contact = event.target.closest('[data-team-area]')?.querySelector('[data-team-contact]');
+      if (contact) contact.style.display = event.target.checked ? 'grid' : 'none';
+    });
     document.getElementById('promoterProfileSave').addEventListener('click', async () => {
       const id = wrap.dataset.userId;
       if (!id) return;
@@ -2535,8 +2620,18 @@ function applyProjectsFilters(list) {
         const value = document.getElementById(fieldId)?.value;
         return parsePromoterNumber(value);
       };
+      let companies;
+      try {
+        companies = readAdminPromoterCompanies(true);
+      } catch (e) {
+        alert(e.message);
+        return;
+      }
+      const primaryCompany = companies.find(company => company.isPrimary) || companies[0] || {};
       const profile = {
-        companyName: document.getElementById('pp-companyName')?.value || '',
+        companyName: primaryCompany.name || '',
+        incorporationYear: primaryCompany.incorporationYear ?? null,
+        companies,
         promoterType: document.getElementById('pp-promoterType')?.value || 'No definido',
         yearsExperience: numOrBlank('pp-yearsExperience'),
         deliveredProjects: numOrBlank('pp-deliveredProjects'),
@@ -2556,6 +2651,7 @@ function applyProjectsFilters(list) {
           commercial: !!document.getElementById('pp-team-commercial')?.checked,
           legal: !!document.getElementById('pp-team-legal')?.checked
         },
+        teamContacts: readAdminPromoterTeamContacts(),
         notes: document.getElementById('pp-notes')?.value || ''
       };
 
@@ -2576,7 +2672,9 @@ function applyProjectsFilters(list) {
     const profile = user?.promoterProfile || {};
     wrap.dataset.userId = user._id;
     document.getElementById('promoterProfileUser').textContent = `${user.name || '-'} · ${user.email || '-'}`;
-    document.getElementById('pp-companyName').value = profile.companyName || '';
+    renderAdminPromoterCompanies(Array.isArray(profile.companies) && profile.companies.length
+      ? profile.companies
+      : [{ name: profile.companyName || '', incorporationYear: profile.incorporationYear ?? '', isPrimary: true }]);
     document.getElementById('pp-promoterType').innerHTML = renderPromoterTypeOptions(profile.promoterType || 'No definido');
     document.getElementById('pp-yearsExperience').value = profile.yearsExperience ?? '';
     document.getElementById('pp-deliveredProjects').value = profile.deliveredProjects ?? '';
@@ -2585,15 +2683,13 @@ function applyProjectsFilters(list) {
     document.getElementById('pp-developedVolume').value = formatPromoterMoney(profile.developedVolume);
     document.getElementById('pp-averageProjectTicket').value = formatPromoterMoney(profile.averageProjectTicket);
     document.getElementById('pp-countries').value = Array.isArray(profile.countries) ? profile.countries.join(', ') : '';
-    document.getElementById('pp-bankFinancingExperience').value = profile.bankFinancingExperience || '';
+    const bankExperience = String(profile.bankFinancingExperience || '').trim().toLowerCase();
+    document.getElementById('pp-bankFinancingExperience').value = bankExperience === 'sí' || bankExperience === 'si' ? 'Sí' : bankExperience === 'no' ? 'No' : '';
     document.getElementById('pp-banksWorkedWith').value = Array.isArray(profile.banksWorkedWith) ? profile.banksWorkedWith.join(', ') : '';
     document.getElementById('pp-onTimeDeliveryHistory').value = profile.onTimeDeliveryHistory || '';
     document.getElementById('pp-incidentHistory').value = profile.incidentHistory || '';
     document.getElementById('pp-documentationLevel').value = profile.documentationLevel || '';
-    document.getElementById('pp-team-technical').checked = !!profile.internalTeam?.technical;
-    document.getElementById('pp-team-financial').checked = !!profile.internalTeam?.financial;
-    document.getElementById('pp-team-commercial').checked = !!profile.internalTeam?.commercial;
-    document.getElementById('pp-team-legal').checked = !!profile.internalTeam?.legal;
+    renderAdminPromoterTeam(profile.internalTeam || {}, profile.teamContacts || {});
     document.getElementById('pp-notes').value = profile.notes || '';
     document.getElementById('pp-category').textContent = user.promoterCategory || 'No definido';
     bindPromoterMoneyInputs();

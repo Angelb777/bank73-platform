@@ -49,6 +49,12 @@ const ProjectRoleSchema = new mongoose.Schema(
 const PromoterProfileSchema = new mongoose.Schema(
   {
     companyName: { type: String, trim: true, default: '' },
+    incorporationYear: { type: Number, min: 1800, max: 9999, default: null },
+    companies: [{
+      name: { type: String, trim: true, required: true },
+      incorporationYear: { type: Number, min: 1800, max: 9999, required: true },
+      isPrimary: { type: Boolean, default: false }
+    }],
     promoterType: { type: String, enum: PROMOTER_TYPES, default: 'No definido' },
     yearsExperience: { type: Number, min: 0, default: null },
     deliveredProjects: { type: Number, min: 0, default: null },
@@ -67,6 +73,24 @@ const PromoterProfileSchema = new mongoose.Schema(
       commercial: { type: Boolean, default: false },
       legal: { type: Boolean, default: false }
     },
+    teamContacts: {
+      technical: {
+        fullName: { type: String, trim: true, default: '' }, title: { type: String, trim: true, default: '' },
+        relationship: { type: String, trim: true, default: '' }, email: { type: String, trim: true, default: '' }, phone: { type: String, trim: true, default: '' }
+      },
+      financial: {
+        fullName: { type: String, trim: true, default: '' }, title: { type: String, trim: true, default: '' },
+        relationship: { type: String, trim: true, default: '' }, email: { type: String, trim: true, default: '' }, phone: { type: String, trim: true, default: '' }
+      },
+      commercial: {
+        fullName: { type: String, trim: true, default: '' }, title: { type: String, trim: true, default: '' },
+        relationship: { type: String, trim: true, default: '' }, email: { type: String, trim: true, default: '' }, phone: { type: String, trim: true, default: '' }
+      },
+      legal: {
+        fullName: { type: String, trim: true, default: '' }, title: { type: String, trim: true, default: '' },
+        relationship: { type: String, trim: true, default: '' }, email: { type: String, trim: true, default: '' }, phone: { type: String, trim: true, default: '' }
+      }
+    },
     countries: [{ type: String, trim: true }],
     notes: { type: String, trim: true, default: '' }
   },
@@ -74,30 +98,50 @@ const PromoterProfileSchema = new mongoose.Schema(
 );
 
 function promoterProfileCompletion(profile = {}) {
+  const usefulText = value => {
+    const text = String(value || '').trim();
+    if (!text) return false;
+    return !/^(?:-|--|n\/?a|na|ninguno|ninguna|no aplica|no definido)$/i.test(text);
+  };
+  const validNumber = (value, { positive = false } = {}) => {
+    if (value === null || value === undefined || value === '') return false;
+    const number = Number(value);
+    return Number.isFinite(number) && (positive ? number > 0 : number >= 0);
+  };
+  const currentYear = new Date().getFullYear();
+  const validYear = value => Number.isInteger(Number(value)) && Number(value) >= 1800 && Number(value) <= currentYear;
+  const primaryCompany = Array.isArray(profile.companies)
+    ? (profile.companies.find(company => company?.isPrimary) || profile.companies[0])
+    : null;
+  const companyName = primaryCompany?.name || profile.companyName;
+  const incorporationYear = primaryCompany?.incorporationYear ?? profile.incorporationYear;
   const checks = [
-    !!profile.companyName,
+    usefulText(companyName),
+    validYear(incorporationYear),
     profile.promoterType && profile.promoterType !== 'No definido',
-    profile.yearsExperience !== null && profile.yearsExperience !== undefined,
-    profile.deliveredProjects !== null && profile.deliveredProjects !== undefined,
-    profile.activeProjects !== null && profile.activeProjects !== undefined,
-    profile.developedUnits !== null && profile.developedUnits !== undefined,
-    Array.isArray(profile.countries) && profile.countries.length > 0,
-    profile.developedVolume !== null && profile.developedVolume !== undefined,
-    profile.averageProjectTicket !== null && profile.averageProjectTicket !== undefined,
-    !!profile.bankFinancingExperience,
-    Array.isArray(profile.banksWorkedWith) && profile.banksWorkedWith.length > 0,
-    !!profile.onTimeDeliveryHistory,
-    !!profile.incidentHistory,
-    !!profile.documentationLevel,
+    validNumber(profile.yearsExperience),
+    validNumber(profile.deliveredProjects),
+    validNumber(profile.activeProjects),
+    validNumber(profile.developedUnits),
+    Array.isArray(profile.countries) && profile.countries.some(usefulText),
+    validNumber(profile.developedVolume, { positive: true }),
+    validNumber(profile.averageProjectTicket, { positive: true }),
+    usefulText(profile.bankFinancingExperience),
+    Array.isArray(profile.banksWorkedWith) && profile.banksWorkedWith.some(usefulText),
+    usefulText(profile.onTimeDeliveryHistory),
+    usefulText(profile.incidentHistory),
+    usefulText(profile.documentationLevel),
     !!profile.internalTeam && Object.values(profile.internalTeam).some(Boolean)
   ];
   const completed = checks.filter(Boolean).length;
   const total = checks.length;
+  const percent = total ? Math.round((completed / total) * 100) : 0;
   return {
     completed,
     total,
-    percent: total ? Math.round((completed / total) * 100) : 0,
-    sufficient: completed >= 10 && !!profile.companyName
+    percent,
+    status: percent >= 90 ? 'complete' : percent >= 70 ? 'partial' : 'incomplete',
+    sufficient: percent >= 90
   };
 }
 

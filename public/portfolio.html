@@ -504,9 +504,46 @@
       stroke-linejoin:round;
     }
     .profile-button.is-complete { border-color: rgba(34,197,94,.85); color:#16a34a; background:rgba(34,197,94,.14); }
+    .profile-button.is-partial { border-color: rgba(245,158,11,.9); color:#d97706; background:rgba(245,158,11,.14); }
     .profile-button.is-incomplete { border-color: rgba(239,68,68,.9); color:#dc2626; background:rgba(239,68,68,.12); }
     body.dark-theme .profile-button.is-complete { color:#86efac; background:rgba(34,197,94,.12); }
+    body.dark-theme .profile-button.is-partial { color:#fcd34d; background:rgba(245,158,11,.12); }
     body.dark-theme .profile-button.is-incomplete { color:#fecaca; background:rgba(239,68,68,.10); }
+    .profile-modal.modal.create-modal { width:min(1120px,calc(100vw - 48px)); max-width:1120px; height:min(900px,calc(100vh - 40px)); max-height:calc(100vh - 40px); }
+    .profile-modal .create-modal-body { overflow-x:hidden; padding:30px 34px 24px; }
+    .profile-modal-header { padding-right:50px; margin-bottom:22px; }
+    .profile-modal-header h3 { margin:0 0 6px; font-size:25px; color:#0f172a; }
+    .profile-modal .muted, .profile-modal .profile-section-help { color:#475569 !important; }
+    .profile-modal label { color:#1e293b !important; font-weight:600; }
+    .profile-modal input::placeholder, .profile-modal textarea::placeholder { color:#64748b; opacity:1; }
+    .profile-modal select { color:#0f172a; }
+    .profile-section { border:1px solid #dbe3ee; border-radius:16px; background:#fff; padding:20px; margin-bottom:18px; box-shadow:0 4px 14px rgba(15,23,42,.04); }
+    .profile-section-head { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:16px; }
+    .profile-section-title { font-size:16px; font-weight:850; color:#0f172a; }
+    .profile-section-help { margin-top:3px; color:#64748b; font-size:12px; }
+    .profile-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px 18px; }
+    .profile-companies-list { display:grid; gap:12px; }
+    .profile-company-row { display:grid; grid-template-columns:minmax(260px,1fr) 180px 170px 44px; gap:14px; align-items:end; padding:16px; border:1px solid #dbe3ee; border-radius:14px; background:#f8fafc; }
+    .profile-company-primary { min-height:42px; display:flex; align-items:center; justify-content:center; gap:8px; border:1px solid #cbd5e1; border-radius:12px; background:#fff; color:#475569; font-weight:750; cursor:pointer; }
+    .profile-company-primary:has(input:checked) { border-color:#2563eb; background:#eff6ff; color:#1d4ed8; }
+    .profile-company-primary input { width:17px !important; min-height:17px !important; margin:0; accent-color:#2563eb; }
+    .profile-company-remove { width:42px; height:42px; padding:0 !important; border-color:#fecaca !important; background:#fff !important; color:#dc2626 !important; font-size:20px; }
+    .profile-add-company { border-color:#bfdbfe !important; background:#eff6ff !important; color:#1d4ed8 !important; }
+    .profile-team-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+    .profile-team-card { border:1px solid #dbe3ee; border-radius:14px; background:#f8fafc; padding:15px; }
+    .profile-team-toggle { display:flex !important; flex-direction:row !important; align-items:center; gap:9px !important; font-weight:800; color:#1e293b !important; cursor:pointer; }
+    .profile-team-toggle input { width:18px !important; min-height:18px !important; margin:0; accent-color:#2563eb; }
+    .profile-team-contact { display:none; grid-template-columns:repeat(2,minmax(0,1fr)); gap:11px; margin-top:14px; padding-top:14px; border-top:1px solid #dbe3ee; }
+    .profile-team-card.is-active { border-color:#93c5fd; background:#f8fbff; }
+    .profile-team-card.is-active .profile-team-contact { display:grid; }
+    .profile-team-contact .wide { grid-column:1/-1; }
+    @media (max-width:840px) {
+      .profile-modal.modal.create-modal { width:calc(100vw - 20px); height:calc(100vh - 20px); max-height:calc(100vh - 20px); }
+      .profile-modal .create-modal-body { padding:24px 18px 18px; }
+      .profile-fields { grid-template-columns:1fr; }
+      .profile-company-row { grid-template-columns:1fr 1fr; }
+      .profile-team-grid { grid-template-columns:1fr 1fr; }
+    }
     .create-progress-list { display:grid; gap:10px; margin-top:10px; }
     .create-progress-group { border:1px solid #dbe2ea; border-radius:12px; background:#fff; overflow:hidden; }
     .create-progress-group[open] { box-shadow:0 8px 20px rgba(15,23,42,.05); }
@@ -779,13 +816,23 @@
   </div>
 
   <div class="modal-backdrop" id="profileModalBackdrop">
-    <div class="modal create-modal filter-modal">
+    <div class="modal create-modal profile-modal">
       <button id="closeProfileModal" class="modal-close" type="button" aria-label="Cerrar">×</button>
       <div class="create-modal-body">
-        <h3>Perfil de promotora</h3>
-        <div id="profileCompletionText" class="small muted" style="margin-bottom:12px;"></div>
-        <div class="create-grid">
-          <label>Nombre de la sociedad<input id="pp-companyName" type="text"></label>
+        <div class="profile-modal-header">
+          <h3>Perfil de promotora</h3>
+          <div id="profileCompletionText" class="small muted"></div>
+        </div>
+        <section class="profile-section">
+          <div class="profile-section-head">
+            <div><div class="profile-section-title">Sociedades promotoras</div><div class="profile-section-help">Selecciona la sociedad principal que se utilizará por defecto en la plataforma.</div></div>
+            <button id="pp-addCompany" class="btn ghost profile-add-company" type="button">+ Añadir sociedad</button>
+          </div>
+          <div id="pp-companies" class="profile-companies-list"></div>
+        </section>
+        <section class="profile-section">
+          <div class="profile-section-head"><div><div class="profile-section-title">Trayectoria y actividad</div><div class="profile-section-help">Experiencia acumulada y dimensión de los proyectos desarrollados.</div></div></div>
+          <div class="profile-fields">
           <label>Tipo de promotor
             <select id="pp-promoterType">
               <option value="No definido">No definido</option>
@@ -802,7 +849,18 @@
           <label>Países de operación<input id="pp-countries" type="text" placeholder="Panamá, Colombia..."></label>
           <label>Volumen total desarrollado (B/.)<input id="pp-developedVolume" type="text" inputmode="decimal" placeholder="Ej: 25,000,000.00" title="Importe económico total desarrollado durante la trayectoria de la promotora"></label>
           <label>Ticket medio de proyecto (B/.)<input id="pp-averageProjectTicket" type="text" inputmode="decimal" placeholder="Ej: 4,500,000.00"></label>
-          <label>Experiencia con financiación bancaria<input id="pp-bankFinancingExperience" type="text"></label>
+          </div>
+        </section>
+        <section class="profile-section">
+          <div class="profile-section-head"><div><div class="profile-section-title">Experiencia bancaria y cumplimiento</div><div class="profile-section-help">Relación con entidades financieras, entregas e incidencias.</div></div></div>
+          <div class="profile-fields">
+          <label>Experiencia con financiación bancaria
+            <select id="pp-bankFinancingExperience">
+              <option value="">No definido</option>
+              <option value="Sí">Sí</option>
+              <option value="No">No</option>
+            </select>
+          </label>
           <label>Bancos con los que ha trabajado<input id="pp-banksWorkedWith" type="text" placeholder="Banco General, Banistmo..."></label>
           <label>Historial de entregas a tiempo<input id="pp-onTimeDeliveryHistory" type="text"></label>
           <label>Historial de incidencias legales o técnicas<input id="pp-incidentHistory" type="text"></label>
@@ -814,16 +872,13 @@
               <option value="Alta">Alta</option>
             </select>
           </label>
-          <label style="grid-column:1/-1;">Equipo interno propio
-            <div class="create-precedent-grid">
-              <label><input id="pp-team-technical" type="checkbox"> Técnico</label>
-              <label><input id="pp-team-financial" type="checkbox"> Financiero</label>
-              <label><input id="pp-team-commercial" type="checkbox"> Comercial</label>
-              <label><input id="pp-team-legal" type="checkbox"> Legal</label>
-            </div>
-          </label>
-          <label style="grid-column:1/-1;">Notas<textarea id="pp-notes" rows="3"></textarea></label>
-        </div>
+          </div>
+        </section>
+        <section class="profile-section">
+          <div class="profile-section-head"><div><div class="profile-section-title">Equipo y observaciones</div><div class="profile-section-help">Capacidades internas disponibles y cualquier información adicional relevante.</div></div></div>
+          <div class="profile-team-grid" id="pp-teamAreas"></div>
+          <label style="display:block;margin-top:16px;color:#334155;font-size:13px;">Notas<textarea id="pp-notes" rows="3"></textarea></label>
+        </section>
       </div>
       <div class="row create-modal-actions">
         <button id="cancelProfileModal" class="btn ghost" type="button">Cancelar</button>
