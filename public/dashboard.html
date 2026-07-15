@@ -161,6 +161,34 @@
     .admin-panel-section{ display:none; }
     .admin-panel-section.active{ display:block; }
 
+    #fundingAdminList{grid-template-columns:minmax(0,1fr);width:100%}
+    .funding-list-card{position:relative;display:grid;grid-template-columns:150px minmax(0,1fr);gap:22px;width:100%;box-sizing:border-box;padding:20px;border:1px solid var(--admin-border);border-radius:16px;background:linear-gradient(135deg,rgba(15,23,42,.68),rgba(15,23,42,.38))}
+    .funding-list-card.has-alert{border-color:rgba(239,68,68,.48);box-shadow:inset 3px 0 0 #ef4444}
+    .funding-list-card img,.funding-cover-fallback{width:150px;height:118px;object-fit:cover;border-radius:12px;background:linear-gradient(135deg,#172554,#2563eb)}
+    .funding-list-card h3{margin:0 0 4px;font-size:1.2rem}.funding-list-metrics{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:8px;margin:14px 0}
+    .funding-metric{padding:10px;border:1px solid rgba(148,163,184,.17);border-radius:10px;background:rgba(2,6,23,.25)}
+    .funding-metric span{display:block;color:var(--admin-muted);font-size:.76rem}.funding-metric strong{display:block;margin-top:3px}
+    .funding-card-alert{display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border-radius:999px;background:rgba(239,68,68,.15);border:1px solid rgba(248,113,113,.48);color:#fecaca;font-size:.8rem;font-weight:800}
+    .funding-card-alert::before{content:'';width:8px;height:8px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 4px rgba(239,68,68,.16)}
+    .funding-dossier{display:grid;gap:16px}.funding-dossier-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
+    .funding-section{border:1px solid var(--admin-border);border-radius:14px;padding:16px;background:rgba(15,23,42,.42)}
+    .funding-section h3{margin:0 0 14px}.funding-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .funding-form-grid label{display:grid;gap:6px;color:var(--admin-muted);font-size:.85rem}.funding-form-grid .wide{grid-column:1/-1}
+    .funding-form-grid input,.funding-form-grid select,.funding-form-grid textarea{width:100%;box-sizing:border-box}
+    .funding-score-item{display:grid;grid-template-columns:minmax(180px,1.3fr) 90px 110px minmax(180px,1fr);gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(148,163,184,.14)}
+    .funding-interest{border:1px solid rgba(148,163,184,.22);border-radius:12px;padding:14px}.funding-interest.is-pending{border-color:rgba(245,158,11,.62)}
+    .funding-checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.funding-checks label{display:flex;align-items:center;gap:8px}
+    .funding-advanced{margin-top:16px;border:1px solid rgba(148,163,184,.22);border-radius:12px;background:rgba(2,6,23,.2)}
+    .funding-advanced>summary{cursor:pointer;padding:14px 16px;font-weight:800}.funding-advanced-body{padding:0 16px 16px}
+    .funding-access-options{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}.funding-access-option,.funding-public-option{display:flex!important;grid-template-columns:none!important;align-items:flex-start!important;justify-content:flex-start!important;gap:9px!important;margin:0!important;padding:10px 12px;border:1px solid rgba(148,163,184,.2);border-radius:10px;background:rgba(15,23,42,.42);line-height:1.25;color:var(--admin-text)!important}
+    .funding-access-option input,.funding-public-option input{flex:0 0 auto;width:auto!important;margin:2px 0 0!important}
+    .funding-tenant-picker{width:100%;min-height:190px;padding:8px;border-radius:10px;background:#0b1729;color:var(--admin-text);border:1px solid var(--admin-border-strong)}
+    .funding-public-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:10px}.funding-public-group{padding:12px;border:1px solid rgba(148,163,184,.18);border-radius:12px}.funding-public-group h5{margin:0 0 10px}.funding-public-group>div{display:grid;gap:7px}
+    .funding-preset-actions{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px}
+    .funding-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.funding-inline-message{margin:0 0 12px}
+    @media(max-width:1000px){.funding-list-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.funding-public-groups{grid-template-columns:1fr}}
+    @media(max-width:800px){.funding-list-card{grid-template-columns:1fr}.funding-list-metrics,.funding-form-grid,.funding-checks{grid-template-columns:1fr}.funding-score-item{grid-template-columns:1fr}.funding-form-grid .wide{grid-column:auto}}
+
     .card{
       border:1px solid var(--admin-border);
       border-radius:var(--admin-radius);
@@ -645,6 +673,14 @@
       padding:3px 8px;
       font-size:.82rem;
     }
+    .project-description-snippet {
+      display:-webkit-box;
+      -webkit-box-orient:vertical;
+      -webkit-line-clamp:2;
+      overflow:hidden;
+      line-height:1.35;
+      max-height:2.7em;
+    }
     .modal-body{
       max-height: calc(100vh - 260px);
       overflow: auto;
@@ -773,6 +809,7 @@
         <button class="admin-tab active" type="button" data-admin-tab="pending"><span class="dot"></span>Pendientes</button>
         <button class="admin-tab" type="button" data-admin-tab="users"><span class="dot"></span>Usuarios</button>
         <button class="admin-tab" type="button" data-admin-tab="projects"><span class="dot"></span>Proyectos</button>
+        <button class="admin-tab" type="button" data-admin-tab="funding"><span class="dot"></span>Financiación <span id="fundingBadge" class="admin-tab-alert">0</span></button>
         <button class="admin-tab" type="button" data-admin-tab="providers"><span class="dot"></span>Proveedores <span id="providerRequestsBadge" class="admin-tab-alert">0</span></button>
         <button class="admin-tab" type="button" data-admin-tab="multiTenant"><span class="dot"></span>Multi-tenant</button>
         <button class="admin-tab" type="button" data-admin-tab="activity"><span class="dot"></span>Actividad</button>
@@ -1066,6 +1103,26 @@
         </section>
       </section>
 
+      <section class="admin-panel-section" data-admin-panel="funding">
+        <section class="card">
+          <div class="section-head"><div><h2>Financiación</h2><p class="muted">Revisión, scoring, publicación e intereses de bancos.</p></div><button id="refreshFunding" class="btn small" type="button">Refrescar</button></div>
+          <div class="provider-module-toggle">
+            <div>
+              <strong>Mostrar funcionalidad de financiación a los usuarios</strong>
+              <div class="muted" style="font-size:.86rem;">Controla si la creación financiera y el marketplace aparecen en el portfolio.</div>
+              <div id="fundingModuleStatus" class="muted" style="font-size:.82rem;margin-top:5px;">Desactivada</div>
+            </div>
+            <label class="provider-switch" title="Mostrar funcionalidad de financiación a los usuarios">
+              <input id="fundingModuleToggle" type="checkbox" />
+              <span aria-hidden="true"></span>
+            </label>
+          </div>
+          <div id="fundingAdminMessage" class="funding-inline-message" aria-live="polite"></div>
+          <div id="fundingAdminList" class="grid"></div>
+          <div id="fundingAdminDetail" style="display:none;"></div>
+        </section>
+      </section>
+
       <!-- PROVEEDORES -->
       <section class="admin-panel-section" data-admin-panel="providers">
         <section class="card" id="providersAdminCard">
@@ -1285,6 +1342,7 @@
         pending: 'Pendientes',
         users: 'Usuarios',
         projects: 'Proyectos',
+        funding: 'Financiación',
         providers: 'Proveedores',
         activity: 'Actividad',
         payments: 'Pagos recibidos'

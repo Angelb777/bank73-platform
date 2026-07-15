@@ -178,10 +178,13 @@ async function attachProjectByUnitId(req, res, next) {
   try {
     const { id } = req.params;
 
-    const unit = await Unit.findOne({ _id: id, tenantKey: req.tenantKey }).lean();
+    let unit = await Unit.findOne({ _id: id, tenantKey: req.tenantKey }).lean();
+    if (!unit && String(req.user?.role || '').toLowerCase() === 'bank' && ['GET', 'HEAD'].includes(req.method)) {
+      unit = await Unit.findById(id).lean();
+    }
     if (!unit) return res.status(404).json({ error: 'Unidad no encontrada' });
 
-    const proj = await Project.findOne({ _id: unit.projectId, tenantKey: req.tenantKey }).lean();
+    const proj = await Project.findById(unit.projectId).lean();
     if (!proj) return res.status(404).json({ error: 'Proyecto no encontrado' });
 
     req.project = proj;
@@ -268,8 +271,8 @@ router.post(
    ========================================================================= */
 router.get(
   '/',
-  attachProjectByProjectId,
   requireProjectAccess(),
+  attachProjectByProjectId,
   async (req, res) => {
     try {
       const { projectId, estado, manzana, q } = req.query;

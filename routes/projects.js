@@ -12,6 +12,8 @@ const Venta             = require('../models/Venta');
 const Unit              = require('../models/Unit');
 const User              = require('../models/User');
 const ProjectFinance    = require('../models/ProjectFinance');
+const ProjectFunding    = require('../models/ProjectFunding');
+const { calculateFundingScore } = require('../services/fundingScoring');
 const audit             = require('../utils/audit');
 const { normalizeProjectCurrency, parsePanamaNumber, formatProjectMoney, currencySymbol } = require('../utils/currency');
 
@@ -163,7 +165,8 @@ function sanitizeLegalData(raw = {}) {
     })),
     interimBank: String(raw.interimBank || raw.bancoInterino || '').trim(),
     trustApplies: !!raw.trustApplies,
-    trustName: raw.trustApplies ? String(raw.trustName || raw.fideicomiso || '').trim() : ''
+    trustName: raw.trustApplies ? String(raw.trustName || raw.fideicomiso || '').trim() : '',
+    assessment: Object.fromEntries(['landOwned','purchaseOptionOrPromise','titleVerified','relevantEncumbrances','zoningApproved','licensesRequested','licensesApproved','legalOpinionAttached'].map(key => [key, raw.assessment?.[key] == null ? null : raw.assessment[key] === true]))
   };
 }
 
@@ -171,7 +174,19 @@ function sanitizeTechnicalData(raw = {}) {
   return {
     phasesCount: Math.max(0, Math.round(parsePanamaNumber(raw.phasesCount ?? raw.cantidadFases) || 0)),
     totalUnits: Math.max(0, Math.round(parsePanamaNumber(raw.totalUnits ?? raw.cantidadTotalUnidades) || 0)),
-    notes: String(raw.notes || raw.observations || '').trim()
+    notes: String(raw.notes || raw.observations || '').trim(),
+    assessment: Object.fromEntries(['conceptualProject','preliminaryDesign','approvedPlans','executiveProject','constructionBudget','contractorDefined','technicalOpinionAttached'].map(key => [key, raw.assessment?.[key] == null ? null : raw.assessment[key] === true]))
+  };
+}
+
+function sanitizeCoverImage(raw = {}) {
+  const path = String(raw.path || '');
+  const match = path.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+  if (!match || path.length > 7 * 1024 * 1024) return undefined;
+  return {
+    path,
+    originalname: String(raw.originalname || '').trim().slice(0, 240),
+    mimetype: match[1]
   };
 }
 
@@ -336,7 +351,14 @@ function sanitizePhaseFinancialConditions(raw = {}) {
 function sanitizePhaseFinancingLines(raw = []) {
   return (Array.isArray(raw) ? raw : []).slice(0, 50).map(item => ({
     name: String(item?.name || item?.facility || item?.facilityName || '').trim(),
+    financierTenantKey: String(item?.financierTenantKey || '').trim(),
+    financierName: String(item?.financierName || item?.bankName || '').trim(),
+    financierType: String(item?.financierType || 'bank').trim(),
+    concept: String(item?.concept || item?.concepto || '').trim(),
     approvedAmount: parsePanamaNumber(item?.approvedAmount ?? item?.amount ?? item?.montoAprobado) || 0,
+    disbursedAmount: parsePanamaNumber(item?.disbursedAmount ?? item?.importeDesembolsado) || 0,
+    amortizedAmount: parsePanamaNumber(item?.amortizedAmount ?? item?.importeAmortizado) || 0,
+    outstandingBalance: parsePanamaNumber(item?.outstandingBalance ?? item?.saldoPendiente) || 0,
     interestRate: String(item?.interestRate || item?.rate || '').trim(),
     term: String(item?.term || item?.plazo || '').trim(),
     paymentMethod: String(item?.paymentMethod || item?.formaPago || '').trim(),
@@ -353,6 +375,8 @@ function sanitizeFinancePhases(raw = [], phasesCount = 0) {
     const item = source[idx] || {};
     return {
       name: String(item.name || item.title || `Fase ${idx + 1}`).trim(),
+      financierBanks: [...new Set((Array.isArray(item.financierBanks) ? item.financierBanks : [])
+        .map(value => String(value || '').trim()).filter(Boolean))].slice(0, 20),
       startDate: item.startDate || null,
       endDate: item.endDate || null,
       planUses: sanitizeLineItems(item.planUses || item.uses || item.usos),
@@ -496,8 +520,8 @@ function sanitizeInitialChecklistKeys(raw = []) {
     .slice(0, 500));
 }
 
-async function applyInitialChecklists({ req, projectId, completedKeys }) {
-  if (!completedKeys?.size) return 0;
+async function applyInitialChecklists({ req, projectId, completedKeys, requestedKeys = completedKeys }) {
+  if (!requestedKeys?.size) return {};
   const col = mongoose.connection.db.collection('processTemplates');
   const tpl = await col.findOne({ active: true });
   if (!tpl?.steps?.length) return 0;
@@ -563,7 +587,11 @@ async function applyInitialChecklists({ req, projectId, completedKeys }) {
       }
     );
   }
-  return completedKeys.size;
+  const requested = await ProjectChecklist.find(
+    { projectId: projectIdObj, ...checklistTenantQuery, templateKey: { $in: Array.from(requestedKeys) } },
+    { templateKey: 1 }
+  ).lean();
+  return Object.fromEntries(requested.filter(item => item.templateKey).map(item => [item.templateKey, String(item._id)]));
 }
 
 async function applyInitialPermits({ tenantKey, projectId, initialPermits = {} }) {
@@ -752,6 +780,7 @@ async function syncInitialFinanceStructure({ tenantKey, projectId, phases = [], 
     const dates = defaultPhaseDates(idx);
     const payload = {
       name,
+      financierBanks: phase.financierBanks || [],
       startDate: phase.startDate || dates.startDate,
       endDate: phase.endDate || dates.endDate,
       planUses: phase.planUses || [],
@@ -767,6 +796,7 @@ async function syncInitialFinanceStructure({ tenantKey, projectId, phases = [], 
         existing.endDate = payload.endDate;
         existing.planUses = payload.planUses;
         existing.planSources = payload.planSources;
+        existing.financierBanks = payload.financierBanks;
         existing.financialConditions = payload.financialConditions;
         existing.financingLines = payload.financingLines;
       }
@@ -1319,6 +1349,8 @@ router.get('/portfolio', async (req, res) => {
         _id: p._id,
         name: p.name,
         description: p.description,
+        location: p.location || '',
+        coverImage: p.coverImage || null,
         projectType: p.projectType || '',
         tipoProyecto: p.projectType || '',
         currency: p.currency || 'PAB',
@@ -1368,14 +1400,47 @@ router.get('/assignees', requireRole('admin','bank'), async (req, res) => {
 router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
   try {
     const tenantKey = req.tenantKey;
+    const creatorRole = String(req.user?.role || '').toLowerCase();
+    if (creatorRole === 'promoter') {
+      const creator = await User.findOne({ _id: req.user.userId, tenantKey }).select('promoterProfile').lean();
+      if (!creator) return res.status(404).json({ error: 'Usuario promotor no encontrado' });
+      const completion = User.promoterProfileCompletion(creator.promoterProfile || {});
+      if (!completion.sufficient) {
+        return res.status(403).json({
+          error: 'Debes completar tu perfil de promotor antes de crear proyectos',
+          code: 'promoter_profile_incomplete',
+          promoterProfileCompletion: completion
+        });
+      }
+    }
     const body = { ...req.body, tenantKey };
     const initialChecklistKeys = sanitizeInitialChecklistKeys(body.initialChecklistCompletedKeys || body.initialChecklistsCompleted || []);
+    const initialChecklistDocumentKeys = sanitizeInitialChecklistKeys(body.initialChecklistDocumentKeys || []);
+    const initialChecklistRequestedKeys = new Set([...initialChecklistKeys, ...initialChecklistDocumentKeys]);
     const initialPermits = body.initialPermits || {};
+    const fundingRequestedAmount = Math.max(0, Number(body.fundingRequestedAmount) || 0);
+    const fundingSecuredAmount = Math.max(0, Number(body.fundingSecuredAmount) || 0);
+    const fundingDeadline = body.fundingDeadline ? new Date(`${String(body.fundingDeadline).slice(0, 10)}T23:59:59.999Z`) : null;
     delete body.initialChecklistCompletedKeys;
     delete body.initialChecklistsCompleted;
+    delete body.initialChecklistDocumentKeys;
     delete body.initialPermits;
+    delete body.fundingRequestedAmount;
+    delete body.fundingSecuredAmount;
+    delete body.fundingDeadline;
 
     body.publishStatus = 'pending';
+    body.seeksFinancing = !!body.seeksFinancing;
+    if (body.seeksFinancing && !fundingRequestedAmount) {
+      return res.status(400).json({ error: 'El monto exacto solicitado es obligatorio y debe ser mayor que cero' });
+    }
+    if (body.seeksFinancing && fundingSecuredAmount > fundingRequestedAmount) {
+      return res.status(400).json({ error: 'Los fondos asegurados no pueden superar el monto solicitado' });
+    }
+    if (body.seeksFinancing && (!fundingDeadline || !Number.isFinite(fundingDeadline.getTime()))) {
+      return res.status(400).json({ error: 'La fecha límite para completar la financiación es obligatoria' });
+    }
+    body.coverImage = sanitizeCoverImage(body.coverImage || {});
     body.createdBy = toObjectId(req.user.userId);
     body.teamSuggestion = sanitizeTeamSuggestion(body.teamSuggestion || {});
     body.description = String(firstDefined(body.description, body.descripcion, body.desc) || '').trim();
@@ -1394,10 +1459,19 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
     if (!body.technicalData.totalUnits && body.housingModels.length) {
       body.technicalData.totalUnits = body.housingModels.reduce((sum, item) => sum + Number(item.unitsCount || 0), 0);
     }
+    if (body.technicalData.totalUnits > 0 && body.housingModels.length) {
+      const modelUnitsTotal = body.housingModels.reduce((sum, item) => sum + Number(item.unitsCount || 0), 0);
+      if (Math.abs(modelUnitsTotal - body.technicalData.totalUnits) > 0.001) {
+        return res.status(400).json({ error: 'La suma de unidades de los modelos debe coincidir con la cantidad total de unidades' });
+      }
+    }
     if (body.technicalData.totalUnits) body.unitsTotal = body.technicalData.totalUnits;
     body.financialConditions = sanitizeFinancialConditions(body.financialConditions || {});
     body.financePhases = sanitizeFinancePhases(body.financePhases || body.phases || [], body.technicalData.phasesCount || 0);
     body.financialConditions = deriveFinancialConditionsFromPhases(body.financialConditions, body.financePhases);
+    if (body.seeksFinancing && fundingRequestedAmount > Number(body.financialConditions.projectTotal || 0)) {
+      return res.status(400).json({ error: 'El monto solicitado no puede superar el coste total' });
+    }
     body.financePhases = applyAutomaticPhaseSources(body.financePhases, body.financialConditions);
     body.financialConditions = deriveFinancialConditionsFromPhases(body.financialConditions, body.financePhases);
     assertFinancePhasesBalanced(body.financePhases, body.financialConditions);
@@ -1406,7 +1480,6 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
 
     // Crear proyecto ya no requiere exponer/asignar usuarios en el alta.
     // Si llegan asignaciones legacy, se validan contra el tenant, pero son opcionales.
-    const creatorRole = String(req.user?.role || '').toLowerCase();
     const isPromoterCreator = creatorRole === 'promoter';
     const isBankCreator = creatorRole === 'bank';
     const promotersRaw   = Array.isArray(body.assignedPromoters)   ? body.assignedPromoters   : [];
@@ -1444,7 +1517,7 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
     }
 
     const p = await Project.create(body);
-    await applyInitialChecklists({ req, projectId: p._id, completedKeys: initialChecklistKeys });
+    const initialChecklistIds = await applyInitialChecklists({ req, projectId: p._id, completedKeys: initialChecklistKeys, requestedKeys: initialChecklistRequestedKeys });
     await applyInitialPermits({ tenantKey, projectId: p._id, initialPermits });
     await syncInitialFinanceStructure({
       tenantKey,
@@ -1462,6 +1535,14 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
       p.unitsTotal = createdUnits.length;
       p.unitsSold = unitsSold;
     }
+    if (p.seeksFinancing) {
+      const primaryPromoter = p.assignedPromoters?.[0]
+        ? await User.findById(p.assignedPromoters[0]).select('promoterProfile promoterCategory').lean()
+        : null;
+      const permits = await ProjectPermit.find({ projectId: p._id, tenantKey }).lean();
+      const scoring = calculateFundingScore({ project: p.toObject(), promoter: primaryPromoter || {}, permits, units: createdUnits, sales: [], requestedAmount: fundingRequestedAmount });
+      await ProjectFunding.create({ tenantKey, project: p._id, requestedAmount: fundingRequestedAmount, securedRequestAmount: fundingSecuredAmount, fundingDeadline, automaticScore: scoring.automaticScore, scoreVersion: scoring.scoreVersion, scoreBreakdown: scoring.scoreBreakdown });
+    }
     await audit(req, 'project.created', {
       targetType: 'project',
       targetId: p._id,
@@ -1470,7 +1551,7 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
       message: 'Proyecto creado',
       metadata: { name: p.name, publishStatus: p.publishStatus, createdUnits: createdUnits.length, phases: body.financePhases.length }
     });
-    res.status(201).json(p);
+    res.status(201).json({ ...p.toObject(), initialChecklistIds });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
   }
@@ -1499,6 +1580,72 @@ router.get('/:id', requireProjectAccess(), async (req, res) => {
   } catch (e) {
     console.error('[GET /projects/:id] error:', e);
     res.status(500).json({ error: 'Error obteniendo el proyecto' });
+  }
+});
+
+router.post('/:id/expiry-alerts/resolve', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const key = String(req.body?.key || '').trim();
+    const kind = String(req.body?.kind || '').trim();
+    const sourceId = String(req.body?.sourceId || '').trim();
+    const due = String(req.body?.due || '').trim();
+
+    if (!['cpp', 'credit_line'].includes(kind)) {
+      return res.status(400).json({ error: 'Tipo de alerta no válido' });
+    }
+    if (!sourceId || sourceId.length > 80 || !/^\d{4}-\d{2}-\d{2}$/.test(due)) {
+      return res.status(400).json({ error: 'Datos de vencimiento no válidos' });
+    }
+    const [dueYear, dueMonth, dueDate] = due.split('-').map(Number);
+    const dueDay = Date.UTC(dueYear, dueMonth - 1, dueDate);
+    const now = new Date();
+    const todayDay = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    if (!Number.isFinite(dueDay) || dueDay >= todayDay) {
+      return res.status(400).json({ error: 'Solo se pueden resolver vencimientos ya superados' });
+    }
+
+    const expectedKey = `${kind}:${sourceId}:${due}`;
+    if (key !== expectedKey || key.length > 180) {
+      return res.status(400).json({ error: 'Clave de alerta no válida' });
+    }
+
+    const projectTenantKey = req.project?.tenantKey || req.tenantKey;
+    const project = await Project.findOne({ _id: id, tenantKey: projectTenantKey });
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+    const existing = (project.expiryAlertResolutions || []).find(item => item.key === key);
+    if (existing) return res.json({ ok: true, resolution: existing });
+
+    const rawUserId = req.user?.userId || req.user?._id || req.user?.id;
+    const resolvedBy = mongoose.isValidObjectId(rawUserId) ? rawUserId : null;
+    const resolution = {
+      key,
+      kind,
+      sourceId,
+      due,
+      resolvedAt: new Date(),
+      resolvedBy,
+      resolvedByLabel: String(req.user?.name || req.user?.email || '').trim()
+    };
+
+    project.expiryAlertResolutions.push(resolution);
+    await project.save();
+    const savedResolution = project.expiryAlertResolutions[project.expiryAlertResolutions.length - 1];
+
+    await audit(req, 'project.expiry_alert.resolved', {
+      targetType: 'project',
+      targetId: project._id,
+      projectId: project._id,
+      status: 'info',
+      message: 'Vencimiento financiero marcado como resuelto',
+      metadata: { key, kind, sourceId, due }
+    });
+
+    res.json({ ok: true, resolution: savedResolution });
+  } catch (e) {
+    console.error('[POST /projects/:id/expiry-alerts/resolve] error:', e);
+    res.status(500).json({ error: 'No se pudo resolver la alerta de vencimiento' });
   }
 });
 
@@ -1585,6 +1732,14 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
       payload.technicalData = sanitizeTechnicalData(req.body.technicalData);
       if (payload.technicalData.totalUnits) payload.unitsTotal = payload.technicalData.totalUnits;
     }
+    if (req.body.seeksFinancing !== undefined) payload.seeksFinancing = !!req.body.seeksFinancing;
+    if (req.body.coverImage === null) {
+      payload.coverImage = { path: '', originalname: '', mimetype: '' };
+    } else if (req.body.coverImage && typeof req.body.coverImage === 'object') {
+      const coverImage = sanitizeCoverImage(req.body.coverImage);
+      if (!coverImage) return res.status(400).json({ error: 'La portada debe ser JPG, PNG o WebP y no superar 5 MB' });
+      payload.coverImage = coverImage;
+    }
     if (Array.isArray(req.body.housingModels)) {
       payload.housingModels = sanitizeHousingModels(req.body.housingModels);
       validateHousingModelStatuses(payload.housingModels);
@@ -1636,17 +1791,11 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
 
       // KPIs numéricos: convertimos y validamos
       const asNum = parsePanamaNumber;
-      const kpis = {
-        loanApproved:   asNum(req.body.loanApproved),
-        loanDisbursed:  asNum(req.body.loanDisbursed),
-        loanBalance:    asNum(req.body.loanBalance),
-        budgetApproved: asNum(req.body.budgetApproved),
-        budgetSpent:    asNum(req.body.budgetSpent),
-        unitsTotal:     asNum(req.body.unitsTotal),
-        unitsSold:      asNum(req.body.unitsSold),
-      };
-      for (const [k, v] of Object.entries(kpis)) {
-        if (typeof v === 'number' && !Number.isNaN(v)) payload[k] = v;
+      const kpiKeys = ['loanApproved', 'loanDisbursed', 'loanBalance', 'budgetApproved', 'budgetSpent', 'unitsTotal', 'unitsSold'];
+      for (const key of kpiKeys) {
+        if (req.body[key] === undefined) continue;
+        const value = asNum(req.body[key]);
+        if (typeof value === 'number' && !Number.isNaN(value)) payload[key] = value;
       }
     } else {
   // === BANK ===
@@ -2815,9 +2964,10 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
       : 0;
 
+    // "Valor total" es el precio lista acumulado de todas las unidades.
+    // Debe coincidir con el total mostrado en la pestaña Comercial.
     const inventoryValue = reportingUnits
-      .filter(u => ['disponible', 'inventario'].includes(getUnitStatus(u)))
-      .reduce((acc, u) => acc + toNum(u.precioLista), 0);
+      .reduce((acc, u) => acc + toNum(u.precioLista ?? u.price), 0);
 
     const absorption3m = (() => {
       const cutoff = now - 90 * 24 * 3600 * 1000;

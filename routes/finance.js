@@ -184,6 +184,10 @@ function normalizeLoanLine(raw = {}, idx = 0) {
     phaseId: mongoose.isValidObjectId(raw.phaseId) ? raw.phaseId : null,
     phaseName: String(raw.phaseName || '').trim(),
     name: String(raw.name || `Linea ${idx + 1}`).trim(),
+    financierTenantKey: String(raw.financierTenantKey || '').trim(),
+    financierName: String(raw.financierName || raw.bankName || '').trim(),
+    financierType: String(raw.financierType || 'bank').trim(),
+    concept: String(raw.concept || '').trim(),
     entries,
     notes: String(raw.notes || '').trim(),
   };
@@ -222,7 +226,14 @@ function normalizePhaseFinancingLines(raw = []) {
   return (Array.isArray(raw) ? raw : []).slice(0, 50).map(item => ({
     _id: mongoose.isValidObjectId(item?._id) ? item._id : undefined,
     name: String(item?.name || item?.facility || '').trim(),
+    financierTenantKey: String(item?.financierTenantKey || '').trim(),
+    financierName: String(item?.financierName || item?.bankName || '').trim(),
+    financierType: String(item?.financierType || 'bank').trim(),
+    concept: String(item?.concept || '').trim(),
     approvedAmount: toNum(item?.approvedAmount ?? item?.amount),
+    disbursedAmount: toNum(item?.disbursedAmount),
+    amortizedAmount: toNum(item?.amortizedAmount),
+    outstandingBalance: toNum(item?.outstandingBalance),
     interestRate: String(item?.interestRate || '').trim(),
     term: String(item?.term || '').trim(),
     paymentMethod: String(item?.paymentMethod || '').trim(),
@@ -459,6 +470,10 @@ function buildFinanceControlAlerts(control, commercialUnits = []) {
   }
 
   return alerts;
+}
+
+function normalizeFinancierBanks(raw = []) {
+  return [...new Set((Array.isArray(raw) ? raw : []).map(value => String(value || '').trim()).filter(Boolean))].slice(0, 20);
 }
 
 function isFinanceSoldLikeStatus(status) {
@@ -698,6 +713,7 @@ router.post('/projects/:projectId/finance/phases', async (req, res) => {
       preventas = 0,
       alertDaysBefore = 15,
       financialConditions = {},
+      financierBanks = [],
       financingLines = []
     } = req.body || {};
 
@@ -714,6 +730,7 @@ router.post('/projects/:projectId/finance/phases', async (req, res) => {
       actualStartDate, actualEndDate, isCompleted, completedAt,
       uses, sources,
       planUses, planSources,
+      financierBanks: normalizeFinancierBanks(financierBanks),
       financialConditions: normalizePhaseFinancialConditions(financialConditions),
       financingLines: normalizePhaseFinancingLines(financingLines),
       disbExpected, disbActual, disbActualAt: disbActualAt || (toNum(disbActual) > 0 ? new Date() : null), disbRequested, disbRequestedAt,
@@ -745,7 +762,7 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
       'actualStartDate','actualEndDate','isCompleted','completedAt',
       'uses','sources',
       'planUses','planSources',
-      'financialConditions','financingLines',
+      'financialConditions','financierBanks','financingLines',
       'disbExpected','disbActual','disbActualAt','disbRequested','disbRequestedAt',
       'interesesDevengados','aportesPropios','preventas',
       'alertDaysBefore','alerted'
@@ -753,6 +770,7 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
     for (const f of fields) {
       if (!(f in req.body)) continue;
       if (f === 'financialConditions') ph[f] = normalizePhaseFinancialConditions(req.body[f] || {});
+      else if (f === 'financierBanks') ph[f] = normalizeFinancierBanks(req.body[f] || []);
       else if (f === 'financingLines') ph[f] = normalizePhaseFinancingLines(req.body[f] || []);
       else ph[f] = req.body[f];
     }

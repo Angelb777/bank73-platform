@@ -36,7 +36,7 @@ async function attachProjectFromFolder(req, res, next) {
   }
 }
 
-router.get('/', attachProjectFromRequest, requireProjectAccess(), async (req, res) => {
+router.get('/', requireProjectAccess(), attachProjectFromRequest, async (req, res) => {
   const { projectId } = req.query;
 
   const filter = { projectId };

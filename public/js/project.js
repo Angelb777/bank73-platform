@@ -27,6 +27,10 @@
   const projectTypeText = document.getElementById('projectTypeText');
   const startBtn    = document.getElementById('startBtn');
   const projectAlertsBtn = document.getElementById('projectAlertsBtn');
+  const projectCoverBtn = document.getElementById('projectCoverBtn');
+  const projectCoverPreview = document.getElementById('projectCoverPreview');
+  const projectCoverFallback = document.getElementById('projectCoverFallback');
+  const projectCoverFile = document.getElementById('projectCoverFile');
 
   const disbRow     = document.getElementById('disbRow');
   const disbBtn     = document.getElementById('disbBtn');
@@ -88,6 +92,7 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
   };
   let currentProjectCurrency = 'PAB';
   let isProjectSettingsSaving = false;
+  let isProjectCoverSaving = false;
 
   function normalizeProjectCurrency(value) {
     const code = String(value || '').trim().toUpperCase();
@@ -2877,8 +2882,6 @@ async function renderSummaryUI(payload) {
     kpis.units.sold = sold;
     kpis.units.available = Math.max(0, total - sold);
 
-    kpis.inventoryValue = (unitsFix || []).reduce((sum, unit) => sum + Number(unit.precioLista || unit.price || 0), 0);
-
     const cppActive = (ventasFix || []).filter(isSummaryActiveCpp).length;
 
     kpis.cpp = kpis.cpp || {};
@@ -3072,7 +3075,6 @@ if (!isPeriodView) try {
   document.getElementById('summaryLegalDataBox')?.remove();
   const legalRows = [
     ['Promotor/deudor como sociedad legal', legalData.promoterLegalName || project.legalCompanyName || project.sociedad],
-    ['Banco interino', legalData.interimBank],
     ['Fideicomiso', legalData.trustApplies ? 'Aplica' : 'No aplica'],
     ['Nombre del fideicomiso', legalData.trustName],
     ['Representantes legales', (legalData.legalRepresentatives || legalData.representantesLegales || []).map(x => x.name || x.nombre || x).filter(Boolean).join(', ')]
@@ -4326,7 +4328,7 @@ async function refreshTopHeaderKpis() {
     unitsSold:  (project.unitsSold  ?? headerKpis.unitsSold  ?? 0),
   };
 
-  renderHeaderKpis(project, headerKpisFixed);
+  renderHeaderKpis(project, headerKpisFixed, payload.kpis || {});
 
   const pname = document.getElementById('pname');
   if (pname && project.name) pname.textContent = project.name;
@@ -4573,6 +4575,42 @@ function semaphoreForRole(roleKey) {
     renderTopHeaderKpis(project);
   }
 
+  function renderProjectCover(project = state.project || {}) {
+    if (!projectCoverBtn) return;
+    const canEditCover = myRole === 'admin';
+    projectCoverBtn.style.display = canEditCover ? '' : 'none';
+    if (!canEditCover) return;
+
+    const path = String(project?.coverImage?.path || '');
+    const hasCover = !!path;
+    if (projectCoverPreview) {
+      projectCoverPreview.src = hasCover ? path : '';
+      projectCoverPreview.style.display = hasCover ? '' : 'none';
+    }
+    if (projectCoverFallback) projectCoverFallback.style.display = hasCover ? 'none' : '';
+  }
+
+  function setProjectCoverBusy(busy) {
+    isProjectCoverSaving = busy;
+    if (projectCoverBtn) projectCoverBtn.disabled = busy;
+    if (projectCoverFile) projectCoverFile.disabled = busy;
+  }
+
+  async function saveProjectCover(coverImage) {
+    if (isProjectCoverSaving || myRole !== 'admin') return;
+    setProjectCoverBusy(true);
+    try {
+      await API.put(`/api/projects/${id}`, { coverImage });
+      await loadProject();
+      if (modalBackdrop) modalBackdrop.style.display = 'none';
+    } catch (error) {
+      alert(error.message || 'No se pudo actualizar la portada');
+    } finally {
+      setProjectCoverBusy(false);
+      if (projectCoverFile) projectCoverFile.value = '';
+    }
+  }
+
   // ====== Carga de datos ======
   async function loadProject() {
     const p = await API.get('/api/projects/' + id);
@@ -4587,6 +4625,7 @@ function semaphoreForRole(roleKey) {
     if (pdesc2) pdesc2.textContent = p.description || '';
     if (statusSel) statusSel.value = (p.status || 'EN_CURSO');
     if (projectTypeText) projectTypeText.textContent = `Tipo de proyecto: ${p.projectType || p.tipoProyecto || 'No definido'}`;
+    renderProjectCover(p);
 
     renderProjectHeaderKpis(p);
       // ROLE-SEP: control de publicación y UI para commercial
@@ -4605,6 +4644,49 @@ function semaphoreForRole(roleKey) {
     if (reviewBanner) reviewBanner.style.display = 'none';
   }
   }
+
+  function openProjectCoverManager() {
+    const path = String(state.project?.coverImage?.path || '');
+    if (!path) return projectCoverFile?.click();
+    openModal('Portada', `
+      <div style="display:grid;gap:16px;justify-items:center;">
+        <img src="${escapeHtml(path)}" alt="Portada actual" style="width:min(520px,100%);max-height:320px;object-fit:cover;border-radius:12px;">
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+          <button id="projectCoverChange" class="btn" type="button">Cambiar portada</button>
+          <button id="projectCoverDelete" class="btn btn-ghost" type="button">Eliminar portada</button>
+        </div>
+      </div>`, 'Cerrar', () => { if (modalBackdrop) modalBackdrop.style.display = 'none'; });
+    document.getElementById('projectCoverChange')?.addEventListener('click', () => projectCoverFile?.click());
+    document.getElementById('projectCoverDelete')?.addEventListener('click', async () => {
+      if (isProjectCoverSaving || !confirm('¿Eliminar la imagen de portada del proyecto?')) return;
+      await saveProjectCover(null);
+    });
+  }
+
+  projectCoverBtn?.addEventListener('click', () => {
+    if (!isProjectCoverSaving) openProjectCoverManager();
+  });
+
+  projectCoverFile?.addEventListener('change', async () => {
+    const file = projectCoverFile.files?.[0];
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      projectCoverFile.value = '';
+      return alert('La portada debe ser JPG, PNG o WebP y no superar 5 MB.');
+    }
+    try {
+      const path = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('No se pudo leer la imagen'));
+        reader.readAsDataURL(file);
+      });
+      await saveProjectCover({ path, originalname: file.name, mimetype: file.type });
+    } catch (error) {
+      projectCoverFile.value = '';
+      alert(error.message || 'No se pudo leer la imagen');
+    }
+  });
 
   async function saveProjectSettingsAuto() {
     if (myRole === 'bank') return;
@@ -4860,11 +4942,13 @@ return {
   const delayed = (cl.status!=='COMPLETADO' && cl.dueDate && new Date(cl.dueDate).getTime() < Date.now());
   const docs = state.docsByChecklist[cl._id] || [];
   const statusText = delayed ? 'RETRASADO' : (cl.status || 'PENDIENTE');
+  const normalizedTitle = String(cl.title || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const isPriorityFinancialDoc = /(dictamen|informe|estudio)/.test(normalizedTitle) && /(jurid|urban|tecnic|comercial|financier)/.test(normalizedTitle);
 
   return `
-    <div class="cl-card ${disabled ? 'locked' : ''}" data-id="${cl._id}" data-phase="${cl.phase}" style="--role-color:${rm.color}; --role-pale:${rm.pale}; ${disabled ? 'opacity:0.6;' : ''}">
+    <div class="cl-card ${disabled ? 'locked' : ''} ${isPriorityFinancialDoc ? 'is-priority-financial-doc' : ''}" data-id="${cl._id}" data-phase="${cl.phase}" style="--role-color:${rm.color}; --role-pale:${rm.pale}; ${disabled ? 'opacity:0.6;' : ''}">
       <div class="cl-head">
-        <div class="cl-title">${cl.title}</div>
+        <div class="cl-title">${cl.title}${isPriorityFinancialDoc ? '<span class="priority-financial-doc-badge">Prioritario para evaluación financiera</span>' : ''}</div>
         <div class="row">
           <span class="role-badge">${rm.label}</span>
           <span class="status-badge">${statusText}</span>
@@ -5527,8 +5611,9 @@ function financePhaseConditionsHtml(ph = {}) {
   const c = ph.financialConditions || {};
   const hasConditions = Object.values(c || {}).some(value => String(value || '').trim());
   const lines = Array.isArray(ph.financingLines) ? ph.financingLines : [];
+  const phaseBanks = Array.isArray(ph.financierBanks) && ph.financierBanks.length ? ph.financierBanks : (c.interimBank ? [c.interimBank] : []);
   const letterRows = [
-    ['Banco/interino', c.interimBank],
+    ['Entidades financiadoras', phaseBanks.join(', ') || 'Por definir'],
     ['Fecha de carta', financeDateInput(c.letterDate)],
     ['Referencia', c.letterReference]
   ].map(([label, value]) => `<div class="finance-condition-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || '---')}</strong></div>`).join('');
@@ -5539,6 +5624,7 @@ function financePhaseConditionsHtml(ph = {}) {
   const lineRows = lines.map((line, idx) => `
     <tr>
       <td>${escapeHtml(line.name || `Linea ${idx + 1}`)}</td>
+      <td>${escapeHtml(line.financierName || 'Por definir')}</td>
       <td class="right">${financeMoney(line.approvedAmount)}</td>
       <td>${escapeHtml(line.interestRate || '---')}</td>
       <td>${escapeHtml(line.term || '---')}</td>
@@ -5553,8 +5639,8 @@ function financePhaseConditionsHtml(ph = {}) {
       <div class="finance-conditions-subgrid">${letterRows}${conditionRows || (!hasConditions ? '<div class="small muted">Sin condiciones de fase registradas.</div>' : '')}</div>
       <div style="overflow:auto;margin:10px;">
         <table class="table">
-          <thead><tr><th>Nombre/facilidad</th><th class="right">Monto aprobado</th><th>Tasa</th><th>Plazo</th><th>Forma de pago</th><th>Forma de desembolso</th><th>Comision</th><th>Observaciones</th></tr></thead>
-          <tbody>${lineRows || '<tr><td colspan="8" class="muted">Sin lineas de financiacion aprobadas para esta fase.</td></tr>'}</tbody>
+          <thead><tr><th>Nombre/facilidad</th><th>Entidad financiadora</th><th class="right">Monto aprobado</th><th>Tasa</th><th>Plazo</th><th>Forma de pago</th><th>Forma de desembolso</th><th>Comision</th><th>Observaciones</th></tr></thead>
+          <tbody>${lineRows || '<tr><td colspan="9" class="muted">Sin lineas de financiacion aprobadas para esta fase.</td></tr>'}</tbody>
         </table>
       </div>
     </details>`;
@@ -5748,6 +5834,10 @@ function collectFinanceLoanLines() {
     phaseId: card.dataset.phaseId || FINANCE_SELECTED_PHASE_ID || null,
     phaseName: card.dataset.phaseName || FINANCE_SELECTED_PHASE_NAME || '',
     name: card.querySelector('[data-line-field="name"]')?.value || `Linea ${idx + 1}`,
+    financierName: card.querySelector('[data-line-field="financierName"]')?.value || '',
+    financierTenantKey: card.querySelector('[data-line-field="financierTenantKey"]')?.value || '',
+    financierType: card.querySelector('[data-line-field="financierType"]')?.value || 'bank',
+    concept: card.querySelector('[data-line-field="concept"]')?.value || '',
     notes: card.querySelector('[data-line-field="notes"]')?.value || '',
     entries: Array.from(card.querySelectorAll('[data-entry-row]')).map(row => ({
       _id: isMongoIdLike(row.dataset.entryId) ? row.dataset.entryId : undefined,
@@ -6232,6 +6322,10 @@ function renderFinanceLoanLines(lines = []) {
           </div>
         </div>
         <div class="finance-loan-line-notes">
+          <input data-line-field="financierName" value="${escapeHtml(line.financierName || '')}" placeholder="Banco o entidad financiadora">
+          <input data-line-field="financierTenantKey" value="${escapeHtml(line.financierTenantKey || '')}" placeholder="Tenant de la entidad (opcional)">
+          <select data-line-field="financierType"><option value="bank" ${line.financierType !== 'other' ? 'selected' : ''}>Banco</option><option value="other" ${line.financierType === 'other' ? 'selected' : ''}>Otra entidad</option></select>
+          <input data-line-field="concept" value="${escapeHtml(line.concept || '')}" placeholder="Concepto financiado">
           <input data-line-field="notes" value="${escapeHtml(line.notes || '')}" placeholder="Notas de la línea">
         </div>
         <div class="finance-table-wrap ${isCollapsed ? 'is-collapsed' : ''}" data-finance-entries-wrap>
@@ -7731,7 +7825,6 @@ const hasRealData =
 // PLAN usos/fuentes + REAL usos/fuentes + desembolso esperado/real
 // (SIMPLIFICADO: quitamos Intereses/Aportes/Preventas para evitar duplicidad)
 const FINANCE_PHASE_CONDITION_FORM_FIELDS = [
-  ['interimBank','Banco/interino','input','Banco General / Banistmo'],
   ['letterDate','Fecha de carta','date',''],
   ['letterReference','Numero o referencia de carta','input','Carta term sheet BG-2026-015'],
   ['phaseTotal','Total de la fase','number','10000000'],
@@ -7768,13 +7861,21 @@ function phaseConditionsFormHtml(conditions = {}) {
   }).join('')}</div>`;
 }
 
-function phaseFinancingLinesFormHtml(lines = []) {
+function phaseFinancierOptionsHtml(banks = [], line = {}) {
+  const current = String(line.financierName || '').trim();
+  const nonBank = line.financierType === 'other';
+  const historical = current && !banks.includes(current) && !nonBank;
+  return `<option value=""${!current ? ' selected' : ''}>Por definir</option>${banks.map(bank => `<option value="${escapeHtml(bank)}"${current === bank && !nonBank ? ' selected' : ''}>${escapeHtml(bank)}</option>`).join('')}<option value="__NON_BANK__"${nonBank ? ' selected' : ''}>Otra fuente no bancaria</option>${historical ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)} (histórico)</option>` : ''}`;
+}
+
+function phaseFinancingLinesFormHtml(lines = [], financierBanks = []) {
   const safeLines = Array.isArray(lines) && lines.length
     ? lines
     : ['Terreno', 'Infraestructura', 'Construccion', 'Costos directos', 'Costos indirectos', 'Otra'].map(name => ({ name }));
   return `<div id="ph-financing-lines">${safeLines.map(line => `
     <div class="finance-facility-form-row" data-phase-financing-line>
       <label><span>Nombre/facilidad</span><input class="input" data-phase-financing="name" value="${escapeHtml(line.name || '')}" placeholder="Terreno"></label>
+      <label><span>Entidad financiadora</span><select class="input" data-phase-financing="financierName">${phaseFinancierOptionsHtml(financierBanks, line)}</select></label>
       <label><span>Monto aprobado</span><input class="input" data-phase-financing="approvedAmount" type="number" step="any" value="${numOr0(line.approvedAmount) || ''}" placeholder="250000"></label>
       <label><span>Tasa de interes</span><input class="input" data-phase-financing="interestRate" value="${escapeHtml(line.interestRate || '')}" placeholder="SOFR + 3.50%"></label>
       <label><span>Plazo</span><input class="input" data-phase-financing="term" value="${escapeHtml(line.term || '')}" placeholder="24 meses"></label>
@@ -7799,6 +7900,8 @@ function collectPhaseFinancialConditionsFromModal() {
 function collectPhaseFinancingLinesFromModal() {
   return Array.from(document.querySelectorAll('[data-phase-financing-line]')).map(row => ({
     name: row.querySelector('[data-phase-financing="name"]')?.value.trim() || '',
+    financierName: row.querySelector('[data-phase-financing="financierName"]')?.value === '__NON_BANK__' ? 'Otra fuente no bancaria' : (row.querySelector('[data-phase-financing="financierName"]')?.value.trim() || ''),
+    financierType: row.querySelector('[data-phase-financing="financierName"]')?.value === '__NON_BANK__' ? 'other' : 'bank',
     approvedAmount: numOr0(row.querySelector('[data-phase-financing="approvedAmount"]')?.value),
     interestRate: row.querySelector('[data-phase-financing="interestRate"]')?.value.trim() || '',
     term: row.querySelector('[data-phase-financing="term"]')?.value.trim() || '',
@@ -7849,6 +7952,9 @@ function openPhaseEditor(ph = null, focus = 'plan') {
     planUses: Array.isArray(ph?.planUses) ? ph.planUses.slice() : [],
     planSources: Array.isArray(ph?.planSources) ? ph.planSources.slice() : [],
     financialConditions: ph?.financialConditions || {},
+    financierBanks: Array.isArray(ph?.financierBanks) && ph.financierBanks.length
+      ? ph.financierBanks.slice()
+      : (ph?.financialConditions?.interimBank ? [ph.financialConditions.interimBank] : []),
     financingLines: Array.isArray(ph?.financingLines) ? ph.financingLines.slice() : [],
 
     uses: Array.isArray(ph?.uses) ? ph.uses.slice() : [],
@@ -7911,10 +8017,13 @@ function openPhaseEditor(ph = null, focus = 'plan') {
     ${tbl('ph-plan-sources', phaseData.planSources)}
 
     <h4 style="margin-top:14px;">Carta y condiciones de la fase</h4>
+    <label>Bancos financiadores de la fase</label>
+    <select id="ph-financier-banks" class="input" multiple size="6"><option value="">Por definir</option>${[...new Set([...(window.BANKS_PANAMA || []), ...phaseData.financierBanks])].map(bank => `<option value="${escapeHtml(bank)}" ${phaseData.financierBanks.includes(bank) ? 'selected' : ''}>${escapeHtml(bank)}</option>`).join('')}</select>
+    <p class="small muted">Esta selección es financiera y no crea tenants ni concede acceso al proyecto.</p>
     ${phaseConditionsFormHtml(phaseData.financialConditions)}
 
     <h4 style="margin-top:14px;">Lineas de financiacion aprobadas</h4>
-    ${phaseFinancingLinesFormHtml(phaseData.financingLines)}
+    ${phaseFinancingLinesFormHtml(phaseData.financingLines, phaseData.financierBanks)}
   `;
 
   const htmlReal = `
@@ -7982,6 +8091,7 @@ function openPhaseEditor(ph = null, focus = 'plan') {
           alertDaysBefore: Number(document.getElementById('ph-alert').value || 15),
           planUses: collect('ph-plan-uses'),
           planSources: collect('ph-plan-sources'),
+          financierBanks: Array.from(document.getElementById('ph-financier-banks')?.selectedOptions || []).map(option => option.value).filter(Boolean),
           financialConditions: collectPhaseFinancialConditionsFromModal(),
           financingLines: collectPhaseFinancingLinesFromModal(),
         };
@@ -8088,6 +8198,7 @@ const payload = {
       document.getElementById('ph-financing-lines')?.insertAdjacentHTML('beforeend', `
         <div class="finance-facility-form-row" data-phase-financing-line>
           <label><span>Nombre/facilidad</span><input class="input" data-phase-financing="name" placeholder="Terreno"></label>
+          <label><span>Entidad financiadora</span><select class="input" data-phase-financing="financierName">${phaseFinancierOptionsHtml(Array.from(document.getElementById('ph-financier-banks')?.selectedOptions || []).map(option => option.value).filter(Boolean))}</select></label>
           <label><span>Monto aprobado</span><input class="input" data-phase-financing="approvedAmount" type="number" step="any" placeholder="250000"></label>
           <label><span>Tasa de interes</span><input class="input" data-phase-financing="interestRate" placeholder="SOFR + 3.50%"></label>
           <label><span>Plazo</span><input class="input" data-phase-financing="term" placeholder="24 meses"></label>
@@ -8102,6 +8213,17 @@ const payload = {
     if (ev.target.closest('[data-remove-phase-financing]')) {
       ev.target.closest('[data-phase-financing-line]')?.remove();
     }
+  });
+  document.getElementById('ph-financier-banks')?.addEventListener('change', event => {
+    const banks = Array.from(event.target.selectedOptions || []).map(option => option.value).filter(Boolean);
+    document.querySelectorAll('[data-phase-financing="financierName"]').forEach(select => {
+      const current = select.value;
+      const allowedCurrent = current === '__NON_BANK__' || banks.includes(current) ? current : '';
+      select.innerHTML = phaseFinancierOptionsHtml(banks, {
+        financierName: allowedCurrent === '__NON_BANK__' ? 'Otra fuente no bancaria' : allowedCurrent,
+        financierType: allowedCurrent === '__NON_BANK__' ? 'other' : 'bank'
+      });
+    });
   });
   modalBody?.querySelectorAll('[data-phase-bank]').forEach(select => {
     if (select.dataset.bankBound) return;
@@ -9113,22 +9235,9 @@ function deselectAllVisible() {
     const q = buscarInput ? buscarInput.value : '';
     const qEnc = encodeURIComponent(q||'');
 
-    // Unidades
-    let units = [];
-    try {
-      units = await apiGet(`/api/units?projectId=${id}&estado=${estado}&q=${qEnc}`);
-    } catch {
-      const legacy = await apiGet(`/api/inventory/${id}`);
-      units = (legacy||[]).map(u => ({
-        _id: u._id,
-        manzana: (u.code||'').split('-')[0] || '',
-        lote: (u.code||'').split('-')[1] || '',
-        modelo: '',
-        m2: 0,
-        precioLista: u.price||0,
-        estado: (String(u.status||'').toLowerCase().includes('reserv')) ? 'reservado' : 'disponible'
-      }));
-    }
+    // Una sola fuente canónica: nunca sustituir datos comerciales por la
+    // proyección legacy de /api/inventory si falla la carga principal.
+    const units = await apiGet(`/api/units?projectId=${id}&estado=${estado}&q=${qEnc}`);
     unitsCache = units;
 
     // Ventas (dato único)
@@ -9150,7 +9259,7 @@ try { await loadCommercialFolders(); } catch(e){ console.warn('folders err', e);
 units.forEach(u => {
   const estado = normalizeUnitEstadoFrontend(u.estado);
 resumen[estado] = (resumen[estado] || 0) + 1;
-  resumen.valor += u.precioLista || 0;
+  resumen.valor += Number(u.precioLista ?? u.price ?? 0);
 });
 
 kpisDiv.innerHTML = [
@@ -9174,13 +9283,16 @@ function daysUntil(dateValue) {
   if (!dateValue) return null;
 
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
   const target = new Date(dateValue);
   if (isNaN(target.getTime())) return null;
-  target.setHours(0, 0, 0, 0);
 
-  return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const dateOnly = String(dateValue).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const todayDay = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const targetDay = dateOnly
+    ? Date.UTC(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : Date.UTC(target.getFullYear(), target.getMonth(), target.getDate());
+
+  return Math.round((targetDay - todayDay) / (1000 * 60 * 60 * 24));
 }
 
 function unitLabel(u) {
@@ -9188,17 +9300,25 @@ function unitLabel(u) {
   return manzanaLote !== '-' ? manzanaLote : (u?.nombre || u?.codigo || u?._id || 'Unidad');
 }
 
-function getCppExpiryAlert(u, venta) {
+function expiryAlertKey(kind, sourceId, due) {
+  return `${kind}:${String(sourceId || '')}:${String(due || '')}`;
+}
+
+function getCppExpiryAlert(u, venta, { includeOverdue = false } = {}) {
   const days = daysUntil(venta?.fechaVencimientoCPP);
 
-  // Alerta desde 60 días antes hasta el día de vencimiento
-  if (days === null || days < 0 || days > 60) return null;
+  // Alerta desde 60 días antes; el popup también conserva las ya vencidas.
+  if (days === null || (!includeOverdue && days < 0) || days > 60) return null;
 
+  const due = String(venta.fechaVencimientoCPP).slice(0, 10);
+  const sourceId = String(venta?._id || u?._id || '');
   return {
     kind: 'cpp',
+    sourceId,
+    alertKey: expiryAlertKey('cpp', sourceId, due),
     unit: unitLabel(u),
     days,
-    due: String(venta.fechaVencimientoCPP).slice(0, 10),
+    due,
     banco: venta?.banco || '',
     cpp: venta?.numCPP || ''
   };
@@ -9215,12 +9335,16 @@ async function getCreditLineExpiryAlerts() {
       return entries.map(entry => {
         const days = daysUntil(entry?.maturityDate);
         if (days === null || days > 120) return null;
+        const due = String(entry.maturityDate).slice(0, 10);
+        const sourceId = String(entry?._id || line?._id || '');
         return {
           kind: 'credit_line',
+          sourceId,
+          alertKey: expiryAlertKey('credit_line', sourceId, due),
           line: line.name || 'Linea de credito',
           loanNumber: entry?.loanNumber || '',
           days,
-          due: String(entry.maturityDate).slice(0, 10),
+          due,
           balance: lineBalance,
         };
       }).filter(Boolean);
@@ -9263,6 +9387,7 @@ function openNoFinanceAlertsPopup() {
 
 function showCppExpiryPopup(alerts = [], { force = false } = {}) {
   latestFinanceExpiryAlerts = Array.isArray(alerts) ? alerts : [];
+  const canResolveExpiryAlerts = ['admin', 'promoter', 'gerencia', 'socios', 'financiero', 'contable', 'commercial'].includes(myRole);
   updateProjectAlertsButton(latestFinanceExpiryAlerts);
   if (!latestFinanceExpiryAlerts.length) {
     if (force) openNoFinanceAlertsPopup();
@@ -9393,6 +9518,11 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
                 ${a.cpp ? ` · CPP: <b>${a.cpp}</b>` : ''}
                 ${a.balance ? ` · Saldo: <b>${financeMoney(a.balance)}</b>` : ''}
               </div>
+              ${canResolveExpiryAlerts && a.days < 0 && a.alertKey && a.sourceId ? `
+                <button type="button" class="btn btn-xs js-resolve-expiry-alert" data-alert-key="${escapeHtml(a.alertKey)}" style="margin-top:10px;">
+                  Marcar como resuelto
+                </button>
+              ` : ''}
             </div>
 
             <div style="
@@ -9405,10 +9535,7 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
               box-shadow:0 10px 25px rgba(15,23,42,.18);
             ">
               <div style="font-size:25px;font-weight:950;line-height:1;">
-                ${Math.abs(a.days)}
-              </div>
-              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-top:4px;">
-                ${a.days < 0 ? 'dias vencido' : 'dias restantes'}
+                ${a.days < 0 ? 'Vencido · ' : ''}${a.days} ${Math.abs(a.days) === 1 ? 'día' : 'días'}
               </div>
             </div>
           </div>
@@ -9419,6 +9546,40 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
   'Entendido',
   () => { modalBackdrop.style.display = 'none'; }
 );
+
+  modalBody?.querySelectorAll('.js-resolve-expiry-alert').forEach(button => {
+    button.addEventListener('click', async () => {
+      const alertItem = alerts.find(item => item.alertKey === button.dataset.alertKey);
+      if (!alertItem || button.disabled) return;
+
+      button.disabled = true;
+      button.textContent = 'Guardando…';
+      try {
+        const result = await apiPost(`/api/projects/${id}/expiry-alerts/resolve`, {
+          key: alertItem.alertKey,
+          kind: alertItem.kind,
+          sourceId: alertItem.sourceId,
+          due: alertItem.due
+        });
+        state.project.expiryAlertResolutions = [
+          ...(state.project.expiryAlertResolutions || []).filter(item => item.key !== alertItem.alertKey),
+          result.resolution
+        ];
+        latestFinanceExpiryAlerts = latestFinanceExpiryAlerts.filter(item => item.alertKey !== alertItem.alertKey);
+        updateProjectAlertsButton(latestFinanceExpiryAlerts);
+
+        if (latestFinanceExpiryAlerts.length) {
+          showCppExpiryPopup(latestFinanceExpiryAlerts, { force: true });
+        } else {
+          modalBackdrop.style.display = 'none';
+        }
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = 'Marcar como resuelto';
+        alert(error.message || 'No se pudo resolver la alerta');
+      }
+    });
+  });
 }
 
 if (projectAlertsBtn) {
@@ -9589,11 +9750,18 @@ grid.innerHTML = `
 `;
 
 const cppAlerts = units
-  .map(u => getCppExpiryAlert(u, ventasMap.get(String(u._id))))
+  .map(u => getCppExpiryAlert(u, ventasMap.get(String(u._id)), { includeOverdue: true }))
   .filter(Boolean);
 
 const creditLineAlerts = await getCreditLineExpiryAlerts();
-showCppExpiryPopup([...cppAlerts, ...creditLineAlerts].sort((a, b) => (a.days ?? 9999) - (b.days ?? 9999)));
+const resolvedExpiryAlertKeys = new Set(
+  (state.project?.expiryAlertResolutions || []).map(item => String(item?.key || '')).filter(Boolean)
+);
+showCppExpiryPopup(
+  [...cppAlerts, ...creditLineAlerts]
+    .filter(alertItem => !resolvedExpiryAlertKeys.has(alertItem.alertKey))
+    .sort((a, b) => (a.days ?? 9999) - (b.days ?? 9999))
+);
 
 wireUnitCards();
 wireCommercialFolders();

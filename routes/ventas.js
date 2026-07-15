@@ -153,10 +153,13 @@ async function attachProjectByVenta(req, res, next) {
 async function attachProjectByUnitIdFromVenta(req, res, next) {
   try {
     const { unitId } = req.params;
-    const unit = await Unit.findOne({ _id: unitId, tenantKey: req.tenantKey }).lean();
+    let unit = await Unit.findOne({ _id: unitId, tenantKey: req.tenantKey }).lean();
+    if (!unit && String(req.user?.role || '').toLowerCase() === 'bank' && ['GET', 'HEAD'].includes(req.method)) {
+      unit = await Unit.findById(unitId).lean();
+    }
     if (!unit) return res.status(404).json({ error: 'Unidad no existe' });
 
-    const proj = await Project.findOne({ _id: unit.projectId, tenantKey: req.tenantKey }).lean();
+    const proj = await Project.findById(unit.projectId).lean();
     if (!proj) return res.status(404).json({ error: 'Proyecto no encontrado' });
 
     req.project = proj;
@@ -186,8 +189,8 @@ async function syncProjectKpisSafe(req, projectId) {
    ========================================================================= */
 router.get(
   '/',
-  attachProjectByProjectId,
   requireProjectAccess(),
+  attachProjectByProjectId,
   async (req, res) => {
     try {
       const { projectId } = req.query;

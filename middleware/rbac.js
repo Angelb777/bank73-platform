@@ -232,6 +232,16 @@ function requireProjectAccess(options = {}) {
           : [];
         const assigned = isUserAssignedToProject(project, getUserId(req));
         if (sameTenant(req, project) || tenantKeys.includes(projectTenant) || assigned) {
+          // El portfolio bancario puede incluir proyectos autorizados de otro
+          // tenant (por multi-tenant o por asignacion explicita). Las consultas
+          // de detalle deben ejecutarse en el tenant real del proyecto; si se
+          // conserva el tenant activo del navegador, el controlador autorizado
+          // termina devolviendo un 404 al filtrar sus datos relacionados.
+          if ((req.method === 'GET' || req.method === 'HEAD') && projectTenant) {
+            req.tenantKey = projectTenant;
+            req.tenant = { key: projectTenant, tenantKey: projectTenant };
+            req.user.tenantKey = projectTenant;
+          }
           return next();
         }
       }

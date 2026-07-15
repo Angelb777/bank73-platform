@@ -7,7 +7,8 @@
     "start": "node server.js",
     "dev": "node server.js",
     "seed": "node seed.js",
-    "test:security": "node --test tests/security-smoke.test.js"
+    "test:security": "node --test tests/security-smoke.test.js",
+    "test:funding": "node --test tests/funding-scoring.test.js"
   },
   "keywords": [],
   "author": "",

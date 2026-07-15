@@ -56,6 +56,8 @@
 }
 .cl-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .cl-title { font-weight:700; line-height:1.2; }
+.cl-card.is-priority-financial-doc { border-color:#60a5fa; box-shadow:0 0 0 2px rgba(59,130,246,.10); }
+.priority-financial-doc-badge { display:inline-flex;margin-left:8px;padding:3px 7px;border-radius:999px;background:#dbeafe;color:#1e40af;font-size:10px;font-weight:800;vertical-align:middle; }
 .role-badge {
   padding:2px 8px; border-radius:8px; font-size:.75rem; color:#111;
   border:1px solid var(--role-color, #e5e7eb); background:var(--role-pale, #f9fafb);
@@ -1209,6 +1211,13 @@ body.light-theme .provider-exclusive {
 .project-title-wrap h2{
   margin:0;
 }
+.commercial-dossier-btn .cover-icon-preview{
+  width:24px;
+  height:24px;
+  display:none;
+  object-fit:cover;
+  border-radius:7px;
+}
 .commercial-dossier-btn{
   min-height:38px;
   display:inline-flex;
@@ -1609,6 +1618,12 @@ body.light-theme .provider-exclusive {
           <span>Dossier comercial</span>
           <span id="commercialDossierMeta" class="dossier-meta">Sin archivo</span>
         </button>
+        <button id="projectCoverBtn" class="commercial-dossier-btn" type="button" style="display:none;" title="Gestionar portada del proyecto">
+          <img id="projectCoverPreview" class="cover-icon-preview" alt="Vista previa de la portada">
+          <span id="projectCoverFallback" class="dossier-icon" aria-hidden="true">IMG</span>
+          <span>Portada</span>
+        </button>
+        <input id="projectCoverFile" type="file" accept="image/jpeg,image/png,image/webp" hidden>
       </div>
       <div class="status-controls">
         <div class="project-status-picker">

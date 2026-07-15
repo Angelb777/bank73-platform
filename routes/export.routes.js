@@ -58,11 +58,14 @@ async function getUnitVenta(unitId, tenantKey) {
 
 async function attachProjectByUnitId(req, res, next) {
   try {
-    const unit = await Unit.findOne({ _id: req.params.unitId, tenantKey: req.tenantKey }).select('projectId').lean();
+    let unit = await Unit.findOne({ _id: req.params.unitId, tenantKey: req.tenantKey }).select('projectId').lean();
+    if (!unit && String(req.user?.role || '').toLowerCase() === 'bank' && ['GET', 'HEAD'].includes(req.method)) {
+      unit = await Unit.findById(req.params.unitId).select('projectId').lean();
+    }
     if (!unit) return res.status(404).json({ error: 'Unidad no encontrada' });
 
     const project = unit.projectId
-      ? await Project.findOne({ _id: unit.projectId, tenantKey: req.tenantKey }).lean()
+      ? await Project.findById(unit.projectId).lean()
       : null;
     if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
 

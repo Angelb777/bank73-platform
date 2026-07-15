@@ -109,11 +109,17 @@ async function loadDocAndAttachProject(req, res, next) {
     const tenantKey = getTenantKey(req);
     const docId = req.params.id;
 
-    const doc = await Document.findOne({ _id: docId, tenantKey }).lean();
+    let doc = await Document.findOne({ _id: docId, tenantKey }).lean();
+    if (!doc && norm(req.user?.role) === 'bank' && ['GET', 'HEAD'].includes(req.method)) {
+      doc = await Document.findById(docId).lean();
+    }
     if (!doc) return res.status(404).json({ error: 'Documento no encontrado' });
 
+    const projectId = doc.projectId || doc.project;
+    if (!projectId) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
     req.params.docId = docId;
-    req.params.id = doc.projectId;
+    req.params.id = projectId;
 
     next();
   } catch (e) {
@@ -1030,7 +1036,7 @@ router.post(
 /* =========================================================================
    LISTADO DE DOCUMENTOS
    ========================================================================= */
-router.get('/', async (req, res) => {
+router.get('/', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   try {
     const q = await buildDocsQuery(req);
     const list = await Document.find(q).sort({ createdAt: -1 }).lean();
@@ -1162,12 +1168,17 @@ router.patch(
 /* =========================================================================
    Descargar
    ========================================================================= */
-router.get('/:id/download', async (req, res) => {
+router.get(
+  '/:id/download',
+  loadDocAndAttachProject,
+  requireProjectAccess({ commercialOnlySales: false }),
+  async (req, res) => {
   try {
     const role = norm(req.user?.role);
     const tenantKey = getTenantKey(req);
+    const docId = req.params.docId || req.params.id;
 
-    const doc = await Document.findOne({ _id: req.params.id, tenantKey }).lean();
+    const doc = await Document.findOne({ _id: docId, tenantKey }).lean();
     if (!doc) return res.status(404).json({ error: 'Documento no encontrado' });
 
     if (doc.unitId && doc.department && !canAccessDocDepartment(req, doc.department)) {

@@ -3107,7 +3107,13 @@ body.light-theme #cards .card.status-FINALIZADO .badge {
 }
 
 #cards .portfolio-card-description {
-  min-height: 28px;
+  min-height: 4.2em;
+  height: 4.2em;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  line-height: 1.4;
 }
 
 #cards .portfolio-card-type.is-empty,
@@ -3137,6 +3143,391 @@ body.light-theme #cards .card.status-FINALIZADO .badge {
   margin-top: auto;
   padding-top: 10px;
   align-self: flex-start;
+}
+
+/* Portfolio: tarjetas compactas de proyectos incorporados */
+#cards.grid {
+  grid-auto-rows: 1fr;
+  align-items: stretch;
+}
+
+#cards .card.portfolio-project-card {
+  --project-accent: #64748b;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+  border-left: 4px solid var(--project-accent);
+  border-radius: 14px;
+  background: linear-gradient(160deg, var(--card-bg), var(--panel));
+  color: var(--text);
+  box-shadow: 0 10px 26px rgba(2, 6, 23, .2);
+}
+
+#cards .portfolio-project-card.status-EN_MARCHA { --project-accent: #22c55e; }
+#cards .portfolio-project-card.status-PAUSADO { --project-accent: #f97316; }
+#cards .portfolio-project-card.status-FINALIZADO { --project-accent: #3b82f6; }
+
+#cards .portfolio-project-card.status-FINALIZADO {
+  color: var(--text);
+}
+
+#cards .portfolio-card-cover {
+  flex: 0 0 160px;
+  height: 160px;
+  overflow: hidden;
+  background: #102a43;
+}
+
+#cards .portfolio-card-cover img,
+#cards .portfolio-card-cover-fallback {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#cards .portfolio-card-cover img {
+  object-fit: cover;
+  transition: transform .25s ease;
+}
+
+#cards .portfolio-project-card:hover .portfolio-card-cover img {
+  transform: scale(1.025);
+}
+
+#cards .portfolio-card-cover-fallback {
+  position: relative;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 82% 20%, rgba(56, 189, 248, .3), transparent 30%),
+    linear-gradient(135deg, #102a43, #1d4ed8);
+}
+
+#cards .portfolio-card-cover-fallback::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 42%, rgba(255, 255, 255, .08) 42% 54%, transparent 54%);
+}
+
+#cards .portfolio-card-cover-fallback span {
+  color: rgba(255, 255, 255, .84);
+  font-size: .82rem;
+  font-weight: 850;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+#cards .portfolio-card-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding: 17px 18px 18px;
+}
+
+#cards .portfolio-project-card .portfolio-card-head {
+  display: block;
+  min-height: 76px;
+  margin: 0;
+}
+
+#cards .portfolio-project-card .portfolio-card-title {
+  height: 2.45em;
+  margin: 0 0 10px;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--text);
+  font-size: 1.22rem;
+  line-height: 1.22;
+  letter-spacing: -.015em;
+}
+
+#cards .portfolio-card-pills {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  overflow: hidden;
+}
+
+#cards .portfolio-status-pill,
+#cards .portfolio-type-pill {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 24px;
+  padding: 4px 9px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--project-accent) 42%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--project-accent) 14%, transparent);
+  color: color-mix(in srgb, var(--project-accent) 72%, white);
+  font-size: .69rem;
+  font-weight: 800;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+#cards .portfolio-type-pill {
+  border-color: var(--border);
+  background: rgba(148, 163, 184, .1);
+  color: var(--text-muted);
+  text-transform: none;
+}
+
+#cards .portfolio-project-card .portfolio-card-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 119px;
+  margin-top: 14px;
+}
+
+#cards .portfolio-project-card .portfolio-card-type {
+  display: none;
+}
+
+#cards .portfolio-project-card .portfolio-card-meta > .small:not(.portfolio-card-type):not(.portfolio-card-promoter),
+#cards .portfolio-project-card .portfolio-card-promoter {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 26px;
+  margin: 0;
+  padding: 5px 10px 5px 29px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(148, 163, 184, .08);
+  color: var(--text-muted);
+  font-size: .72rem;
+  font-weight: 650;
+  line-height: 14px;
+  opacity: .9;
+  order: -2;
+  position: relative;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#cards .portfolio-project-card .portfolio-card-meta > .small:not(.portfolio-card-type):not(.portfolio-card-promoter)::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid color-mix(in srgb, var(--project-accent) 76%, white);
+  border-radius: 50% 50% 50% 2px;
+  transform: rotate(-45deg) scale(.72);
+}
+
+#cards .portfolio-project-card .portfolio-card-meta > .small:not(.portfolio-card-type):not(.portfolio-card-promoter)::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 10px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--project-accent) 76%, white);
+}
+
+#cards .portfolio-project-card .portfolio-card-promoter {
+  width: 100%;
+  min-height: 15px;
+  height: 15px;
+  margin-top: -1px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: .68rem;
+  font-weight: 400;
+  line-height: 15px;
+  opacity: .72;
+  order: 1;
+}
+
+#cards .portfolio-card-summary {
+  position: relative;
+  order: 0;
+  width: 100%;
+  min-height: 66px;
+  padding: 9px 11px 10px 13px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--project-accent);
+  border-radius: 10px;
+  background: linear-gradient(110deg, color-mix(in srgb, var(--project-accent) 9%, transparent), rgba(148, 163, 184, .045));
+}
+
+#cards .portfolio-card-summary-label {
+  display: block;
+  margin-bottom: 4px;
+  color: color-mix(in srgb, var(--project-accent) 72%, white);
+  font-size: .64rem;
+  font-weight: 850;
+  letter-spacing: .08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+#cards .portfolio-card-summary .portfolio-card-description {
+  height: 2.7em;
+  min-height: 2.7em;
+  margin: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--text);
+  font-size: .84rem;
+  line-height: 1.35;
+  opacity: 1;
+}
+
+#cards .portfolio-card-summary.is-empty {
+  opacity: .62;
+}
+
+#cards .portfolio-card-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 11px;
+}
+
+#cards .portfolio-card-metrics > div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 2px 7px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(148, 163, 184, .07);
+}
+
+#cards .portfolio-card-metrics span,
+#cards .portfolio-card-metrics small {
+  color: var(--text-muted);
+  font-size: .67rem;
+}
+
+#cards .portfolio-card-metrics strong {
+  justify-self: end;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+#cards .portfolio-card-metrics small {
+  grid-column: 1 / -1;
+}
+
+#cards .portfolio-card-commercial {
+  margin-top: 13px;
+}
+
+#cards .portfolio-card-progress-title {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--text);
+  font-size: .76rem;
+  font-weight: 750;
+}
+
+#cards progress.portfolio-card-progress {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 8px;
+  margin: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: var(--progress-track);
+}
+
+#cards progress.portfolio-card-progress::-webkit-progress-bar {
+  border-radius: inherit;
+  background: var(--progress-track);
+}
+
+#cards progress.portfolio-card-progress::-webkit-progress-value {
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #38bdf8);
+}
+
+#cards progress.portfolio-card-progress::-moz-progress-bar {
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #38bdf8);
+}
+
+#cards .portfolio-project-card .portfolio-card-sales {
+  margin: 7px 0 0;
+  color: var(--text-muted);
+  font-size: .73rem;
+  line-height: 1.3;
+}
+
+#cards .portfolio-card-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: auto;
+  padding-top: 14px;
+}
+
+#cards .portfolio-card-open {
+  min-width: 116px;
+  padding: 9px 20px;
+  border-radius: 10px;
+  font-size: .84rem;
+  font-weight: 800;
+  text-align: center;
+  box-shadow: 0 7px 16px rgba(37, 99, 235, .18);
+}
+
+body.light-theme #cards .card.portfolio-project-card {
+  background: linear-gradient(160deg, #fff, #f8fafc);
+  color: var(--text);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, .09);
+}
+
+body.light-theme #cards .portfolio-status-pill {
+  color: color-mix(in srgb, var(--project-accent) 78%, #0f172a);
+}
+
+body.light-theme #cards .portfolio-card-summary-label {
+  color: color-mix(in srgb, var(--project-accent) 78%, #0f172a);
+}
+
+body.light-theme #cards .portfolio-card-metrics > div {
+  background: #f8fafc;
+}
+
+@media (max-width: 700px) {
+  #cards .portfolio-card-cover {
+    flex-basis: 145px;
+    height: 145px;
+  }
+
+  #cards .portfolio-card-body {
+    padding: 15px 16px 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #cards .portfolio-card-cover img {
+    transition: none;
+  }
 }
 
 #tab-proyecto .cl-list {
@@ -6544,7 +6935,54 @@ body {
   width: max-content;
 }
 
+.funding-publication-state {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #26344d);
+  border-radius: 12px;
+  color: var(--muted, #91a0ba);
+  background: rgba(148, 163, 184, .08);
+}
+
+.funding-publication-state.is-published {
+  border-color: rgba(52, 211, 153, .45);
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, .1);
+}
+
+.funding-publication-readiness {
+  margin: 0 0 16px;
+  padding: 14px;
+  border: 1px solid rgba(52, 211, 153, .35);
+  border-radius: 12px;
+  background: rgba(16, 185, 129, .08);
+}
+
+.funding-publication-readiness.has-missing {
+  border-color: rgba(251, 191, 36, .45);
+  background: rgba(245, 158, 11, .09);
+}
+
+.funding-publication-readiness > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 14px;
+  margin-top: 10px;
+}
+
+.funding-publication-readiness span {
+  font-size: .82rem;
+}
+
+.funding-publication-readiness span.is-ready { color: #86efac; }
+.funding-publication-readiness span.is-missing { color: #fcd34d; font-weight: 700; }
+
 @media (max-width: 768px) {
+  .funding-publication-readiness > div { grid-template-columns: 1fr; }
   #tab-comercial,
   #tab-comercial * {
     box-sizing: border-box;

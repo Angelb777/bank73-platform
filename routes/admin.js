@@ -14,9 +14,9 @@ const ChatMessage = require('../models/ChatMessage');
 const Provider = require('../models/Provider');
 const { PROVIDER_STAGE_SERVICES } = require('../models/Provider');
 const ProviderRequest = require('../models/ProviderRequest');
-const AppSetting = require('../models/AppSetting');
 const { requireRole } = require('../middleware/rbac'); // ROLE-SEP
 const audit = require('../utils/audit');
+const { moduleEnabled, setModuleEnabled } = require('../services/moduleSettings');
 const { tenantKeyFromBankName: sharedTenantKeyFromBankName } = require('../utils/tenants');
 const { sanitizePromoterProfile: sanitizePromoterProfileShared } = require('../utils/promoterProfile');
 const router = express.Router();
@@ -24,7 +24,6 @@ const router = express.Router();
 const { ROLES: VALID_ROLES } = require('../models/User'); // usa la misma fuente que el modelo
 const { promoterProfileCompletion } = require('../models/User');
 const VALID_PUBLISH = ['draft','pending','approved','rejected']; // ROLE-SEP
-const PROVIDERS_MODULE_SETTING_KEY = 'providersModule';
 
 function cleanProviderBody(body = {}) {
   const pick = (key, max = 500) => String(body[key] ?? '').trim().slice(0, max);
@@ -313,8 +312,7 @@ router.get('/providers/options', (_req, res) => {
 
 router.get('/providers/module-settings', async (_req, res) => {
   try {
-    const setting = await AppSetting.findOne({ key: PROVIDERS_MODULE_SETTING_KEY }).lean();
-    res.json({ enabled: setting?.value?.enabled !== false });
+    res.json({ enabled: await moduleEnabled('providers') });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -323,17 +321,40 @@ router.get('/providers/module-settings', async (_req, res) => {
 router.patch('/providers/module-settings', async (req, res) => {
   try {
     const enabled = req.body?.enabled === true || req.body?.enabled === 'true';
-    const setting = await AppSetting.findOneAndUpdate(
-      { key: PROVIDERS_MODULE_SETTING_KEY },
-      { $set: { value: { enabled } } },
-      { upsert: true, new: true }
-    );
+    const setting = await setModuleEnabled('providers', enabled);
 
     await audit(req, 'provider_module.visibility_updated', {
       targetType: 'app_setting',
       targetId: setting._id,
       status: enabled ? 'success' : 'info',
       message: enabled ? 'Módulo Proveedores activado' : 'Módulo Proveedores desactivado',
+      metadata: { enabled }
+    });
+
+    res.json({ ok: true, enabled });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/funding/module-settings', async (_req, res) => {
+  try {
+    res.json({ enabled: await moduleEnabled('funding') });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.patch('/funding/module-settings', async (req, res) => {
+  try {
+    const enabled = req.body?.enabled === true || req.body?.enabled === 'true';
+    const setting = await setModuleEnabled('funding', enabled);
+
+    await audit(req, 'funding_module.visibility_updated', {
+      targetType: 'app_setting',
+      targetId: setting._id,
+      status: enabled ? 'success' : 'info',
+      message: enabled ? 'Funcionalidad de financiación activada' : 'Funcionalidad de financiación desactivada',
       metadata: { enabled }
     });
 

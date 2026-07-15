@@ -22,6 +22,9 @@
   const cancelProfileModalBtn = document.getElementById('cancelProfileModal');
   const saveProfileModalBtn = document.getElementById('saveProfileModal');
   const profileCompletionText = document.getElementById('profileCompletionText');
+  const profileRequiredBackdrop = document.getElementById('profileRequiredBackdrop');
+  const closeProfileRequiredBtn = document.getElementById('closeProfileRequired');
+  const goToPromoterProfileBtn = document.getElementById('goToPromoterProfile');
   const promoterMap = new Map();
   let promoterOptionsLoaded = false;
   const createPromoterProfiles = new Map();
@@ -33,6 +36,9 @@
     userId: localStorage.getItem('userId')
   };
   const role = (auth.role || '').toLowerCase();
+  let fundingModuleEnabled = role === 'admin';
+  const fundingOpportunityDetailCache = new Map();
+  const fundingOpportunityDetailRequests = new Map();
   const dashboardBtn = document.getElementById('portfolioDashboardBtn');
   if (dashboardBtn && ['admin', 'bank'].includes(role)) {
     dashboardBtn.style.display = '';
@@ -65,6 +71,10 @@
   const escapeHtml = (s) => (s || '').toString().replace(/[&<>"']/g, m => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
   }[m]));
+  const truncateText = (value, maxLength = 220) => {
+    const text = String(value || '').trim();
+    return text.length > maxLength ? `${text.slice(0, maxLength).trimEnd()}...` : text;
+  };
 
   const splitCsv = (value) => String(value || '').split(/\r?\n|,/).map(x => x.trim()).filter(Boolean);
   const numberOrNull = (value) => {
@@ -186,7 +196,7 @@
     if (!profileBtn || role !== 'promoter') return;
     profileBtn.style.display = '';
     const percent = Number(completion.percent) || 0;
-    const status = percent >= 90 ? 'complete' : percent >= 70 ? 'partial' : 'incomplete';
+    const status = completion.status || (completion.sufficient ? 'complete' : percent >= 70 ? 'partial' : 'incomplete');
     profileBtn.classList.toggle('is-complete', status === 'complete');
     profileBtn.classList.toggle('is-partial', status === 'partial');
     profileBtn.classList.toggle('is-incomplete', status === 'incomplete');
@@ -258,10 +268,22 @@
     try {
       const data = await API.get('/api/auth/promoter-profile');
       fillProfileModal(data);
+      return data;
     } catch (e) {
       console.warn('No se pudo cargar el perfil de promotora', e);
       updateProfileButton({ sufficient: false, percent: 0 });
+      return null;
     }
+  }
+
+  function showPromoterProfileRequired(completion = {}) {
+    const percent = Math.max(0, Math.min(100, Number(completion.percent) || 0));
+    const minimum = Math.max(0, Math.min(100, Number(completion.minimumPercent) || 90));
+    const progress = document.getElementById('profileRequiredProgress');
+    const text = document.getElementById('profileRequiredPercent');
+    if (progress) progress.style.width = `${percent}%`;
+    if (text) text.textContent = `Perfil completado al ${percent}% · mínimo actual: ${minimum}%`;
+    profileRequiredBackdrop?.classList.add('show');
   }
 
   async function loadPromotersForFilters() {
@@ -356,7 +378,7 @@
   // ===== UI Cards =====
   function statusBadge(status) {
     const s = status || 'EN_CURSO';
-    return `<span class="badge">${escapeHtml(s)}</span>`;
+    return `<span class="badge portfolio-status-pill">${escapeHtml(s.replaceAll('_', ' '))}</span>`;
   }
 
   function statusClass(status) {
@@ -370,27 +392,48 @@
       ? `Promotor: ${escapeHtml(p.promoterNames.join(', '))}`
       : '';
     const displayProjectType = p.projectType || p.tipoProyecto || '';
-    const typeText = displayProjectType
-      ? `Tipo de proyecto: ${escapeHtml(displayProjectType)}`
-      : '';
+    const typeText = displayProjectType ? escapeHtml(displayProjectType) : '';
+    const unitsSold = p.unitsSold || 0;
+    const unitsTotal = p.unitsTotal || 0;
 
     return `
-      <div class="card ${statusClass(p.status)}">
-        <div class="portfolio-card-head">
-          <h3 class="portfolio-card-title">${escapeHtml(p.name)}</h3>
-          ${statusBadge(p.status)}
+      <article class="card portfolio-project-card ${statusClass(p.status)}">
+        <div class="portfolio-card-cover">
+          ${p.coverImage?.path
+            ? `<img src="${escapeHtml(p.coverImage.path)}" alt="Portada de ${escapeHtml(p.name || 'proyecto')}" loading="lazy">`
+            : '<div class="portfolio-card-cover-fallback" aria-hidden="true"><span>Bank73</span></div>'}
         </div>
+        <div class="portfolio-card-body">
+          <div class="portfolio-card-head">
+            <h3 class="portfolio-card-title">${escapeHtml(p.name)}</h3>
+            <div class="portfolio-card-pills">
+              ${statusBadge(p.status)}
+              ${typeText ? `<span class="portfolio-type-pill">${typeText}</span>` : ''}
+            </div>
+          </div>
         <div class="portfolio-card-meta">
-          <p class="muted portfolio-card-description">${p.description ? escapeHtml(p.description) : ''}</p>
+          <div class="portfolio-card-summary ${p.description ? '' : 'is-empty'}">
+            <span class="portfolio-card-summary-label">Resumen</span>
+            <p class="portfolio-card-description">${p.description ? escapeHtml(truncateText(p.description)) : 'Sin descripci&oacute;n disponible.'}</p>
+          </div>
           <p class="small muted portfolio-card-type ${typeText ? '' : 'is-empty'}">${typeText || '&nbsp;'}</p>
+          <p class="small muted">${p.location ? `Ubicación: ${escapeHtml(p.location)}` : '&nbsp;'}</p>
           <p class="small muted portfolio-card-promoter ${promoterText ? '' : 'is-empty'}">${promoterText || '&nbsp;'}</p>
         </div>
-        <div class="progress portfolio-card-progress"><div style="width:${soldPct}%"></div></div>
-        <p class="small muted portfolio-card-sales">${p.unitsSold || 0}/${p.unitsTotal || 0} unidades vendidas (${soldPct}%)</p>
-        <div class="row">
-          <a class="btn" href="/project?id=${encodeURIComponent(p._id)}&ref=portfolio">Abrir</a>
+          <div class="portfolio-card-metrics" aria-label="Resumen de unidades">
+            <div><span>Total</span><strong>${escapeHtml(String(unitsTotal))}</strong><small>unidades</small></div>
+            <div><span>Vendidas</span><strong>${escapeHtml(String(unitsSold))}</strong><small>unidades</small></div>
+          </div>
+          <div class="portfolio-card-commercial">
+            <span class="portfolio-card-progress-title">Avance comercial</span>
+            <progress class="portfolio-card-progress" max="100" value="${soldPct}" aria-label="${soldPct}% de unidades vendidas">${soldPct}%</progress>
+            <p class="portfolio-card-sales">${escapeHtml(String(unitsSold))}/${escapeHtml(String(unitsTotal))} unidades vendidas <span aria-hidden="true">&middot;</span> ${soldPct} %</p>
+          </div>
+          <div class="portfolio-card-actions">
+            <a class="btn portfolio-card-open" href="/project?id=${encodeURIComponent(p._id)}&ref=portfolio">Abrir</a>
+          </div>
         </div>
-      </div>
+      </article>
     `;
   }
 
@@ -417,6 +460,7 @@
 
       // Reaplicar filtro si ya había texto
       if (searchInput && searchInput.value) applyAllFilters();
+      if (fundingModuleEnabled && ['bank', 'admin'].includes((API.getRole?.() || '').toLowerCase())) loadFundingOpportunities();
     } catch (e) {
       container.innerHTML = `<div class="card">Error: ${escapeHtml(e.message || e)}</div>`;
       if (banner) banner.style.display = 'none';
@@ -491,6 +535,7 @@
   const createStepPanels = Array.from(document.querySelectorAll('[data-create-panel]'));
   const prevCreateStepBtn = document.getElementById('prevCreateStep');
   const nextCreateStepBtn = document.getElementById('nextCreateStep');
+  const createModalBody = modal?.querySelector('.create-modal-body');
   const createBoardMembers = document.getElementById('createBoardMembers');
   const createShareholders = document.getElementById('createShareholders');
   const createHousingModels = document.getElementById('createHousingModels');
@@ -509,6 +554,32 @@
   let createTotalUnitsManuallyEdited = false;
   let createLastSuggestedUnitsTotal = 0;
 
+  function syncCreateFundingRequestVisibility() {
+    const seeks = fundingModuleEnabled && document.getElementById('pSeeksFinancing')?.value === 'true';
+    const section = document.getElementById('createFundingRequestSection');
+    const requested = document.getElementById('fundingRequestedAmount');
+    const deadlineLabel = document.getElementById('pFundingDeadlineLabel');
+    const deadline = document.getElementById('pFundingDeadline');
+    const legalAssessment = document.getElementById('createLegalAssessmentSection');
+    const technicalAssessment = document.getElementById('createTechnicalAssessmentSection');
+    const progressChecks = document.getElementById('createProgressChecks');
+    const fundingDocumentsNotice = document.getElementById('createFundingDocumentsNotice');
+    if (section) section.style.display = seeks ? '' : 'none';
+    if (requested) requested.required = seeks;
+    if (deadlineLabel) deadlineLabel.style.display = seeks ? '' : 'none';
+    if (deadline) deadline.required = seeks;
+    if (legalAssessment) legalAssessment.style.display = seeks ? '' : 'none';
+    if (technicalAssessment) technicalAssessment.style.display = seeks ? '' : 'none';
+    if (progressChecks) progressChecks.classList.toggle('show-financing-docs', seeks);
+    if (fundingDocumentsNotice) fundingDocumentsNotice.style.display = seeks ? '' : 'none';
+    if (!seeks) {
+      const error = document.getElementById('createFundingRequestError');
+      if (error) error.style.display = 'none';
+      const deadlineError = document.getElementById('pFundingDeadlineError');
+      if (deadlineError) deadlineError.style.display = 'none';
+    }
+  }
+
   function setCreateStep(step) {
     activeCreateStep = CREATE_STEP_ORDER.includes(step) ? step : 'general';
     createStepTabs.forEach(btn => btn.classList.toggle('active', btn.dataset.createStep === activeCreateStep));
@@ -516,12 +587,107 @@
     const idx = CREATE_STEP_ORDER.indexOf(activeCreateStep);
     if (prevCreateStepBtn) prevCreateStepBtn.disabled = idx <= 0;
     if (nextCreateStepBtn) nextCreateStepBtn.style.display = idx >= CREATE_STEP_ORDER.length - 1 ? 'none' : '';
+    requestAnimationFrame(() => {
+      if (createModalBody) createModalBody.scrollTop = 0;
+    });
+  }
+
+  document.getElementById('pSeeksFinancing')?.addEventListener('change', syncCreateFundingRequestVisibility);
+  syncCreateFundingRequestVisibility();
+
+  function applyFundingModuleVisibility() {
+    const choice = document.getElementById('createFundingChoice');
+    const section = document.getElementById('fundingOpportunitiesSection');
+    if (choice) choice.style.display = fundingModuleEnabled ? '' : 'none';
+    if (!fundingModuleEnabled) {
+      const seeks = document.getElementById('pSeeksFinancing');
+      if (seeks) seeks.value = 'false';
+      if (section) section.style.display = 'none';
+      document.getElementById('fundingOpportunityModal')?.remove();
+    }
+    syncCreateFundingRequestVisibility();
+  }
+
+  async function syncFundingModuleVisibility() {
+    try {
+      const settings = await API.get('/api/funding/module-settings');
+      fundingModuleEnabled = role === 'admin' || settings?.enabled === true;
+    } catch (_error) {
+      fundingModuleEnabled = role === 'admin';
+    }
+    applyFundingModuleVisibility();
+  }
+
+  function fundingDeadlineLabel(value, fallback = '') {
+    if (!value) return fallback || 'Fecha límite no indicada';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return fallback || 'Fecha límite no indicada';
+    return `Hasta ${date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+  }
+
+  async function getFundingOpportunityDetail(opportunityId) {
+    if (fundingOpportunityDetailCache.has(opportunityId)) return fundingOpportunityDetailCache.get(opportunityId);
+    if (fundingOpportunityDetailRequests.has(opportunityId)) return fundingOpportunityDetailRequests.get(opportunityId);
+    const request = API.get(`/api/funding/opportunities/${encodeURIComponent(opportunityId)}`)
+      .then(item => {
+        fundingOpportunityDetailCache.set(opportunityId, item);
+        return item;
+      })
+      .finally(() => fundingOpportunityDetailRequests.delete(opportunityId));
+    fundingOpportunityDetailRequests.set(opportunityId, request);
+    return request;
+  }
+
+  async function loadFundingOpportunities() {
+    const section = document.getElementById('fundingOpportunitiesSection');
+    const target = document.getElementById('fundingOpportunityCards');
+    if (!fundingModuleEnabled || !section || !target) return;
+    try {
+      const list = await API.get('/api/funding/opportunities');
+      section.style.display = '';
+      target.innerHTML = list.length ? list.map(item => {
+        const currency = escapeHtml(item.currency || 'PAB');
+        const moneyLabel = value => `${Number(value || 0).toLocaleString('es-ES', { maximumFractionDigits: 2 })} ${currency}`;
+        return `
+        <article class="card funding-opportunity-card">
+          <div class="funding-opportunity-cover">
+            ${item.coverImage?.path ? `<img src="${escapeHtml(item.coverImage.path)}" alt="Portada de ${escapeHtml(item.name || 'proyecto')}">` : ''}
+            <div class="funding-opportunity-cover-tags">
+              <span class="funding-opportunity-pill">${escapeHtml(item.projectType || 'Proyecto inmobiliario')}</span>
+              <span class="funding-opportunity-pill is-term">${escapeHtml(fundingDeadlineLabel(item.fundingDeadline, item.estimatedTerm))}</span>
+            </div>
+          </div>
+          <div class="funding-opportunity-body">
+            <h3 class="funding-opportunity-title">${escapeHtml(item.name)}</h3>
+            <p class="funding-opportunity-subtitle">Oportunidad de financiación publicada por Bank73</p>
+            <div class="funding-opportunity-metrics">
+              <div class="funding-opportunity-metric is-primary"><div><span>Monto solicitado a través de Bank73</span><strong>${moneyLabel(item.requestedAmount)}</strong></div><span>Solicitud financiera</span></div>
+              <div class="funding-opportunity-metric"><span>Fondos asegurados</span><strong>${moneyLabel(item.securedRequestAmount)}</strong></div>
+              <div class="funding-opportunity-metric"><span>Pendiente de financiar</span><strong>${moneyLabel(item.requestPendingAmount)}</strong></div>
+              <div class="funding-opportunity-metric"><span>Coste total</span><strong>${moneyLabel(item.totalCost)}</strong></div>
+              <div class="funding-opportunity-metric is-viability"><span>Venta potencial del inventario</span><strong>${moneyLabel(item.potentialSalesValue)}</strong></div>
+            </div>
+            <div class="funding-opportunity-coverage">
+              <div class="funding-opportunity-coverage-head"><span>Cobertura de la solicitud</span><strong>${Math.round(item.requestCoveredPct || 0)}% asegurado</strong></div>
+              <div class="progress funding-opportunity-progress"><div style="width:${Math.min(100, Number(item.requestCoveredPct || 0))}%"></div></div>
+              <div class="funding-opportunity-coverage-caption">${moneyLabel(item.securedRequestAmount)} asegurados · ${moneyLabel(item.requestPendingAmount)} pendientes</div>
+            </div>
+            <div class="funding-opportunity-coverage is-presales">
+              <div class="funding-opportunity-coverage-head"><span>Avance de preventas</span><strong>${Number(item.unitsSold || 0)}/${Number(item.unitsTotal || 0)} unidades (${Math.round(item.presalesPct || 0)}%)</strong></div>
+              <div class="progress funding-opportunity-progress is-presales"><div style="width:${Math.min(100, Number(item.presalesPct || 0))}%"></div></div>
+            </div>
+            <p class="funding-opportunity-viability-note">La venta potencial se calcula con los precios de lista actuales; no equivale a beneficio neto.</p>
+            <div class="funding-opportunity-actions"><button class="btn" type="button" data-funding-opportunity="${escapeHtml(item._id)}">Ver oferta completa</button></div>
+          </div>
+        </article>`;
+      }).join('') : '<p class="funding-marketplace-empty muted">No hay oportunidades publicadas en este momento.</p>';
+    } catch (err) { section.style.display = 'none'; console.warn(err); }
   }
 
   async function loadCreatePromoterProfiles() {
     const select = document.getElementById('ld-promoterProfileSelect');
     if (!select || createPromoterProfilesLoaded) return;
-    if (role !== 'admin') {
+    if (!['admin', 'bank'].includes(role)) {
       select.closest('label')?.setAttribute('hidden', '');
       return;
     }
@@ -534,7 +700,7 @@
       list.forEach(user => {
         const opt = document.createElement('option');
         opt.value = user._id;
-        const company = user.promoterProfile?.companyName || '';
+        const company = primaryPromoterCompany(user.promoterProfile);
         opt.textContent = `${user.name || user.email || 'Promotor'}${company ? ` - ${company}` : ''}`;
         select.appendChild(opt);
         createPromoterProfiles.set(String(user._id), user);
@@ -544,6 +710,11 @@
       select.innerHTML = '<option value="">Escribir manualmente</option>';
       console.warn('No se pudieron cargar promotores para creacion', e);
     }
+  }
+
+  function primaryPromoterCompany(profile = {}) {
+    const companies = Array.isArray(profile?.companies) ? profile.companies : [];
+    return String((companies.find(company => company?.isPrimary) || companies[0])?.name || profile?.companyName || '').trim();
   }
 
   let createProcessTemplateLoaded = false;
@@ -567,20 +738,48 @@
         if (!groups.has(phase)) groups.set(phase, []);
         groups.get(phase).push(step);
       });
-      host.innerHTML = Array.from(groups.entries()).map(([phase, steps]) => `
+      const normalizeProgressTitle = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const isPriorityDocument = step => {
+        const title = normalizeProgressTitle(step.title);
+        const relevantArea = /(jurid|urban|tecnic|comercial|financier)/.test(title);
+        return (/(dictamen|opinion)/.test(title) && relevantArea) || (/viabilidad/.test(title) && /financier/.test(title));
+      };
+      const progressItem = (step, priority = false) => `
+        <div class="create-progress-item${priority ? ' is-priority' : ''}">
+          <input type="checkbox" data-create-checklist-key="${escapeHtml(step.key)}">
+          <div class="create-progress-item-copy">
+            <span>${escapeHtml(step.title)}</span>
+            ${priority ? '<small>Prioritario para la evaluación financiera</small>' : ''}
+          </div>
+          <div class="create-checklist-upload">
+            <label class="create-checklist-upload-button">
+              <span aria-hidden="true">＋</span> Adjuntar
+              <input type="file" multiple data-create-checklist-file="${escapeHtml(step.key)}" aria-label="Adjuntar archivos a ${escapeHtml(step.title)}">
+            </label>
+            <span class="create-checklist-upload-name" data-create-checklist-file-name>Sin archivos</span>
+          </div>
+        </div>`;
+      const groupedHtml = Array.from(groups.entries()).map(([phase, steps]) => {
+        return `
         <details class="create-progress-group">
           <summary class="create-progress-group-title">${escapeHtml(phaseLabel(phase))}</summary>
           <div class="create-progress-group-body">
-            ${steps.map(step => `
-              <label class="create-progress-item">
-                <input type="checkbox" data-create-checklist-key="${escapeHtml(step.key)}">
-                <span>${escapeHtml(step.title)}</span>
-              </label>
-            `).join('')}
+            ${steps.map(step => progressItem(step, isPriorityDocument(step))).join('')}
           </div>
         </details>
-      `).join('') || '<div class="small muted">No hay checks configurados.</div>';
+      `;
+      }).join('');
+      host.innerHTML = groupedHtml || '<div class="small muted">No hay checks configurados.</div>';
+      host.addEventListener('change', event => {
+        const input = event.target.closest('[data-create-checklist-file]');
+        if (!input) return;
+        const files = Array.from(input.files || []);
+        const name = input.closest('.create-checklist-upload')?.querySelector('[data-create-checklist-file-name]');
+        if (name) name.textContent = files.length ? (files.length === 1 ? files[0].name : `${files.length} archivos seleccionados`) : 'Sin archivos';
+        input.closest('.create-checklist-upload')?.classList.toggle('has-files', files.length > 0);
+      });
       createProcessTemplateLoaded = true;
+      syncCreateFundingRequestVisibility();
     } catch (e) {
       host.innerHTML = '<div class="small muted">No se pudieron cargar los checks de avances.</div>';
       console.warn('No se pudieron cargar avances iniciales', e);
@@ -641,10 +840,15 @@
   }
 
   function collectInitialProgress() {
+    const documentKeys = Array.from(document.querySelectorAll('[data-create-checklist-file]'))
+      .filter(input => input.files?.length)
+      .map(input => input.dataset.createChecklistFile)
+      .filter(Boolean);
     return {
       initialChecklistCompletedKeys: Array.from(document.querySelectorAll('[data-create-checklist-key]:checked'))
         .map(input => input.dataset.createChecklistKey)
         .filter(Boolean),
+      initialChecklistDocumentKeys: documentKeys,
       initialPermits: {
         templateId: document.getElementById('createPermitTemplate')?.value || '',
         statuses: Object.fromEntries(Array.from(document.querySelectorAll('[data-create-permit-status]'))
@@ -807,7 +1011,8 @@
           ].map(([key,label]) => `<label>${label}<input data-create-model-status="${key}" type="number" min="0" step="1" value="${statuses[key] ?? ''}"></label>`).join('')}
         </div>
         <div class="small muted" data-create-model-status-warning style="margin-top:8px;"></div>
-      </div>
+        </div>
+      </article>
       <details class="create-model-units-preview" data-create-units-preview style="grid-column:1/-1;border:1px solid #dbe2ea;border-radius:12px;padding:10px;background:#fff;margin-top:6px;">
         <summary><strong>Unidades generadas</strong> <span class="small muted" data-create-units-summary></span></summary>
         <div data-create-units-box style="overflow:auto;margin-top:10px;"></div>
@@ -833,6 +1038,7 @@
         cedula: row.querySelector('[data-create-board="cedula"]')?.value.trim() || '',
         position: row.querySelector('[data-create-board="position"]')?.value.trim() || ''
       })),
+      assessment: Object.fromEntries(Array.from(document.querySelectorAll('[data-legal-assessment]')).map(input => [input.dataset.legalAssessment, input.value === '' ? null : input.value === 'true'])),
       shareholders: Array.from(document.querySelectorAll('[data-create-shareholder-row]')).map(row => ({
         name: row.querySelector('[data-create-shareholder="name"]')?.value.trim() || '',
         cedula: row.querySelector('[data-create-shareholder="cedula"]')?.value.trim() || '',
@@ -845,7 +1051,8 @@
     return {
       phasesCount: numberFromCreate(document.getElementById('td-phasesCount')?.value),
       totalUnits: numberFromCreate(document.getElementById('td-totalUnits')?.value),
-      notes: document.getElementById('td-notes')?.value?.trim() || ''
+      notes: document.getElementById('td-notes')?.value?.trim() || '',
+      assessment: Object.fromEntries(Array.from(document.querySelectorAll('[data-technical-assessment]')).map(input => [input.dataset.technicalAssessment, input.value === '' ? null : input.value === 'true']))
     };
   }
 
@@ -1079,7 +1286,10 @@
   }
 
   function syncTechnicalUnitsFromModels() {
-    if (hasCreateDatoUnicoFile()) return;
+    if (hasCreateDatoUnicoFile()) {
+      updateCreateUnitsReconciliation();
+      return;
+    }
     const totalEl = document.getElementById('td-totalUnits');
     if (!totalEl) return;
     const total = Array.from(document.querySelectorAll('[data-create-model-row]'))
@@ -1091,6 +1301,47 @@
       totalEl.value = total ? Math.round(total) : '';
       createTotalUnitsManuallyEdited = false;
     }
+    updateCreateUnitsReconciliation();
+  }
+
+  function createModelsUnitsTotal() {
+    return Array.from(document.querySelectorAll('[data-create-model-row]'))
+      .reduce((sum, row) => sum + numberFromCreate(row.querySelector('[data-create-model="unitsCount"]')?.value), 0);
+  }
+
+  function updateCreateUnitsReconciliation() {
+    const box = document.getElementById('createUnitsReconciliation');
+    if (!box) return true;
+    const total = numberFromCreate(document.getElementById('td-totalUnits')?.value);
+    const modelsTotal = createModelsUnitsTotal();
+    const difference = total - modelsTotal;
+    const matches = Math.abs(difference) < 0.001;
+    box.querySelector('[data-units-total]').textContent = String(total);
+    box.querySelector('[data-units-models]').textContent = String(modelsTotal);
+    box.querySelector('[data-units-difference]').textContent = String(difference);
+    box.querySelector('[data-units-message]').textContent = hasCreateDatoUnicoFile()
+      ? 'La comprobación no bloquea la creación porque las unidades se importarán mediante Excel.'
+      : matches ? 'Los totales coinciden.' : 'La suma de unidades de los modelos debe coincidir con el total indicado.';
+    box.classList.toggle('has-difference', !matches && !hasCreateDatoUnicoFile());
+    box.classList.toggle('is-match', matches || hasCreateDatoUnicoFile());
+    return matches;
+  }
+
+  function updateCreateFundingSummary() {
+    const box = document.getElementById('createFundingSummary');
+    if (!box) return;
+    const total = numberFromCreate(document.getElementById('fc-projectTotal')?.value);
+    const requested = numberFromCreate(document.getElementById('fundingRequestedAmount')?.value);
+    const secured = numberFromCreate(document.getElementById('fundingSecuredAmount')?.value);
+    const pending = Math.max(0, requested - secured);
+    const covered = requested ? secured / requested * 100 : 0;
+    const values = { total, requested, secured, pending };
+    Object.entries(values).forEach(([key, value]) => {
+      const target = box.querySelector(`[data-funding-summary="${key}"]`);
+      if (target) target.textContent = formatBankNumber(value);
+    });
+    const coveredEl = box.querySelector('[data-funding-summary="covered"]');
+    if (coveredEl) coveredEl.textContent = `${covered.toFixed(2)}%`;
   }
 
   function syncFinancialTriplet(sourceId = '') {
@@ -1134,6 +1385,7 @@
     if (promoterEl) promoterEl.value = formatBankNumber(promoter);
     if (promoterPctEl) promoterPctEl.value = formatPercentNumber(promoterPct);
     syncCreatePhaseSources();
+    updateCreateFundingSummary();
   }
 
   ['fc-projectTotal'].forEach(fieldId => {
@@ -1143,6 +1395,9 @@
 
   ['fc-projectTotal'].forEach(fieldId => {
     document.getElementById(fieldId)?.addEventListener('input', () => syncFinancialTriplet(fieldId));
+  });
+  ['fundingRequestedAmount', 'fundingSecuredAmount'].forEach(fieldId => {
+    document.getElementById(fieldId)?.addEventListener('input', updateCreateFundingSummary);
   });
 
   const PHASE_CONDITION_FIELDS = [
@@ -1165,12 +1420,37 @@
 
   const DEFAULT_PHASE_PLAN_USES = ['Terreno', 'Infraestructura', 'Construcción', 'Costes directos', 'Costes indirectos', 'Honorarios', 'Licencias', 'Comercialización', 'Imprevistos'];
   const DEFAULT_PHASE_FINANCING_LINES = ['Terreno', 'Infraestructura', 'Construccion', 'Costos directos', 'Costos indirectos', 'Otra'];
-  const PHASE_FINANCING_GRID = 'display:grid;grid-template-columns:minmax(150px,1.1fr) 120px 110px 110px minmax(180px,1fr) minmax(200px,1fr) 110px minmax(180px,1fr) 76px;gap:6px;align-items:start;min-width:1250px;';
+  const PHASE_FINANCING_GRID = 'display:grid;grid-template-columns:minmax(150px,1.1fr) minmax(150px,1fr) minmax(140px,1fr) 120px 110px 110px minmax(180px,1fr) minmax(200px,1fr) 110px minmax(180px,1fr) 76px;gap:6px;align-items:start;min-width:1550px;';
   const PHASE_FINANCING_HEADER = `
     <div style="${PHASE_FINANCING_GRID}font-size:.72rem;font-weight:700;color:#475569;margin-bottom:6px;">
-      <span>Nombre/facilidad</span><span>Monto</span><span>Tasa</span><span>Plazo</span><span>Forma de pago</span><span>Forma de desembolso</span><span>Comision</span><span>Observaciones</span><span></span>
+      <span>Nombre/facilidad</span><span>Entidad financiadora</span><span>Concepto</span><span>Monto</span><span>Tasa</span><span>Plazo</span><span>Forma de pago</span><span>Forma de desembolso</span><span>Comision</span><span>Observaciones</span><span></span>
     </div>
   `;
+
+  function phaseSelectedBanks(item = {}) {
+    const saved = Array.isArray(item.financierBanks) ? item.financierBanks.filter(Boolean) : [];
+    if (saved.length) return [...new Set(saved.map(value => String(value).trim()).filter(Boolean))];
+    const historical = String(item.financialConditions?.interimBank || '').trim();
+    return historical ? [historical] : [];
+  }
+
+  function phaseBankOptionsHtml(selected = []) {
+    const chosen = new Set(selected.map(value => String(value)));
+    const banks = [...new Set([...(window.BANKS_PANAMA || []), ...selected].filter(Boolean))];
+    return `<option value="">Por definir</option>${banks.map(bank => `<option value="${escapeHtml(bank)}"${chosen.has(bank) ? ' selected' : ''}>${escapeHtml(bank)}</option>`).join('')}`;
+  }
+
+  function lineFinancierOptionsHtml(banks = [], current = '', currentType = 'bank') {
+    const value = String(current || '').trim();
+    const nonBank = currentType && currentType !== 'bank';
+    const historical = value && !banks.includes(value) && !nonBank;
+    return `
+      <option value=""${!value ? ' selected' : ''}>Por definir</option>
+      ${banks.map(bank => `<option value="${escapeHtml(bank)}"${value === bank && !nonBank ? ' selected' : ''}>${escapeHtml(bank)}</option>`).join('')}
+      <option value="__NON_BANK__"${nonBank ? ' selected' : ''}>Otra fuente no bancaria</option>
+      ${historical ? `<option value="${escapeHtml(value)}" selected>${escapeHtml(value)} (histórico)</option>` : ''}
+    `;
+  }
 
   function hideGlobalCreateFinancialConditionFields() {
     [
@@ -1202,6 +1482,7 @@
       `).join('');
     };
     const condition = item.financialConditions || {};
+    const selectedBanks = phaseSelectedBanks(item);
     const phaseFinancial = {
       phaseTotal: numberFromCreate(condition.phaseTotal),
       bankFinancedAmount: numberFromCreate(condition.bankFinancedAmount),
@@ -1219,7 +1500,10 @@
       <summary><strong>${escapeHtml(item.name || `Fase ${index + 1}`)}</strong></summary>
       <div class="create-grid" style="margin-top:10px;">
         <label>Nombre<input data-create-phase="name" value="${escapeHtml(item.name || `Fase ${index + 1}`)}"></label>
-        <label>Banco/interino${bankChoiceHtml('interimBank', condition.interimBank || '')}</label>
+        <label style="grid-column:1/-1">Bancos financiadores de la fase
+          <select data-create-phase-banks multiple size="5">${phaseBankOptionsHtml(selectedBanks)}</select>
+          <span class="small muted">Deja la selección vacía o elige “Por definir” si todavía no hay banco. Esta selección no concede acceso ni crea tenants.</span>
+        </label>
         <label>Fecha de carta<input data-create-phase-condition="letterDate" type="date" value="${escapeHtml((condition.letterDate || '').slice(0, 10))}"></label>
         <label>Numero o referencia de carta<input data-create-phase-condition="letterReference" placeholder="Carta term sheet BG-2026-015" value="${escapeHtml(condition.letterReference || '')}"></label>
         <div style="grid-column:1/-1;border:1px solid #dbeafe;background:#f8fbff;border-radius:12px;padding:10px;">
@@ -1248,9 +1532,12 @@
   }
 
   function createPhaseFinancingLinesBlock(index, item = {}) {
+    const selectedBanks = phaseSelectedBanks(item);
     const financingRows = (Array.isArray(item.financingLines) && item.financingLines.length ? item.financingLines : DEFAULT_PHASE_FINANCING_LINES.map(name => ({ name }))).map(line => `
       <div data-create-phase-financing-line style="${PHASE_FINANCING_GRID}margin-bottom:6px;">
         <input data-create-phase-financing="name" placeholder="Terreno" value="${escapeHtml(line.name || '')}">
+        <select data-create-phase-financing="financierName">${lineFinancierOptionsHtml(selectedBanks, line.financierName, line.financierType)}</select>
+        <input data-create-phase-financing="concept" placeholder="Concepto" value="${escapeHtml(line.concept || line.name || '')}">
         <input data-create-phase-financing="approvedAmount" data-bank-number type="text" inputmode="decimal" placeholder="Monto" value="${line.approvedAmount ? formatBankNumber(line.approvedAmount) : ''}">
         <input data-create-phase-financing="interestRate" placeholder="SOFR + 3.50%" value="${escapeHtml(line.interestRate || '')}">
         <input data-create-phase-financing="term" placeholder="24 meses" value="${escapeHtml(line.term || '')}">
@@ -1481,7 +1768,6 @@
     }
     bindBankNumberFormatting(createFinancePhases);
     bindBankNumberFormatting(createFinanceLines || document);
-    bindBankChoices(createFinancePhases);
     syncCreatePhaseSources();
   }
 
@@ -1511,6 +1797,11 @@
   function collectPhaseFinancingLines(row) {
     return Array.from(row.querySelectorAll('[data-create-phase-financing-line]')).map(line => ({
       name: line.querySelector('[data-create-phase-financing="name"]')?.value.trim() || '',
+      financierName: line.querySelector('[data-create-phase-financing="financierName"]')?.value === '__NON_BANK__'
+        ? 'Otra fuente no bancaria'
+        : (line.querySelector('[data-create-phase-financing="financierName"]')?.value.trim() || ''),
+      financierType: line.querySelector('[data-create-phase-financing="financierName"]')?.value === '__NON_BANK__' ? 'other' : 'bank',
+      concept: line.querySelector('[data-create-phase-financing="concept"]')?.value.trim() || '',
       approvedAmount: numberFromCreate(line.querySelector('[data-create-phase-financing="approvedAmount"]')?.value),
       interestRate: line.querySelector('[data-create-phase-financing="interestRate"]')?.value.trim() || '',
       term: line.querySelector('[data-create-phase-financing="term"]')?.value.trim() || '',
@@ -1526,6 +1817,7 @@
       const lineRow = document.querySelector(`[data-create-phase-financing-row="${idx}"]`) || row;
       return {
         name: row.querySelector('[data-create-phase="name"]')?.value.trim() || `Fase ${idx + 1}`,
+        financierBanks: Array.from(row.querySelector('[data-create-phase-banks]')?.selectedOptions || []).map(option => option.value).filter(Boolean),
         planUses: collectPhaseLineItems(row, 'planUses'),
         planSources: autoPhaseSourcesForUses(phaseUsesTotal(row), currentPhaseFinancialNumbers(row)),
         financialConditions: collectPhaseFinancialConditions(row),
@@ -1597,6 +1889,7 @@
   document.getElementById('td-totalUnits')?.addEventListener('input', event => {
     const raw = String(event.target.value || '').trim();
     createTotalUnitsManuallyEdited = !!raw && numberFromCreate(raw) !== createLastSuggestedUnitsTotal;
+    updateCreateUnitsReconciliation();
   });
   document.getElementById('pLocation')?.addEventListener('input', () => {
     createHousingModels?.querySelectorAll('[data-create-model-row]').forEach(row => syncCreateUnitsPreview(row));
@@ -1623,6 +1916,10 @@
       box?.insertAdjacentHTML('beforeend', `
         <div data-create-phase-financing-line style="${PHASE_FINANCING_GRID}margin-bottom:6px;">
           <input data-create-phase-financing="name" placeholder="Terreno">
+          <select data-create-phase-financing="financierName">${lineFinancierOptionsHtml(
+            Array.from(document.querySelector(`[data-create-phase-row="${addFinancingBtn.closest('[data-create-phase-financing-row]')?.dataset.createPhaseFinancingRow}"] [data-create-phase-banks]`)?.selectedOptions || []).map(option => option.value).filter(Boolean)
+          )}</select>
+          <input data-create-phase-financing="concept" placeholder="Concepto">
           <input data-create-phase-financing="approvedAmount" data-bank-number type="text" inputmode="decimal" placeholder="Monto">
           <input data-create-phase-financing="interestRate" placeholder="SOFR + 3.50%">
           <input data-create-phase-financing="term" placeholder="24 meses">
@@ -1649,7 +1946,20 @@
     }
     syncCreatePhaseSources();
   });
-  createFinancePhases?.addEventListener('change', syncCreatePhaseSources);
+  createFinancePhases?.addEventListener('change', event => {
+    const bankSelect = event.target?.closest?.('[data-create-phase-banks]');
+    if (bankSelect) {
+      const phaseIndex = bankSelect.closest('[data-create-phase-row]')?.dataset.createPhaseRow;
+      const banks = Array.from(bankSelect.selectedOptions || []).map(option => option.value).filter(Boolean);
+      document.querySelectorAll(`[data-create-phase-financing-row="${phaseIndex}"] [data-create-phase-financing="financierName"]`).forEach(select => {
+        const current = select.value;
+        const currentType = current === '__NON_BANK__' ? 'other' : 'bank';
+        const allowedCurrent = currentType === 'other' || banks.includes(current) ? current : '';
+        select.innerHTML = lineFinancierOptionsHtml(banks, allowedCurrent === '__NON_BANK__' ? 'Otra fuente no bancaria' : allowedCurrent, currentType);
+      });
+    }
+    syncCreatePhaseSources();
+  });
   createFinancePhases?.addEventListener('keyup', syncCreatePhaseSources);
   createFinanceLines?.addEventListener('input', syncCreatePhaseSources);
   createFinanceLines?.addEventListener('change', syncCreatePhaseSources);
@@ -1783,6 +2093,14 @@
 
   const openModal = async () => {
     if (!modal) return;
+    if (role === 'promoter') {
+      const profileData = await loadPromoterProfile();
+      const completion = profileData?.promoterProfileCompletion || promoterProfileState?.promoterProfileCompletion || {};
+      if (completion.sufficient !== true) {
+        showPromoterProfileRequired(completion);
+        return;
+      }
+    }
     modal.classList.remove('is-fullscreen');
     if (btnExpandCreate) { btnExpandCreate.textContent = '⛶'; btnExpandCreate.title = 'Pantalla completa'; }
     modal.classList.add('show');
@@ -1797,6 +2115,11 @@
     updateCreateDatoUnicoMode();
     hideGlobalCreateFinancialConditionFields();
     await loadCreatePromoterProfiles();
+    if (role === 'promoter') {
+      const legalInput = document.getElementById('ld-promoterLegalName');
+      const company = primaryPromoterCompany(promoterProfileState?.promoterProfile);
+      if (legalInput && !legalInput.value.trim() && company) legalInput.value = company;
+    }
     await loadCreateProgressChecks();
     await loadCreatePermitTemplates();
     renderCreatePermitItems();
@@ -1865,9 +2188,9 @@
     document.getElementById('createPermitTemplate')?.addEventListener('change', renderCreatePermitItems);
     document.getElementById('ld-promoterProfileSelect')?.addEventListener('change', ev => {
       const user = createPromoterProfiles.get(String(ev.target.value || ''));
-      const legalName = user?.promoterProfile?.companyName || '';
+      const legalName = primaryPromoterCompany(user?.promoterProfile);
       const input = document.getElementById('ld-promoterLegalName');
-      if (input && legalName) input.value = legalName;
+      if (input) input.value = legalName;
     });
     if (btnExpandCreate) btnExpandCreate.addEventListener('click', () => {
       modal.classList.toggle('is-fullscreen');
@@ -1889,6 +2212,40 @@
           const location = document.getElementById('pLocation')?.value?.trim() || '';
           const status = document.getElementById('pStatus')?.value || 'EN_CURSO';
           const projectType = document.getElementById('pProjectType')?.value || '';
+          const seeksFinancing = fundingModuleEnabled && document.getElementById('pSeeksFinancing')?.value === 'true';
+          const fundingDeadline = document.getElementById('pFundingDeadline')?.value || '';
+          const fundingRequestedAmount = numberFromCreate(document.getElementById('fundingRequestedAmount')?.value);
+          const fundingSecuredAmount = numberFromCreate(document.getElementById('fundingSecuredAmount')?.value);
+          const fundingRequestError = document.getElementById('createFundingRequestError');
+          const fundingDeadlineError = document.getElementById('pFundingDeadlineError');
+          if (fundingRequestError) fundingRequestError.style.display = 'none';
+          if (fundingDeadlineError) fundingDeadlineError.style.display = 'none';
+          if (seeksFinancing && !fundingDeadline) {
+            if (fundingDeadlineError) {
+              fundingDeadlineError.textContent = 'Indica la fecha límite para completar la financiación.';
+              fundingDeadlineError.style.display = '';
+            }
+            setCreateStep('general');
+            document.getElementById('pFundingDeadline')?.focus();
+            return;
+          }
+          if (seeksFinancing && (!fundingRequestedAmount || fundingSecuredAmount > fundingRequestedAmount)) {
+            if (fundingRequestError) {
+              fundingRequestError.textContent = !fundingRequestedAmount
+                ? 'Indica un monto exacto solicitado mayor que cero.'
+                : 'Los fondos asegurados no pueden superar el monto solicitado.';
+              fundingRequestError.style.display = '';
+            }
+            setCreateStep('financial');
+            document.getElementById('fundingRequestedAmount')?.focus();
+            return;
+          }
+          const coverFile = document.getElementById('pCoverImage')?.files?.[0];
+          let coverPath = '';
+          if (coverFile) {
+            if (!['image/jpeg','image/png','image/webp'].includes(coverFile.type) || coverFile.size > 5 * 1024 * 1024) return alert('La portada debe ser JPG, PNG o WebP y no superar 5 MB.');
+            coverPath = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || '')); reader.onerror = reject; reader.readAsDataURL(coverFile); });
+          }
 
           // (Estos inputs no están en tu HTML actual, pero lo mantengo sin romper)
           const kLoan = document.getElementById('kLoanApproved');
@@ -1909,12 +2266,29 @@
             financialConditions[key] = document.getElementById(`fc-${key}`)?.value?.trim() || '';
           });
           financialConditions.facilities = [];
-
           if (!name) return alert('El nombre es obligatorio.');
+          if (!hasCreateDatoUnicoFile() && String(document.getElementById('td-totalUnits')?.value || '').trim() !== '' && !updateCreateUnitsReconciliation()) {
+            setCreateStep('technical');
+            document.getElementById('td-totalUnits')?.focus();
+            return alert('La suma de unidades de todos los modelos debe coincidir con la cantidad total de unidades.');
+          }
           if (!validateCreateModelStatuses({ alertOnError: true })) return;
           if (!validateCreateFinancePhases({ alertOnError: true })) return;
+          const projectTotal = numberFromCreate(document.getElementById('fc-projectTotal')?.value);
+          if (seeksFinancing && fundingRequestedAmount > projectTotal) {
+            if (fundingRequestError) {
+              fundingRequestError.textContent = 'El monto solicitado no puede superar el coste total.';
+              fundingRequestError.style.display = '';
+            }
+            setCreateStep('financial');
+            document.getElementById('fundingRequestedAmount')?.focus();
+            return;
+          }
           const legalData = collectLegalData();
           const importFile = createDatoUnicoFileState;
+          const checklistFiles = Array.from(document.querySelectorAll('[data-create-checklist-file]'))
+            .flatMap(input => Array.from(input.files || []).map(file => ({ key: input.dataset.createChecklistFile, file })))
+            .filter(item => item.key && item.file);
 
           const payload = {
             name,
@@ -1922,6 +2296,11 @@
             descripcion: description,
             location,
             projectType,
+            coverImage: coverPath ? { path: coverPath, originalname: coverFile.name, mimetype: coverFile.type } : undefined,
+            seeksFinancing,
+            fundingRequestedAmount: seeksFinancing ? fundingRequestedAmount : undefined,
+            fundingSecuredAmount: seeksFinancing ? fundingSecuredAmount : undefined,
+            fundingDeadline: seeksFinancing ? fundingDeadline : undefined,
             status,
             loanApproved,
             budgetApproved,
@@ -1937,6 +2316,28 @@
           };
 
           const createdProject = await API.post('/api/projects', payload);
+          if (createdProject?._id && checklistFiles.length) {
+            const checklistIds = createdProject.initialChecklistIds || {};
+            const uploadFailures = [];
+            for (const item of checklistFiles) {
+              const checklistId = checklistIds[item.key];
+              if (!checklistId) {
+                uploadFailures.push(item.file.name);
+                continue;
+              }
+              const fd = new FormData();
+              fd.append('files', item.file);
+              fd.append('projectId', createdProject._id);
+              fd.append('checklistId', checklistId);
+              try {
+                await API.upload('/api/documents/upload', fd);
+              } catch (uploadErr) {
+                console.error(uploadErr);
+                uploadFailures.push(item.file.name);
+              }
+            }
+            if (uploadFailures.length) alert(`Proyecto creado, pero no se pudieron adjuntar: ${uploadFailures.join(', ')}.`);
+          }
           if (importFile && createdProject?._id) {
             const fd = new FormData();
             fd.append('file', importFile);
@@ -1952,7 +2353,7 @@
           closeModal();
 
           // reset campos
-          ['pName', 'pDesc', 'pLocation', 'pProjectType', 'ld-promoterProfileSelect', 'kLoanApproved', 'kBudgetApproved', 'ts-promoter', 'ts-commercial', 'ts-legal', 'ts-tecnico', 'ts-gerencia', 'ts-socios', 'ts-financiero', 'ts-contable', 'ts-notes', ...conditionNumbers.map(x => `fc-${x}`), ...conditionTexts.map(x => `fc-${x}`)].forEach(id => {
+          ['pName', 'pDesc', 'pLocation', 'pProjectType', 'pFundingDeadline', 'ld-promoterProfileSelect', 'kLoanApproved', 'kBudgetApproved', 'ts-promoter', 'ts-commercial', 'ts-legal', 'ts-tecnico', 'ts-gerencia', 'ts-socios', 'ts-financiero', 'ts-contable', 'ts-notes', 'fundingRequestedAmount', 'fundingSecuredAmount', ...conditionNumbers.map(x => `fc-${x}`), ...conditionTexts.map(x => `fc-${x}`)].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
           });
@@ -1968,16 +2369,27 @@
           createTotalUnitsManuallyEdited = false;
           createLastSuggestedUnitsTotal = 0;
           document.querySelectorAll('[data-create-precedent]').forEach(input => { input.checked = false; });
+          document.querySelectorAll('[data-legal-assessment],[data-technical-assessment]').forEach(input => { input.value = ''; });
           document.querySelectorAll('[data-create-checklist-key]').forEach(input => { input.checked = false; });
+          document.querySelectorAll('[data-create-checklist-file]').forEach(input => {
+            input.value = '';
+            const upload = input.closest('.create-checklist-upload');
+            upload?.classList.remove('has-files');
+            const name = upload?.querySelector('[data-create-checklist-file-name]');
+            if (name) name.textContent = 'Sin archivos';
+          });
           const createPermitTemplate = document.getElementById('createPermitTemplate');
           if (createPermitTemplate) createPermitTemplate.value = '';
           renderCreatePermitItems();
-          ['fc-otherRequirements','fc-trustee','fc-trustType','fc-technicalInspector','fc-financialInspector','ld-promoterLegalName','ld-interimBank','ld-interimBankOther','ld-trustName','td-phasesCount','td-totalUnits','td-notes'].forEach(fieldId => {
+          ['fc-otherRequirements','fc-trustee','fc-trustType','fc-technicalInspector','fc-financialInspector','ld-promoterLegalName','ld-trustName','td-phasesCount','td-totalUnits','td-notes'].forEach(fieldId => {
             const field = document.getElementById(fieldId); if (field) field.value = '';
           });
           clearCreateDatoUnicoFile();
           const trustApplies = document.getElementById('ld-trustApplies');
           if (trustApplies) trustApplies.value = 'false';
+          const seeks = document.getElementById('pSeeksFinancing'); if (seeks) seeks.value = 'false';
+          const secured = document.getElementById('fundingSecuredAmount'); if (secured) secured.value = '0';
+          syncCreateFundingRequestVisibility();
           setCreateStep('general');
 
           // reset selects
@@ -2012,7 +2424,147 @@
     if (modal && modal.parentNode) modal.parentNode.removeChild(modal);
   }
 
+  document.getElementById('fundingOpportunityCards')?.addEventListener('click', async ev => {
+    if (!fundingModuleEnabled) return;
+    const btn = ev.target.closest('[data-funding-opportunity]'); if (!btn) return;
+    const opportunityId = btn.dataset.fundingOpportunity;
+    document.getElementById('fundingOpportunityModal')?.remove();
+    const wrap = document.createElement('div'); wrap.id = 'fundingOpportunityModal'; wrap.className = 'modal-backdrop show';
+    wrap.innerHTML = `<div class="modal create-modal funding-detail-modal funding-detail-loading"><button class="modal-close" type="button" data-close-funding aria-label="Cerrar">×</button><div class="funding-detail-loading-body"><span class="funding-detail-spinner" aria-hidden="true"></span><strong>Preparando la oferta completa</strong><span>Estamos cargando el expediente, el inventario y la documentación publicada.</span></div></div>`;
+    document.body.appendChild(wrap);
+    wrap.querySelector('[data-close-funding]')?.addEventListener('click', () => wrap.remove());
+    wrap.addEventListener('click', event => { if (event.target === wrap) wrap.remove(); });
+    const originalButtonText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Abriendo oferta…';
+    let item;
+    try {
+      item = await getFundingOpportunityDetail(opportunityId);
+    } catch (error) {
+      wrap.innerHTML = `<div class="modal profile-required-modal"><div class="profile-required-body"><div class="profile-required-icon" aria-hidden="true">!</div><h3>No se pudo abrir la oferta</h3><p>${escapeHtml(error.message || 'No se pudo cargar el detalle de la oportunidad.')}</p></div><div class="profile-required-actions"><button class="btn" type="button" data-close-funding>Cerrar</button></div></div>`;
+      wrap.querySelector('[data-close-funding]')?.addEventListener('click', () => wrap.remove());
+      return;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalButtonText;
+    }
+    const currency = escapeHtml(item.currency || 'PAB');
+    const moneyLabel = value => `${Number(value || 0).toLocaleString('es-ES', { maximumFractionDigits: 2 })} ${currency}`;
+    const requestCoverage = Math.max(0, Math.min(100, Number(item.requestCoveredPct || 0)));
+    const presalesPct = Math.max(0, Math.min(100, Number(item.presalesPct || 0)));
+    const modelNames = (item.housingModels || []).map(model => escapeHtml(model.name)).filter(Boolean);
+    const phaseNames = (item.phases || []).map(phase => escapeHtml(phase.name)).filter(Boolean);
+    wrap.innerHTML = `<div class="modal create-modal funding-detail-modal"><button class="modal-close" type="button" data-close-funding aria-label="Cerrar">×</button><div class="funding-detail-scroll">
+      <section class="funding-detail-top">
+        <div class="funding-detail-hero">
+          ${item.coverImage?.path ? `<img src="${escapeHtml(item.coverImage.path)}" alt="Portada de ${escapeHtml(item.name || 'proyecto')}">` : ''}
+          <div class="funding-detail-hero-content">
+            <div class="funding-detail-badges"><span class="funding-detail-badge">${escapeHtml(item.projectType || 'Proyecto inmobiliario')}</span><span class="funding-detail-badge">Oportunidad Bank73</span></div>
+            <h2>${escapeHtml(item.name || 'Oportunidad de financiación')}</h2>
+            <p class="funding-detail-location">${escapeHtml(item.location || 'Ubicación general no publicada')}</p>
+          </div>
+        </div>
+        <aside class="funding-detail-summary">
+          <span class="funding-detail-summary-kicker">Resumen de la solicitud</span><h3>Financiación requerida</h3>
+          <div class="funding-detail-request"><span>Monto solicitado</span><strong>${moneyLabel(item.requestedAmount)}</strong></div>
+          <div class="funding-detail-summary-grid">
+            <div class="funding-detail-summary-row"><span>Fondos asegurados</span><strong>${moneyLabel(item.securedRequestAmount)}</strong></div>
+            <div class="funding-detail-summary-row"><span>Pendiente de financiar</span><strong>${moneyLabel(item.requestPendingAmount)}</strong></div>
+            <div class="funding-detail-summary-row"><span>Coste total del proyecto</span><strong>${moneyLabel(item.totalCost)}</strong></div>
+            <div class="funding-detail-summary-row"><span>Venta potencial inventario</span><strong>${moneyLabel(item.potentialSalesValue)}</strong></div>
+            <div class="funding-detail-summary-row"><span>Fecha límite</span><strong>${escapeHtml(fundingDeadlineLabel(item.fundingDeadline, item.estimatedTerm))}</strong></div>
+            <div class="funding-detail-summary-row"><span>Scoring Bank73</span><strong>${Number(item.finalScore || 0).toFixed(1)} / 100</strong></div>
+          </div>
+          <div class="funding-opportunity-coverage"><div class="funding-opportunity-coverage-head"><span>Cobertura de la solicitud</span><strong>${Math.round(requestCoverage)}%</strong></div><div class="progress funding-opportunity-progress"><div style="width:${requestCoverage}%"></div></div></div>
+          <div class="funding-opportunity-coverage is-presales"><div class="funding-opportunity-coverage-head"><span>Avance de preventas</span><strong>${Number(item.unitsSold || 0)}/${Number(item.unitsTotal || 0)} (${Math.round(presalesPct)}%)</strong></div><div class="progress funding-opportunity-progress is-presales"><div style="width:${presalesPct}%"></div></div></div>
+        </aside>
+      </section>
+      <div class="funding-detail-main">
+        <main class="funding-detail-column">
+          <section class="funding-detail-section"><h3>Descripción del proyecto</h3><p>${escapeHtml(item.description || 'La descripción detallada no se ha incluido en la información pública de esta oportunidad.')}</p>
+            <div class="funding-detail-kpis"><div class="funding-detail-kpi"><span>Inventario</span><strong>${Number(item.unitsTotal || 0)} unidades</strong></div><div class="funding-detail-kpi"><span>Preventas</span><strong>${Number(item.unitsSold || 0)} unidades</strong></div><div class="funding-detail-kpi"><span>Valor potencial de venta</span><strong>${moneyLabel(item.potentialSalesValue)}</strong></div></div>
+          </section>
+          <section class="funding-detail-section"><h3>Cómo se formaliza la financiación</h3><p>Proceso orientativo coordinado por Bank73. Los hitos y condiciones definitivos dependerán del análisis del expediente y de la entidad financiadora.</p><div class="funding-process-list">
+            <div class="funding-process-step"><div><strong>Manifestación de interés</strong><span>El banco indica el importe que estudiaría y designa a las personas responsables.</span></div></div>
+            <div class="funding-process-step"><div><strong>Revisión inicial de Bank73</strong><span>Validación del encaje de la propuesta, documentación disponible y alcance de la solicitud.</span></div></div>
+            <div class="funding-process-step"><div><strong>Análisis financiero y de riesgos</strong><span>Revisión económica, comercial, jurídica, urbanística y técnica; pueden solicitarse aclaraciones o documentación adicional.</span></div></div>
+            <div class="funding-process-step"><div><strong>Carta de condiciones</strong><span>La entidad define importe, plazo, garantías, desembolsos, amortización y condiciones precedentes.</span></div></div>
+            <div class="funding-process-step"><div><strong>Contratos, garantías y notaría</strong><span>Formalización contractual y, cuando corresponda, constitución notarial de hipoteca, fideicomiso u otras garantías.</span></div></div>
+            <div class="funding-process-step"><div><strong>Desembolso y seguimiento</strong><span>Cumplidas las condiciones, se ejecutan los desembolsos y el control técnico-financiero acordado.</span></div></div>
+          </div></section>
+          <section class="funding-detail-section"><h3>Aspectos que se revisarán</h3><p>No representan incidencias confirmadas; son los principales bloques de diligencia debida antes de aprobar una financiación.</p><div class="funding-risk-grid">
+            <div class="funding-risk-item"><strong>Jurídico y garantías</strong><span>Titularidad, cargas, contratos, estructura societaria y garantías propuestas.</span></div>
+            <div class="funding-risk-item"><strong>Urbanístico y licencias</strong><span>Uso de suelo, normativa, permisos, aprobaciones y condicionantes administrativos.</span></div>
+            <div class="funding-risk-item"><strong>Técnico y construcción</strong><span>Presupuesto, diseño, cronograma, contratista, contingencias y control de obra.</span></div>
+            <div class="funding-risk-item"><strong>Comercial y preventas</strong><span>Demanda, precios, ritmo de absorción, cancelaciones y calidad de las reservas.</span></div>
+            <div class="funding-risk-item"><strong>Financiero</strong><span>Fuentes y usos, aportes, cobertura, flujo de caja, repago y sensibilidad de costes.</span></div>
+            <div class="funding-risk-item"><strong>Condiciones de desembolso</strong><span>Hitos, certificaciones, seguros, aportes previos y demás condiciones precedentes.</span></div>
+          </div></section>
+          ${(modelNames.length || phaseNames.length || item.publicConclusions) ? `<section class="funding-detail-section"><h3>Estructura del proyecto</h3>${(modelNames.length || phaseNames.length) ? `<div class="funding-detail-kpis">${modelNames.length ? `<div class="funding-detail-kpi"><span>Tipologías publicadas</span><strong>${modelNames.join(', ')}</strong></div>` : ''}${phaseNames.length ? `<div class="funding-detail-kpi"><span>Fases publicadas</span><strong>${phaseNames.join(', ')}</strong></div>` : ''}</div>` : ''}${item.publicConclusions ? `<p style="margin-top:${modelNames.length || phaseNames.length ? '14px' : '0'};">${escapeHtml(item.publicConclusions)}</p>` : ''}</section>` : ''}
+          ${(item.documents || []).length ? `<section class="funding-detail-section"><h3>Documentación pública</h3><p>Documentos seleccionados expresamente para esta oportunidad.</p><div class="funding-doc-list">${item.documents.map(doc => `<button type="button" class="btn ghost small" data-public-doc-url="${escapeHtml(doc.downloadUrl)}" data-public-doc-name="${escapeHtml(doc.name)}">${escapeHtml(doc.name)}</button>`).join('')}</div></section>` : ''}
+          ${(item.units || []).length ? `<section class="funding-detail-section"><h3>Inventario publicado</h3><div class="table-scroll"><table class="table"><thead><tr><th>Unidad</th><th>Modelo</th><th>Área</th><th>Precio</th><th>Estado</th></tr></thead><tbody>${item.units.map(unit => `<tr><td>${escapeHtml(unit.reference)}</td><td>${escapeHtml(unit.model)}</td><td>${Number(unit.areaM2 || 0)}</td><td>${unit.price === undefined ? 'No publicado' : moneyLabel(unit.price)}</td><td>${escapeHtml(unit.status)}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
+        </main>
+        <aside class="funding-detail-column funding-detail-interest"><section class="funding-detail-section"><h3>Estoy interesado en financiar</h3><p style="margin-bottom:16px;">Envía una manifestación de interés a Bank73. No constituye todavía una oferta vinculante.</p><form id="fundingInterestForm"><label>Monto que desea estudiar<input name="amount" required inputmode="decimal"><span id="fundingInterestAmountMeta" class="small muted">0% del coste total · 0% del importe pendiente</span></label><label>Persona responsable<input name="responsiblePerson" required></label><label>Contacto interno<input name="internalContact" required></label><label>Comentario<textarea name="comment" rows="4" placeholder="Indica condiciones iniciales, dudas o documentación necesaria"></textarea></label><p id="fundingInterestMessage" class="msg" style="display:none;" aria-live="polite"></p><button class="btn" type="submit">Enviar interés a Bank73</button><div class="funding-detail-disclaimer">Bank73 revisará la solicitud y coordinará el intercambio de información. La aprobación depende del análisis y de las políticas de la entidad financiadora.</div></form></section></aside>
+      </div>
+    </div></div>`;
+    wrap.querySelector('[data-close-funding]').addEventListener('click', () => wrap.remove());
+    wrap.querySelectorAll('[data-public-doc-url]').forEach(downloadBtn => downloadBtn.addEventListener('click', async () => {
+      const auth = API.getAuth();
+      const response = await fetch(downloadBtn.dataset.publicDocUrl, { headers: { Authorization: `Bearer ${API.getToken()}`, 'x-tenant': auth.tenantKey || auth.tenant } });
+      if (!response.ok) return alert('No se pudo descargar el documento.');
+      const url = URL.createObjectURL(await response.blob()); const a = document.createElement('a'); a.href = url; a.download = downloadBtn.dataset.publicDocName || 'documento'; a.click(); URL.revokeObjectURL(url);
+    }));
+    wrap.addEventListener('click', e => { if (e.target === wrap) wrap.remove(); });
+    const interestAmountInput = wrap.querySelector('#fundingInterestForm [name="amount"]');
+    const interestAmountMeta = wrap.querySelector('#fundingInterestAmountMeta');
+    interestAmountInput?.addEventListener('input', () => {
+      const amount = numberFromCreate(interestAmountInput.value);
+      const total = Number(item.totalCost || 0);
+      const pending = Number(item.pendingAmount || 0);
+      const totalPct = total > 0 ? amount / total * 100 : 0;
+      const pendingText = pending > 0 ? `${(amount / pending * 100).toFixed(2)}% del importe pendiente` : 'Sin importe pendiente de financiar';
+      if (interestAmountMeta) interestAmountMeta.textContent = `${totalPct.toFixed(2)}% del coste total · ${pendingText}`;
+    });
+    wrap.querySelector('#fundingInterestForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const message = e.currentTarget.querySelector('#fundingInterestMessage');
+      if (role !== 'bank') {
+        if (message) { message.textContent = 'Vista previa del marketplace bancario. Solo un banco puede enviar interés.'; message.className = 'msg error'; message.style.display = ''; }
+        return;
+      }
+      const submitBtn = e.currentTarget.querySelector('[type="submit"]');
+      const form = new FormData(e.currentTarget);
+      try {
+        if (submitBtn) submitBtn.disabled = true;
+        await API.post(`/api/funding/opportunities/${encodeURIComponent(btn.dataset.fundingOpportunity)}/interests`, { amount: numberFromCreate(form.get('amount')), responsiblePerson: form.get('responsiblePerson'), internalContact: form.get('internalContact'), comment: form.get('comment') });
+        if (message) { message.textContent = 'Interés registrado. Bank73 revisará la propuesta.'; message.className = 'msg success'; message.style.display = ''; }
+        e.currentTarget.reset();
+      } catch (error) {
+        if (message) { message.textContent = error.message || 'No se pudo registrar el interés.'; message.className = 'msg error'; message.style.display = ''; }
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    });
+  });
+
+  document.getElementById('fundingOpportunityCards')?.addEventListener('pointerover', event => {
+    const button = event.target.closest('[data-funding-opportunity]');
+    const opportunityId = button?.dataset.fundingOpportunity;
+    if (!opportunityId || fundingOpportunityDetailCache.has(opportunityId)) return;
+    getFundingOpportunityDetail(opportunityId).catch(() => {});
+  });
+
   if (role === 'promoter') {
+    const closeProfileRequired = () => profileRequiredBackdrop?.classList.remove('show');
+    closeProfileRequiredBtn?.addEventListener('click', closeProfileRequired);
+    profileRequiredBackdrop?.addEventListener('click', event => {
+      if (event.target === profileRequiredBackdrop) closeProfileRequired();
+    });
+    goToPromoterProfileBtn?.addEventListener('click', async () => {
+      closeProfileRequired();
+      await loadPromoterProfile();
+      profileModalBackdrop?.classList.add('show');
+    });
     profileBtn?.addEventListener('click', async () => {
       await loadPromoterProfile();
       profileModalBackdrop?.classList.add('show');
@@ -2062,6 +2614,7 @@
   }
 
   // Init
+  await syncFundingModuleVisibility();
   await loadList();
 
   const logoutBtn = document.getElementById('logoutBtn');

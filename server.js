@@ -39,6 +39,7 @@ const providerRoutes = require('./routes/providers');
 const permitRoutes = require('./routes/permits');
 const chatRoutes = require('./routes/chat');
 const bankRoutes = require('./routes/bank');
+const fundingRoutes = require('./routes/funding');
 
 const app = express();
 
@@ -246,6 +247,7 @@ app.use('/api', ...guard, financeRoutes);
 
 // Admin
 app.use('/api/admin', ...guard, adminRoutes);
+app.use('/api/funding', ...guard, fundingRoutes);
 
 // Proveedores generales Bank73 (lectura autenticada)
 app.use('/api/providers', ...guard, providerRoutes);

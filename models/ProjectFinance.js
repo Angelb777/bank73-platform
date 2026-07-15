@@ -9,7 +9,14 @@ const LineItemSchema = new Schema({
 
 const PhaseFinancingLineSchema = new Schema({
   name: { type: String, trim: true, default: '' },
+  financierTenantKey: { type: String, trim: true, default: '' },
+  financierName: { type: String, trim: true, default: '' },
+  financierType: { type: String, trim: true, default: 'bank' },
+  concept: { type: String, trim: true, default: '' },
   approvedAmount: { type: Number, default: 0 },
+  disbursedAmount: { type: Number, default: 0 },
+  amortizedAmount: { type: Number, default: 0 },
+  outstandingBalance: { type: Number, default: 0 },
   interestRate: { type: String, trim: true, default: '' },
   term: { type: String, trim: true, default: '' },
   paymentMethod: { type: String, trim: true, default: '' },
@@ -46,6 +53,7 @@ const PhaseFinancialConditionsSchema = new Schema({
 
 const PhaseSchema = new Schema({
   name: { type: String, required: true },                // "Fase 1"
+  financierBanks: { type: [{ type: String, trim: true }], default: [] },
   startDate: { type: Date, required: true },
   endDate:   { type: Date, required: true },
   actualStartDate: { type: Date, default: null },
@@ -106,6 +114,10 @@ const LoanLineSchema = new Schema({
   phaseId: { type: Schema.Types.ObjectId, default: null, index: true },
   phaseName: { type: String, default: '' },
   name: { type: String, default: 'Linea 1' },
+  financierTenantKey: { type: String, trim: true, default: '' },
+  financierName: { type: String, trim: true, default: '' },
+  financierType: { type: String, trim: true, default: 'bank' },
+  concept: { type: String, trim: true, default: '' },
   entries: { type: [LoanLineItemSchema], default: [] },
   // Compatibilidad con la primera versión: si existen datos antiguos aquí,
   // el backend los expone como una partida dentro de entries.

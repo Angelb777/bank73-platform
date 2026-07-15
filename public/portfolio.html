@@ -5,7 +5,7 @@
   <title>Portfolio — Bank73</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link href="/css/base.css" rel="stylesheet" />
-  <link href="/css/theme.css?v=dashboard-nav-v2" rel="stylesheet" />
+  <link href="/css/theme.css?v=portfolio-cards-v3" rel="stylesheet" />
   <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
 
   <style>
@@ -517,6 +517,15 @@
     .profile-modal label { color:#1e293b !important; font-weight:600; }
     .profile-modal input::placeholder, .profile-modal textarea::placeholder { color:#64748b; opacity:1; }
     .profile-modal select { color:#0f172a; }
+    .profile-required-modal { width:min(520px,calc(100vw - 32px));padding:0;overflow:hidden; }
+    .profile-required-body { padding:30px;text-align:center; }
+    .profile-required-icon { display:grid;place-items:center;width:54px;height:54px;margin:0 auto 16px;border-radius:50%;background:#fff7ed;color:#c2410c;font-size:26px;font-weight:900; }
+    .profile-required-body h3 { margin:0 0 9px;color:#0f172a;font-size:21px; }
+    .profile-required-body p { margin:0;color:#64748b;line-height:1.55; }
+    .profile-required-progress { margin:18px 0 6px;height:9px;border-radius:999px;background:#e2e8f0;overflow:hidden; }
+    .profile-required-progress > div { height:100%;border-radius:inherit;background:linear-gradient(90deg,#f59e0b,#f97316); }
+    .profile-required-percent { color:#9a3412;font-size:12px;font-weight:800; }
+    .profile-required-actions { display:flex;justify-content:flex-end;gap:10px;padding:16px 20px;border-top:1px solid #e2e8f0;background:#f8fafc; }
     .profile-section { border:1px solid #dbe3ee; border-radius:16px; background:#fff; padding:20px; margin-bottom:18px; box-shadow:0 4px 14px rgba(15,23,42,.04); }
     .profile-section-head { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:16px; }
     .profile-section-title { font-size:16px; font-weight:850; color:#0f172a; }
@@ -670,6 +679,92 @@
       pointer-events:none;
       filter:grayscale(.25);
     }
+    .create-units-reconciliation,
+    .create-funding-summary {
+      display:grid;
+      grid-template-columns:repeat(5,minmax(0,1fr));
+      gap:10px;
+      margin:12px 0;
+      padding:12px;
+      border:1px solid #bbf7d0;
+      border-radius:14px;
+      background:#f0fdf4;
+    }
+    .create-units-reconciliation { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .create-units-reconciliation > div,
+    .create-funding-summary > div { display:grid;gap:4px; }
+    .create-units-reconciliation span,
+    .create-funding-summary span { color:#64748b;font-size:12px; }
+    .create-units-reconciliation strong,
+    .create-funding-summary strong { color:#0f172a;font-size:16px; }
+    .create-units-reconciliation p { grid-column:1/-1;margin:0;color:#166534;font-weight:700; }
+    .create-units-reconciliation.has-difference { border-color:#fbbf24;background:#fffbeb; }
+    .create-units-reconciliation.has-difference p { color:#92400e; }
+    #createProgressChecks .create-progress-item {
+      grid-template-columns:24px minmax(0,1fr) minmax(230px,290px);
+      gap:12px;
+      min-height:58px;
+      padding:9px 10px;
+      margin-top:6px;
+      border:1px solid transparent;
+      border-radius:12px;
+      transition:border-color .16s ease,background .16s ease,box-shadow .16s ease;
+    }
+    #createProgressChecks .create-progress-item:hover { background:#f8fafc; }
+    .create-progress-item-copy { display:grid;gap:3px;min-width:0; }
+    .create-progress-item-copy > span { font-weight:700;color:#334155;line-height:1.35; }
+    .create-progress-item-copy small { color:#1d4ed8;font-size:11px;font-weight:800; }
+    .create-checklist-upload { display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0; }
+    #createProgressChecks.show-financing-docs .create-progress-item.is-priority {
+      border-color:#bfdbfe;
+      background:linear-gradient(135deg,#eff6ff 0%,#f8fbff 100%);
+      box-shadow:0 4px 14px rgba(37,99,235,.07);
+    }
+    .create-checklist-upload-button {
+      display:inline-flex!important;
+      align-items:center;
+      justify-content:center!important;
+      gap:5px;
+      min-height:34px!important;
+      padding:7px 11px!important;
+      border:1px solid #bfdbfe!important;
+      border-radius:9px!important;
+      background:#fff!important;
+      color:#1d4ed8!important;
+      font-size:12px!important;
+      font-weight:800!important;
+      line-height:1!important;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .create-checklist-upload-button:hover { border-color:#60a5fa!important;background:#eff6ff!important; }
+    .create-checklist-upload-button input { display:none; }
+    .create-checklist-upload-name { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:145px;color:#64748b;font-size:11px; }
+    .create-checklist-upload.has-files .create-checklist-upload-button { border-color:#86efac!important;background:#f0fdf4!important;color:#166534!important; }
+    .create-checklist-upload.has-files .create-checklist-upload-name { color:#166534;font-weight:700; }
+    .create-funding-documents-notice {
+      margin:14px 0 16px;
+      padding:16px;
+      border:1px solid #93c5fd;
+      border-radius:16px;
+      background:linear-gradient(135deg,#eff6ff 0%,#f8fbff 100%);
+      box-shadow:0 8px 22px rgba(37,99,235,.08);
+    }
+    .create-funding-documents-notice-head { display:flex;align-items:flex-start;gap:12px; }
+    .create-funding-documents-notice-icon { display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;border-radius:50%;background:#2563eb;color:#fff;font-weight:900;font-family:Georgia,serif; }
+    .create-funding-documents-notice h4 { margin:1px 0 5px;color:#1e3a8a;font-size:15px; }
+    .create-funding-documents-notice p { margin:0;color:#475569;font-size:12px;line-height:1.5; }
+    .create-funding-documents-guide { display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:13px; }
+    .create-funding-documents-guide > div { display:grid;gap:4px;padding:10px;border:1px solid #dbeafe;border-radius:11px;background:rgba(255,255,255,.8); }
+    .create-funding-documents-guide strong { color:#1e40af;font-size:12px; }
+    .create-funding-documents-guide span { color:#64748b;font-size:11px;line-height:1.4; }
+    @media (max-width:760px) {
+      .create-units-reconciliation,
+      .create-funding-summary { grid-template-columns:1fr 1fr; }
+      #createProgressChecks .create-progress-item { grid-template-columns:24px minmax(0,1fr); }
+      #createProgressChecks .create-checklist-upload { grid-column:2;justify-content:flex-start;flex-wrap:wrap; }
+      .create-funding-documents-guide { grid-template-columns:1fr; }
+    }
     .create-step-card .btn,
     .create-finance-panel .btn,
     .create-modal-actions .btn {
@@ -709,6 +804,148 @@
       box-shadow:none;
       cursor:not-allowed;
     }
+
+    #fundingOpportunitiesSection {
+      width:100%;
+      max-width:1268px;
+      margin:48px auto 0;
+    }
+    .funding-marketplace-heading {
+      width:100%;
+      margin:0 auto 32px;
+      text-align:center;
+    }
+    .funding-marketplace-title {
+      margin:0;
+      color:var(--text);
+      font-size:clamp(1.35rem,2vw,1.7rem);
+      line-height:1.3;
+      letter-spacing:-.015em;
+    }
+    .funding-marketplace-subtitle {
+      margin:10px 0 0;
+      color:var(--text-muted);
+      font-size:1.08rem;
+      line-height:1.5;
+    }
+    #fundingOpportunityCards {
+      width:100%;
+      grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),620px));
+      justify-content:center;
+      gap:28px;
+    }
+    .funding-marketplace-empty {
+      grid-column:1/-1;
+      width:100%;
+      margin:2px 0 0;
+      text-align:center;
+      color:var(--text-muted);
+      font-size:.96rem;
+      line-height:1.5;
+    }
+    #fundingOpportunityCards .funding-opportunity-card {
+      display:flex;
+      flex-direction:column;
+      min-height:650px;
+      padding:0;
+      overflow:hidden;
+      border-radius:24px;
+      border:1px solid rgba(148,163,184,.2);
+      background:linear-gradient(160deg,rgba(25,36,58,.98),rgba(13,23,41,.98));
+      box-shadow:0 24px 65px rgba(0,0,0,.25);
+      transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease;
+    }
+    #fundingOpportunityCards .funding-opportunity-card:hover {
+      transform:translateY(-4px);
+      border-color:rgba(96,165,250,.45);
+      box-shadow:0 30px 75px rgba(0,0,0,.34);
+    }
+    .funding-opportunity-cover { position:relative; height:300px; overflow:hidden; background:linear-gradient(135deg,#172554,#2563eb); }
+    .funding-opportunity-cover img { width:100%; height:100%; object-fit:cover; display:block; transition:transform .35s ease; }
+    .funding-opportunity-card:hover .funding-opportunity-cover img { transform:scale(1.025); }
+    .funding-opportunity-cover::after { content:''; position:absolute; inset:45% 0 0; background:linear-gradient(transparent,rgba(7,15,29,.78)); pointer-events:none; }
+    .funding-opportunity-cover-tags { position:absolute; inset:18px 18px auto; z-index:1; display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+    .funding-opportunity-pill { display:inline-flex; align-items:center; gap:7px; min-height:34px; padding:7px 12px; border-radius:999px; border:1px solid rgba(255,255,255,.22); background:rgba(8,20,38,.76); color:#f8fafc; backdrop-filter:blur(10px); font-size:.78rem; font-weight:800; }
+    .funding-opportunity-pill.is-term { background:rgba(37,99,235,.82); }
+    .funding-opportunity-body { display:flex; flex-direction:column; flex:1; padding:24px 26px 26px; }
+    .funding-opportunity-title { margin:0; font-size:1.55rem; line-height:1.2; letter-spacing:-.02em; color:var(--text); }
+    .funding-opportunity-subtitle { margin:8px 0 20px; color:var(--text-muted); }
+    .funding-opportunity-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; }
+    .funding-opportunity-metric { min-width:0; padding:11px 12px; border:1px solid rgba(148,163,184,.16); border-radius:13px; background:rgba(2,6,23,.24); }
+    .funding-opportunity-metric.is-primary { grid-column:1/-1; display:flex; justify-content:space-between; align-items:flex-end; gap:16px; background:linear-gradient(135deg,rgba(37,99,235,.18),rgba(14,165,233,.08)); border-color:rgba(96,165,250,.26); }
+    .funding-opportunity-metric span { display:block; color:var(--text-muted); font-size:.76rem; line-height:1.25; }
+    .funding-opportunity-metric strong { display:block; margin-top:5px; color:var(--text); font-size:.96rem; line-height:1.15; }
+    .funding-opportunity-metric.is-primary strong { font-size:1.55rem; }
+    .funding-opportunity-metric.is-viability { grid-column:1/-1;text-align:center;background:linear-gradient(135deg,rgba(14,165,233,.12),rgba(37,99,235,.08));border-color:rgba(56,189,248,.24); }
+    .funding-opportunity-coverage { margin:20px 0 0; padding:16px; border-radius:15px; background:rgba(2,6,23,.2); }
+    .funding-opportunity-coverage-head { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:9px; font-size:.82rem; color:var(--text-muted); }
+    .funding-opportunity-coverage-head strong { color:#34d399; font-size:.92rem; }
+    .funding-opportunity-progress { height:10px; margin:0; border-radius:999px; background:rgba(148,163,184,.18); }
+    .funding-opportunity-progress>div { border-radius:inherit; background:linear-gradient(90deg,#22c55e,#34d399); }
+    .funding-opportunity-coverage-caption { margin-top:8px;color:var(--text-muted);font-size:.72rem;line-height:1.35; }
+    .funding-opportunity-coverage.is-presales { margin-top:10px; }
+    .funding-opportunity-coverage.is-presales .funding-opportunity-coverage-head strong { color:#60a5fa; }
+    .funding-opportunity-progress.is-presales>div { background:linear-gradient(90deg,#2563eb,#38bdf8); }
+    .funding-opportunity-actions { display:flex; justify-content:center; margin-top:auto; padding-top:22px; }
+    .funding-opportunity-actions .btn { width:min(340px,100%); min-height:48px; border-radius:14px; font-weight:850; letter-spacing:.01em; box-shadow:0 14px 30px rgba(37,99,235,.26); }
+    .funding-opportunity-viability-note { margin:10px 2px 0;color:var(--text-muted);font-size:.7rem;line-height:1.4; }
+    .funding-detail-modal.modal.create-modal { width:min(1500px,calc(100vw - 48px));max-width:1500px;height:min(940px,calc(100vh - 32px));max-height:calc(100vh - 32px);border-radius:22px;background:#f1f5f9; }
+    .funding-detail-modal>.modal-close { z-index:10;background:rgba(255,255,255,.94);box-shadow:0 6px 18px rgba(15,23,42,.18); }
+    .funding-detail-loading.modal.create-modal { width:min(540px,calc(100vw - 32px));height:310px; }
+    .funding-detail-loading-body { display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:40px;text-align:center;background:linear-gradient(180deg,#fff,#f8fafc); }
+    .funding-detail-loading-body strong { color:#0f172a;font-size:1.05rem; }
+    .funding-detail-loading-body>span:last-child { color:#64748b;font-size:.82rem;line-height:1.5; }
+    .funding-detail-spinner { width:38px;height:38px;margin-bottom:5px;border:4px solid #dbeafe;border-top-color:#2563eb;border-radius:50%;animation:funding-detail-spin .75s linear infinite; }
+    @keyframes funding-detail-spin { to { transform:rotate(360deg); } }
+    .funding-detail-scroll { flex:1;min-height:0;overflow:auto;background:#f1f5f9;color:#0f172a; }
+    .funding-detail-top { display:grid;grid-template-columns:minmax(0,1.7fr) minmax(340px,.72fr);min-height:510px; }
+    .funding-detail-hero { position:relative;min-height:510px;overflow:hidden;background:linear-gradient(135deg,#0f172a,#1d4ed8); }
+    .funding-detail-hero>img { width:100%;height:100%;object-fit:cover;display:block;position:absolute;inset:0; }
+    .funding-detail-hero::after { content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(2,6,23,.08) 25%,rgba(2,6,23,.88) 100%); }
+    .funding-detail-hero-content { position:absolute;z-index:1;inset:auto 0 0;padding:42px;color:#fff; }
+    .funding-detail-badges { display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px; }
+    .funding-detail-badge { display:inline-flex;padding:7px 11px;border:1px solid rgba(255,255,255,.3);border-radius:999px;background:rgba(15,23,42,.64);backdrop-filter:blur(8px);font-size:.75rem;font-weight:800; }
+    .funding-detail-hero h2 { margin:0;font-size:clamp(2rem,4vw,4rem);line-height:1.02;letter-spacing:-.045em; }
+    .funding-detail-location { margin:15px 0 0;color:#e2e8f0;font-size:1rem; }
+    .funding-detail-summary { display:flex;flex-direction:column;padding:34px;background:#0f1d33;color:#f8fafc;border-left:1px solid rgba(56,189,248,.28); }
+    .funding-detail-summary-kicker { color:#7dd3fc;font-size:.72rem;font-weight:900;letter-spacing:.11em;text-transform:uppercase; }
+    .funding-detail-summary h3 { margin:8px 0 24px;font-size:1.45rem;color:#fff; }
+    .funding-detail-request { padding:18px;border:1px solid rgba(125,211,252,.22);border-radius:16px;background:rgba(30,64,175,.18); }
+    .funding-detail-request span,.funding-detail-summary-row span { color:#94a3b8;font-size:.76rem; }
+    .funding-detail-request strong { display:block;margin-top:5px;font-size:1.75rem;color:#fff; }
+    .funding-detail-summary-grid { display:grid;gap:0;margin-top:16px; }
+    .funding-detail-summary-row { display:flex;justify-content:space-between;gap:15px;padding:12px 2px;border-bottom:1px solid rgba(148,163,184,.14); }
+    .funding-detail-summary-row strong { color:#f8fafc;text-align:right;font-size:.86rem; }
+    .funding-detail-summary .funding-opportunity-coverage { background:rgba(2,6,23,.26);margin-top:20px; }
+    .funding-detail-main { display:grid;grid-template-columns:minmax(0,1.75fr) minmax(320px,.75fr);gap:24px;padding:30px;align-items:start; }
+    .funding-detail-column { display:grid;gap:20px; }
+    .funding-detail-section { padding:24px;border:1px solid #e2e8f0;border-radius:18px;background:#fff;box-shadow:0 8px 24px rgba(15,23,42,.05); }
+    .funding-detail-section h3 { margin:0 0 12px;color:#0f172a;font-size:1.2rem; }
+    .funding-detail-section>p { margin:0;color:#475569;line-height:1.7; }
+    .funding-detail-kpis { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px; }
+    .funding-detail-kpi { padding:13px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc; }
+    .funding-detail-kpi span { display:block;color:#64748b;font-size:.72rem; }
+    .funding-detail-kpi strong { display:block;margin-top:5px;color:#0f172a;font-size:1rem; }
+    .funding-process-list { display:grid;gap:0;margin-top:15px;counter-reset:funding-step; }
+    .funding-process-step { position:relative;display:grid;grid-template-columns:36px 1fr;gap:12px;padding:0 0 18px;counter-increment:funding-step; }
+    .funding-process-step:not(:last-child)::after { content:'';position:absolute;left:17px;top:34px;bottom:2px;width:2px;background:#dbeafe; }
+    .funding-process-step::before { content:counter(funding-step);display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:#dbeafe;color:#1d4ed8;font-weight:900;z-index:1; }
+    .funding-process-step strong { display:block;color:#1e293b;font-size:.9rem; }
+    .funding-process-step span { display:block;margin-top:3px;color:#64748b;font-size:.78rem;line-height:1.5; }
+    .funding-risk-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px; }
+    .funding-risk-item { padding:13px;border:1px solid #fed7aa;border-radius:12px;background:#fffaf5; }
+    .funding-risk-item strong { display:block;color:#9a3412;font-size:.82rem; }
+    .funding-risk-item span { display:block;margin-top:4px;color:#78716c;font-size:.75rem;line-height:1.45; }
+    .funding-detail-interest { position:sticky;top:20px; }
+    .funding-detail-interest form { display:grid;gap:12px; }
+    .funding-detail-interest label { display:grid;gap:5px;color:#334155;font-size:.78rem;font-weight:750; }
+    .funding-detail-interest input,.funding-detail-interest textarea { width:100%;border:1px solid #cbd5e1;border-radius:11px;padding:10px 11px;background:#fff;color:#0f172a; }
+    .funding-detail-interest .btn { min-height:46px;border-radius:12px;font-weight:850; }
+    .funding-doc-list { display:flex;gap:8px;flex-wrap:wrap;margin-top:12px; }
+    .funding-doc-list .btn { border-radius:10px; }
+    .funding-detail-disclaimer { padding:12px;border-radius:11px;background:#f8fafc;color:#64748b;font-size:.72rem;line-height:1.5; }
+    body.light-theme #fundingOpportunityCards .funding-opportunity-card { background:linear-gradient(160deg,#fff,#f8fafc); box-shadow:0 22px 55px rgba(15,23,42,.12); }
+    body.light-theme .funding-opportunity-metric,body.light-theme .funding-opportunity-coverage { background:#f8fafc; }
     @media (max-width: 840px) {
       .create-grid, .create-repeat-row, .create-model-row { grid-template-columns:1fr; }
       .create-precedent-grid { grid-template-columns:1fr; }
@@ -716,6 +953,20 @@
       .create-steps { justify-content:center; }
       .create-step-tab { flex:1 1 220px; }
       .create-step-tab { justify-content:flex-start; }
+      .funding-marketplace-heading { margin-bottom:26px; }
+      .funding-marketplace-subtitle { margin-top:8px; }
+      .funding-opportunity-cover { height:245px; }
+      #fundingOpportunityCards .funding-opportunity-card { min-height:590px; }
+      .funding-opportunity-metrics { grid-template-columns:1fr; }
+      .funding-opportunity-metric.is-primary { grid-column:auto; display:block; }
+      .funding-opportunity-metric.is-viability { grid-column:auto; }
+      .funding-detail-modal.modal.create-modal { width:calc(100vw - 16px);height:calc(100vh - 16px);max-height:calc(100vh - 16px); }
+      .funding-detail-top,.funding-detail-main { grid-template-columns:1fr; }
+      .funding-detail-hero { min-height:420px; }
+      .funding-detail-summary { border-left:0;border-top:1px solid rgba(56,189,248,.28); }
+      .funding-detail-main { padding:16px; }
+      .funding-detail-kpis,.funding-risk-grid { grid-template-columns:1fr; }
+      .funding-detail-interest { position:static; }
     }
   </style>
 </head>
@@ -887,6 +1138,22 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="profileRequiredBackdrop">
+    <div class="modal profile-required-modal" role="dialog" aria-modal="true" aria-labelledby="profileRequiredTitle">
+      <div class="profile-required-body">
+        <div class="profile-required-icon" aria-hidden="true">!</div>
+        <h3 id="profileRequiredTitle">Completa tu perfil antes de crear proyectos</h3>
+        <p>Necesitamos que tu perfil de promotor alcance el nivel mínimo de completitud para poder crear un proyecto.</p>
+        <div class="profile-required-progress"><div id="profileRequiredProgress" style="width:0%"></div></div>
+        <div id="profileRequiredPercent" class="profile-required-percent">Perfil completado al 0%</div>
+      </div>
+      <div class="profile-required-actions">
+        <button id="closeProfileRequired" class="btn ghost" type="button">Ahora no</button>
+        <button id="goToPromoterProfile" class="btn" type="button">Ir a mi perfil</button>
+      </div>
+    </div>
+  </div>
+
   <!-- CONTENIDO -->
   <div class="container">
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
@@ -898,6 +1165,13 @@
     </div>
 
     <div id="cards" class="grid"></div>
+    <section id="fundingOpportunitiesSection" style="display:none;">
+      <header class="funding-marketplace-heading">
+        <h2 class="funding-marketplace-title">¿Quieres incorporar nuevos proyectos a tu portfolio?</h2>
+        <p class="funding-marketplace-subtitle">Revisa estas oportunidades de financiación.</p>
+      </header>
+      <div id="fundingOpportunityCards" class="grid"></div>
+    </section>
   </div>
 
   <!-- FAB empieza oculto, lo muestra JS solo a admin/bank -->
@@ -942,6 +1216,14 @@
         </select>
         <input id="pLocation" type="text" placeholder="Ubicacion / direccion del proyecto" style="flex:1 1 320px;" />
         <textarea id="pDesc" rows="3" placeholder="Descripción" style="width:100%;"></textarea>
+        <label style="flex:1 1 280px;">Imagen de portada<input id="pCoverImage" type="file" accept="image/jpeg,image/png,image/webp"></label>
+        <label id="createFundingChoice" style="display:none;flex:1 1 280px;">¿Este proyecto busca financiación?
+          <select id="pSeeksFinancing"><option value="false">No</option><option value="true">Sí</option></select>
+        </label>
+        <label id="pFundingDeadlineLabel" style="display:none;flex:1 1 280px;">Fecha límite para completar la financiación
+          <input id="pFundingDeadline" type="date">
+          <span id="pFundingDeadlineError" class="small" style="display:none;color:#b91c1c;margin-top:5px;"></span>
+        </label>
       </div>
       </div>
       </section>
@@ -951,10 +1233,6 @@
         <div class="create-grid">
           <label>Promotor registrado<select id="ld-promoterProfileSelect"><option value="">Escribir manualmente</option></select></label>
           <label>Promotor / deudor como sociedad legal<input id="ld-promoterLegalName" type="text"></label>
-          <label>Banco interino
-            <select id="ld-interimBank"></select>
-            <input id="ld-interimBankOther" type="text" placeholder="Especificar banco" style="display:none;margin-top:6px;">
-          </label>
           <label>Fideicomiso
             <select id="ld-trustApplies">
               <option value="false">No aplica</option>
@@ -969,6 +1247,15 @@
         <h4>Accionistas</h4>
         <div id="createShareholders"></div>
         <button id="addCreateShareholder" class="btn ghost" type="button">+ Anadir accionista</button>
+        <div id="createLegalAssessmentSection" style="display:none;">
+        <h4>Comprobaciones jurídicas para valoración</h4>
+        <div class="create-precedent-grid">
+          <label>Terreno en propiedad<select data-legal-assessment="landOwned"><option value="">No informado</option><option value="true">Cumplido</option><option value="false">No cumplido</option></select></label><label>Opción o promesa de compraventa<select data-legal-assessment="purchaseOptionOrPromise"><option value="">No informado</option><option value="true">Cumplido</option><option value="false">No cumplido</option></select></label>
+          <label>Titularidad verificada<select data-legal-assessment="titleVerified"><option value="">No informado</option><option value="true">Cumplido</option><option value="false">No cumplido</option></select></label><label>Cargas relevantes<select data-legal-assessment="relevantEncumbrances"><option value="">No informado</option><option value="true">Cumplido</option><option value="false">No cumplido</option></select></label>
+          <label>Uso de suelo aprobado<select data-legal-assessment="zoningApproved"><option value="">No informado</option><option value="true">Cumplido</option><option value="false">No cumplido</option></select></label><label>Licencias solicitadas<select data-legal-assessment="licensesRequested"><option value="">No informado</option><option value="true">Cumplido</option><option value="false">No cumplido</option></select></label>
+          <label>Licencias aprobadas<select data-legal-assessment="licensesApproved"><option value="">No informado</option><option value="true">Cumplido</option><option value="false">No cumplido</option></select></label><label>Dictamen jurídico adjunto<select data-legal-assessment="legalOpinionAttached"><option value="">No informado</option><option value="true">Cumplido</option><option value="false">No cumplido</option></select></label>
+        </div>
+        </div>
         </div>
       </section>
       <section class="create-step" data-create-panel="technical">
@@ -978,6 +1265,12 @@
           <label>Cantidad de fases o etapas<input id="td-phasesCount" type="number" min="0" step="1"></label>
           <label>Cantidad total de unidades<input id="td-totalUnits" type="number" min="0" step="1"></label>
           <label style="grid-column:1/-1">Observaciones tecnicas<textarea id="td-notes" rows="3"></textarea></label>
+        </div>
+        <div id="createUnitsReconciliation" class="create-units-reconciliation is-match" aria-live="polite">
+          <div><span>Total indicado</span><strong data-units-total>0</strong></div>
+          <div><span>Suma de modelos</span><strong data-units-models>0</strong></div>
+          <div><span>Diferencia</span><strong data-units-difference>0</strong></div>
+          <p data-units-message>Los totales coinciden.</p>
         </div>
         <div class="create-section-title" style="margin-top:18px;">Modelos de vivienda/apartamento <span class="create-section-kicker">Inventario inicial</span></div>
         <p class="create-model-help">Modo manual: cada fila define una tipologia. Si indicas cantidad de unidades, Bank73 creara automaticamente esas unidades en Comercial con las caracteristicas comunes del modelo.</p>
@@ -995,6 +1288,15 @@
         <div id="createManualModelsPanel">
           <div id="createHousingModels"></div>
           <button id="addCreateHousingModel" class="btn ghost" type="button">+ Anadir modelo</button>
+        </div>
+        <div id="createTechnicalAssessmentSection" style="display:none;">
+        <h4>Comprobaciones técnicas para valoración</h4>
+        <div class="create-precedent-grid">
+          <label>Proyecto conceptual<select data-technical-assessment="conceptualProject"><option value="">No informado</option><option value="true">Cumplido</option><option value="false">No cumplido</option></select></label><label>Anteproyecto<select data-technical-assessment="preliminaryDesign"><option value="">No informado</option><option value="true">Cumplido</option><option value="false">No cumplido</option></select></label>
+          <label>Planos aprobados<select data-technical-assessment="approvedPlans"><option value="">No informado</option><option value="true">Cumplido</option><option value="false">No cumplido</option></select></label><label>Proyecto ejecutivo<select data-technical-assessment="executiveProject"><option value="">No informado</option><option value="true">Cumplido</option><option value="false">No cumplido</option></select></label>
+          <label>Presupuesto de construcción<select data-technical-assessment="constructionBudget"><option value="">No informado</option><option value="true">Cumplido</option><option value="false">No cumplido</option></select></label><label>Constructora definida<select data-technical-assessment="contractorDefined"><option value="">No informado</option><option value="true">Cumplido</option><option value="false">No cumplido</option></select></label>
+          <label>Dictamen técnico adjunto<select data-technical-assessment="technicalOpinionAttached"><option value="">No informado</option><option value="true">Cumplido</option><option value="false">No cumplido</option></select></label>
+        </div>
         </div>
         </div>
       </section>
@@ -1050,6 +1352,21 @@
             </div>
           </section>
         </div>
+        <section id="createFundingRequestSection" class="create-finance-section" style="display:none;margin-top:18px;">
+          <h4>Solicitud de financiación</h4>
+          <div class="create-grid">
+            <label>Monto solicitado<input id="fundingRequestedAmount" type="text" inputmode="decimal" data-bank-number><span class="small muted">Indica el importe que deseas obtener mediante Bank73. Puede corresponder al proyecto completo, a una fase o a varias fases.</span></label>
+            <label>Fondos ya asegurados para esta solicitud<input id="fundingSecuredAmount" type="text" inputmode="decimal" data-bank-number value="0"><span class="small muted">Indica qué parte del importe ya está cubierta mediante aporte propio confirmado, financiación aprobada u otras fuentes confirmadas.</span></label>
+          </div>
+          <div id="createFundingSummary" class="create-funding-summary" aria-live="polite">
+            <div><span>Coste total</span><strong data-funding-summary="total">0</strong></div>
+            <div><span>Monto solicitado</span><strong data-funding-summary="requested">0</strong></div>
+            <div><span>Fondos asegurados</span><strong data-funding-summary="secured">0</strong></div>
+            <div><span>Pendiente</span><strong data-funding-summary="pending">0</strong></div>
+            <div><span>Porcentaje cubierto</span><strong data-funding-summary="covered">0%</strong></div>
+          </div>
+          <p id="createFundingRequestError" class="msg error" style="display:none;margin-top:10px;"></p>
+        </section>
       </div>
 
       <div id="createAssigneesSection" style="display:none; margin-top:12px;">
@@ -1076,6 +1393,22 @@
       <section class="create-step" data-create-panel="progress">
       <div class="create-step-card">
         <div class="create-section-title">Avances <span class="create-section-kicker">Estado inicial opcional</span></div>
+        <section id="createFundingDocumentsNotice" class="create-funding-documents-notice" style="display:none;">
+          <div class="create-funding-documents-notice-head">
+            <span class="create-funding-documents-notice-icon" aria-hidden="true">i</span>
+            <div>
+              <h4>Documentación recomendada para la evaluación financiera</h4>
+              <p>Para facilitar el análisis de Bank73, adjunta los dictámenes disponibles en su check correspondiente. No son obligatorios por defecto y puedes completar la documentación posteriormente.</p>
+            </div>
+          </div>
+          <div class="create-funding-documents-guide">
+            <div><strong>Jurídico</strong><span>Titularidad, cargas, contratos, promesas y situación legal del proyecto.</span></div>
+            <div><strong>Urbanístico</strong><span>Uso de suelo, normativa aplicable, viabilidad urbanística y licencias.</span></div>
+            <div><strong>Técnico</strong><span>Diseño, presupuesto, cronograma, estado actual y principales riesgos técnicos.</span></div>
+            <div><strong>Comercial</strong><span>Demanda estimada, precios, ventas o reservas y ritmo previsto de comercialización.</span></div>
+            <div><strong>Financiero</strong><span>Costes, fuentes de fondos, proyecciones, viabilidad y capacidad de repago.</span></div>
+          </div>
+        </section>
         <div id="createProgressChecks" class="create-progress-list">
           <div class="small muted">Cargando checks...</div>
         </div>
@@ -1126,6 +1459,6 @@
   <script src="/js/api.js"></script>
   <script src="/js/banks.js"></script>
   <script src="/js/theme-toggle.js"></script>
-  <script src="/js/portfolio.js?v=create-finance-flow-v1"></script>
+  <script src="/js/portfolio.js?v=portfolio-cards-v3"></script>
 </body>
 </html>

@@ -97,6 +97,8 @@ const PromoterProfileSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const PROMOTER_PROFILE_MIN_COMPLETION = 90;
+
 function promoterProfileCompletion(profile = {}) {
   const usefulText = value => {
     const text = String(value || '').trim();
@@ -140,8 +142,9 @@ function promoterProfileCompletion(profile = {}) {
     completed,
     total,
     percent,
-    status: percent >= 90 ? 'complete' : percent >= 70 ? 'partial' : 'incomplete',
-    sufficient: percent >= 90
+    status: percent >= PROMOTER_PROFILE_MIN_COMPLETION ? 'complete' : percent >= 70 ? 'partial' : 'incomplete',
+    sufficient: percent >= PROMOTER_PROFILE_MIN_COMPLETION,
+    minimumPercent: PROMOTER_PROFILE_MIN_COMPLETION
   };
 }
 
@@ -266,3 +269,4 @@ module.exports.PROMOTER_CATEGORIES = PROMOTER_CATEGORIES;
 module.exports.PROMOTER_TYPES = PROMOTER_TYPES;
 module.exports.calculatePromoterCategory = calculatePromoterCategory;
 module.exports.promoterProfileCompletion = promoterProfileCompletion;
+module.exports.PROMOTER_PROFILE_MIN_COMPLETION = PROMOTER_PROFILE_MIN_COMPLETION;

@@ -30,6 +30,25 @@ const projectSchema = new Schema({
   projectType: { type: String, enum: ['', ...PROJECT_TYPES], default: '' },
   currency: { type: String, enum: PROJECT_CURRENCIES, default: 'PAB' },
 
+  coverImage: {
+    path: { type: String, trim: true, default: '' },
+    originalname: { type: String, trim: true, default: '' },
+    mimetype: { type: String, trim: true, default: '' }
+  },
+  expiryAlertResolutions: {
+    type: [{
+      key: { type: String, required: true, trim: true },
+      kind: { type: String, enum: ['cpp', 'credit_line'], required: true },
+      sourceId: { type: String, required: true, trim: true },
+      due: { type: String, required: true, trim: true },
+      resolvedAt: { type: Date, default: Date.now },
+      resolvedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+      resolvedByLabel: { type: String, trim: true, default: '' }
+    }],
+    default: []
+  },
+  seeksFinancing: { type: Boolean, default: false, index: true },
+
   status: { type: String, default: 'EN_CURSO' },
 
   publishStatus: {
@@ -97,13 +116,32 @@ const projectSchema = new Schema({
     },
     interimBank: { type: String, trim: true, default: '' },
     trustApplies: { type: Boolean, default: false },
-    trustName: { type: String, trim: true, default: '' }
+    trustName: { type: String, trim: true, default: '' },
+    assessment: {
+      landOwned: { type: Boolean, default: null },
+      purchaseOptionOrPromise: { type: Boolean, default: null },
+      titleVerified: { type: Boolean, default: null },
+      relevantEncumbrances: { type: Boolean, default: null },
+      zoningApproved: { type: Boolean, default: null },
+      licensesRequested: { type: Boolean, default: null },
+      licensesApproved: { type: Boolean, default: null },
+      legalOpinionAttached: { type: Boolean, default: null }
+    }
   },
 
   technicalData: {
     phasesCount: { type: Number, default: 0 },
     totalUnits: { type: Number, default: 0 },
-    notes: { type: String, trim: true, default: '' }
+    notes: { type: String, trim: true, default: '' },
+    assessment: {
+      conceptualProject: { type: Boolean, default: null },
+      preliminaryDesign: { type: Boolean, default: null },
+      approvedPlans: { type: Boolean, default: null },
+      executiveProject: { type: Boolean, default: null },
+      constructionBudget: { type: Boolean, default: null },
+      contractorDefined: { type: Boolean, default: null },
+      technicalOpinionAttached: { type: Boolean, default: null }
+    }
   },
 
   housingModels: {
@@ -133,6 +171,7 @@ const projectSchema = new Schema({
   financePhases: {
     type: [{
       name: { type: String, trim: true, default: '' },
+      financierBanks: { type: [{ type: String, trim: true }], default: [] },
       startDate: { type: Date, default: null },
       endDate: { type: Date, default: null },
       planUses: {
@@ -171,7 +210,14 @@ const projectSchema = new Schema({
       financingLines: {
         type: [{
           name: { type: String, trim: true, default: '' },
+          financierTenantKey: { type: String, trim: true, default: '' },
+          financierName: { type: String, trim: true, default: '' },
+          financierType: { type: String, trim: true, default: 'bank' },
+          concept: { type: String, trim: true, default: '' },
           approvedAmount: { type: Number, default: 0 },
+          disbursedAmount: { type: Number, default: 0 },
+          amortizedAmount: { type: Number, default: 0 },
+          outstandingBalance: { type: Number, default: 0 },
           interestRate: { type: String, trim: true, default: '' },
           term: { type: String, trim: true, default: '' },
           paymentMethod: { type: String, trim: true, default: '' },

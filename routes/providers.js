@@ -2,16 +2,10 @@ const express = require('express');
 const Provider = require('../models/Provider');
 const ProviderRequest = require('../models/ProviderRequest');
 const Project = require('../models/Project');
-const AppSetting = require('../models/AppSetting');
 const audit = require('../utils/audit');
+const { moduleEnabled } = require('../services/moduleSettings');
 
 const router = express.Router();
-const PROVIDERS_MODULE_SETTING_KEY = 'providersModule';
-
-async function providersModuleEnabled() {
-  const setting = await AppSetting.findOne({ key: PROVIDERS_MODULE_SETTING_KEY }).lean();
-  return setting?.value?.enabled !== false;
-}
 
 function buildProviderFilter(query = {}) {
   const filter = { isActive: true };
@@ -62,7 +56,7 @@ function canRequestForProject(req, project) {
 
 router.get('/', async (req, res) => {
   try {
-    if (!(await providersModuleEnabled())) {
+    if (!(await moduleEnabled('providers'))) {
       return res.status(403).json({ error: 'Módulo Proveedores desactivado' });
     }
     const providers = await Provider.find(buildProviderFilter(req.query))
@@ -76,7 +70,7 @@ router.get('/', async (req, res) => {
 
 router.get('/module-settings', async (_req, res) => {
   try {
-    res.json({ enabled: await providersModuleEnabled() });
+    res.json({ enabled: await moduleEnabled('providers') });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -84,7 +78,7 @@ router.get('/module-settings', async (_req, res) => {
 
 router.post('/:providerId/requests', async (req, res) => {
   try {
-    if (!(await providersModuleEnabled())) {
+    if (!(await moduleEnabled('providers'))) {
       return res.status(403).json({ error: 'Módulo Proveedores desactivado' });
     }
     const provider = await Provider.findOne({ _id: req.params.providerId, isActive: true });

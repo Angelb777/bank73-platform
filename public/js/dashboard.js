@@ -151,6 +151,12 @@ if (roleSelectDefault) {
   const allProjectsPagerInfo = document.getElementById('allProjectsPagerInfo');
   const allProjectsPrev = document.getElementById('allProjectsPrev');
   const allProjectsNext = document.getElementById('allProjectsNext');
+  const fundingAdminList = document.getElementById('fundingAdminList');
+  const fundingAdminDetail = document.getElementById('fundingAdminDetail');
+  const fundingAdminMessage = document.getElementById('fundingAdminMessage');
+  const fundingBadge = document.getElementById('fundingBadge');
+  const fundingModuleToggle = document.getElementById('fundingModuleToggle');
+  const fundingModuleStatus = document.getElementById('fundingModuleStatus');
 
   // Proveedores
   const providersTbody = document.getElementById('providersTbody');
@@ -189,6 +195,7 @@ if (roleSelectDefault) {
   let providerStageServices = {};
   let openProviderRequestsFor = '';
   let providersModuleEnabled = true;
+  let fundingModuleEnabled = false;
   const usersPageSize = 10;
   const allProjectsPageSize = 10;
 
@@ -277,10 +284,12 @@ if (roleSelectDefault) {
     document.querySelector('[data-admin-tab="payments"]')?.remove();
     document.querySelector('[data-admin-tab="multiTenant"]')?.remove();
     document.querySelector('[data-admin-tab="providers"]')?.remove();
+    document.querySelector('[data-admin-tab="funding"]')?.remove();
     document.querySelector('[data-admin-panel="pending"]')?.remove();
     document.querySelector('[data-admin-panel="payments"]')?.remove();
     document.querySelector('[data-admin-panel="multiTenant"]')?.remove();
     document.querySelector('[data-admin-panel="providers"]')?.remove();
+    document.querySelector('[data-admin-panel="funding"]')?.remove();
 
     const tabs = Array.from(document.querySelectorAll('[data-admin-tab]'));
     const panels = Array.from(document.querySelectorAll('[data-admin-panel]'));
@@ -347,7 +356,7 @@ if (roleSelectDefault) {
         return `
           <tr>
             <td>${escapeHtml(p.name || '-')}</td>
-            <td>${escapeHtml(p.description || '-')}</td>
+            <td><span class="project-description-snippet">${escapeHtml(shortProjectDescription(p.description))}</span></td>
             <td><span class="badge ${escapeHtml(st)}">${escapeHtml(st.toUpperCase())}</span></td>
             <td>${proms.length ? escapeHtml(proms.join(', ')) : '<span class="muted">-</span>'}</td>
             <td>${comms.length ? escapeHtml(comms.join(', ')) : '<span class="muted">-</span>'}</td>
@@ -495,6 +504,15 @@ if (roleSelectDefault) {
   }
   async function apiUpdateProvidersModuleSettings(enabled) {
     return xfetch('/api/admin/providers/module-settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled })
+    });
+  }
+  async function apiGetFundingModuleSettings() {
+    return xfetch('/api/admin/funding/module-settings');
+  }
+  async function apiUpdateFundingModuleSettings(enabled) {
+    return xfetch('/api/admin/funding/module-settings', {
       method: 'PATCH',
       body: JSON.stringify({ enabled })
     });
@@ -1244,7 +1262,7 @@ function applyProjectsFilters(list) {
       tr.innerHTML = `
         <td>${escapeHtml(p.name || '-')}</td>
         <td>
-          <div>${escapeHtml(p.description || '-')}</div>
+          <div class="project-description-snippet">${escapeHtml(shortProjectDescription(p.description))}</div>
           <div class="muted" style="font-size:.82rem;">Tipo: ${escapeHtml(p.projectType || p.tipoProyecto || 'No definido')}</div>
           ${teamSuggestionHtml(p.teamSuggestion)}
         </td>
@@ -1285,7 +1303,7 @@ function applyProjectsFilters(list) {
     tr.innerHTML = `
       <td>${escapeHtml(p.name || '-')}</td>
       <td>
-        <div>${escapeHtml(p.description || '-')}</div>
+        <div class="project-description-snippet">${escapeHtml(shortProjectDescription(p.description))}</div>
         <div class="muted" style="font-size:.82rem;">Tipo: ${escapeHtml(p.projectType || p.tipoProyecto || 'No definido')}</div>
       </td>
       <td><span class="badge ${st}">${st.toUpperCase()}</span></td>
@@ -1306,6 +1324,12 @@ function applyProjectsFilters(list) {
     `;
     allProjectsTbody.appendChild(tr);
   });
+}
+
+function shortProjectDescription(value, maxLength = 150) {
+  const text = String(value || '').trim();
+  if (!text) return '-';
+  return text.length > maxLength ? `${text.slice(0, maxLength).trimEnd()}...` : text;
 }
 
   function providerInitials(name) {
@@ -1630,6 +1654,28 @@ function applyProjectsFilters(list) {
   } catch (e) {
     providersTbody.innerHTML = `<tr><td colspan="8" class="muted">Error al cargar proveedores: ${escapeHtml(e.message)}</td></tr>`;
   }
+ }
+
+ function renderFundingModuleToggle() {
+  if (fundingModuleToggle) fundingModuleToggle.checked = fundingModuleEnabled;
+  if (fundingModuleStatus) {
+    fundingModuleStatus.textContent = fundingModuleEnabled ? 'Activada' : 'Desactivada';
+    fundingModuleStatus.style.color = fundingModuleEnabled ? '#86efac' : '';
+  }
+ }
+
+ function applyFundingModuleVisibility() {
+  renderFundingModuleToggle();
+ }
+
+ async function syncFundingModuleSettings() {
+  try {
+    const settings = await apiGetFundingModuleSettings();
+    fundingModuleEnabled = settings?.enabled === true;
+  } catch (_error) {
+    fundingModuleEnabled = false;
+  }
+  applyFundingModuleVisibility();
  }
 
  async function loadAuditLogs() {
@@ -2248,7 +2294,7 @@ function applyProjectsFilters(list) {
       <summary class="small muted">Datos legales</summary>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
         <label class="small muted">Promotor / sociedad<input id="ep-ld-promoterLegalName" class="input"></label>
-        <label class="small muted">Banco interino<input id="ep-ld-interimBank" class="input"></label>
+        <input id="ep-ld-interimBank" type="hidden">
         <label class="small muted">Fideicomiso<select id="ep-ld-trustApplies" class="input"><option value="false">No aplica</option><option value="true">Aplica</option></select></label>
         <label class="small muted">Nombre fideicomiso<input id="ep-ld-trustName" class="input"></label>
       </div>
@@ -2752,6 +2798,399 @@ function applyProjectsFilters(list) {
 
   // Proyectos (admin)
   refreshAllProjectsBtn?.addEventListener('click', loadAllProjects);
+  document.getElementById('refreshFunding')?.addEventListener('click', loadFundingAdmin);
+
+  const FUNDING_STATUS_LABELS = {
+    pending_review: 'Pendiente de revisión', in_review: 'En revisión', requires_information: 'Requiere información',
+    approved: 'Aprobado', published: 'Publicado', partially_funded: 'Financiación parcial', funded: 'Financiado', rejected: 'Rechazado'
+  };
+  const INTEREST_STATUS_LABELS = {
+    received: 'Interés recibido', in_review: 'En revisión', additional_information_requested: 'Información adicional solicitada',
+    contact_authorized: 'Contacto autorizado', in_negotiation: 'En negociación', offer_received: 'Oferta recibida',
+    accepted: 'Aceptado', rejected: 'Rechazado', closed: 'Cerrado'
+  };
+  const PUBLIC_FIELD_LABELS = {
+    description: 'Descripción', images: 'Imágenes', location: 'Ubicación general', housingModels: 'Tipologías',
+    units: 'Unidades', prices: 'Precios', financialSummary: 'Resumen financiero', phases: 'Fases',
+    score: 'Scoring final', conclusions: 'Conclusiones', documents: 'Documentos autorizados'
+  };
+  const fundingMoney = value => Number(value || 0).toLocaleString('es-ES', { maximumFractionDigits: 2 });
+  const fundingStatusLabel = value => FUNDING_STATUS_LABELS[value] || value || 'Pendiente de revisión';
+  const interestStatusLabel = value => INTEREST_STATUS_LABELS[value] || value || 'Interés recibido';
+  let activeFundingProjectId = '';
+
+  function setFundingAdminMessage(message = '', type = '') {
+    if (!fundingAdminMessage) return;
+    fundingAdminMessage.className = `funding-inline-message${type ? ` msg ${type}` : ''}`;
+    fundingAdminMessage.textContent = message;
+  }
+
+  function fundingMetric(label, value, suffix = '') {
+    return `<div class="funding-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}${suffix}</strong></div>`;
+  }
+
+  async function loadFundingAdmin() {
+    if (!fundingAdminList || roleL !== 'admin') return;
+    activeFundingProjectId = '';
+    if (fundingAdminDetail) fundingAdminDetail.style.display = 'none';
+    fundingAdminList.style.display = '';
+    setFundingAdminMessage();
+    try {
+      const list = await API.get('/api/funding/admin');
+      const pending = list.reduce((sum, item) => sum + Number(item.pendingNotificationCount || 0), 0);
+      if (fundingBadge) { fundingBadge.textContent = pending; fundingBadge.classList.toggle('is-visible', pending > 0); }
+      fundingAdminList.innerHTML = list.length ? list.map(item => `
+        <article class="funding-list-card${Number(item.pendingNotificationCount || 0) > 0 ? ' has-alert' : ''}">
+          ${item.coverImage?.path ? `<img src="${escapeHtml(item.coverImage.path)}" alt="">` : '<div class="funding-cover-fallback"></div>'}
+          <div>
+            <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+              <div><h3>${escapeHtml(item.name || '-')}</h3><div class="muted">${escapeHtml(item.projectType || 'Tipo no indicado')}</div></div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                ${Number(item.pendingNotificationCount || 0) > 0 ? `<span class="funding-card-alert">${Number(item.pendingNotificationCount)} ${Number(item.pendingNotificationCount) === 1 ? 'interés nuevo' : 'intereses nuevos'}</span>` : ''}
+                <span class="badge">${escapeHtml(fundingStatusLabel(item.fundingStatus))}</span>
+              </div>
+            </div>
+            <div class="funding-list-metrics">
+              ${fundingMetric('Coste total', fundingMoney(item.totalCost))}
+              ${fundingMetric('Monto solicitado', fundingMoney(item.requestedAmount))}
+              ${fundingMetric('Fondos cubiertos', fundingMoney(item.coveredAmount))}
+              ${fundingMetric('Pendiente de la solicitud', fundingMoney(item.requestPendingAmount))}
+              ${fundingMetric('Scoring automático', Number(item.automaticScore || 0).toFixed(1))}
+              ${fundingMetric('Scoring final', item.finalScore == null ? 'Sin decidir' : Number(item.finalScore).toFixed(1))}
+              ${fundingMetric('Intereses recibidos', String(item.interestCount || 0))}
+              ${fundingMetric('Pendientes de revisión', String(item.pendingNotificationCount || 0))}
+            </div>
+            <button class="btn small" type="button" data-funding-open="${escapeHtml(item.projectId)}">Ver expediente</button>
+          </div>
+        </article>`).join('') : '<p class="muted">No hay proyectos que busquen financiación.</p>';
+    } catch (err) {
+      fundingAdminList.innerHTML = `<p class="msg error">${escapeHtml(err.message || err)}</p>`;
+    }
+  }
+
+  function renderPromoterProfile(promoter = {}) {
+    const p = promoter.promoterProfile || {};
+    return `<div class="funding-list-metrics">
+      ${fundingMetric('Promotor', p.companyName || promoter.companyName || promoter.name || 'No asignado')}
+      ${fundingMetric('Categoría', promoter.promoterCategory || 'No definida')}
+      ${fundingMetric('Años de experiencia', String(p.yearsExperience ?? 'No informado'))}
+      ${fundingMetric('Proyectos entregados', String(p.deliveredProjects ?? 'No informado'))}
+      ${fundingMetric('Proyectos activos', String(p.activeProjects ?? 'No informado'))}
+      ${fundingMetric('Volumen desarrollado', p.developedVolume == null ? 'No informado' : fundingMoney(p.developedVolume))}
+      ${fundingMetric('Unidades desarrolladas', String(p.developedUnits ?? 'No informado'))}
+      ${fundingMetric('Experiencia bancaria', p.bankFinancingExperience || 'No informada')}
+    </div>`;
+  }
+
+  function renderFundingScore(detail) {
+    const grouped = ['promoter', 'project', 'legal', 'technical', 'financial', 'commercial'];
+    const names = { promoter: 'Perfil del promotor', project: 'Datos del proyecto', legal: 'Datos jurídicos', technical: 'Datos técnicos', financial: 'Datos financieros', commercial: 'Datos comerciales' };
+    return grouped.map(category => {
+      const items = (detail.funding.scoreBreakdown || []).filter(item => item.category === category);
+      if (!items.length) return '';
+      return `<h4>${names[category]}</h4>${items.map(item => `<div class="funding-score-item">
+        <div><strong>${escapeHtml(item.label)}</strong><div class="small muted">${escapeHtml(item.reason || '')}</div></div>
+        <div><span class="small muted">Automático</span><br><b>${Number(item.automaticScore || 0).toFixed(2)} / ${Number(item.maxScore || 0)}</b></div>
+        <label class="small">Ajuste manual<input type="number" min="0" max="${Number(item.maxScore || 0)}" step="any" data-score-key="${escapeHtml(item.key)}" value="${item.manualScore == null ? '' : Number(item.manualScore)}" ${category === 'promoter' ? 'disabled title="Se reutiliza automáticamente el perfil del promotor"' : ''}></label>
+        <div class="small muted">${category === 'promoter' ? 'Dato reutilizado del perfil; no se vuelve a solicitar.' : 'Vacío conserva la puntuación automática.'}</div>
+      </div>`).join('')}`;
+    }).join('');
+  }
+
+  function renderFundingInterests(detail) {
+    const total = Number(detail.financialSummary?.totalCost || 0);
+    const pending = Number(detail.financialSummary?.requestPendingAmount || 0);
+    if (!(detail.interests || []).length) return '<p class="muted">Todavía no se han recibido intereses.</p>';
+    const actions = [
+      ['in_review', 'Pasar a En revisión'], ['additional_information_requested', 'Solicitar información'],
+      ['contact_authorized', 'Autorizar contacto'], ['in_negotiation', 'Marcar en negociación'],
+      ['accepted', 'Marcar como aceptado'], ['rejected', 'Marcar como rechazado'], ['closed', 'Marcar como cerrado']
+    ];
+    return detail.interests.map(item => {
+      const costPct = total ? Number(item.amount || 0) / total * 100 : 0;
+      const pendingPct = pending ? Number(item.amount || 0) / pending * 100 : 0;
+      const isPending = item.notificationPending !== false && !['accepted', 'rejected', 'closed'].includes(item.status);
+      return `<article class="funding-interest${isPending ? ' is-pending' : ''}" data-interest-id="${escapeHtml(item._id)}">
+        <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;"><strong>${escapeHtml(item.bankName || item.bankTenantKey || 'Banco')}</strong><span class="badge">${escapeHtml(interestStatusLabel(item.status))}</span></div>
+        <div class="funding-list-metrics">
+          ${fundingMetric('Fecha', new Date(item.createdAt).toLocaleString('es-ES'))}
+          ${fundingMetric('Importe', fundingMoney(item.amount))}
+          ${fundingMetric('% sobre coste total', `${costPct.toFixed(2)}%`)}
+          ${fundingMetric('% sobre pendiente solicitado', pending ? `${pendingPct.toFixed(2)}%` : 'Sin pendiente')}
+          ${fundingMetric('Responsable', item.responsiblePerson || 'No indicado')}
+          ${fundingMetric('Contacto interno', item.internalContact || 'No indicado')}
+        </div>
+        <p><b>Comentario:</b> ${escapeHtml(item.comment || 'Sin comentario')}</p>
+        <p class="small muted">Aviso: ${isPending ? 'pendiente de revisión' : `revisado${item.notificationReviewedAt ? ` el ${new Date(item.notificationReviewedAt).toLocaleString('es-ES')}` : ''}`}</p>
+        <div class="funding-actions">
+          ${isPending ? `<button class="btn small" type="button" data-interest-reviewed="${escapeHtml(item._id)}">Marcar como revisado</button>` : ''}
+          ${actions.map(([status, label]) => `<button class="btn ghost small" type="button" data-interest-status="${status}" data-interest-id="${escapeHtml(item._id)}" ${item.status === status ? 'disabled' : ''}>${label}</button>`).join('')}
+        </div>
+      </article>`;
+    }).join('');
+  }
+
+  function renderFundingDossier(detail) {
+    const f = detail.funding || {};
+    const s = detail.financialSummary || {};
+    const market = f.marketAnalysis || {};
+    const selectedFields = new Set(f.publicFields || []);
+    const selectedDocs = new Set((f.publicDocumentIds || []).map(String));
+    const selectedTenants = new Set((f.visibleToTenantKeys || []).map(String));
+    const tenantOptions = bankOptionList().filter(bank => bankTenantKey(bank) !== 'bancodemo').map(bank => ({ key: bankTenantKey(bank), label: bank }));
+    selectedTenants.forEach(key => { if (!tenantOptions.some(option => option.key === key)) tenantOptions.push({ key, label: key }); });
+    const visibilityMode = f.visibilityMode || (selectedTenants.size ? 'selected_tenants' : 'all_banks');
+    const restrictedTenants = visibilityMode === 'selected_tenants';
+    const isPublished = !!f.isVisibleToBanks && (
+      ['published', 'partially_funded'].includes(f.status) || (f.status === 'approved' && !!f.publishedAt)
+    );
+    const publishedBy = detail.publishedByUser?.name || detail.publishedByUser?.email || 'Superadmin';
+    const publicationRequirements = [
+      [detail.project.publishStatus === 'approved', 'Proyecto aprobado en el portfolio ordinario'],
+      [detail.project.seeksFinancing === true, 'Proyecto marcado como búsqueda de financiación'],
+      [Number(s.requestedAmount || 0) > 0, 'Monto solicitado informado'],
+      [f.finalScore !== null && f.finalScore !== undefined, 'Scoring final decidido por el superadmin'],
+      [!!f.fundingDeadline, 'Fecha límite de financiación informada'],
+      [!restrictedTenants || selectedTenants.size > 0, 'Tenants bancarios seleccionados']
+    ];
+    const missingPublicationRequirements = publicationRequirements.filter(([ready]) => !ready);
+    const publicGroups = [
+      ['Ficha del proyecto', ['description', 'images', 'location', 'housingModels']],
+      ['Información comercial', ['units', 'prices', 'phases']],
+      ['Información financiera', ['financialSummary', 'score', 'conclusions']]
+    ];
+    const declaredStatus = value => value === true ? ['Cumplido', '#166534', '#f0fdf4'] : value === false ? ['No cumplido', '#991b1b', '#fef2f2'] : ['No informado', '#475569', '#f8fafc'];
+    const renderDeclaredChecks = (title, assessment, definitions) => `<section class="funding-section"><h3>${title}</h3><p class="small muted">Información declarada por el creador del proyecto. No constituye la valoración final de Bank73.</p><div class="funding-checks">${definitions.map(([key, label]) => { const [status, color, background] = declaredStatus(assessment?.[key]); return `<div style="display:flex;justify-content:space-between;gap:12px;padding:9px 11px;border:1px solid #e2e8f0;border-radius:10px;background:${background};"><span>${escapeHtml(label)}</span><strong style="color:${color};white-space:nowrap;">${status}</strong></div>`; }).join('')}</div></section>`;
+    const legalChecks = [['landOwned','Terreno en propiedad'],['purchaseOptionOrPromise','Opción o promesa de compraventa'],['titleVerified','Titularidad verificada'],['relevantEncumbrances','Cargas relevantes'],['zoningApproved','Uso de suelo aprobado'],['licensesRequested','Licencias solicitadas'],['licensesApproved','Licencias aprobadas'],['legalOpinionAttached','Dictamen jurídico adjunto']];
+    const technicalChecks = [['conceptualProject','Proyecto conceptual'],['preliminaryDesign','Anteproyecto'],['approvedPlans','Planos aprobados'],['executiveProject','Proyecto ejecutivo'],['constructionBudget','Presupuesto de construcción'],['contractorDefined','Constructora definida'],['technicalOpinionAttached','Dictamen técnico adjunto']];
+    const phases = Array.isArray(detail.project.financePhases) ? detail.project.financePhases : [];
+    const phasesHtml = `<section class="funding-section"><h3>Bancos seleccionados por fase</h3><p class="small muted">Información declarada para la solicitud. No crea asignaciones, tenants ni permisos.</p><div style="display:grid;gap:10px;">${phases.length ? phases.map((phase, index) => { const cost = Number(phase.financialConditions?.phaseTotal || (phase.planUses || []).reduce((sum, item) => sum + Number(item.amount || 0), 0)); const banks = Array.isArray(phase.financierBanks) ? phase.financierBanks.filter(Boolean) : []; return `<div style="display:grid;grid-template-columns:minmax(140px,1fr) minmax(140px,1fr) minmax(200px,2fr);gap:12px;padding:11px;border:1px solid #e2e8f0;border-radius:10px;"><strong>${escapeHtml(phase.name || `Fase ${index + 1}`)}</strong><span>Coste total: ${fundingMoney(cost)}</span><span>Bancos seleccionados: ${banks.length ? banks.map(escapeHtml).join(', ') : 'Por definir'}</span></div>`; }).join('') : '<span class="muted">No hay fases informadas.</span>'}</div></section>`;
+    fundingAdminDetail.innerHTML = `<div class="funding-dossier" data-funding-project="${escapeHtml(detail.project._id)}" data-funding-published="${isPublished ? '1' : '0'}">
+      <div class="funding-dossier-head"><div><button class="btn ghost small" type="button" data-funding-back>← Volver al listado</button><h2>${escapeHtml(detail.project.name || 'Expediente')}</h2><p class="muted">${escapeHtml(detail.project.projectType || '')} · ${escapeHtml(detail.project.location || '')}</p></div><span class="badge">${escapeHtml(fundingStatusLabel(f.status))}</span></div>
+      <section class="funding-section"><h3>Resumen financiero</h3><div class="funding-list-metrics">
+        ${fundingMetric('Coste total', fundingMoney(s.totalCost))}${fundingMetric('Aporte del promotor', fundingMoney(s.promoterContribution))}${fundingMetric('Otras fuentes', fundingMoney(s.otherSources))}${fundingMetric('Financiación bancaria aprobada', fundingMoney(s.approvedBankFinancing))}${fundingMetric('Financiación desembolsada', fundingMoney(s.disbursedAmount))}${fundingMetric('Fondos asegurados', fundingMoney(s.securedRequestAmount))}${fundingMetric('Monto solicitado', fundingMoney(s.requestedAmount))}${fundingMetric('Pendiente de la solicitud', fundingMoney(s.requestPendingAmount))}${fundingMetric('Porcentaje cubierto', `${Number(s.requestCoveredPct || 0).toFixed(2)}%`)}
+      </div><div class="funding-form-grid" style="margin-top:14px;"><label>Monto solicitado<input id="fundingDossierRequested" type="number" min="0" step="any" value="${Number(s.requestedAmount || 0)}"></label><label>Fondos ya asegurados para esta solicitud<input id="fundingDossierSecured" type="number" min="0" step="any" value="${Number(s.securedRequestAmount || 0)}"></label></div><div class="funding-actions"><button class="btn small" type="button" data-save-funding-request>Actualizar solicitud</button></div></section>
+      ${renderDeclaredChecks('Comprobaciones jurídicas declaradas', detail.project.legalData?.assessment, legalChecks)}
+      ${renderDeclaredChecks('Comprobaciones técnicas declaradas', detail.project.technicalData?.assessment, technicalChecks)}
+      ${phasesHtml}
+      <section class="funding-section"><h3>Scoring</h3><h4>Datos procedentes del perfil del promotor</h4>${renderPromoterProfile(detail.promoter || {})}${renderFundingScore(detail)}
+        <div class="funding-form-grid" style="margin-top:16px;"><label class="wide">Valoración de mercado<textarea id="fundingMarketAssessment" rows="3">${escapeHtml(f.marketAssessment || '')}</textarea></label><label class="wide">Comentarios internos<textarea id="fundingInternalComments" rows="3">${escapeHtml(f.internalComments || '')}</textarea></label></div>
+        <h4>Análisis de mercado</h4><div class="funding-form-grid" data-funding-market-form><label>Ingreso mensual medio estimado del hogar objetivo<input type="number" min="0" step="any" data-market-field="targetHouseholdMonthlyIncome" value="${Number(market.targetHouseholdMonthlyIncome || 0)}"></label><label>Precio medio de venta del proyecto<input type="number" readonly value="${Number(detail.derivedAverageSalePrice || 0)}"></label><label>Cuota hipotecaria mensual estimada<input type="number" min="0" step="any" data-market-field="estimatedMonthlyMortgagePayment" value="${Number(market.estimatedMonthlyMortgagePayment || 0)}"></label><label>Ratio cuota/ingresos (%)<input type="number" readonly data-market-field="paymentToIncomeRatio" value="${Number(market.paymentToIncomeRatio || 0).toFixed(2)}"></label><label>Precio medio de proyectos comparables<input type="number" min="0" step="any" data-market-field="comparableProjectsAveragePrice" value="${Number(market.comparableProjectsAveragePrice || 0)}"></label><label>Velocidad de venta estimada<input data-market-field="estimatedSalesVelocity" value="${escapeHtml(market.estimatedSalesVelocity || '')}"></label><label>Fuente de los datos<input data-market-field="dataSource" value="${escapeHtml(market.dataSource || '')}"></label><label>Fecha de referencia<input type="date" data-market-field="referenceDate" value="${market.referenceDate ? escapeHtml(String(market.referenceDate).slice(0, 10)) : ''}"></label><label>Puntuación de mercado<input type="number" min="0" max="100" step="any" data-market-field="marketScore" value="${Number(market.marketScore || 0)}"></label><label class="wide">Comentario del analista<textarea rows="3" data-market-field="analystComment">${escapeHtml(market.analystComment || '')}</textarea></label></div>
+        <div class="funding-actions"><button class="btn small" type="button" data-save-funding-score>Guardar scoring y análisis</button><button class="btn ghost small" type="button" data-recalculate-funding-score>Recalcular scoring automático</button></div>
+      </section>
+      <section class="funding-section"><h3>Publicación</h3><div class="funding-publication-state ${isPublished ? 'is-published' : ''}"><strong>${isPublished ? 'Publicado en marketplace' : 'No publicado en marketplace'}</strong><span>Modalidad: ${restrictedTenants ? 'solo tenants seleccionados' : 'todos los bancos'}${f.publishedAt ? ` · Fecha: ${new Date(f.publishedAt).toLocaleString('es-ES')} · Publicado por: ${escapeHtml(publishedBy)}` : ''}</span></div>
+        <div class="funding-publication-readiness ${missingPublicationRequirements.length ? 'has-missing' : 'is-ready'}"><strong>${missingPublicationRequirements.length ? 'Faltan requisitos para publicar' : 'Expediente listo para publicar'}</strong><div>${publicationRequirements.map(([ready, label]) => `<span class="${ready ? 'is-ready' : 'is-missing'}">${ready ? '✓' : '!' } ${escapeHtml(label)}</span>`).join('')}</div></div>
+        <p class="msg" data-funding-publication-message style="display:none;" aria-live="polite"></p>
+        <div class="funding-form-grid"><label>Scoring final para publicar<input id="fundingFinalScore" type="number" min="0" max="100" step="any" value="${f.finalScore == null ? '' : Number(f.finalScore)}" placeholder="Sugerido automático: ${Number(f.automaticScore || 0).toFixed(1)}"><span class="small muted">Scoring automático sugerido: ${Number(f.automaticScore || 0).toFixed(1)}. El valor final lo decide el superadmin.</span></label><label>Fecha límite de financiación<input id="fundingDossierDeadline" type="date" value="${f.fundingDeadline ? escapeHtml(String(f.fundingDeadline).slice(0, 10)) : ''}"></label><label>Estado de financiación<select id="fundingStatus">${Object.entries(FUNDING_STATUS_LABELS).filter(([value]) => value !== 'published' || f.status === 'published').map(([value,label]) => `<option value="${value}" ${f.status === value ? 'selected' : ''} ${value === 'published' ? 'disabled' : ''}>${label}</option>`).join('')}</select></label><label><span>Visibilidad en marketplace</span><span><input id="fundingVisible" type="checkbox" ${f.isVisibleToBanks ? 'checked' : ''}> Publicar para bancos autorizados al guardar</span></label><label class="wide">Conclusiones públicas<textarea id="fundingPublicConclusions" rows="3">${escapeHtml(f.publicConclusions || '')}</textarea></label></div>
+        <details class="funding-advanced" ${restrictedTenants ? 'open' : ''}><summary>Acceso y contenido visible para bancos</summary><div class="funding-advanced-body">
+          <p class="small muted">Esta configuración no cambia los tenants del proyecto. Solo decide qué bancos pueden ver este anuncio y qué información aparece al abrirlo.</p>
+          <h4>¿Quién puede ver la oportunidad?</h4><div class="funding-access-options">
+            <label class="funding-access-option"><input type="radio" name="fundingTenantMode" value="all" ${restrictedTenants ? '' : 'checked'}> <span><b>Todos los bancos</b><br><small class="muted">Disponible para cualquier tenant bancario.</small></span></label>
+            <label class="funding-access-option"><input type="radio" name="fundingTenantMode" value="selected" ${restrictedTenants ? 'checked' : ''}> <span><b>Solo bancos seleccionados</b><br><small class="muted">Restringe la oportunidad a tenants concretos.</small></span></label>
+          </div>
+          <div data-funding-tenant-picker style="display:${restrictedTenants ? '' : 'none'};"><label>Selecciona uno o varios bancos<select class="funding-tenant-picker" multiple data-public-tenant-select>${tenantOptions.map(option => `<option value="${escapeHtml(option.key)}" ${selectedTenants.has(option.key) ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select></label><p class="small muted">Usa Ctrl o Cmd para seleccionar varios bancos.</p></div>
+          <h4>¿Qué verá el banco al abrir el anuncio?</h4><p class="small muted">Nombre, portada, tipo, estado e importes principales siempre aparecen en la tarjeta. Aquí eliges el contenido adicional del detalle.</p>
+          <div class="funding-preset-actions"><button class="btn ghost small" type="button" data-public-preset="summary">Aplicar ficha resumida</button><button class="btn ghost small" type="button" data-public-preset="extended">Aplicar ficha ampliada</button><button class="btn ghost small" type="button" data-public-preset="clear">Limpiar selección</button></div>
+          <div class="funding-public-groups">${publicGroups.map(([group, keys]) => `<section class="funding-public-group"><h5>${group}</h5><div>${keys.map(value => `<label class="funding-public-option"><input type="checkbox" data-public-field value="${value}" ${selectedFields.has(value) ? 'checked' : ''}> ${PUBLIC_FIELD_LABELS[value]}</label>`).join('')}</div></section>`).join('')}</div>
+          <h4>Documentos públicos</h4><label class="funding-public-option" style="margin-bottom:10px!important;"><input type="checkbox" data-public-field value="documents" ${selectedFields.has('documents') ? 'checked' : ''}> Permitir los documentos seleccionados abajo</label><div class="funding-checks">${(detail.documents || []).length ? detail.documents.map(doc => `<label class="funding-public-option"><input type="checkbox" data-public-document value="${escapeHtml(doc._id)}" ${selectedDocs.has(String(doc._id)) ? 'checked' : ''}> ${escapeHtml(doc.title || doc.originalname || 'Documento')}</label>`).join('') : '<span class="muted">No hay documentos disponibles.</span>'}</div>
+        </div></details>
+        <div class="funding-actions"><button class="btn small" type="button" data-save-funding-publication>Guardar cambios</button><button class="btn ghost small" type="button" data-funding-quick-status="approved">Aprobar oportunidad</button><button class="btn ghost small" type="button" data-funding-quick-status="rejected">Rechazar oportunidad</button>${isPublished ? '<button class="btn ghost small" type="button" data-funding-withdraw>Retirar del marketplace</button>' : '<button class="btn small" type="button" data-funding-publish>Publicar</button>'}</div>
+      </section>
+      <section class="funding-section"><h3>Intereses recibidos</h3><div style="display:grid;gap:12px;">${renderFundingInterests(detail)}</div></section>
+    </div>`;
+  }
+
+  async function openFundingDossier(projectId) {
+    activeFundingProjectId = projectId;
+    setFundingAdminMessage('Cargando expediente…');
+    try {
+      let detail = await API.get(`/api/funding/admin/${encodeURIComponent(projectId)}`);
+      if (!detail.funding?.scoreBreakdown?.length) {
+        await API.post(`/api/funding/admin/${encodeURIComponent(projectId)}/recalculate`, {});
+        detail = await API.get(`/api/funding/admin/${encodeURIComponent(projectId)}`);
+      }
+      fundingAdminList.style.display = 'none';
+      fundingAdminDetail.style.display = '';
+      renderFundingDossier(detail);
+      setFundingAdminMessage();
+      fundingAdminDetail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) { setFundingAdminMessage(err.message || String(err), 'error'); }
+  }
+
+  async function reloadFundingDossier(message = '') {
+    const id = activeFundingProjectId;
+    await loadFundingAdmin();
+    if (id) await openFundingDossier(id);
+    if (message) setFundingAdminMessage(message, 'success');
+  }
+
+  fundingAdminList?.addEventListener('click', ev => {
+    const button = ev.target.closest('[data-funding-open]');
+    if (button) openFundingDossier(button.dataset.fundingOpen);
+  });
+
+  fundingAdminDetail?.addEventListener('input', ev => {
+    if (!ev.target.matches('[data-market-field="targetHouseholdMonthlyIncome"], [data-market-field="estimatedMonthlyMortgagePayment"]')) return;
+    const form = ev.target.closest('[data-funding-market-form]');
+    const income = Number(form?.querySelector('[data-market-field="targetHouseholdMonthlyIncome"]')?.value) || 0;
+    const payment = Number(form?.querySelector('[data-market-field="estimatedMonthlyMortgagePayment"]')?.value) || 0;
+    const ratioInput = form?.querySelector('[data-market-field="paymentToIncomeRatio"]');
+    if (ratioInput) ratioInput.value = income ? (payment / income * 100).toFixed(2) : '0.00';
+  });
+
+  fundingAdminDetail?.addEventListener('change', ev => {
+    if (!ev.target.matches('[name="fundingTenantMode"]')) return;
+    const root = ev.target.closest('[data-funding-project]');
+    const picker = root?.querySelector('[data-funding-tenant-picker]');
+    if (picker) picker.style.display = ev.target.value === 'selected' ? '' : 'none';
+  });
+
+  function collectFundingPublication(root) {
+    const tenantMode = root.querySelector('[name="fundingTenantMode"]:checked')?.value || 'all';
+    const visibleToTenantKeys = tenantMode === 'selected'
+      ? Array.from(root.querySelector('[data-public-tenant-select]')?.selectedOptions || []).map(option => option.value)
+      : [];
+    if (tenantMode === 'selected' && !visibleToTenantKeys.length) throw new Error('Selecciona al menos un banco o cambia el acceso a “Todos los bancos”.');
+    const payload = {
+      status: root.querySelector('#fundingStatus')?.value,
+      isVisibleToBanks: !!root.querySelector('#fundingVisible')?.checked,
+      visibilityMode: tenantMode === 'selected' ? 'selected_tenants' : 'all_banks',
+      publicConclusions: root.querySelector('#fundingPublicConclusions')?.value || '',
+      visibleToTenantKeys,
+      publicFields: Array.from(root.querySelectorAll('[data-public-field]:checked')).map(input => input.value),
+      publicDocumentIds: Array.from(root.querySelectorAll('[data-public-document]:checked')).map(input => input.value)
+    };
+    const finalScore = root.querySelector('#fundingFinalScore')?.value;
+    const fundingDeadline = root.querySelector('#fundingDossierDeadline')?.value;
+    if (finalScore !== undefined && finalScore !== '') payload.finalScore = Number(finalScore);
+    if (fundingDeadline) payload.fundingDeadline = fundingDeadline;
+    return payload;
+  }
+
+  function validateFundingPublication(root) {
+    const missing = [];
+    const finalScore = root.querySelector('#fundingFinalScore')?.value;
+    const fundingDeadline = root.querySelector('#fundingDossierDeadline')?.value;
+    const requestedAmount = Number(root.querySelector('#fundingDossierRequested')?.value) || 0;
+    if (!requestedAmount) missing.push('monto solicitado');
+    if (finalScore === undefined || finalScore === '') missing.push('scoring final');
+    if (!fundingDeadline) missing.push('fecha límite de financiación');
+    const tenantMode = root.querySelector('[name="fundingTenantMode"]:checked')?.value || 'all';
+    const selectedTenants = Array.from(root.querySelector('[data-public-tenant-select]')?.selectedOptions || []);
+    if (tenantMode === 'selected' && !selectedTenants.length) missing.push('al menos un tenant bancario');
+    if (missing.length) throw new Error(`No se puede publicar. Falta: ${missing.join(', ')}.`);
+  }
+
+  function setFundingPublicationMessage(root, message = '', type = '') {
+    const target = root?.querySelector('[data-funding-publication-message]');
+    if (!target) return;
+    target.textContent = message;
+    target.className = `msg${type ? ` ${type}` : ''}`;
+    target.style.display = message ? '' : 'none';
+    if (message) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  fundingAdminDetail?.addEventListener('click', async ev => {
+    const root = ev.target.closest('[data-funding-project]');
+    const projectId = root?.dataset.fundingProject;
+    if (ev.target.closest('[data-funding-back]')) return loadFundingAdmin();
+    if (!projectId) return;
+    const button = ev.target.closest('button');
+    if (!button) return;
+    const preset = button.dataset.publicPreset;
+    if (preset) {
+      const summary = new Set(['description', 'location', 'housingModels', 'financialSummary', 'score', 'conclusions']);
+      const extended = new Set(['description', 'images', 'location', 'housingModels', 'units', 'prices', 'phases', 'financialSummary', 'score', 'conclusions']);
+      const selected = preset === 'summary' ? summary : preset === 'extended' ? extended : new Set();
+      root.querySelectorAll('[data-public-field]').forEach(input => { input.checked = selected.has(input.value); });
+      return;
+    }
+    button.disabled = true;
+    setFundingAdminMessage();
+    setFundingPublicationMessage(root);
+    try {
+      if (button.matches('[data-save-funding-request]')) {
+        await API.patch(`/api/funding/admin/${encodeURIComponent(projectId)}`, {
+          requestedAmount: Number(root.querySelector('#fundingDossierRequested')?.value) || 0,
+          securedRequestAmount: Number(root.querySelector('#fundingDossierSecured')?.value) || 0,
+          fundingDeadline: root.querySelector('#fundingDossierDeadline')?.value || ''
+        });
+        return reloadFundingDossier('Solicitud actualizada.');
+      }
+      if (button.matches('[data-recalculate-funding-score]')) {
+        await API.post(`/api/funding/admin/${encodeURIComponent(projectId)}/recalculate`, {});
+        return reloadFundingDossier('Scoring automático recalculado.');
+      }
+      if (button.matches('[data-save-funding-score]')) {
+        const marketForm = root.querySelector('[data-funding-market-form]');
+        const marketValue = key => marketForm?.querySelector(`[data-market-field="${key}"]`)?.value ?? '';
+        const scoreBreakdown = Array.from(root.querySelectorAll('[data-score-key]:not(:disabled)')).map(input => ({ key: input.dataset.scoreKey, manualScore: input.value === '' ? null : Number(input.value) }));
+        const scoringPayload = {
+          marketAssessment: root.querySelector('#fundingMarketAssessment')?.value || '',
+          internalComments: root.querySelector('#fundingInternalComments')?.value || '',
+          scoreBreakdown,
+          marketAnalysis: {
+            targetHouseholdMonthlyIncome: marketValue('targetHouseholdMonthlyIncome'), estimatedMonthlyMortgagePayment: marketValue('estimatedMonthlyMortgagePayment'),
+            comparableProjectsAveragePrice: marketValue('comparableProjectsAveragePrice'), estimatedSalesVelocity: marketValue('estimatedSalesVelocity'),
+            dataSource: marketValue('dataSource'), referenceDate: marketValue('referenceDate'), marketScore: marketValue('marketScore'), analystComment: marketValue('analystComment')
+          }
+        };
+        const finalScoreValue = root.querySelector('#fundingFinalScore')?.value;
+        if (finalScoreValue !== undefined && finalScoreValue !== '') scoringPayload.finalScore = Number(finalScoreValue);
+        await API.patch(`/api/funding/admin/${encodeURIComponent(projectId)}`, scoringPayload);
+        return reloadFundingDossier('Scoring y análisis guardados.');
+      }
+      if (button.matches('[data-save-funding-publication]')) {
+        const payload = collectFundingPublication(root);
+        const wasPublished = root.dataset.fundingPublished === '1';
+        if (payload.isVisibleToBanks && !wasPublished) {
+          validateFundingPublication(root);
+          payload.publicationAction = 'publish';
+        } else if (!payload.isVisibleToBanks && wasPublished) {
+          payload.publicationAction = 'withdraw';
+        }
+        await API.patch(`/api/funding/admin/${encodeURIComponent(projectId)}`, payload);
+        return reloadFundingDossier(payload.publicationAction === 'publish' ? 'Oportunidad publicada correctamente en el marketplace.' : payload.publicationAction === 'withdraw' ? 'Oportunidad retirada del marketplace.' : 'Configuración de publicación guardada.');
+      }
+      if (button.matches('[data-funding-publish]')) {
+        validateFundingPublication(root);
+        await API.patch(`/api/funding/admin/${encodeURIComponent(projectId)}`, {
+          ...collectFundingPublication(root),
+          publicationAction: 'publish'
+        });
+        return reloadFundingDossier('Oportunidad publicada correctamente en el marketplace.');
+      }
+      const quickStatus = button.dataset.fundingQuickStatus;
+      if (quickStatus) {
+        const payload = { status: quickStatus };
+        if (quickStatus === 'published') payload.isVisibleToBanks = true;
+        await API.patch(`/api/funding/admin/${encodeURIComponent(projectId)}`, payload);
+        return reloadFundingDossier(quickStatus === 'published' ? 'Oportunidad publicada.' : 'Estado actualizado.');
+      }
+      if (button.matches('[data-funding-withdraw]')) {
+        await API.patch(`/api/funding/admin/${encodeURIComponent(projectId)}`, {
+          ...collectFundingPublication(root),
+          publicationAction: 'withdraw'
+        });
+        return reloadFundingDossier('Oportunidad retirada del marketplace.');
+      }
+      const reviewedId = button.dataset.interestReviewed;
+      if (reviewedId) {
+        await API.patch(`/api/funding/admin/interests/${encodeURIComponent(reviewedId)}`, { markReviewed: true });
+        return reloadFundingDossier('Interés marcado como revisado.');
+      }
+      const interestStatus = button.dataset.interestStatus;
+      const interestId = button.dataset.interestId;
+      if (interestStatus && interestId) {
+        await API.patch(`/api/funding/admin/interests/${encodeURIComponent(interestId)}`, { status: interestStatus });
+        return reloadFundingDossier('Estado del interés actualizado.');
+      }
+    } catch (err) {
+      setFundingAdminMessage(err.message || String(err), 'error');
+      setFundingPublicationMessage(root, err.message || String(err), 'error');
+      button.disabled = false;
+    }
+  });
 
   // Proveedores
   refreshProvidersBtn?.addEventListener('click', loadProviders);
@@ -2771,6 +3210,24 @@ function applyProjectsFilters(list) {
       alert(err.message || 'No se pudo actualizar la visibilidad del módulo.');
     } finally {
       providersModuleToggle.disabled = false;
+    }
+  });
+  fundingModuleToggle?.addEventListener('change', async () => {
+    const next = fundingModuleToggle.checked;
+    fundingModuleToggle.disabled = true;
+    try {
+      const res = await apiUpdateFundingModuleSettings(next);
+      fundingModuleEnabled = res.enabled === true;
+      applyFundingModuleVisibility();
+      if (fundingModuleEnabled) await loadFundingAdmin();
+    } catch (error) {
+      renderFundingModuleToggle();
+      if (fundingModuleStatus) {
+        fundingModuleStatus.textContent = error.message || 'No se pudo guardar la configuración';
+        fundingModuleStatus.style.color = '#fca5a5';
+      }
+    } finally {
+      fundingModuleToggle.disabled = false;
     }
   });
   providerForm?.addEventListener('submit', async (ev) => {
@@ -3446,11 +3903,13 @@ allProjectsNext?.addEventListener('click', () => {
 });
 
   // ---------- INIT ----------
+  await syncFundingModuleSettings();
   await Promise.all([
     loadPendingUsers(),
     loadPendingProjects(),
     loadUsers(),
     loadAllProjects(), // se ignora si no existe la UI de proyectos completos
+    loadFundingAdmin(),
     loadProviders(),
     loadTenants(),
   ]);

@@ -20,6 +20,8 @@ const Loan = require('../models/Loan');
 const Milestone = require('../models/Milestone');
 const ProjectFinance = require('../models/ProjectFinance');
 const ProjectPermit = require('../models/ProjectPermit');
+const Venta = require('../models/Venta');
+const CommercialFolder = require('../models/CommercialFolder');
 const { hashPassword } = require('../utils/passwords');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -117,6 +119,16 @@ async function seedData() {
     status: 'active'
   });
 
+  const bank = await User.create({
+    tenantKey: TENANT,
+    tenantKeys: [TENANT],
+    name: 'Assigned Bank',
+    email: 'assigned.bank@example.test',
+    password: hashPassword(PASSWORD),
+    role: 'bank',
+    status: 'active'
+  });
+
   const projectAllowed = await Project.create({
     tenantKey: TENANT,
     name: 'Allowed Project',
@@ -134,7 +146,73 @@ async function seedData() {
   const otherTenantProject = await Project.create({
     tenantKey: OTHER_TENANT,
     name: 'Other Tenant Project',
-    publishStatus: 'approved'
+    publishStatus: 'approved',
+    assignedBanks: [bank._id],
+    assignees: { bank: [bank._id] }
+  });
+
+  const otherTenantUnits = await Unit.create([
+    {
+      tenantKey: OTHER_TENANT,
+      projectId: otherTenantProject._id,
+      manzana: 'A',
+      lote: '1',
+      code: 'A-1',
+      modelo: 'Modelo actual',
+      m2: 80,
+      precioLista: 100000,
+      price: 90000,
+      estado: 'disponible',
+      status: 'DISPONIBLE'
+    },
+    {
+      tenantKey: OTHER_TENANT,
+      projectId: otherTenantProject._id,
+      manzana: 'A',
+      lote: '2',
+      code: 'A-2',
+      modelo: 'Modelo vendido',
+      m2: 95,
+      precioLista: 250000,
+      price: 200000,
+      estado: 'con_cpp',
+      status: 'DISPONIBLE'
+    }
+  ]);
+
+  const otherTenantFolder = await CommercialFolder.create({
+    tenantKey: OTHER_TENANT,
+    projectId: otherTenantProject._id,
+    name: 'Etapa bancaria',
+    color: '#123456',
+    order: 0
+  });
+
+  await Unit.updateMany(
+    { _id: { $in: otherTenantUnits.map(unit => unit._id) } },
+    { $set: { folderId: otherTenantFolder._id } }
+  );
+
+  const otherTenantVenta = await Venta.create({
+    tenantKey: OTHER_TENANT,
+    projectId: otherTenantProject._id,
+    unitId: otherTenantUnits[1]._id,
+    manzana: 'A',
+    lote: '2',
+    numCPP: 'CPP-TEST',
+    valor: 250000,
+    deletedAt: null
+  });
+
+  const otherTenantDocument = await Document.create({
+    tenantKey: OTHER_TENANT,
+    projectId: otherTenantProject._id,
+    originalname: 'bank-visible.pdf',
+    filename: 'bank-visible.pdf',
+    path: 'uploads/bank-visible.pdf',
+    mimetype: 'application/pdf',
+    size: 10,
+    status: 'ACTIVE'
   });
 
   const unitDenied = await Unit.create({
@@ -204,9 +282,14 @@ async function seedData() {
     admin,
     assigned,
     unassigned,
+    bank,
     projectAllowed,
     projectDenied,
     otherTenantProject,
+    otherTenantUnits,
+    otherTenantFolder,
+    otherTenantVenta,
+    otherTenantDocument,
     unitDenied,
     folderDenied,
     checklistDenied,
@@ -283,6 +366,7 @@ test('security integration smoke: tenant isolation, project access, IDOR and upl
   const adminToken = await login(fixtures.admin.email);
   const assignedToken = await login(fixtures.assigned.email);
   const unassignedToken = await login(fixtures.unassigned.email);
+  const bankToken = await login(fixtures.bank.email);
 
   await t.test('login and /api/auth/me expose expected role and tenants', async () => {
     const me = await api('/api/auth/me', { token: adminToken });
@@ -362,6 +446,38 @@ test('security integration smoke: tenant isolation, project access, IDOR and upl
   await t.test('valid tenant token cannot access another tenant project by ID', async () => {
     const res = await api(`/api/projects/${fixtures.otherTenantProject._id}`, { token: adminToken });
     assertNoBypass(res, 'other tenant project');
+  });
+
+  await t.test('assigned bank reads the complete canonical commercial data across tenants', async () => {
+    const projectId = fixtures.otherTenantProject._id;
+    const unitId = fixtures.otherTenantUnits[1]._id;
+    const requests = await Promise.all([
+      api(`/api/projects/${projectId}/summary`, { token: bankToken }),
+      api(`/api/units?projectId=${projectId}`, { token: bankToken }),
+      api(`/api/ventas?projectId=${projectId}`, { token: bankToken }),
+      api(`/api/commercial-folders?projectId=${projectId}`, { token: bankToken }),
+      api(`/api/documents?projectId=${projectId}`, { token: bankToken }),
+      api(`/api/units/${unitId}`, { token: bankToken }),
+      api(`/api/ventas/by-unit/${unitId}`, { token: bankToken })
+    ]);
+
+    for (const response of requests) {
+      assert.equal(response.status, 200, JSON.stringify(response.payload));
+    }
+
+    const [summary, units, ventas, folders, documents, unit, venta] = requests.map(item => item.payload);
+    assert.equal(summary.kpis.inventoryValue, 350000);
+    assert.equal(units.length, 2);
+    assert.equal(units[1].estado, 'con_cpp');
+    assert.equal(units[1].precioLista, 250000);
+    assert.equal(units[1].m2, 95);
+    assert.equal(String(units[1].folderId), String(fixtures.otherTenantFolder._id));
+    assert.equal(ventas.length, 1);
+    assert.equal(folders.folders.length, 1);
+    assert.equal(documents.length, 1);
+    assert.equal(documents[0].originalname, 'bank-visible.pdf');
+    assert.equal(unit.estado, 'con_cpp');
+    assert.equal(venta.numCPP, 'CPP-TEST');
   });
 
   await t.test('upload blocks dangerous extensions and allows valid PDF', async () => {
