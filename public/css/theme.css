@@ -3397,41 +3397,6 @@ body.light-theme #cards .card.status-FINALIZADO .badge {
   opacity: .62;
 }
 
-#cards .portfolio-card-metrics {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 11px;
-}
-
-#cards .portfolio-card-metrics > div {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: baseline;
-  gap: 2px 7px;
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: rgba(148, 163, 184, .07);
-}
-
-#cards .portfolio-card-metrics span,
-#cards .portfolio-card-metrics small {
-  color: var(--text-muted);
-  font-size: .67rem;
-}
-
-#cards .portfolio-card-metrics strong {
-  justify-self: end;
-  color: var(--text);
-  font-size: 1rem;
-}
-
-#cards .portfolio-card-metrics small {
-  grid-column: 1 / -1;
-}
-
 #cards .portfolio-card-commercial {
   margin-top: 13px;
 }
@@ -3507,10 +3472,6 @@ body.light-theme #cards .portfolio-status-pill {
 
 body.light-theme #cards .portfolio-card-summary-label {
   color: color-mix(in srgb, var(--project-accent) 78%, #0f172a);
-}
-
-body.light-theme #cards .portfolio-card-metrics > div {
-  background: #f8fafc;
 }
 
 @media (max-width: 700px) {

@@ -419,10 +419,6 @@
           <p class="small muted">${p.location ? `Ubicación: ${escapeHtml(p.location)}` : '&nbsp;'}</p>
           <p class="small muted portfolio-card-promoter ${promoterText ? '' : 'is-empty'}">${promoterText || '&nbsp;'}</p>
         </div>
-          <div class="portfolio-card-metrics" aria-label="Resumen de unidades">
-            <div><span>Total</span><strong>${escapeHtml(String(unitsTotal))}</strong><small>unidades</small></div>
-            <div><span>Vendidas</span><strong>${escapeHtml(String(unitsSold))}</strong><small>unidades</small></div>
-          </div>
           <div class="portfolio-card-commercial">
             <span class="portfolio-card-progress-title">Avance comercial</span>
             <progress class="portfolio-card-progress" max="100" value="${soldPct}" aria-label="${soldPct}% de unidades vendidas">${soldPct}%</progress>
