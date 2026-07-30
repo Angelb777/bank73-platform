@@ -36,7 +36,8 @@
     userId: localStorage.getItem('userId')
   };
   const role = (auth.role || '').toLowerCase();
-  let fundingModuleEnabled = role === 'admin';
+  const DEFAULT_PROJECT_COVER = '/assets/FotoPortfolio.jpg';
+  let fundingModuleEnabled = false;
   const fundingOpportunityDetailCache = new Map();
   const fundingOpportunityDetailRequests = new Map();
   const dashboardBtn = document.getElementById('portfolioDashboardBtn');
@@ -399,9 +400,7 @@
     return `
       <article class="card portfolio-project-card ${statusClass(p.status)}">
         <div class="portfolio-card-cover">
-          ${p.coverImage?.path
-            ? `<img src="${escapeHtml(p.coverImage.path)}" alt="Portada de ${escapeHtml(p.name || 'proyecto')}" loading="lazy">`
-            : '<div class="portfolio-card-cover-fallback" aria-hidden="true"><span>Bank73</span></div>'}
+          <img src="${escapeHtml(p.coverImage?.path || DEFAULT_PROJECT_COVER)}" alt="Portada de ${escapeHtml(p.name || 'proyecto')}" loading="lazy">
         </div>
         <div class="portfolio-card-body">
           <div class="portfolio-card-head">
@@ -611,9 +610,9 @@
   async function syncFundingModuleVisibility() {
     try {
       const settings = await API.get('/api/funding/module-settings');
-      fundingModuleEnabled = role === 'admin' || settings?.enabled === true;
+      fundingModuleEnabled = settings?.enabled === true;
     } catch (_error) {
-      fundingModuleEnabled = role === 'admin';
+      fundingModuleEnabled = false;
     }
     applyFundingModuleVisibility();
   }
@@ -651,7 +650,7 @@
         return `
         <article class="card funding-opportunity-card">
           <div class="funding-opportunity-cover">
-            ${item.coverImage?.path ? `<img src="${escapeHtml(item.coverImage.path)}" alt="Portada de ${escapeHtml(item.name || 'proyecto')}">` : ''}
+            <img src="${escapeHtml(item.coverImage?.path || DEFAULT_PROJECT_COVER)}" alt="Portada de ${escapeHtml(item.name || 'proyecto')}">
             <div class="funding-opportunity-cover-tags">
               <span class="funding-opportunity-pill">${escapeHtml(item.projectType || 'Proyecto inmobiliario')}</span>
               <span class="funding-opportunity-pill is-term">${escapeHtml(fundingDeadlineLabel(item.fundingDeadline, item.estimatedTerm))}</span>
@@ -2353,7 +2352,7 @@
           closeModal();
 
           // reset campos
-          ['pName', 'pDesc', 'pLocation', 'pProjectType', 'pFundingDeadline', 'ld-promoterProfileSelect', 'kLoanApproved', 'kBudgetApproved', 'ts-promoter', 'ts-commercial', 'ts-legal', 'ts-tecnico', 'ts-gerencia', 'ts-socios', 'ts-financiero', 'ts-contable', 'ts-notes', 'fundingRequestedAmount', 'fundingSecuredAmount', ...conditionNumbers.map(x => `fc-${x}`), ...conditionTexts.map(x => `fc-${x}`)].forEach(id => {
+          ['pName', 'pDesc', 'pLocation', 'pProjectType', 'pCoverImage', 'pFundingDeadline', 'ld-promoterProfileSelect', 'kLoanApproved', 'kBudgetApproved', 'ts-promoter', 'ts-commercial', 'ts-legal', 'ts-tecnico', 'ts-gerencia', 'ts-socios', 'ts-financiero', 'ts-contable', 'ts-notes', 'fundingRequestedAmount', 'fundingSecuredAmount', ...conditionNumbers.map(x => `fc-${x}`), ...conditionTexts.map(x => `fc-${x}`)].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
           });
@@ -2457,7 +2456,7 @@
     wrap.innerHTML = `<div class="modal create-modal funding-detail-modal"><button class="modal-close" type="button" data-close-funding aria-label="Cerrar">×</button><div class="funding-detail-scroll">
       <section class="funding-detail-top">
         <div class="funding-detail-hero">
-          ${item.coverImage?.path ? `<img src="${escapeHtml(item.coverImage.path)}" alt="Portada de ${escapeHtml(item.name || 'proyecto')}">` : ''}
+          <img src="${escapeHtml(item.coverImage?.path || DEFAULT_PROJECT_COVER)}" alt="Portada de ${escapeHtml(item.name || 'proyecto')}">
           <div class="funding-detail-hero-content">
             <div class="funding-detail-badges"><span class="funding-detail-badge">${escapeHtml(item.projectType || 'Proyecto inmobiliario')}</span><span class="funding-detail-badge">Oportunidad Bank73</span></div>
             <h2>${escapeHtml(item.name || 'Oportunidad de financiación')}</h2>
