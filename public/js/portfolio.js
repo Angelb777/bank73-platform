@@ -546,6 +546,50 @@
   let activeCreateStep = 'general';
   let createDatoUnicoFileState = null;
   let isCreatingProject = false;
+  const BANK_REQUIREMENT_TITLES = [
+    'Presupuesto del proyecto',
+    'Experiencia del promotor y contratista en el desarrollo y promoción de proyectos',
+    'Composición accionaria',
+    'Imágenes del proyecto y planta arquitectónica del modelo de la unidad',
+    'Estudio de mercado realizado por un tercero',
+    'Avalúo del terreno donde se desarrollará el proyecto',
+    'Estados financieros de la sociedad deudora (si aplica)',
+    'Estados financieros y/o declaración de renta de los accionistas',
+    'Identificación de accionistas y dignatarios',
+    'Estudio de Impacto Ambiental (EIA) con resolución aprobada',
+    'Cronograma de ejecución de la obra',
+    'Flujo de fondos del proyecto',
+    'Aviso de operaciones',
+    'Formulario para consulta APC de accionistas y sociedad',
+    'Paz y Salvo de la Caja de Seguro Social',
+    'Planos de anteproyecto firmados por arquitecto e ingeniero',
+    'Formulario de Debida Diligencia',
+    'Manual de Cumplimiento',
+    'Estudio hidrológico del río y validación de niveles de inundación en planos aprobados por el MOP',
+    'Preventas netas equivalentes al 50% de la etapa a financiar y cesión suficiente para cubrir la facilidad aprobada',
+    'Certificación inicial del inspector independiente sobre costos, permisos, pólizas y documentos requeridos',
+    'Revisión y validación del presupuesto de construcción por la Gerencia de Ingeniería',
+    'Contrato de construcción',
+    'Póliza CAR por el 100% del valor de construcción, endosada al Banco / Póliza incendio',
+    'Fianza de cumplimiento equivalente al 50% del valor de la etapa',
+    'Fianza de pago equivalente al 25% del valor de la etapa',
+    'Informe de Inspección de Ingeniería',
+    'Revisión y validación del presupuesto de construcción por la Gerencia de Ingeniería',
+    'Planos de anteproyecto firmados por arquitecto e ingeniero',
+    'Cuenta Avance'
+  ];
+  const REQUIREMENT_PROMOTER_FIELDS = [
+    ['yearsExperience','Años de experiencia','number'], ['deliveredProjects','Proyectos entregados','number'], ['activeProjects','Proyectos activos','number'],
+    ['developedUnits','Unidades desarrolladas','number'], ['countries','Países de operación','list'], ['developedVolume','Volumen total desarrollado','number'],
+    ['averageProjectTicket','Ticket medio de proyecto','number'], ['bankFinancingExperience','Experiencia con financiación bancaria','yesno'],
+    ['banksWorkedWith','Bancos con los que ha trabajado','list'], ['onTimeDeliveryHistory','Historial de entregas a tiempo','text'],
+    ['incidentHistory','Historial de incidencias legales o técnicas','text'], ['documentationLevel','Nivel de documentación disponible','doclevel']
+  ];
+  const createPhaseRequirementsState = new Map();
+  const createRequirementFilesState = new Map();
+  let createRequirementPromoterDraft = null;
+  let createRequirementPromoterOriginal = null;
+  let createRequirementLegalDraft = null;
   let createTotalUnitsManuallyEdited = false;
   let createLastSuggestedUnitsTotal = 0;
 
@@ -1494,6 +1538,10 @@
     return `<details class="create-phase-block" data-create-phase-row="${index}" style="border:1px solid #dbe2ea;border-radius:12px;padding:10px;margin-bottom:10px;background:#fff;">
       <summary><strong>${escapeHtml(item.name || `Fase ${index + 1}`)}</strong></summary>
       <div class="create-grid" style="margin-top:10px;">
+        <div style="grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #bae6fd;background:#f0f9ff;border-radius:12px;padding:10px 12px;">
+          <div><strong>Requisitos</strong><div class="small muted">30 requisitos aplicables a esta fase. Bank73 precarga la información disponible.</div></div>
+          <button class="btn" type="button" data-open-create-requirements="${index}">Requisitos</button>
+        </div>
         <label>Nombre<input data-create-phase="name" value="${escapeHtml(item.name || `Fase ${index + 1}`)}"></label>
         <label style="grid-column:1/-1">Bancos financiadores de la fase
           <select data-create-phase-banks multiple size="5">${phaseBankOptionsHtml(selectedBanks)}</select>
@@ -1518,9 +1566,6 @@
         <div style="grid-column:1/-1;border:1px solid #dbeafe;background:#f8fbff;border-radius:12px;padding:10px;" data-create-phase-sources-summary>
           <strong>Fuentes estimadas automaticas</strong>
           <div class="small muted" style="margin-top:6px;">Total usos: <b data-phase-total-uses>0</b> · Banco: <b data-phase-bank-source>0</b> · Promotor: <b data-phase-promoter-source>0</b> · Total fuentes: <b data-phase-total-sources>0</b></div>
-        </div>
-        <div style="grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
-          ${PHASE_CONDITION_FIELDS.map(conditionField).join('')}
         </div>
       </div>
     </details>`;
@@ -1807,6 +1852,326 @@
     })).filter(item => Object.values(item).some(value => String(value ?? '').trim() !== '' && numberFromCreate(value) !== 0));
   }
 
+  function createRequirementAutomaticInformation(number, phaseIndex) {
+    const row = document.querySelector(`[data-create-phase-row="${phaseIndex}"]`);
+    const legal = createRequirementLegalDraft || collectLegalData();
+    const technical = collectTechnicalData();
+    const models = collectHousingModels();
+    const selectedPromoter = createPromoterProfiles.get(String(document.getElementById('ld-promoterProfileSelect')?.value || ''));
+    const profile = createRequirementPromoterDraft || selectedPromoter?.promoterProfile || promoterProfileState?.promoterProfile || {};
+    const conditions = row ? collectPhaseFinancialConditions(row) : {};
+    const lineList = items => items.map(item => `${item.name || 'Partida'}: B/. ${formatBankNumber(item.amount)}`).join('; ');
+    const uses = row ? collectPhaseLineItems(row, 'planUses') : [];
+    const sources = row ? autoPhaseSourcesForUses(phaseUsesTotal(row), currentPhaseFinancialNumbers(row)) : [];
+
+    if (number === 1) return [
+      `Presupuesto total del proyecto: B/. ${formatBankNumber(numberFromCreate(document.getElementById('fc-projectTotal')?.value))}`,
+      `Presupuesto de la fase: B/. ${formatBankNumber(numberFromCreate(conditions.phaseTotal))}`,
+      uses.length ? `Usos: ${lineList(uses)}` : ''
+    ].filter(Boolean).join('\n');
+    if (number === 2) {
+      const experience = [
+      profile.yearsExperience != null ? `${profile.yearsExperience} años de experiencia` : '',
+      profile.deliveredProjects != null ? `${profile.deliveredProjects} proyectos entregados` : '',
+      profile.activeProjects != null ? `${profile.activeProjects} proyectos activos` : '',
+      profile.developedUnits != null ? `${profile.developedUnits} unidades desarrolladas` : '',
+      profile.bankFinancingExperience ? `Experiencia bancaria: ${profile.bankFinancingExperience}` : '',
+      profile.banksWorkedWith?.length ? `Bancos: ${profile.banksWorkedWith.join(', ')}` : ''
+      ].filter(Boolean).join('; ');
+      return experience ? `Promotor (perfil Bank73): ${experience}` : '';
+    }
+    if (number === 3) return legal.shareholders.map(item => `${item.name || 'Accionista'}: ${item.percentage || 0}%`).join('; ');
+    if (number === 4) return '';
+    if (number === 9) return [
+      ...legal.shareholders.map(item => `Accionista: ${item.name || ''}${item.cedula ? `, identificación ${item.cedula}` : ''}`),
+      ...legal.boardMembers.map(item => `Dignatario: ${item.name || ''}${item.position ? `, ${item.position}` : ''}${item.cedula ? `, identificación ${item.cedula}` : ''}`)
+    ].join('\n');
+    if (number === 10) return document.querySelector('[data-create-precedent="environmentalStudyApproved"]')?.checked ? 'Estudio ambiental marcado como aprobado en Bank73.' : '';
+    if (number === 11) return `Fase prevista: ${row?.querySelector('[data-create-phase="name"]')?.value.trim() || `Fase ${phaseIndex + 1}`}`;
+    if (number === 12) return [uses.length ? `Usos: ${lineList(uses)}` : '', sources.length ? `Fuentes: ${lineList(sources)}` : ''].filter(Boolean).join('\n');
+    if (number === 16 || number === 29) return technical.assessment?.preliminaryDesign === true || technical.assessment?.approvedPlans === true
+      ? `Anteproyecto: ${technical.assessment.preliminaryDesign === true ? 'informado' : 'no informado'}; planos aprobados: ${technical.assessment.approvedPlans === true ? 'sí' : 'no informado'}. Bank73 no registra aquí las firmas del arquitecto y el ingeniero.`
+      : '';
+    if (number === 20) {
+      const commercial = models.reduce((summary, model) => {
+        const states = model.initialStatuses || {};
+        summary.total += numberFromCreate(model.unitsCount);
+        summary.reserved += numberFromCreate(states.reservado);
+        summary.cpp += numberFromCreate(states.con_cpp);
+        summary.legal += numberFromCreate(states.tramite_legal_activado);
+        summary.deeded += numberFromCreate(states.escriturado_traspasado);
+        summary.delivered += numberFromCreate(states.vivienda_entregada);
+        return summary;
+      }, { total: 0, reserved: 0, cpp: 0, legal: 0, deeded: 0, delivered: 0 });
+      const presales = commercial.reserved + commercial.cpp + commercial.legal + commercial.deeded + commercial.delivered;
+      const pct = commercial.total ? (presales / commercial.total * 100).toFixed(1) : '0.0';
+      return [
+        commercial.total || presales
+          ? `Comercial: ${commercial.total} unidades totales; ${commercial.reserved} reservadas; ${commercial.cpp} con CPP; ${commercial.legal} en trámite legal; ${commercial.deeded} escrituradas/traspasadas; ${commercial.delivered} entregadas. Preventas/comercializadas: ${presales} (${pct}%).`
+          : '',
+        conditions.requiredPresales ? `Condición financiera registrada: ${conditions.requiredPresales}` : ''
+      ].filter(Boolean).join('\n');
+    }
+    if (number === 21) return conditions.technicalInspector ? `Inspector técnico registrado: ${conditions.technicalInspector}. Este dato no acredita por sí solo la certificación inicial.` : '';
+    if (number === 22 || number === 28) return technical.assessment?.constructionBudget === true ? 'Bank73 registra la existencia de un presupuesto de construcción; no consta aquí su validación por la Gerencia de Ingeniería.' : '';
+    if (number === 24) return conditions.insurance ? `Seguros registrados en las condiciones financieras: ${conditions.insurance}` : '';
+    if (number === 25 || number === 26) return conditions.guarantees ? `Garantías registradas en las condiciones financieras: ${conditions.guarantees}` : '';
+    return '';
+  }
+
+  function createRequirementStructuredData(number, phaseIndex) {
+    const row = document.querySelector(`[data-create-phase-row="${phaseIndex}"]`);
+    const conditions = row ? collectPhaseFinancialConditions(row) : {};
+    const legal = createRequirementLegalDraft || collectLegalData();
+    const selectedPromoter = createPromoterProfiles.get(String(document.getElementById('ld-promoterProfileSelect')?.value || ''));
+    const profile = createRequirementPromoterDraft || selectedPromoter?.promoterProfile || promoterProfileState?.promoterProfile || {};
+    const technical = collectTechnicalData();
+    if (number === 1) return { kind:'budget', projectTotal:numberFromCreate(document.getElementById('fc-projectTotal')?.value), phaseTotal:numberFromCreate(conditions.phaseTotal), uses:row ? collectPhaseLineItems(row, 'planUses') : [] };
+    if (number === 2) return { kind:'experience', promoter: Object.fromEntries(REQUIREMENT_PROMOTER_FIELDS.map(([key]) => [key, profile[key] ?? (['countries','banksWorkedWith'].includes(key) ? [] : null)])) };
+    if (number === 3) return { kind:'shareholders', shareholders:legal.shareholders || [] };
+    if (number === 9) return { kind:'legalParties', shareholders:legal.shareholders || [], dignitaries:legal.boardMembers || [] };
+    if (number === 12) return { kind:'cashflow', uses:row ? collectPhaseLineItems(row, 'planUses') : [], sources:row ? autoPhaseSourcesForUses(phaseUsesTotal(row), currentPhaseFinancialNumbers(row)) : [] };
+    if (number === 20) {
+      const data = collectHousingModels().reduce((out, model) => { const states = model.initialStatuses || {}; const marketed = numberFromCreate(states.reservado) + numberFromCreate(states.con_cpp) + numberFromCreate(states.tramite_legal_activado) + numberFromCreate(states.escriturado_traspasado) + numberFromCreate(states.vivienda_entregada); out.total += numberFromCreate(model.unitsCount); out.reserved += numberFromCreate(states.reservado); out.cpp += numberFromCreate(states.con_cpp); out.legal += numberFromCreate(states.tramite_legal_activado); out.deeded += numberFromCreate(states.escriturado_traspasado); out.delivered += numberFromCreate(states.vivienda_entregada); out.saleValue += marketed * numberFromCreate(model.price); return out; }, { total:0,reserved:0,cpp:0,legal:0,deeded:0,delivered:0,saleValue:0 });
+      data.presales = data.reserved + data.cpp + data.legal + data.deeded + data.delivered;
+      data.presalesPct = data.total ? data.presales / data.total * 100 : 0;
+      return { kind:'presales', ...data, cppAmount:0, requiredPresales:conditions.requiredPresales || '' };
+    }
+    if (number === 11) return { kind:'schedule', phaseName:row?.querySelector('[data-create-phase="name"]')?.value || `Fase ${phaseIndex + 1}` };
+    if (number === 10) return { kind:'flag', label:'EIA aprobado', value:!!document.querySelector('[data-create-precedent="environmentalStudyApproved"]')?.checked };
+    if (number === 16 || number === 29) return { kind:'plans', preliminaryDesign:technical.assessment?.preliminaryDesign ?? null, approvedPlans:technical.assessment?.approvedPlans ?? null };
+    if (number === 21) return { kind:'inspector', technicalInspector:conditions.technicalInspector || '' };
+    if (number === 22 || number === 28) return { kind:'constructionBudget', exists:technical.assessment?.constructionBudget ?? null };
+    if (number === 24) return { kind:'insurance', value:conditions.insurance || '' };
+    if (number === 25 || number === 26) return { kind:'guarantees', value:conditions.guarantees || '' };
+    return undefined;
+  }
+
+  function requirementsForCreatePhase(phaseIndex) {
+    const saved = createPhaseRequirementsState.get(phaseIndex) || [];
+    const byNumber = new Map(saved.map(item => [Number(item.number), item]));
+    const requirements = BANK_REQUIREMENT_TITLES.map((title, index) => {
+      const number = index + 1;
+      const current = byNumber.get(number) || {};
+      const automatic = createRequirementAutomaticInformation(number, phaseIndex);
+      const structuredData = createRequirementStructuredData(number, phaseIndex);
+      const useAutomatic = !byNumber.has(number) || current.sourceKey === 'bank73';
+      const hasAutomaticSource = Boolean(automatic || structuredData);
+      return {
+        number,
+        title,
+        information: useAutomatic ? automatic : current.information,
+        manualInformation: current.manualInformation || '',
+        structuredData,
+        sourceKey: useAutomatic ? (hasAutomaticSource ? 'bank73' : 'manual') : (current.sourceKey || 'manual'),
+        sourceLabel: useAutomatic && hasAutomaticSource ? 'Precargado desde Bank73' : 'Entrada manual',
+        status: 'PENDIENTE',
+        observations: current.observations || ''
+      };
+    });
+    createPhaseRequirementsState.set(phaseIndex, requirements);
+    return requirements;
+  }
+
+  function requirementInputGuidance(title) {
+    return `Información solicitada: ${title}. Describe los datos disponibles y adjunta la documentación correspondiente.`;
+  }
+
+  function createRequirementMetric(label, value, type = '') {
+    const shown = type === 'money' ? `B/. ${formatBankNumber(value || 0)}` : type === 'pct' ? `${Number(value || 0).toFixed(1)}%` : (value ?? '—');
+    return `<div class="requirement-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(shown))}</strong></div>`;
+  }
+
+  function createLegalRowsHtml(rows = [], kind) {
+    const source = rows.length ? rows : [{}];
+    return source.map(item => `<div class="requirement-legal-row" data-create-legal-row="${kind}"><input data-create-legal-field="name" value="${escapeHtml(item.name || '')}" placeholder="Nombre">${kind !== 'shareholder' ? `<input data-create-legal-field="cedula" value="${escapeHtml(item.cedula || '')}" placeholder="Identificación">` : ''}${kind === 'shareholder' ? `<input data-create-legal-field="percentage" type="number" min="0" max="100" value="${escapeHtml(item.percentage ?? '')}" placeholder="%">` : kind === 'dignitary' ? `<input data-create-legal-field="position" value="${escapeHtml(item.position || '')}" placeholder="Cargo">` : ''}<button class="btn btn-ghost btn-xs" type="button" data-remove-create-legal-row>✕</button></div>`).join('');
+  }
+
+  function createStructuredRequirementHtml(item) {
+    const data = item.structuredData || {};
+    if (data.kind === 'budget') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric('Total del proyecto',data.projectTotal,'money')}${createRequirementMetric('Presupuesto de fase',data.phaseTotal,'money')}</div><div class="requirement-line-list">${(data.uses || []).map(use => `<div><span>${escapeHtml(use.name || 'Partida')}</span><b>B/. ${escapeHtml(formatBankNumber(use.amount))}</b></div>`).join('')}</div></div>`;
+    if (data.kind === 'presales') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric('Unidades totales',data.total)}${createRequirementMetric('Reservadas',data.reserved)}${createRequirementMetric('Con CPP',data.cpp)}${createRequirementMetric('Trámite legal',data.legal)}${createRequirementMetric('Escrituradas',data.deeded)}${createRequirementMetric('Entregadas',data.delivered)}${createRequirementMetric('Preventas',data.presales)}${createRequirementMetric('% preventa',data.presalesPct,'pct')}${createRequirementMetric('Valor asociado',data.saleValue,'money')}</div></div>`;
+    if (data.kind === 'experience') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Experiencia del promotor</strong><div class="requirement-profile-grid">${REQUIREMENT_PROMOTER_FIELDS.map(([key,label,type]) => { const value = Array.isArray(data.promoter?.[key]) ? data.promoter[key].join(', ') : (data.promoter?.[key] ?? ''); const field = type === 'yesno' ? `<select data-create-promoter-field="${key}" data-field-type="${type}"><option value="">No definido</option><option value="Sí" ${value === 'Sí' ? 'selected' : ''}>Sí</option><option value="No" ${value === 'No' ? 'selected' : ''}>No</option></select>` : type === 'doclevel' ? `<select data-create-promoter-field="${key}" data-field-type="${type}"><option value="">No definido</option>${['Baja','Media','Alta'].map(option => `<option value="${option}" ${value === option ? 'selected' : ''}>${option}</option>`).join('')}</select>` : `<input data-create-promoter-field="${key}" data-field-type="${type}" ${type === 'number' ? 'type="number" min="0"' : ''} value="${escapeHtml(value)}">`; return `<label><span>${escapeHtml(label)}</span>${field}</label>`; }).join('')}</div></div></div>`;
+    if (data.kind === 'shareholders') return `<div class="requirement-structured"><strong>Accionistas</strong><div data-create-legal-rows="shareholder">${createLegalRowsHtml(data.shareholders || [],'shareholder')}</div><button class="btn btn-ghost btn-xs" type="button" data-add-create-legal-row="shareholder">+ Accionista</button></div>`;
+    if (data.kind === 'legalParties') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Accionistas e identificación</strong><div data-create-legal-rows="shareholder-id">${createLegalRowsHtml(data.shareholders || [],'shareholder-id')}</div><button class="btn btn-ghost btn-xs" type="button" data-add-create-legal-row="shareholder-id">+ Accionista</button></div><div class="requirement-structured-section"><strong>Dignatarios</strong><div data-create-legal-rows="dignitary">${createLegalRowsHtml(data.dignitaries || [],'dignitary')}</div><button class="btn btn-ghost btn-xs" type="button" data-add-create-legal-row="dignitary">+ Dignatario</button></div></div>`;
+    if (data.kind === 'cashflow') return `<div class="requirement-structured">${['uses','sources'].map(key => `<div class="requirement-structured-section"><strong>${key === 'uses' ? 'Usos' : 'Fuentes'}</strong><div class="requirement-line-list">${(data[key] || []).map(line => `<div><span>${escapeHtml(line.name || 'Partida')}</span><b>B/. ${escapeHtml(formatBankNumber(line.amount))}</b></div>`).join('')}</div></div>`).join('')}</div>`;
+    if (data.kind === 'schedule') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric('Fase',data.phaseName || '—')}</div></div>`;
+    if (data.kind === 'plans') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric('Anteproyecto',data.preliminaryDesign === true ? 'Informado' : 'No informado')}${createRequirementMetric('Planos aprobados',data.approvedPlans === true ? 'Sí' : 'No informado')}</div></div>`;
+    if (data.kind === 'flag') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric(data.label || 'Estado',data.value ? 'Sí' : 'No')}</div></div>`;
+    if (data.kind === 'inspector') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric('Inspector técnico',data.technicalInspector || 'No informado')}</div></div>`;
+    if (data.kind === 'constructionBudget') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric('Presupuesto de construcción registrado',data.exists === true ? 'Sí' : 'No informado')}</div></div>`;
+    if (data.kind === 'insurance' || data.kind === 'guarantees') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric(data.kind === 'insurance' ? 'Seguros registrados' : 'Garantías registradas',data.value || 'No informado')}</div></div>`;
+    return '';
+  }
+
+  function setCreateRequirementsFullscreen(modal, full) {
+    modal.classList.toggle('is-fullscreen', full);
+    const button = modal.querySelector('[data-toggle-create-requirements-fullscreen]');
+    if (button) {
+      button.textContent = full ? '□' : '⛶';
+      button.title = full ? 'Restaurar tamaño' : 'Pantalla completa';
+      button.setAttribute('aria-label', button.title);
+    }
+    const bodyZoom = Number.parseFloat(getComputedStyle(document.body).zoom) || 1;
+    modal.style.zoom = full && bodyZoom < 1 ? String(1 / bodyZoom) : '';
+  }
+
+  function readCreateRequirementLegalRows(modal, kind) {
+    return Array.from(modal.querySelectorAll(`[data-create-legal-row="${kind}"]`)).map(row => ({
+      name: row.querySelector('[data-create-legal-field="name"]')?.value.trim() || '',
+      cedula: row.querySelector('[data-create-legal-field="cedula"]')?.value.trim() || '',
+      percentage: numberFromCreate(row.querySelector('[data-create-legal-field="percentage"]')?.value),
+      position: row.querySelector('[data-create-legal-field="position"]')?.value.trim() || ''
+    }));
+  }
+
+  function syncCreateRequirementStructuredDrafts(modal) {
+    const promoterInputs = modal.querySelectorAll('[data-create-promoter-field]');
+    if (promoterInputs.length) {
+      createRequirementPromoterDraft ||= {};
+      promoterInputs.forEach(input => {
+        const key = input.dataset.createPromoterField;
+        createRequirementPromoterDraft[key] = input.dataset.fieldType === 'number'
+          ? (input.value === '' ? null : numberFromCreate(input.value))
+          : input.dataset.fieldType === 'list'
+            ? input.value.split(',').map(value => value.trim()).filter(Boolean)
+            : input.value.trim();
+      });
+    }
+    createRequirementLegalDraft ||= collectLegalData();
+    const composition = readCreateRequirementLegalRows(modal, 'shareholder');
+    const identities = readCreateRequirementLegalRows(modal, 'shareholder-id');
+    if (composition.length) createRequirementLegalDraft.shareholders = composition;
+    if (identities.length) {
+      const current = createRequirementLegalDraft.shareholders || [];
+      createRequirementLegalDraft.shareholders = identities.map((item, index) => ({
+        ...(current[index] || {}), name: item.name, cedula: item.cedula
+      }));
+    }
+    const dignitaries = readCreateRequirementLegalRows(modal, 'dignitary');
+    if (dignitaries.length) createRequirementLegalDraft.boardMembers = dignitaries;
+  }
+
+  function ensureCreateRequirementsModal() {
+    let modal = document.getElementById('createRequirementsModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'createRequirementsModal';
+    modal.className = 'modal-backdrop requirements-modal-backdrop';
+    modal.style.display = 'none';
+    modal.innerHTML = `<div class="modal requirements-modal">
+      <header class="requirements-modal-header">
+        <div><div class="requirements-modal-eyebrow">CONFIGURACIÓN DE LA FASE</div><h3>Requisitos</h3><div class="requirements-modal-subtitle" data-create-requirements-phase></div></div>
+        <div class="requirements-modal-header-actions"><button class="btn btn-ghost requirements-modal-icon" type="button" data-toggle-create-requirements-fullscreen aria-label="Pantalla completa" title="Pantalla completa">⛶</button><button class="btn btn-ghost" type="button" data-close-create-requirements>✕ Cerrar</button></div>
+      </header>
+      <div class="requirements-copy-toolbar" data-create-requirements-copy>
+        <label><span>Reutilizar información de otra fase</span><select data-create-requirements-source></select></label>
+        <button class="btn btn-ghost" type="button" data-copy-create-requirements>Copiar información</button>
+      </div>
+      <div class="requirements-modal-list" data-create-requirements-list></div>
+      <footer class="requirements-modal-actions"><button class="btn" type="button" data-save-create-requirements>Guardar requisitos</button></footer>
+    </div>`;
+    document.body.appendChild(modal);
+    modal.querySelector('[data-close-create-requirements]').onclick = () => {
+      setCreateRequirementsFullscreen(modal, false);
+      modal.style.display = 'none';
+    };
+    modal.querySelector('[data-toggle-create-requirements-fullscreen]').onclick = () => {
+      setCreateRequirementsFullscreen(modal, !modal.classList.contains('is-fullscreen'));
+    };
+    modal.querySelector('[data-save-create-requirements]').onclick = () => {
+      syncCreateRequirementStructuredDrafts(modal);
+      setCreateRequirementsFullscreen(modal, false);
+      modal.style.display = 'none';
+    };
+    modal.addEventListener('input', event => {
+      if (event.target.matches('[data-create-promoter-field],[data-create-legal-field]')) syncCreateRequirementStructuredDrafts(modal);
+    });
+    modal.addEventListener('click', event => {
+      const remove = event.target.closest('[data-remove-create-legal-row]');
+      if (remove) {
+        remove.closest('[data-create-legal-row]')?.remove();
+        syncCreateRequirementStructuredDrafts(modal);
+        return;
+      }
+      const add = event.target.closest('[data-add-create-legal-row]');
+      if (add) {
+        const kind = add.dataset.addCreateLegalRow;
+        modal.querySelector(`[data-create-legal-rows="${kind}"]`)?.insertAdjacentHTML('beforeend', createLegalRowsHtml([{}], kind));
+        syncCreateRequirementStructuredDrafts(modal);
+      }
+    });
+    return modal;
+  }
+
+  function openCreateRequirements(phaseIndex) {
+    const modal = ensureCreateRequirementsModal();
+    const selectedPromoter = createPromoterProfiles.get(String(document.getElementById('ld-promoterProfileSelect')?.value || ''));
+    if (!createRequirementPromoterDraft) {
+      const profile = selectedPromoter?.promoterProfile || promoterProfileState?.promoterProfile || {};
+      createRequirementPromoterOriginal = JSON.parse(JSON.stringify(profile));
+      createRequirementPromoterDraft = JSON.parse(JSON.stringify(profile));
+    }
+    if (!createRequirementLegalDraft) createRequirementLegalDraft = JSON.parse(JSON.stringify(collectLegalData()));
+    const requirements = requirementsForCreatePhase(phaseIndex);
+    modal.dataset.phaseIndex = String(phaseIndex);
+    setCreateRequirementsFullscreen(modal, false);
+    const phaseName = document.querySelector(`[data-create-phase-row="${phaseIndex}"] [data-create-phase="name"]`)?.value || `Fase ${phaseIndex + 1}`;
+    modal.querySelector('[data-create-requirements-phase]').textContent = phaseName;
+    const phaseRows = Array.from(document.querySelectorAll('[data-create-phase-row]'));
+    const copyToolbar = modal.querySelector('[data-create-requirements-copy]');
+    const sourceSelect = modal.querySelector('[data-create-requirements-source]');
+    const otherPhases = phaseRows.map((row, index) => ({
+      index,
+      name: row.querySelector('[data-create-phase="name"]')?.value.trim() || `Fase ${index + 1}`
+    })).filter(item => item.index !== phaseIndex);
+    copyToolbar.style.display = otherPhases.length ? '' : 'none';
+    sourceSelect.innerHTML = otherPhases.map(item => `<option value="${item.index}">${escapeHtml(item.name)}</option>`).join('');
+    modal.querySelector('[data-create-requirements-list]').innerHTML = requirements.map(item => {
+      const fileKey = `${phaseIndex}:${item.number}`;
+      const files = createRequirementFilesState.get(fileKey) || [];
+      const isManual = item.sourceKey !== 'bank73';
+      const guidance = requirementInputGuidance(item.title);
+      return `<article class="requirement-card" data-create-requirement="${item.number}">
+        <div class="requirement-card-heading"><strong class="requirement-title"><span>${item.number}</span>${escapeHtml(item.title)}</strong><span class="requirement-source ${isManual ? 'is-manual' : 'is-bank73'}">${escapeHtml(item.sourceLabel)}</span></div>
+        ${createStructuredRequirementHtml(item)}
+        ${isManual ? `<div class="requirement-help">${escapeHtml(guidance)}</div>` : ''}
+        <label class="requirement-field"><span>${item.number === 2 ? 'Experiencia del contratista' : 'Información manual o adicional'}</span><textarea rows="3" data-create-requirement-information placeholder="${escapeHtml(guidance)}">${escapeHtml(item.manualInformation || '')}</textarea></label>
+        <div class="requirement-documents-row"><label class="btn btn-ghost btn-xs requirement-upload-button">Adjuntar documentos<input type="file" multiple data-create-requirement-files="${item.number}"></label>
+        <span class="requirement-file-name" data-create-requirement-file-name>${files.length ? files.map(file => escapeHtml(file.name)).join(', ') : 'Sin archivos seleccionados'}</span></div>
+      </article>`;
+    }).join('');
+    modal.querySelectorAll('[data-create-requirement-information]').forEach(input => {
+      input.addEventListener('input', () => {
+        const number = Number(input.closest('[data-create-requirement]').dataset.createRequirement);
+        const item = requirements.find(entry => entry.number === number);
+        if (item) item.manualInformation = input.value;
+      });
+    });
+    modal.querySelector('[data-copy-create-requirements]').onclick = () => {
+      const sourceIndex = Number(sourceSelect.value);
+      if (!Number.isInteger(sourceIndex)) return;
+      const source = requirementsForCreatePhase(sourceIndex);
+      const conflicts = requirements.filter((target, index) => target.manualInformation && source[index]?.manualInformation && target.manualInformation !== source[index].manualInformation);
+      if (conflicts.length && !confirm(`La fase destino ya tiene información manual en ${conflicts.length} requisito(s). ¿Quieres sustituirla?`)) return;
+      requirements.forEach((target, index) => {
+        if (source[index]?.manualInformation) target.manualInformation = source[index].manualInformation;
+      });
+      createPhaseRequirementsState.set(phaseIndex, requirements);
+      openCreateRequirements(phaseIndex);
+    };
+    modal.querySelectorAll('[data-create-requirement-files]').forEach(input => {
+      input.addEventListener('change', () => {
+        const number = Number(input.dataset.createRequirementFiles);
+        const files = Array.from(input.files || []);
+        createRequirementFilesState.set(`${phaseIndex}:${number}`, files);
+        const label = input.closest('[data-create-requirement]').querySelector('[data-create-requirement-file-name]');
+        if (label) label.textContent = files.length ? files.map(file => file.name).join(', ') : 'Sin archivos';
+      });
+    });
+    modal.style.display = 'flex';
+  }
+
   function collectFinancePhases() {
     return Array.from(document.querySelectorAll('[data-create-phase-row]')).map((row, idx) => {
       const lineRow = document.querySelector(`[data-create-phase-financing-row="${idx}"]`) || row;
@@ -1816,7 +2181,8 @@
         planUses: collectPhaseLineItems(row, 'planUses'),
         planSources: autoPhaseSourcesForUses(phaseUsesTotal(row), currentPhaseFinancialNumbers(row)),
         financialConditions: collectPhaseFinancialConditions(row),
-        financingLines: collectPhaseFinancingLines(lineRow)
+        financingLines: collectPhaseFinancingLines(lineRow),
+        requirements: requirementsForCreatePhase(idx)
       };
     });
   }
@@ -1890,6 +2256,11 @@
     createHousingModels?.querySelectorAll('[data-create-model-row]').forEach(row => syncCreateUnitsPreview(row));
   });
   createFinancePhases?.addEventListener('click', event => {
+    const requirementsBtn = event.target.closest('[data-open-create-requirements]');
+    if (requirementsBtn) {
+      openCreateRequirements(Number(requirementsBtn.dataset.openCreateRequirements));
+      return;
+    }
     const addBtn = event.target.closest('[data-add-create-phase-line]');
     if (!addBtn) return;
     const kind = addBtn.dataset.addCreatePhaseLine;
@@ -2186,6 +2557,8 @@
       const legalName = primaryPromoterCompany(user?.promoterProfile);
       const input = document.getElementById('ld-promoterLegalName');
       if (input) input.value = legalName;
+      createRequirementPromoterOriginal = JSON.parse(JSON.stringify(user?.promoterProfile || {}));
+      createRequirementPromoterDraft = JSON.parse(JSON.stringify(user?.promoterProfile || {}));
     });
     if (btnExpandCreate) btnExpandCreate.addEventListener('click', () => {
       modal.classList.toggle('is-fullscreen');
@@ -2279,7 +2652,26 @@
             document.getElementById('fundingRequestedAmount')?.focus();
             return;
           }
-          const legalData = collectLegalData();
+          const collectedLegalData = collectLegalData();
+          const legalData = createRequirementLegalDraft ? {
+            ...collectedLegalData,
+            shareholders: createRequirementLegalDraft.shareholders || collectedLegalData.shareholders,
+            boardMembers: createRequirementLegalDraft.boardMembers || collectedLegalData.boardMembers
+          } : collectedLegalData;
+          const selectedPromoterId = String(document.getElementById('ld-promoterProfileSelect')?.value || '');
+          const promoterExperienceValues = createRequirementPromoterDraft
+            ? Object.fromEntries(REQUIREMENT_PROMOTER_FIELDS.map(([key]) => [key, createRequirementPromoterDraft[key]]))
+            : null;
+          const promoterExperienceChanged = promoterExperienceValues && REQUIREMENT_PROMOTER_FIELDS.some(([key]) =>
+            JSON.stringify(promoterExperienceValues[key] ?? null) !== JSON.stringify(createRequirementPromoterOriginal?.[key] ?? null)
+          );
+          const promoterExperienceConflicts = promoterExperienceChanged && REQUIREMENT_PROMOTER_FIELDS.some(([key]) => {
+            const before = createRequirementPromoterOriginal?.[key];
+            const after = promoterExperienceValues[key];
+            const hadValue = Array.isArray(before) ? before.length > 0 : before !== null && before !== undefined && String(before).trim() !== '';
+            return hadValue && JSON.stringify(before) !== JSON.stringify(after);
+          });
+          if (promoterExperienceConflicts && !confirm('Has modificado datos de experiencia que ya existían en el perfil del promotor. ¿Quieres actualizar también el perfil original?')) return;
           const importFile = createDatoUnicoFileState;
           const checklistFiles = Array.from(document.querySelectorAll('[data-create-checklist-file]'))
             .flatMap(input => Array.from(input.files || []).map(file => ({ key: input.dataset.createChecklistFile, file })))
@@ -2306,11 +2698,24 @@
             initialUnits: collectInitialUnits(),
             financePhases: collectFinancePhases(),
             financialConditions,
+            assignedPromoters: selectedPromoterId ? [selectedPromoterId] : undefined,
             teamSuggestion: collectTeamSuggestion(),
             ...collectInitialProgress()
           };
 
           const createdProject = await API.post('/api/projects', payload);
+          if (createdProject?._id && promoterExperienceChanged) {
+            try {
+              await API.put(`/api/projects/${createdProject._id}/finance/promoter-experience`, {
+                base: Object.fromEntries(REQUIREMENT_PROMOTER_FIELDS.map(([key]) => [key, createRequirementPromoterOriginal?.[key]])),
+                values: promoterExperienceValues,
+                allowOverwrite: Boolean(promoterExperienceConflicts)
+              });
+            } catch (profileErr) {
+              console.error(profileErr);
+              alert('Proyecto creado, pero no se pudo actualizar la experiencia en el perfil del promotor.');
+            }
+          }
           if (createdProject?._id && checklistFiles.length) {
             const checklistIds = createdProject.initialChecklistIds || {};
             const uploadFailures = [];
@@ -2332,6 +2737,29 @@
               }
             }
             if (uploadFailures.length) alert(`Proyecto creado, pero no se pudieron adjuntar: ${uploadFailures.join(', ')}.`);
+          }
+          if (createdProject?._id && createRequirementFilesState.size) {
+            const requirementIds = createdProject.initialRequirementIds || {};
+            const phaseIds = createdProject.initialFinancePhaseIds || {};
+            const uploadFailures = [];
+            for (const [key, files] of createRequirementFilesState.entries()) {
+              const [phaseIndex] = key.split(':');
+              const requirementId = requirementIds[key];
+              const financePhaseId = phaseIds[phaseIndex];
+              for (const file of files) {
+                if (!requirementId || !financePhaseId) { uploadFailures.push(file.name); continue; }
+                const fd = new FormData();
+                fd.append('files', file);
+                fd.append('projectId', createdProject._id);
+                fd.append('requirementId', requirementId);
+                fd.append('financePhaseId', financePhaseId);
+                fd.append('category', 'financeRequirement');
+                fd.append('folder', 'financiero');
+                try { await API.upload('/api/documents/upload?category=financeRequirement', fd); }
+                catch (uploadErr) { console.error(uploadErr); uploadFailures.push(file.name); }
+              }
+            }
+            if (uploadFailures.length) alert(`Proyecto creado, pero no se pudieron adjuntar estos documentos de requisitos: ${uploadFailures.join(', ')}.`);
           }
           if (importFile && createdProject?._id) {
             const fd = new FormData();
@@ -2361,6 +2789,11 @@
           if (createHousingModels) createHousingModels.innerHTML = '';
           if (createFinancePhases) createFinancePhases.innerHTML = '';
           if (createFinanceLines) createFinanceLines.innerHTML = '';
+          createPhaseRequirementsState.clear();
+          createRequirementFilesState.clear();
+          createRequirementPromoterDraft = null;
+          createRequirementPromoterOriginal = null;
+          createRequirementLegalDraft = null;
           createTotalUnitsManuallyEdited = false;
           createLastSuggestedUnitsTotal = 0;
           document.querySelectorAll('[data-create-precedent]').forEach(input => { input.checked = false; });

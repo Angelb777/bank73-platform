@@ -51,6 +51,18 @@ const PhaseFinancialConditionsSchema = new Schema({
   generalObservations: { type: String, trim: true, default: '' },
 }, { _id: false });
 
+const PhaseRequirementSchema = new Schema({
+  number: { type: Number, required: true, min: 1, max: 30 },
+  title: { type: String, required: true, trim: true },
+  information: { type: String, trim: true, default: '' },
+  manualInformation: { type: String, trim: true, default: '' },
+  structuredData: { type: Schema.Types.Mixed, default: undefined },
+  sourceKey: { type: String, trim: true, default: 'manual' },
+  sourceLabel: { type: String, trim: true, default: 'Entrada manual' },
+  status: { type: String, enum: ['PENDIENTE', 'CUMPLIDO'], default: 'PENDIENTE' },
+  observations: { type: String, trim: true, default: '' },
+}, { _id: true, timestamps: true });
+
 const PhaseSchema = new Schema({
   name: { type: String, required: true },                // "Fase 1"
   financierBanks: { type: [{ type: String, trim: true }], default: [] },
@@ -75,6 +87,7 @@ const PhaseSchema = new Schema({
 
   financialConditions: { type: PhaseFinancialConditionsSchema, default: () => ({}) },
   financingLines: { type: [PhaseFinancingLineSchema], default: [] },
+  requirements: { type: [PhaseRequirementSchema], default: [] },
 
   // Desembolso por fase (banco)
 disbExpected:  { type: Number, default: 0 },   // desembolso esperado en esta fase

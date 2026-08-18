@@ -31,6 +31,10 @@ const documentSchema = new mongoose.Schema({
   // ❖ Proyecto
   checklistId: { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectChecklist', index: true },
 
+  // Requisito financiero de una fase (subdocumento de ProjectFinance.phases)
+  requirementId: { type: mongoose.Schema.Types.ObjectId, index: true },
+  financePhaseId: { type: mongoose.Schema.Types.ObjectId, index: true },
+
   // ❖ Repositorio documental del proyecto
   folder: {
     type: String,
@@ -121,6 +125,7 @@ documentSchema.pre('validate', function (next) {
 // Índices útiles
 documentSchema.index({ tenantKey: 1, projectId: 1, createdAt: -1 });
 documentSchema.index({ tenantKey: 1, checklistId: 1, createdAt: -1 });
+documentSchema.index({ tenantKey: 1, requirementId: 1, createdAt: -1 });
 documentSchema.index({ tenantKey: 1, unitId: 1, createdAt: -1 });
 documentSchema.index({ tenantKey: 1, visibleToRoles: 1 });
 documentSchema.index({ tenantKey: 1, category: 1, baTag: 1, createdAt: -1 });

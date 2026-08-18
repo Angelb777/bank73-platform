@@ -7665,16 +7665,14 @@ function renderPhases(phases = []) {
       <div class="small muted" style="margin-top:8px;">
         Recomendación informativa: no modifica tus fuentes guardadas.
       </div>
-      <div class="finance-phase-conditions-inline" style="margin-top:12px;">
-        ${financePhaseConditionsHtml(ph)}
-      </div>
-      <div class="finance-phase-card-actions"><button class="btn btn-xs" data-act="lines">Gestionar desembolsos</button></div>
+      <div class="finance-phase-card-actions"><button class="btn btn-xs" data-act="requirements">Requisitos</button><button class="btn btn-xs" data-act="lines">Gestionar desembolsos</button></div>
     `;
 
     const planCard = makeCardShell({ variant: 'plan', ph, titleRight: planBody });
 
     // Actions PLAN
     planCard.querySelector('[data-act="edit"]')?.addEventListener('click', () => openPhaseEditor(ph, 'plan'));
+    planCard.querySelector('[data-act="requirements"]')?.addEventListener('click', () => openFinanceRequirements(ph, 'plan'));
     planCard.querySelector('[data-act="lines"]')?.addEventListener('click', () => openFinancePhaseLines(ph));
 
     planCard.querySelector('[data-act="del"]')?.addEventListener('click', async () => {
@@ -7747,6 +7745,7 @@ const hasRealData =
         <div><span>Pendiente vs recomendación</span><b>${financeMoney(funding.pendingRecommendedDisbursement)}</b></div>
       </div>
       <div class="finance-phase-card-actions">
+        <button class="btn btn-xs" data-act="requirements">Requisitos</button>
         <button class="btn btn-xs" data-act="lines">Líneas de la fase</button>
         <button class="btn btn-xs ${ph?.isCompleted ? 'btn-ghost' : 'btn-success'}" data-act="complete">${ph?.isCompleted ? 'Reabrir fase' : 'Marcar finalizada'}</button>
       </div>
@@ -7756,6 +7755,7 @@ const hasRealData =
 
     // Actions REAL
     realCard.querySelector('[data-act="edit"]')?.addEventListener('click', () => openPhaseEditor(ph, 'real'));
+    realCard.querySelector('[data-act="requirements"]')?.addEventListener('click', () => openFinanceRequirements(ph, 'real'));
     realCard.querySelector('[data-act="lines"]')?.addEventListener('click', () => openFinancePhaseLines(ph));
     realCard.querySelector('[data-act="complete"]')?.addEventListener('click', () => toggleFinancePhaseCompletion(ph));
 
@@ -7866,6 +7866,266 @@ function phaseFinancierOptionsHtml(banks = [], line = {}) {
   const nonBank = line.financierType === 'other';
   const historical = current && !banks.includes(current) && !nonBank;
   return `<option value=""${!current ? ' selected' : ''}>Por definir</option>${banks.map(bank => `<option value="${escapeHtml(bank)}"${current === bank && !nonBank ? ' selected' : ''}>${escapeHtml(bank)}</option>`).join('')}<option value="__NON_BANK__"${nonBank ? ' selected' : ''}>Otra fuente no bancaria</option>${historical ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)} (histórico)</option>` : ''}`;
+}
+
+let FINANCE_REQUIREMENT_DOCS = [];
+
+function financeRequirementInputGuidance(title) {
+  return `Información solicitada: ${title}. Describe los datos disponibles y adjunta la documentación correspondiente.`;
+}
+
+const REQUIREMENT_PROMOTER_FIELDS = [
+  ['yearsExperience','Años de experiencia','number'], ['deliveredProjects','Proyectos entregados','number'],
+  ['activeProjects','Proyectos activos','number'], ['developedUnits','Unidades desarrolladas','number'],
+  ['countries','Países de operación','list'], ['developedVolume','Volumen total desarrollado','number'],
+  ['averageProjectTicket','Ticket medio de proyecto','number'], ['bankFinancingExperience','Experiencia con financiación bancaria','yesno'],
+  ['banksWorkedWith','Bancos con los que ha trabajado','list'], ['onTimeDeliveryHistory','Historial de entregas a tiempo','text'],
+  ['incidentHistory','Historial de incidencias legales o técnicas','text'], ['documentationLevel','Nivel de documentación disponible','doclevel']
+];
+
+function requirementMetric(label, value, { money = false, pct = false } = {}) {
+  const shown = money ? financeMoney(value || 0) : pct ? `${numOr0(value).toFixed(1)}%` : (value ?? '—');
+  return `<div class="requirement-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(shown))}</strong></div>`;
+}
+
+function requirementLinesHtml(title, items = []) {
+  if (!items.length) return '';
+  return `<div class="requirement-structured-section"><strong>${escapeHtml(title)}</strong><div class="requirement-line-list">${items.map(item => `<div><span>${escapeHtml(item.name || 'Partida')}</span><b>${escapeHtml(financeMoney(item.amount || 0))}</b></div>`).join('')}</div></div>`;
+}
+
+function legalRowsHtml(rows = [], kind, editable) {
+  const source = rows.length ? rows : (editable ? [{}] : []);
+  if (!source.length) return '<div class="requirement-empty">Sin datos registrados.</div>';
+  return source.map(item => `<div class="requirement-legal-row" data-legal-row="${kind}">
+    <input class="input" data-legal-field="name" value="${escapeHtml(item.name || '')}" placeholder="Nombre" ${editable ? '' : 'readonly'}>
+    ${kind !== 'shareholder' ? `<input class="input" data-legal-field="cedula" value="${escapeHtml(item.cedula || '')}" placeholder="Identificación" ${editable ? '' : 'readonly'}>` : ''}
+    ${kind === 'shareholder' ? `<input class="input" data-legal-field="percentage" type="number" min="0" max="100" value="${escapeHtml(item.percentage ?? '')}" placeholder="%" ${editable ? '' : 'readonly'}>` : kind === 'dignitary' ? `<input class="input" data-legal-field="position" value="${escapeHtml(item.position || '')}" placeholder="Cargo" ${editable ? '' : 'readonly'}>` : ''}
+    ${editable ? '<button class="btn btn-ghost btn-xs" type="button" data-remove-legal-row>✕</button>' : ''}
+  </div>`).join('');
+}
+
+function financeStructuredRequirementHtml(item, editable) {
+  const data = item.structuredData || {};
+  if (!data.kind) return '';
+  if (data.kind === 'budget') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Total del proyecto', data.projectTotal, { money:true })}${requirementMetric('Presupuesto de la fase', data.phaseTotal, { money:true })}</div>${requirementLinesHtml('Usos de la fase', data.uses || [])}</div>`;
+  if (data.kind === 'presales') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Unidades totales', data.total)}${requirementMetric('Reservadas', data.reserved)}${requirementMetric('Con CPP', data.cpp)}${requirementMetric('Trámite legal', data.legal)}${requirementMetric('Escrituradas', data.deeded)}${requirementMetric('Entregadas', data.delivered)}${requirementMetric('Preventas', data.presales)}${requirementMetric('% preventa', data.presalesPct, { pct:true })}${requirementMetric('Valor asociado', data.saleValue, { money:true })}${requirementMetric('Monto CPP', data.cppAmount, { money:true })}</div>${data.requiredPresales ? `<div class="requirement-structured-note"><b>Condición registrada:</b> ${escapeHtml(data.requiredPresales)}</div>` : ''}</div>`;
+  if (data.kind === 'experience') return `<div class="requirement-structured" data-promoter-experience data-promoter-id="${escapeHtml(data.promoterId || '')}"><div class="requirement-structured-section"><strong>Experiencia del promotor</strong><div class="requirement-profile-grid">${REQUIREMENT_PROMOTER_FIELDS.map(([key,label,type]) => { const value = Array.isArray(data.promoter?.[key]) ? data.promoter[key].join(', ') : (data.promoter?.[key] ?? ''); const field = type === 'yesno' ? `<select class="input" data-promoter-field="${key}" data-field-type="${type}" ${editable ? '' : 'disabled'}><option value="">No definido</option><option value="Sí" ${value === 'Sí' ? 'selected' : ''}>Sí</option><option value="No" ${value === 'No' ? 'selected' : ''}>No</option></select>` : type === 'doclevel' ? `<select class="input" data-promoter-field="${key}" data-field-type="${type}" ${editable ? '' : 'disabled'}><option value="">No definido</option>${['Baja','Media','Alta'].map(option => `<option value="${option}" ${value === option ? 'selected' : ''}>${option}</option>`).join('')}</select>` : `<input class="input" data-promoter-field="${key}" data-field-type="${type}" ${type === 'number' ? 'type="number" min="0"' : ''} value="${escapeHtml(value)}" ${editable ? '' : 'readonly'}>`; return `<label><span>${escapeHtml(label)}</span>${field}</label>`; }).join('')}</div></div></div>`;
+  if (data.kind === 'shareholders') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Accionistas</strong><div data-legal-rows="shareholder">${legalRowsHtml(data.shareholders || [], 'shareholder', editable)}</div>${editable ? '<button class="btn btn-ghost btn-xs" type="button" data-add-legal-row="shareholder">+ Accionista</button>' : ''}</div></div>`;
+  if (data.kind === 'legalParties') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Accionistas e identificación</strong><div data-legal-rows="shareholder-id">${legalRowsHtml(data.shareholders || [], 'shareholder-id', editable)}</div>${editable ? '<button class="btn btn-ghost btn-xs" type="button" data-add-legal-row="shareholder-id">+ Accionista</button>' : ''}</div><div class="requirement-structured-section"><strong>Dignatarios</strong><div data-legal-rows="dignitary">${legalRowsHtml(data.dignitaries || [], 'dignitary', editable)}</div>${editable ? '<button class="btn btn-ghost btn-xs" type="button" data-add-legal-row="dignitary">+ Dignatario</button>' : ''}</div></div>`;
+  if (data.kind === 'cashflow') return `<div class="requirement-structured">${requirementLinesHtml('Usos', data.uses || [])}${requirementLinesHtml('Fuentes', data.sources || [])}</div>`;
+  if (data.kind === 'schedule') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Fase', data.phaseName || '—')}${requirementMetric('Inicio previsto', data.startDate ? String(data.startDate).slice(0,10) : '—')}${requirementMetric('Fin previsto', data.endDate ? String(data.endDate).slice(0,10) : '—')}</div></div>`;
+  if (data.kind === 'plans') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Anteproyecto', data.preliminaryDesign === true ? 'Informado' : 'No informado')}${requirementMetric('Planos aprobados', data.approvedPlans === true ? 'Sí' : 'No informado')}</div></div>`;
+  if (data.kind === 'flag') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric(data.label || 'Estado', data.value ? 'Sí' : 'No')}</div></div>`;
+  const simpleValue = data.technicalInspector ?? data.value ?? (data.exists === true ? 'Sí' : data.exists === false ? 'No' : 'No informado');
+  return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Dato registrado en Bank73', simpleValue || 'No informado')}</div></div>`;
+}
+
+function setFinanceRequirementsFullscreen(modal, full) {
+  modal.classList.toggle('is-fullscreen', full);
+  const button = modal.querySelector('[data-toggle-finance-requirements-fullscreen]');
+  if (button) {
+    button.textContent = full ? '□' : '⛶';
+    button.title = full ? 'Restaurar tamaño' : 'Pantalla completa';
+    button.setAttribute('aria-label', button.title);
+  }
+  const bodyZoom = Number.parseFloat(getComputedStyle(document.body).zoom) || 1;
+  modal.style.zoom = full && bodyZoom < 1 ? String(1 / bodyZoom) : '';
+}
+
+function ensureFinanceRequirementsModal() {
+  let modal = document.getElementById('financeRequirementsModal');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'financeRequirementsModal';
+  modal.className = 'modal-backdrop requirements-modal-backdrop';
+  modal.style.display = 'none';
+  modal.innerHTML = `<div class="modal requirements-modal">
+    <header class="requirements-modal-header">
+      <div><div class="requirements-modal-eyebrow" data-finance-requirements-mode></div><h3 data-finance-requirements-title>Requisitos</h3></div>
+      <div class="requirements-modal-header-actions"><button class="btn btn-ghost requirements-modal-icon" type="button" data-toggle-finance-requirements-fullscreen aria-label="Pantalla completa" title="Pantalla completa">⛶</button><button class="btn btn-ghost" type="button" data-close-finance-requirements>✕ Cerrar</button></div>
+    </header>
+    <div class="requirements-copy-toolbar" data-finance-requirements-copy><label>Reutilizar información de <select class="input" data-finance-requirements-source></select></label><button class="btn btn-ghost btn-xs" type="button" data-copy-finance-requirements>Copiar información</button></div>
+    <div class="requirements-modal-list" data-finance-requirements-list></div>
+    <footer class="requirements-modal-actions" data-finance-requirements-actions><button class="btn" type="button" data-save-finance-requirements>Guardar requisitos</button></footer>
+  </div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('[data-close-finance-requirements]').onclick = () => {
+    setFinanceRequirementsFullscreen(modal, false);
+    modal.style.display = 'none';
+  };
+  modal.querySelector('[data-toggle-finance-requirements-fullscreen]').onclick = () => {
+    setFinanceRequirementsFullscreen(modal, !modal.classList.contains('is-fullscreen'));
+  };
+  return modal;
+}
+
+function financeRequirementDocsHtml(requirementId) {
+  const docs = FINANCE_REQUIREMENT_DOCS.filter(doc => String(doc.requirementId || '') === String(requirementId || ''));
+  if (!docs.length) return '<span class="small muted">Sin documentos adjuntos</span>';
+  return `<div style="display:flex;flex-wrap:wrap;gap:6px;">${docs.map(doc => `<a class="btn btn-ghost btn-xs js-secure-file" href="#" data-url="${secureDocUrl(doc._id)}" data-filename="${escapeHtml(doc.originalname || 'documento')}" data-action="view">${escapeHtml(doc.originalname || 'Documento')}</a>`).join('')}</div>`;
+}
+
+async function openFinanceRequirements(phase, mode = 'plan') {
+  const editable = mode === 'real' && ['admin', 'promoter', 'financiero', 'contable', 'gerencia', 'socios'].includes(myRole);
+  const modal = ensureFinanceRequirementsModal();
+  setFinanceRequirementsFullscreen(modal, false);
+  const requirements = Array.isArray(phase?.requirements) ? phase.requirements.map(item => ({ ...item })) : [];
+  try {
+    FINANCE_REQUIREMENT_DOCS = await API.get(`/api/documents?projectId=${encodeURIComponent(id)}&category=financeRequirement&ts=${Date.now()}`);
+  } catch (_) {
+    FINANCE_REQUIREMENT_DOCS = [];
+  }
+  modal.dataset.phaseId = String(phase?._id || '');
+  modal.dataset.mode = mode;
+  modal.querySelector('[data-finance-requirements-mode]').textContent = mode === 'real'
+    ? 'REAL · Cumplimiento y evidencias'
+    : 'ESTIMACIÓN · Información prevista/exigida';
+  modal.querySelector('[data-finance-requirements-title]').textContent = `Requisitos — ${phase?.name || 'Fase'}`;
+  modal.querySelector('[data-finance-requirements-actions]').style.display = editable ? '' : 'none';
+  const copyToolbar = modal.querySelector('[data-finance-requirements-copy]');
+  const sourceSelect = modal.querySelector('[data-finance-requirements-source]');
+  const otherPhases = (FINANCE?.phases || []).filter(item => String(item._id) !== String(phase?._id));
+  copyToolbar.style.display = editable && otherPhases.length ? '' : 'none';
+  sourceSelect.innerHTML = '<option value="">Selecciona una fase</option>' + otherPhases.map(item => `<option value="${escapeHtml(item._id)}">${escapeHtml(item.name || 'Fase')}</option>`).join('');
+  modal.querySelector('[data-finance-requirements-list]').innerHTML = requirements.map(item => {
+    const isManual = item.sourceKey !== 'bank73';
+    const guidance = financeRequirementInputGuidance(item.title || '');
+    return `
+    <article class="requirement-card" data-finance-requirement="${escapeHtml(item._id || '')}" data-requirement-number="${item.number}">
+      <div class="requirement-card-heading">
+        <strong class="requirement-title"><span>${item.number}</span>${escapeHtml(item.title || '')}</strong>
+        <span class="requirement-status ${item.status === 'CUMPLIDO' ? 'is-complete' : 'is-pending'}">${escapeHtml(item.status || 'PENDIENTE')}</span>
+      </div>
+      <div class="requirement-source ${isManual ? 'is-manual' : 'is-bank73'}">${escapeHtml(item.sourceLabel || 'Entrada manual')}</div>
+      ${isManual ? `<div class="requirement-help">${escapeHtml(guidance)}</div>` : ''}
+      ${financeStructuredRequirementHtml(item, editable)}
+      <label class="requirement-field"><span>${item.number === 2 ? 'Experiencia del contratista' : 'Información manual o adicional'}</span>
+        <textarea class="input" rows="3" data-requirement-information placeholder="${escapeHtml(guidance)}" ${editable ? '' : 'readonly'}>${escapeHtml(item.manualInformation || (item.sourceKey === 'manual' ? item.information || '' : ''))}</textarea>
+      </label>
+      ${mode === 'real' ? `<div style="display:grid;grid-template-columns:minmax(180px,260px) 1fr;gap:10px;margin-top:8px;">
+        <label>Estado<select class="input" data-requirement-status ${editable ? '' : 'disabled'}><option value="PENDIENTE" ${item.status !== 'CUMPLIDO' ? 'selected' : ''}>Pendiente</option><option value="CUMPLIDO" ${item.status === 'CUMPLIDO' ? 'selected' : ''}>Cumplido</option></select></label>
+        <label>Observaciones<textarea class="input" rows="2" data-requirement-observations ${editable ? '' : 'readonly'}>${escapeHtml(item.observations || '')}</textarea></label>
+      </div>` : ''}
+      <div class="requirement-evidence"><strong>Documentos/evidencias</strong>${financeRequirementDocsHtml(item._id)}</div>
+      ${editable ? `<div class="requirement-documents-row"><label class="btn btn-ghost btn-xs requirement-upload-button">Adjuntar documentos<input type="file" multiple data-requirement-files></label><span class="requirement-file-name" data-requirement-file-name>Sin nuevos archivos</span></div>` : ''}
+    </article>`;
+  }).join('') || '<div class="small muted">No hay requisitos configurados para esta fase.</div>';
+
+  modal.querySelectorAll('[data-requirement-files]').forEach(input => input.addEventListener('change', () => {
+    const label = input.closest('[data-finance-requirement]').querySelector('[data-requirement-file-name]');
+    const files = Array.from(input.files || []);
+    if (label) label.textContent = files.length ? files.map(file => file.name).join(', ') : 'Sin nuevos archivos';
+  }));
+
+  modal.querySelector('[data-copy-finance-requirements]').onclick = () => {
+    const sourcePhase = otherPhases.find(item => String(item._id) === String(sourceSelect.value));
+    if (!sourcePhase) return alert('Selecciona una fase de origen.');
+    const sourceByNumber = new Map((sourcePhase.requirements || []).map(item => [Number(item.number), item]));
+    const targetRows = Array.from(modal.querySelectorAll('[data-finance-requirement]'));
+    const conflicts = targetRows.some(row => {
+      const current = row.querySelector('[data-requirement-information]')?.value.trim() || '';
+      const incomingItem = sourceByNumber.get(Number(row.dataset.requirementNumber)) || {};
+      const incoming = String(incomingItem.manualInformation || (incomingItem.sourceKey === 'manual' ? incomingItem.information || '' : '')).trim();
+      return current && incoming && current !== incoming;
+    });
+    if (conflicts && !confirm('La fase destino ya contiene información manual. ¿Quieres sobrescribirla con la fase seleccionada?')) return;
+    targetRows.forEach(row => {
+      const incomingItem = sourceByNumber.get(Number(row.dataset.requirementNumber)) || {};
+      const incoming = incomingItem.manualInformation || (incomingItem.sourceKey === 'manual' ? incomingItem.information || '' : '');
+      const field = row.querySelector('[data-requirement-information]');
+      if (field && (incoming || conflicts)) field.value = incoming;
+    });
+    alert('Información manual reutilizada. Guarda los requisitos para confirmar los cambios.');
+  };
+
+  modal.querySelector('[data-finance-requirements-list]').onclick = event => {
+    const remove = event.target.closest('[data-remove-legal-row]');
+    if (remove) return remove.closest('[data-legal-row]')?.remove();
+    const add = event.target.closest('[data-add-legal-row]');
+    if (!add) return;
+    const kind = add.dataset.addLegalRow;
+    const container = modal.querySelector(`[data-legal-rows="${kind}"]`);
+    if (container) container.insertAdjacentHTML('beforeend', legalRowsHtml([{}], kind, true));
+  };
+
+  modal.querySelector('[data-save-finance-requirements]').onclick = async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const rows = Array.from(modal.querySelectorAll('[data-finance-requirement]'));
+      const experienceRow = rows.find(row => Number(row.dataset.requirementNumber) === 2);
+      if (experienceRow?.querySelector('[data-promoter-experience]')) {
+        const originalPromoter = requirements.find(item => Number(item.number) === 2)?.structuredData?.promoter || {};
+        const values = {};
+        experienceRow.querySelectorAll('[data-promoter-field]').forEach(input => {
+          const type = input.dataset.fieldType;
+          values[input.dataset.promoterField] = type === 'number' ? (input.value === '' ? null : Number(input.value)) : type === 'list' ? input.value.split(',').map(value => value.trim()).filter(Boolean) : input.value.trim();
+        });
+        const overwrites = Object.keys(values).some(key => originalPromoter[key] !== null && originalPromoter[key] !== '' && (!Array.isArray(originalPromoter[key]) || originalPromoter[key].length) && JSON.stringify(values[key]) !== JSON.stringify(originalPromoter[key]));
+        if (overwrites && !confirm('Has modificado datos ya existentes del perfil del promotor. ¿Quieres actualizar también el perfil original?')) return;
+        if (JSON.stringify(values) !== JSON.stringify(originalPromoter)) await API.put(`/api/projects/${id}/finance/promoter-experience`, { values, base: originalPromoter, allowOverwrite: overwrites });
+      }
+
+      const readLegalRows = selector => Array.from(modal.querySelectorAll(selector)).map(row => ({ name: row.querySelector('[data-legal-field="name"]')?.value.trim() || '', cedula: row.querySelector('[data-legal-field="cedula"]')?.value.trim() || '', percentage: Number(row.querySelector('[data-legal-field="percentage"]')?.value || 0), position: row.querySelector('[data-legal-field="position"]')?.value.trim() || '' })).filter(item => item.name || item.cedula || item.percentage || item.position);
+      const composition = readLegalRows('[data-requirement-number="3"] [data-legal-row="shareholder"]');
+      const identities = readLegalRows('[data-requirement-number="9"] [data-legal-row="shareholder-id"]');
+      const shareholders = Array.from({ length: Math.max(composition.length, identities.length) }, (_, index) => ({
+        ...(composition[index] || {}),
+        name: composition[index]?.name || identities[index]?.name || '',
+        cedula: identities[index]?.cedula || composition[index]?.cedula || '',
+        percentage: Number(composition[index]?.percentage || 0)
+      })).filter(item => item.name || item.cedula || item.percentage);
+      const dignitaries = readLegalRows('[data-requirement-number="9"] [data-legal-row="dignitary"]');
+      const legalBase = { shareholders: requirements.find(item => Number(item.number) === 3)?.structuredData?.shareholders || [], dignitaries: requirements.find(item => Number(item.number) === 9)?.structuredData?.dignitaries || [] };
+      const legalValues = { shareholders, dignitaries };
+      if (JSON.stringify(legalValues) !== JSON.stringify(legalBase)) {
+        const hasExistingLegal = legalBase.shareholders.length || legalBase.dignitaries.length;
+        if (hasExistingLegal && !confirm('Has modificado datos legales ya existentes. ¿Quieres actualizar también los datos legales originales del proyecto?')) return;
+        await API.put(`/api/projects/${id}/finance/legal-parties`, { values: legalValues, base: legalBase, allowOverwrite: !!hasExistingLegal });
+      }
+
+      const updated = rows.map(row => {
+        const original = requirements.find(item => String(item._id) === String(row.dataset.financeRequirement)) || {};
+        const manualInformation = row.querySelector('[data-requirement-information]')?.value.trim() || '';
+        return {
+          ...original,
+          number: Number(row.dataset.requirementNumber),
+          manualInformation,
+          information: original.information || manualInformation,
+          sourceKey: original.structuredData?.kind ? (original.sourceKey || 'bank73') : 'manual',
+          sourceLabel: original.structuredData?.kind ? (original.sourceLabel || 'Precargado desde Bank73') : 'Entrada manual',
+          status: row.querySelector('[data-requirement-status]')?.value || original.status || 'PENDIENTE',
+          observations: row.querySelector('[data-requirement-observations]')?.value.trim() || ''
+        };
+      });
+      await API.put(`/api/projects/${id}/finance/phases/${phase._id}`, { requirements: updated });
+      for (const row of rows) {
+        const requirementId = row.dataset.financeRequirement;
+        const files = Array.from(row.querySelector('[data-requirement-files]')?.files || []);
+        for (const file of files) {
+          const fd = new FormData();
+          fd.append('files', file);
+          fd.append('projectId', id);
+          fd.append('requirementId', requirementId);
+          fd.append('financePhaseId', phase._id);
+          fd.append('category', 'financeRequirement');
+          fd.append('folder', 'financiero');
+          await API.upload('/api/documents/upload?category=financeRequirement', fd);
+        }
+      }
+      setFinanceRequirementsFullscreen(modal, false);
+      modal.style.display = 'none';
+      await loadFinance();
+      await markProjectDataChanged();
+    } catch (error) {
+      console.error(error);
+      alert(error.message || 'No se pudieron guardar los requisitos.');
+    } finally {
+      button.disabled = false;
+    }
+  };
+  modal.style.display = 'flex';
+  await hydrateSecureImages(modal);
 }
 
 function phaseFinancingLinesFormHtml(lines = [], financierBanks = []) {
@@ -8016,11 +8276,10 @@ function openPhaseEditor(ph = null, focus = 'plan') {
     <h4 style="margin-top:12px;">PLAN (estimación) — Fuentes</h4>
     ${tbl('ph-plan-sources', phaseData.planSources)}
 
-    <h4 style="margin-top:14px;">Carta y condiciones de la fase</h4>
+    <h4 style="margin-top:14px;">Entidades financiadoras de la fase</h4>
     <label>Bancos financiadores de la fase</label>
     <select id="ph-financier-banks" class="input" multiple size="6"><option value="">Por definir</option>${[...new Set([...(window.BANKS_PANAMA || []), ...phaseData.financierBanks])].map(bank => `<option value="${escapeHtml(bank)}" ${phaseData.financierBanks.includes(bank) ? 'selected' : ''}>${escapeHtml(bank)}</option>`).join('')}</select>
     <p class="small muted">Esta selección es financiera y no crea tenants ni concede acceso al proyecto.</p>
-    ${phaseConditionsFormHtml(phaseData.financialConditions)}
 
     <h4 style="margin-top:14px;">Lineas de financiacion aprobadas</h4>
     ${phaseFinancingLinesFormHtml(phaseData.financingLines, phaseData.financierBanks)}
@@ -8092,7 +8351,7 @@ function openPhaseEditor(ph = null, focus = 'plan') {
           planUses: collect('ph-plan-uses'),
           planSources: collect('ph-plan-sources'),
           financierBanks: Array.from(document.getElementById('ph-financier-banks')?.selectedOptions || []).map(option => option.value).filter(Boolean),
-          financialConditions: collectPhaseFinancialConditionsFromModal(),
+          financialConditions: phaseData.financialConditions,
           financingLines: collectPhaseFinancingLinesFromModal(),
         };
 

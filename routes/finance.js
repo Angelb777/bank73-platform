@@ -8,7 +8,11 @@ const ProjectFinance = require('../models/ProjectFinance');
 const Project = require('../models/Project');
 const Unit = require('../models/Unit');
 const Venta = require('../models/Venta');
+const User = require('../models/User');
 const { requireProjectAccess } = require('../middleware/rbac');
+const { REQUIREMENT_TITLES, PROMOTER_EXPERIENCE_FIELDS, normalizePhaseRequirements } = require('../services/phaseRequirements');
+const { sanitizePromoterProfile } = require('../utils/promoterProfile');
+const audit = require('../utils/audit');
 
 router.use(bankReadOnly);
 router.use('/projects/:projectId/finance', requireProjectAccess({ commercialOnlySales: false }));
@@ -70,6 +74,39 @@ async function getOrCreate(projectId, tenantKey) {
   if (!doc) {
     doc = await ProjectFinance.create({ tenantKey, project: projectId, phases: [] });
   }
+  return doc;
+}
+
+async function ensureFinanceRequirements(doc, project, commercialUnits = []) {
+  const projectPlain = project?.toObject ? project.toObject() : (project || {});
+  const promoterId = projectPlain.assignedPromoters?.[0];
+  const promoter = promoterId
+    ? await User.findById(promoterId).select('promoterProfile').lean()
+    : null;
+  let changed = false;
+
+  for (const phase of (doc.phases || [])) {
+    const current = Array.isArray(phase.requirements) ? phase.requirements : [];
+    const normalized = normalizePhaseRequirements(current, {
+      project: projectPlain,
+      promoterProfile: promoter?.promoterProfile || {},
+      phase: phase.toObject ? phase.toObject() : phase,
+      commercialUnits
+    });
+    const needsNormalization = current.length !== REQUIREMENT_TITLES.length || current.some((item, index) => (
+      Number(item?.number) !== index + 1 || String(item?.title || '') !== REQUIREMENT_TITLES[index]
+      || String(item?.information || '') !== String(normalized[index]?.information || '')
+      || String(item?.manualInformation || '') !== String(normalized[index]?.manualInformation || '')
+      || JSON.stringify(item?.structuredData || null) !== JSON.stringify(normalized[index]?.structuredData || null)
+      || String(item?.sourceKey || '') !== String(normalized[index]?.sourceKey || '')
+      || String(item?.sourceLabel || '') !== String(normalized[index]?.sourceLabel || '')
+    ));
+    if (!needsNormalization) continue;
+    phase.requirements = normalized;
+    changed = true;
+  }
+
+  if (changed) await doc.save();
   return doc;
 }
 
@@ -586,6 +623,8 @@ router.get('/projects/:projectId/finance', async (req, res) => {
     if (!projectRaw) return;
 
     const doc = await getOrCreate(projectId, projectRaw.tenantKey);
+    const commercialUnits = await getFinanceCommercialUnits(projectId, projectRaw.tenantKey);
+    await ensureFinanceRequirements(doc, projectRaw, commercialUnits);
 
     // alertas por fin de fase
     const today = new Date();
@@ -604,7 +643,6 @@ router.get('/projects/:projectId/finance', async (req, res) => {
     }
 
     const kpis = doc.kpis();
-    const commercialUnits = await getFinanceCommercialUnits(projectId, projectRaw.tenantKey);
     const projectPlain = projectRaw?.toObject ? projectRaw.toObject() : projectRaw;
     const approvedTotals = financeApprovedTotals(doc, projectPlain || {});
     const commercialUnitsTotal = commercialUnits.length;
@@ -636,6 +674,55 @@ router.get('/projects/:projectId/finance', async (req, res) => {
   } catch (err) {
     console.error('GET finance error', err);
     res.status(500).json({ error: 'Error al obtener finanzas' });
+  }
+});
+
+router.put('/projects/:projectId/finance/promoter-experience', async (req, res) => {
+  try {
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+    const promoterId = project.assignedPromoters?.[0];
+    if (!promoterId) return res.status(400).json({ error: 'El proyecto no tiene un promotor asignado.' });
+    const promoter = await User.findOne({ _id: promoterId, $or: [{ tenantKey: project.tenantKey }, { tenantKeys: project.tenantKey }] });
+    if (!promoter) return res.status(404).json({ error: 'Promotor no encontrado.' });
+    const values = req.body?.values || {};
+    const base = req.body?.base || {};
+    const current = promoter.promoterProfile?.toObject ? promoter.promoterProfile.toObject() : (promoter.promoterProfile || {});
+    const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+    const conflicts = PROMOTER_EXPERIENCE_FIELDS.filter(key => key in values && key in base && !same(current[key], base[key]));
+    if (conflicts.length) return res.status(409).json({ error: 'El perfil cambió desde que se abrió el requisito. Recarga antes de guardar para no sobrescribir información reciente.', conflicts });
+    const merged = { ...current };
+    PROMOTER_EXPERIENCE_FIELDS.forEach(key => { if (key in values) merged[key] = values[key]; });
+    promoter.promoterProfile = sanitizePromoterProfile(merged, { strictNumbers: true });
+    await promoter.save();
+    await audit(req, 'finance.requirement_promoter_experience_updated', { targetType: 'user', targetId: promoter._id, projectId: project._id, message: 'Experiencia del promotor actualizada desde Requisitos' });
+    res.json({ ok: true, promoterProfile: promoter.promoterProfile, promoterCategory: promoter.promoterCategory });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || 'No se pudo actualizar la experiencia del promotor.' });
+  }
+});
+
+router.put('/projects/:projectId/finance/legal-parties', async (req, res) => {
+  try {
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+    const values = req.body?.values || {};
+    const base = req.body?.base || {};
+    const current = project.legalData?.toObject ? project.legalData.toObject() : (project.legalData || {});
+    const same = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
+    const conflicts = [];
+    if (Array.isArray(values.shareholders) && Array.isArray(base.shareholders) && !same(current.shareholders, base.shareholders)) conflicts.push('shareholders');
+    if (Array.isArray(values.dignitaries) && Array.isArray(base.dignitaries) && !same(current.boardMembers, base.dignitaries)) conflicts.push('dignitaries');
+    if (conflicts.length) return res.status(409).json({ error: 'Los datos legales cambiaron desde que se abrió el requisito. Recarga antes de guardar para no sobrescribir información reciente.', conflicts });
+    const cleanShareholders = rows => (rows || []).slice(0, 50).map(item => ({ name: String(item?.name || '').trim(), cedula: String(item?.cedula || '').trim(), percentage: Math.max(0, Number(item?.percentage || 0)) })).filter(item => item.name || item.cedula || item.percentage);
+    const cleanDignitaries = rows => (rows || []).slice(0, 50).map(item => ({ name: String(item?.name || '').trim(), cedula: String(item?.cedula || '').trim(), position: String(item?.position || '').trim() })).filter(item => item.name || item.cedula || item.position);
+    if (Array.isArray(values.shareholders)) project.legalData.shareholders = cleanShareholders(values.shareholders);
+    if (Array.isArray(values.dignitaries)) project.legalData.boardMembers = cleanDignitaries(values.dignitaries);
+    await project.save();
+    await audit(req, 'finance.requirement_legal_parties_updated', { targetType: 'project', targetId: project._id, projectId: project._id, message: 'Accionistas y dignatarios actualizados desde Requisitos' });
+    res.json({ ok: true, legalData: project.legalData });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || 'No se pudieron actualizar los datos legales.' });
   }
 });
 
@@ -714,7 +801,8 @@ router.post('/projects/:projectId/finance/phases', async (req, res) => {
       alertDaysBefore = 15,
       financialConditions = {},
       financierBanks = [],
-      financingLines = []
+      financingLines = [],
+      requirements = []
     } = req.body || {};
 
     if (!name || !startDate || !endDate) {
@@ -724,8 +812,14 @@ router.post('/projects/:projectId/finance/phases', async (req, res) => {
     const project = await loadTenantProject(req, res);
     if (!project) return;
 
+    const promoterId = project.assignedPromoters?.[0];
+    const promoter = promoterId
+      ? await User.findById(promoterId).select('promoterProfile').lean()
+      : null;
+    const commercialUnits = await getFinanceCommercialUnits(projectId, project.tenantKey);
+
     const doc = await getOrCreate(projectId, project.tenantKey);
-    doc.phases.push({
+    const phaseSeed = {
       name, startDate, endDate,
       actualStartDate, actualEndDate, isCompleted, completedAt,
       uses, sources,
@@ -736,7 +830,14 @@ router.post('/projects/:projectId/finance/phases', async (req, res) => {
       disbExpected, disbActual, disbActualAt: disbActualAt || (toNum(disbActual) > 0 ? new Date() : null), disbRequested, disbRequestedAt,
       interesesDevengados, aportesPropios, preventas,
       alertDaysBefore
+    };
+    phaseSeed.requirements = normalizePhaseRequirements(requirements, {
+      project: project.toObject ? project.toObject() : project,
+      promoterProfile: promoter?.promoterProfile || {},
+      phase: phaseSeed,
+      commercialUnits
     });
+    doc.phases.push(phaseSeed);
 
     await doc.save();
     res.json({ ok: true, phases: doc.phases, kpis: doc.kpis() });
@@ -756,13 +857,20 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
     const ph = doc.phases.id(phaseId);
     if (!ph) return res.status(404).json({ error: 'Fase no encontrada' });
     const hadActualDisbursement = toNum(ph.disbActual) > 0;
+    const requirementCommercialUnits = 'requirements' in req.body
+      ? await getFinanceCommercialUnits(projectId, project.tenantKey)
+      : [];
+    const requirementPromoterId = 'requirements' in req.body ? project.assignedPromoters?.[0] : null;
+    const requirementPromoter = requirementPromoterId
+      ? await User.findById(requirementPromoterId).select('promoterProfile').lean()
+      : null;
 
     const fields = [
       'name','startDate','endDate',
       'actualStartDate','actualEndDate','isCompleted','completedAt',
       'uses','sources',
       'planUses','planSources',
-      'financialConditions','financierBanks','financingLines',
+      'financialConditions','financierBanks','financingLines','requirements',
       'disbExpected','disbActual','disbActualAt','disbRequested','disbRequestedAt',
       'interesesDevengados','aportesPropios','preventas',
       'alertDaysBefore','alerted'
@@ -772,6 +880,12 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
       if (f === 'financialConditions') ph[f] = normalizePhaseFinancialConditions(req.body[f] || {});
       else if (f === 'financierBanks') ph[f] = normalizeFinancierBanks(req.body[f] || []);
       else if (f === 'financingLines') ph[f] = normalizePhaseFinancingLines(req.body[f] || []);
+      else if (f === 'requirements') ph[f] = normalizePhaseRequirements(req.body[f] || [], {
+        project: project.toObject ? project.toObject() : project,
+        promoterProfile: requirementPromoter?.promoterProfile || {},
+        phase: ph.toObject ? ph.toObject() : ph,
+        commercialUnits: requirementCommercialUnits
+      });
       else ph[f] = req.body[f];
     }
     if (!hadActualDisbursement && toNum(ph.disbActual) > 0 && !ph.disbActualAt) {

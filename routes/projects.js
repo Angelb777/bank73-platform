@@ -14,6 +14,7 @@ const User              = require('../models/User');
 const ProjectFinance    = require('../models/ProjectFinance');
 const ProjectFunding    = require('../models/ProjectFunding');
 const { calculateFundingScore } = require('../services/fundingScoring');
+const { normalizePhaseRequirements } = require('../services/phaseRequirements');
 const audit             = require('../utils/audit');
 const { normalizeProjectCurrency, parsePanamaNumber, formatProjectMoney, currencySymbol } = require('../utils/currency');
 
@@ -373,7 +374,7 @@ function sanitizeFinancePhases(raw = [], phasesCount = 0) {
   const source = Array.isArray(raw) ? raw : [];
   return Array.from({ length: count }, (_, idx) => {
     const item = source[idx] || {};
-    return {
+    const phase = {
       name: String(item.name || item.title || `Fase ${idx + 1}`).trim(),
       financierBanks: [...new Set((Array.isArray(item.financierBanks) ? item.financierBanks : [])
         .map(value => String(value || '').trim()).filter(Boolean))].slice(0, 20),
@@ -384,6 +385,8 @@ function sanitizeFinancePhases(raw = [], phasesCount = 0) {
       financialConditions: sanitizePhaseFinancialConditions(item.financialConditions || {}),
       financingLines: sanitizePhaseFinancingLines(item.financingLines || item.financingFacilities || [])
     };
+    phase.requirements = normalizePhaseRequirements(item.requirements || [], { phase });
+    return phase;
   });
 }
 
@@ -757,7 +760,14 @@ function defaultPhaseDates(index = 0) {
   return { startDate: start, endDate: end };
 }
 
-async function syncInitialFinanceStructure({ tenantKey, projectId, phases = [], financialConditions = {}, appendOnly = false }) {
+async function syncInitialFinanceStructure({
+  tenantKey,
+  projectId,
+  phases = [],
+  financialConditions = {},
+  appendOnly = false,
+  syncRequirements = false
+}) {
   const desired = applyAutomaticPhaseSources(Array.isArray(phases) ? phases : [], financialConditions || {});
   if (!desired.length) return null;
   let doc = await ProjectFinance.findOne({ project: projectId, tenantKey });
@@ -773,6 +783,12 @@ async function syncInitialFinanceStructure({ tenantKey, projectId, phases = [], 
   }
   if (!doc) doc = await ProjectFinance.create({ tenantKey, project: projectId, phases: [] });
 
+  const requirementProject = await Project.findOne({ _id: projectId, tenantKey }).lean();
+  const requirementPromoterId = requirementProject?.assignedPromoters?.[0];
+  const requirementPromoter = requirementPromoterId
+    ? await User.findById(requirementPromoterId).select('promoterProfile').lean()
+    : null;
+
   const existingNames = new Set((doc.phases || []).map(ph => String(ph.name || '').trim().toLowerCase()));
   desired.forEach((phase, idx) => {
     const name = String(phase.name || `Fase ${idx + 1}`).trim();
@@ -787,6 +803,11 @@ async function syncInitialFinanceStructure({ tenantKey, projectId, phases = [], 
       planSources: phase.planSources || [],
       financialConditions: phase.financialConditions || {},
       financingLines: phase.financingLines || [],
+      requirements: normalizePhaseRequirements(phase.requirements || [], {
+        project: requirementProject || {},
+        promoterProfile: requirementPromoter?.promoterProfile || {},
+        phase
+      }),
       uses: [],
       sources: []
     };
@@ -799,6 +820,7 @@ async function syncInitialFinanceStructure({ tenantKey, projectId, phases = [], 
         existing.financierBanks = payload.financierBanks;
         existing.financialConditions = payload.financialConditions;
         existing.financingLines = payload.financingLines;
+        if (syncRequirements) existing.requirements = payload.requirements;
       }
     } else if (!existingNames.has(name.toLowerCase())) {
       doc.phases.push(payload);
@@ -1519,11 +1541,23 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
     const p = await Project.create(body);
     const initialChecklistIds = await applyInitialChecklists({ req, projectId: p._id, completedKeys: initialChecklistKeys, requestedKeys: initialChecklistRequestedKeys });
     await applyInitialPermits({ tenantKey, projectId: p._id, initialPermits });
-    await syncInitialFinanceStructure({
+    const primaryPromoter = p.assignedPromoters?.[0]
+      ? await User.findById(p.assignedPromoters[0]).select('promoterProfile promoterCategory').lean()
+      : null;
+    const financePhasesWithRequirements = body.financePhases.map(phase => ({
+      ...phase,
+      requirements: normalizePhaseRequirements(phase.requirements || [], {
+        project: p.toObject(),
+        promoterProfile: primaryPromoter?.promoterProfile || {},
+        phase
+      })
+    }));
+    const initialFinance = await syncInitialFinanceStructure({
       tenantKey,
       projectId: p._id,
-      phases: body.financePhases,
-      financialConditions: body.financialConditions
+      phases: financePhasesWithRequirements,
+      financialConditions: body.financialConditions,
+      syncRequirements: true
     });
     const createdUnits = await createInitialUnitsFromModels({ req, project: p, initialUnits });
     if (createdUnits.length) {
@@ -1536,9 +1570,6 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
       p.unitsSold = unitsSold;
     }
     if (p.seeksFinancing) {
-      const primaryPromoter = p.assignedPromoters?.[0]
-        ? await User.findById(p.assignedPromoters[0]).select('promoterProfile promoterCategory').lean()
-        : null;
       const permits = await ProjectPermit.find({ projectId: p._id, tenantKey }).lean();
       const scoring = calculateFundingScore({ project: p.toObject(), promoter: primaryPromoter || {}, permits, units: createdUnits, sales: [], requestedAmount: fundingRequestedAmount });
       await ProjectFunding.create({ tenantKey, project: p._id, requestedAmount: fundingRequestedAmount, securedRequestAmount: fundingSecuredAmount, fundingDeadline, automaticScore: scoring.automaticScore, scoreVersion: scoring.scoreVersion, scoreBreakdown: scoring.scoreBreakdown });
@@ -1551,7 +1582,15 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
       message: 'Proyecto creado',
       metadata: { name: p.name, publishStatus: p.publishStatus, createdUnits: createdUnits.length, phases: body.financePhases.length }
     });
-    res.status(201).json({ ...p.toObject(), initialChecklistIds });
+    const initialRequirementIds = {};
+    const initialFinancePhaseIds = {};
+    (initialFinance?.phases || []).forEach((phase, phaseIndex) => {
+      initialFinancePhaseIds[String(phaseIndex)] = String(phase._id);
+      (phase.requirements || []).forEach(requirement => {
+        initialRequirementIds[`${phaseIndex}:${requirement.number}`] = String(requirement._id);
+      });
+    });
+    res.status(201).json({ ...p.toObject(), initialChecklistIds, initialRequirementIds, initialFinancePhaseIds });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
   }

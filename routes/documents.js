@@ -15,6 +15,7 @@ const {
 const Document = require('../models/Document');
 const Project = require('../models/Project');
 const ProjectChecklist = require('../models/ProjectChecklist');
+const ProjectFinance = require('../models/ProjectFinance');
 const Unit = require('../models/Unit');
 const UnitDocFolder = require('../models/UnitDocFolder');
 const User = require('../models/User');
@@ -252,7 +253,7 @@ function inferProjectFolder(req, department, category) {
   const cat = norm(category);
   if (cat === 'beforeafter' || cat === 'avances' || cat === 'tecnico') return 'tecnico';
   if (cat === 'permits' || cat === 'permisos') return 'legal';
-  if (cat === 'finanzas' || cat === 'finance' || cat === 'financiero') return 'financiero';
+  if (cat === 'finanzas' || cat === 'finance' || cat === 'financiero' || cat === 'financerequirement') return 'financiero';
   if (cat === 'legal') return 'legal';
   if (cat === 'commercial' || cat === 'comercial') return 'comercial';
 
@@ -441,9 +442,16 @@ async function buildDocsQuery(req) {
     }
   }
 
+  if (req.query.requirementId) {
+    const rid = safeOid(String(req.query.requirementId));
+    if (rid) and.push({ requirementId: rid });
+    else and.push({ _id: { $exists: false } });
+  }
+
   const isProjectRepositoryQuery = !!projectOid &&
     !req.query.unitId &&
     !req.query.checklistId &&
+    !req.query.requirementId &&
     !category &&
     !permitCode &&
     !req.query.department;
@@ -767,6 +775,8 @@ router.post(
 
       const projectId = (req.body?.projectId || req.query?.projectId || req.params?.id || '').toString();
       const checklistId = req.body?.checklistId || req.query?.checklistId || null;
+      const requirementIdRaw = req.body?.requirementId || req.query?.requirementId || null;
+      const financePhaseIdRaw = req.body?.financePhaseId || req.query?.financePhaseId || null;
       const unitId = req.body?.unitId || req.query?.unitId || null;
 
       const permitCode = (req.body?.permitCode || req.query?.permitCode || '').trim() || undefined;
@@ -795,6 +805,20 @@ router.post(
 
       const proj = await Project.findOne({ _id: projectOid, tenantKey }).lean();
       if (!proj) return res.status(404).json({ error: 'project_not_found' });
+
+      let requirementOid = null;
+      let financePhaseOid = null;
+      if (requirementIdRaw) {
+        requirementOid = safeOid(String(requirementIdRaw));
+        financePhaseOid = safeOid(String(financePhaseIdRaw));
+        if (!requirementOid || !financePhaseOid) return res.status(400).json({ error: 'requirementId o financePhaseId inválido' });
+        const finance = await ProjectFinance.findOne({
+          project: projectOid,
+          tenantKey,
+          phases: { $elemMatch: { _id: financePhaseOid, 'requirements._id': requirementOid } }
+        }).select('_id').lean();
+        if (!finance) return res.status(404).json({ error: 'finance_requirement_not_found' });
+      }
 
       let expiry = null;
       if (expiryDate) {
@@ -968,6 +992,8 @@ router.post(
           permitTitle,
 
           checklistId: checklistId ? new mongoose.Types.ObjectId(checklistId) : undefined,
+          requirementId: requirementOid || undefined,
+          financePhaseId: financePhaseOid || undefined,
           unitId: unitOid || undefined,
           unitTag: unitTag || undefined,
 
@@ -1018,6 +1044,8 @@ router.post(
             department: doc.department,
             unitId: doc.unitId,
             checklistId: doc.checklistId,
+            requirementId: doc.requirementId,
+            financePhaseId: doc.financePhaseId,
             permitCode: doc.permitCode
           }
         });
