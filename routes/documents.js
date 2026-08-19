@@ -251,7 +251,7 @@ function inferProjectFolder(req, department, category) {
   if (dep === 'legal') return 'legal';
 
   const cat = norm(category);
-  if (cat === 'beforeafter' || cat === 'avances' || cat === 'tecnico') return 'tecnico';
+  if (cat === 'beforeafter' || cat === 'avances' || cat === 'tecnico' || cat === 'architecturalplans') return 'tecnico';
   if (cat === 'permits' || cat === 'permisos') return 'legal';
   if (cat === 'finanzas' || cat === 'finance' || cat === 'financiero' || cat === 'financerequirement') return 'financiero';
   if (cat === 'legal') return 'legal';
@@ -930,9 +930,14 @@ router.post(
       }
 
       const isPermits = (category || '').toLowerCase() === 'permits';
+      const isArchitecturalPlans = (category || '').toLowerCase() === 'architecturalplans';
 
       if ((!acl || !acl.length) && isPermits) {
         acl = Array.from(new Set(['tecnico', 'legal', ...FULL]));
+      }
+
+      if ((!acl || !acl.length) && isArchitecturalPlans) {
+        acl = Array.from(new Set(['tecnico', ...FULL]));
       }
 
       if (!acl || !acl.length) {

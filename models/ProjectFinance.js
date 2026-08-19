@@ -57,6 +57,7 @@ const PhaseRequirementSchema = new Schema({
   information: { type: String, trim: true, default: '' },
   manualInformation: { type: String, trim: true, default: '' },
   structuredData: { type: Schema.Types.Mixed, default: undefined },
+  legacyRequirementIds: { type: [Schema.Types.ObjectId], default: undefined },
   sourceKey: { type: String, trim: true, default: 'manual' },
   sourceLabel: { type: String, trim: true, default: 'Entrada manual' },
   status: { type: String, enum: ['PENDIENTE', 'CUMPLIDO'], default: 'PENDIENTE' },

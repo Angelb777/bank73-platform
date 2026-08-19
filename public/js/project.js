@@ -12,6 +12,11 @@
   const ref  = params.get('ref'); // 'dashboard' | 'portfolio' | null
   if (!id) { location.href = '/portfolio'; return; }
 
+  function finishInitialProjectLoad() {
+    document.body.classList.remove('project-loading');
+    document.getElementById('projectLoadingScreen')?.setAttribute('aria-hidden', 'true');
+  }
+
   const backA = document.querySelector('.topbar .brand a.link');
   if (backA) backA.href = (ref === 'dashboard') ? '/dashboard' : '/portfolio';
 
@@ -7869,6 +7874,8 @@ function phaseFinancierOptionsHtml(banks = [], line = {}) {
 }
 
 let FINANCE_REQUIREMENT_DOCS = [];
+let ARCHITECTURAL_PLAN_DOCS = [];
+let INSURANCE_UNITS_CACHE = [];
 
 function financeRequirementInputGuidance(title) {
   return `Información solicitada: ${title}. Describe los datos disponibles y adjunta la documentación correspondiente.`;
@@ -7904,18 +7911,156 @@ function legalRowsHtml(rows = [], kind, editable) {
   </div>`).join('');
 }
 
-function financeStructuredRequirementHtml(item, editable) {
+function projectInsurancePolicies() {
+  return Array.isArray(state.project?.technicalData?.insurancePolicies) ? state.project.technicalData.insurancePolicies : [];
+}
+
+function insuranceUnitReference(unit = {}) {
+  return String(unit.code || `${unit.manzana || unit.modelo || ''}-${unit.lote || ''}`).trim();
+}
+
+function policyAppliesToUnit(policy = {}, unit = {}) {
+  if (policy.appliesToAllUnits !== false) return true;
+  const unitId = String(unit._id || '');
+  const ref = insuranceUnitReference(unit);
+  return (policy.unitIds || []).some(value => String(value) === unitId)
+    || (policy.unitRefs || []).some(value => String(value) === ref);
+}
+
+function effectivePoliciesForUnit(unit = {}) {
+  const applicable = projectInsurancePolicies().filter(policy => policyAppliesToUnit(policy, unit));
+  return ['CAR', 'INCENDIO'].flatMap(type => {
+    const typed = applicable.filter(policy => String(policy.type).toUpperCase() === type);
+    const specific = typed.filter(policy => policy.appliesToAllUnits === false);
+    return specific.length ? specific : typed.filter(policy => policy.appliesToAllUnits !== false);
+  });
+}
+
+function insurancePolicyCardsHtml(policies = [], { showCoverage = true } = {}) {
+  if (!policies.length) return '<div class="requirement-empty">No hay pólizas CAR/incendio registradas.</div>';
+  return `<div style="display:grid;gap:9px;">${policies.map(policy => {
+    const docLink = policy.documentId ? `<a class="btn btn-ghost btn-xs js-secure-file" href="#" data-url="${secureDocUrl(policy.documentId)}" data-filename="${escapeHtml(policy.documentName || 'poliza')}" data-action="view">${escapeHtml(policy.documentName || 'Ver documento')}</a>` : '<span class="small muted">Sin documento</span>';
+    const ids = (policy.unitIds || []).map(String);
+    const refs = [...(policy.unitRefs || []).map(String), ...ids.map(unitId => insuranceUnitReference(INSURANCE_UNITS_CACHE.find(unit => String(unit._id) === unitId) || {}) || unitId)];
+    const coverage = policy.appliesToAllUnits !== false ? 'Todas las unidades' : (Array.from(new Set(refs)).join(', ') || 'Sin unidades seleccionadas');
+    return `<div class="insurance-policy-card ${policy.endorsedToBank ? 'is-endorsed' : 'is-not-endorsed'}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><strong>${escapeHtml(policy.type || 'CAR')} · ${escapeHtml(policy.policyNumber || 'Sin número')}</strong><span class="insurance-endorsement ${policy.endorsedToBank ? 'yes' : 'no'}">${policy.endorsedToBank ? '✓ Endosada al banco' : '⚠ No endosada al banco'}</span></div><div class="insurance-policy-card-grid"><div><span>Aseguradora</span><strong>${escapeHtml(policy.insurer || 'No informada')}</strong></div><div><span>Suma asegurada</span><strong>${escapeHtml(formatProjectMoney(policy.insuredAmount || 0))}</strong></div><div><span>Vigencia</span><strong>${escapeHtml(policy.startDate ? String(policy.startDate).slice(0,10) : '—')} → ${escapeHtml(policy.expiryDate ? String(policy.expiryDate).slice(0,10) : '—')}</strong></div><div><span>Banco</span><strong>${escapeHtml(policy.bank || 'No informado')}</strong></div>${showCoverage ? `<div><span>Cobertura</span><strong>${escapeHtml(coverage)}</strong></div>` : ''}<div><span>Documento</span>${docLink}</div></div></div>`;
+  }).join('')}</div>`;
+}
+
+function insurancePolicyUnitOptions(policy = {}, forcedUnitId = '') {
+  const selectedIds = new Set((policy.unitIds || []).map(String));
+  const selectedRefs = new Set((policy.unitRefs || []).map(String));
+  return INSURANCE_UNITS_CACHE.map(unit => {
+    const unitId = String(unit._id || '');
+    const ref = insuranceUnitReference(unit);
+    const checked = forcedUnitId ? unitId === String(forcedUnitId) : selectedIds.has(unitId) || selectedRefs.has(ref);
+    return `<label><input type="checkbox" data-policy-unit-id="${escapeHtml(unitId)}" data-policy-unit-ref="${escapeHtml(ref)}" ${checked ? 'checked' : ''} ${forcedUnitId ? 'disabled' : ''}> ${escapeHtml(ref || unitId)}</label>`;
+  }).join('') || '<span class="small muted">No hay unidades cargadas.</span>';
+}
+
+function insurancePolicyEditorRow(policy = {}, { forcedUnitId = '' } = {}) {
+  const appliesAll = forcedUnitId ? false : policy.appliesToAllUnits !== false;
+  return `<div class="insurance-policy-row" data-insurance-policy-row data-policy-id="${escapeHtml(policy._id || '')}" data-forced-unit-id="${escapeHtml(forcedUnitId)}" data-document-id="${escapeHtml(policy.documentId || '')}" data-document-name="${escapeHtml(policy.documentName || '')}"><button class="btn btn-ghost btn-xs insurance-policy-remove" type="button" data-remove-policy>×</button><label>Tipo<select class="input" data-policy-field="type"><option value="CAR" ${policy.type !== 'INCENDIO' ? 'selected' : ''}>CAR</option><option value="INCENDIO" ${policy.type === 'INCENDIO' ? 'selected' : ''}>Incendio</option></select></label><label>Aseguradora<input class="input" data-policy-field="insurer" value="${escapeHtml(policy.insurer || '')}"></label><label>Nº de póliza<input class="input" data-policy-field="policyNumber" value="${escapeHtml(policy.policyNumber || '')}"></label><label>Suma asegurada<input class="input" data-policy-field="insuredAmount" type="number" min="0" step=".01" value="${escapeHtml(policy.insuredAmount || '')}"></label><label>Fecha de inicio<input class="input" data-policy-field="startDate" type="date" value="${policy.startDate ? String(policy.startDate).slice(0,10) : ''}"></label><label>Fecha de vencimiento<input class="input" data-policy-field="expiryDate" type="date" value="${policy.expiryDate ? String(policy.expiryDate).slice(0,10) : ''}"></label><label>Endosada al banco<select class="input" data-policy-field="endorsedToBank"><option value="false" ${policy.endorsedToBank ? '' : 'selected'}>No</option><option value="true" ${policy.endorsedToBank ? 'selected' : ''}>Sí</option></select></label><label>Banco<input class="input" data-policy-field="bank" value="${escapeHtml(policy.bank || '')}" ${policy.endorsedToBank ? '' : 'disabled'}></label>${forcedUnitId ? '<div class="insurance-policy-wide small muted">Esta póliza será específica para esta unidad y tendrá prioridad sobre la póliza global del mismo tipo.</div>' : `<label class="insurance-policy-wide">Aplicación<select class="input" data-policy-field="appliesToAllUnits"><option value="true" ${appliesAll ? 'selected' : ''}>Todas las unidades</option><option value="false" ${appliesAll ? '' : 'selected'}>Unidades concretas</option></select></label><div class="insurance-policy-wide insurance-policy-units" data-policy-units style="display:${appliesAll ? 'none' : 'grid'}">${insurancePolicyUnitOptions(policy)}</div>`}<label class="insurance-policy-wide">Documento<input data-policy-document type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"><span class="small muted" data-policy-document-name>${escapeHtml(policy.documentName || 'Sin documento')}</span></label></div>`;
+}
+
+function bindInsurancePolicyEditor(root) {
+  root.querySelectorAll('[data-insurance-policy-row]').forEach(row => {
+    if (row.dataset.policyBound === '1') return;
+    row.dataset.policyBound = '1';
+    row.querySelector('[data-remove-policy]')?.addEventListener('click', () => row.remove());
+    row.querySelector('[data-policy-field="appliesToAllUnits"]')?.addEventListener('change', event => { row.querySelector('[data-policy-units]').style.display = event.target.value === 'true' ? 'none' : 'grid'; });
+    row.querySelector('[data-policy-field="endorsedToBank"]')?.addEventListener('change', event => { const bank = row.querySelector('[data-policy-field="bank"]'); bank.disabled = event.target.value !== 'true'; if (bank.disabled) bank.value = ''; });
+    row.querySelector('[data-policy-document]')?.addEventListener('change', event => { row.querySelector('[data-policy-document-name]').textContent = event.target.files?.[0]?.name || row.dataset.documentName || 'Sin documento'; });
+  });
+}
+
+async function saveInsurancePoliciesFrom(root, { preserveUnrendered = false } = {}) {
+  const policies = [];
+  for (const row of Array.from(root.querySelectorAll('[data-insurance-policy-row]'))) {
+    const get = key => row.querySelector(`[data-policy-field="${key}"]`)?.value || '';
+    const forcedUnitId = row.dataset.forcedUnitId || '';
+    const appliesToAllUnits = forcedUnitId ? false : get('appliesToAllUnits') !== 'false';
+    const checkedUnits = Array.from(row.querySelectorAll('[data-policy-unit-id]:checked'));
+    const policy = { _id:row.dataset.policyId || undefined, type:get('type') || 'CAR', insurer:get('insurer').trim(), policyNumber:get('policyNumber').trim(), insuredAmount:Number(get('insuredAmount') || 0), startDate:get('startDate') || null, expiryDate:get('expiryDate') || null, endorsedToBank:get('endorsedToBank') === 'true', bank:get('bank').trim(), appliesToAllUnits, unitIds:forcedUnitId ? [forcedUnitId] : (appliesToAllUnits ? [] : checkedUnits.map(input => input.dataset.policyUnitId).filter(Boolean)), unitRefs:appliesToAllUnits ? [] : checkedUnits.map(input => input.dataset.policyUnitRef).filter(Boolean), documentId:row.dataset.documentId || null, documentName:row.dataset.documentName || '' };
+    if (policy.endorsedToBank && !policy.bank) throw new Error('Indica el banco de la póliza marcada como endosada.');
+    const file = row.querySelector('[data-policy-document]')?.files?.[0];
+    if (file) {
+      const fd = new FormData(); fd.append('files', file); fd.append('projectId', id); fd.append('category', 'insurancePolicy'); fd.append('folder', 'tecnico');
+      if (policy.documentId) fd.append('replaces', policy.documentId);
+      const uploaded = await API.upload('/api/documents/upload?category=insurancePolicy', fd);
+      const document = Array.isArray(uploaded) ? uploaded[0] : uploaded;
+      policy.documentId = document?._id || policy.documentId; policy.documentName = document?.originalname || file.name;
+    }
+    policies.push(policy);
+  }
+  if (preserveUnrendered) {
+    const renderedIds = new Set(policies.map(policy => String(policy._id || '')).filter(Boolean));
+    projectInsurancePolicies().forEach(policy => {
+      if (!renderedIds.has(String(policy._id || ''))) policies.push(policy);
+    });
+  }
+  const result = await API.put(`/api/projects/${id}/insurance-policies`, { insurancePolicies: policies });
+  state.project.technicalData ||= {};
+  state.project.technicalData.insurancePolicies = result.insurancePolicies || policies;
+  return state.project.technicalData.insurancePolicies;
+}
+
+function financeBondValidity(data = {}) {
+  const start = String(data.startDate || '').slice(0, 10);
+  const expiry = String(data.expiryDate || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(expiry)) return { status:'MISSING_DATES', label:'Fechas pendientes' };
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const startAt = Date.parse(`${start}T00:00:00Z`);
+  const expiryAt = Date.parse(`${expiry}T00:00:00Z`);
+  if (expiryAt < today) return { status:'EXPIRED', label:'Vencida' };
+  if (startAt > today) return { status:'NOT_STARTED', label:'No iniciada' };
+  return { status:'CURRENT', label:'Vigente' };
+}
+
+function financeBondValidityMetric(data = {}) {
+  return `<div class="requirement-metric"><span>Vigencia</span><strong data-bond-validity-label>${escapeHtml(financeBondValidity(data).label)}</strong></div>`;
+}
+
+function financeAddMonthsClamped(dateValue, months) {
+  const date = String(dateValue || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return '';
+  const [year, month, day] = date.split('-').map(Number);
+  const targetMonth = month - 1 + Math.max(1, Math.round(Number(months) || 1));
+  const targetYear = year + Math.floor(targetMonth / 12);
+  const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
+  return `${targetYear}-${String(normalizedMonth + 1).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
+}
+
+function financePeriodicFollowUpMeta(data = {}) {
+  const nextReviewDate = String(data.nextReviewDate || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(nextReviewDate)) return { current:false, due:false, label:'Sin primer documento' };
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const dueAt = Date.parse(`${nextReviewDate}T00:00:00Z`);
+  return dueAt > today
+    ? { current:true, due:false, label:`Próxima revisión: ${nextReviewDate}` }
+    : { current:false, due:true, label:`Revisión pendiente desde ${nextReviewDate}` };
+}
+
+function financeStructuredRequirementHtml(item, editable, mode = 'plan') {
   const data = item.structuredData || {};
   if (!data.kind) return '';
   if (data.kind === 'budget') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Total del proyecto', data.projectTotal, { money:true })}${requirementMetric('Presupuesto de la fase', data.phaseTotal, { money:true })}</div>${requirementLinesHtml('Usos de la fase', data.uses || [])}</div>`;
-  if (data.kind === 'presales') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Unidades totales', data.total)}${requirementMetric('Reservadas', data.reserved)}${requirementMetric('Con CPP', data.cpp)}${requirementMetric('Trámite legal', data.legal)}${requirementMetric('Escrituradas', data.deeded)}${requirementMetric('Entregadas', data.delivered)}${requirementMetric('Preventas', data.presales)}${requirementMetric('% preventa', data.presalesPct, { pct:true })}${requirementMetric('Valor asociado', data.saleValue, { money:true })}${requirementMetric('Monto CPP', data.cppAmount, { money:true })}</div>${data.requiredPresales ? `<div class="requirement-structured-note"><b>Condición registrada:</b> ${escapeHtml(data.requiredPresales)}</div>` : ''}</div>`;
+  if (data.kind === 'presales') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Unidades totales', data.total)}${requirementMetric('Reservadas', data.reserved)}${requirementMetric('Con CPP', data.cpp)}${requirementMetric('Trámite legal', data.legal)}${requirementMetric('Escrituradas', data.deeded)}${requirementMetric('Entregadas', data.delivered)}${requirementMetric('Preventas', data.presales)}${requirementMetric('% preventa actual', data.presalesPct, { pct:true })}${requirementMetric('% preventa requerido', data.requiredPresalesPct ?? 50, { pct:true })}${requirementMetric('Valor asociado', data.saleValue, { money:true })}${requirementMetric('Monto CPP', data.cppAmount, { money:true })}</div></div>`;
+  if (data.kind === 'performanceBond') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Valor de la fase', data.phaseValue, { money:true })}${requirementMetric('% de fianza requerido', data.requiredPct ?? 50, { pct:true })}${requirementMetric('Importe requerido', data.requiredAmount, { money:true })}${mode === 'real' ? `${requirementMetric('Importe informado', data.actualAmount, { money:true })}${financeBondValidityMetric(data)}` : ''}</div>${mode === 'real' ? `<div class="requirement-profile-grid" style="margin-top:10px;"><label><span>Importe de la fianza</span><input class="input" type="number" min="0" step=".01" data-performance-bond-field="actualAmount" value="${escapeHtml(data.actualAmount || '')}" ${editable ? '' : 'readonly'}></label><label><span>Nº de fianza</span><input class="input" data-performance-bond-field="bondNumber" value="${escapeHtml(data.bondNumber || '')}" ${editable ? '' : 'readonly'}></label><label><span>Entidad emisora</span><input class="input" data-performance-bond-field="issuer" value="${escapeHtml(data.issuer || '')}" ${editable ? '' : 'readonly'}></label><label><span>Fecha de inicio</span><input class="input" type="date" data-performance-bond-field="startDate" value="${escapeHtml(String(data.startDate || '').slice(0,10))}" ${editable ? '' : 'readonly'}></label><label><span>Fecha de vencimiento</span><input class="input" type="date" data-performance-bond-field="expiryDate" value="${escapeHtml(String(data.expiryDate || '').slice(0,10))}" ${editable ? '' : 'readonly'}></label><label><span>Días de antelación para alerta</span><input class="input" type="number" min="0" max="3650" step="1" data-performance-bond-field="alertDaysBefore" value="${escapeHtml(data.alertDaysBefore ?? 30)}" ${editable ? '' : 'readonly'}></label></div>` : ''}</div>`;
+  if (data.kind === 'paymentBond') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Valor de la fase', data.phaseValue, { money:true })}${requirementMetric('% de fianza de pago requerido', data.requiredPct ?? 25, { pct:true })}${requirementMetric('Importe requerido', data.requiredAmount, { money:true })}${mode === 'real' ? `${requirementMetric('Importe informado', data.actualAmount, { money:true })}${financeBondValidityMetric(data)}` : ''}</div>${mode === 'real' ? `<div class="requirement-profile-grid" style="margin-top:10px;"><label><span>Importe de la fianza de pago</span><input class="input" type="number" min="0" step=".01" data-payment-bond-field="actualAmount" value="${escapeHtml(data.actualAmount || '')}" ${editable ? '' : 'readonly'}></label><label><span>Nº de fianza</span><input class="input" data-payment-bond-field="bondNumber" value="${escapeHtml(data.bondNumber || '')}" ${editable ? '' : 'readonly'}></label><label><span>Entidad emisora</span><input class="input" data-payment-bond-field="issuer" value="${escapeHtml(data.issuer || '')}" ${editable ? '' : 'readonly'}></label><label><span>Fecha de inicio</span><input class="input" type="date" data-payment-bond-field="startDate" value="${escapeHtml(String(data.startDate || '').slice(0,10))}" ${editable ? '' : 'readonly'}></label><label><span>Fecha de vencimiento</span><input class="input" type="date" data-payment-bond-field="expiryDate" value="${escapeHtml(String(data.expiryDate || '').slice(0,10))}" ${editable ? '' : 'readonly'}></label><label><span>Días de antelación para alerta</span><input class="input" type="number" min="0" max="3650" step="1" data-payment-bond-field="alertDaysBefore" value="${escapeHtml(data.alertDaysBefore ?? 30)}" ${editable ? '' : 'readonly'}></label></div>` : ''}</div>`;
+  if (data.kind === 'periodicFollowUp') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Periodicidad', `${data.periodicityMonths || (item.number === 27 ? 4 : 1)} meses`)}${mode === 'real' ? `${requirementMetric('Último documento', data.lastRecordDate || '—')}<div class="requirement-metric"><span>Seguimiento</span><strong data-follow-up-status-label>${escapeHtml(financePeriodicFollowUpMeta(data).label)}</strong></div>` : ''}</div>${mode === 'real' ? `<div class="requirement-profile-grid" style="margin-top:10px;"><label><span>Periodicidad (meses)</span><input class="input" type="number" min="1" max="120" step="1" data-follow-up-field="periodicityMonths" value="${escapeHtml(data.periodicityMonths || (item.number === 27 ? 4 : 1))}" ${editable ? '' : 'readonly'}></label><label><span>Fecha del nuevo documento</span><input class="input" type="date" data-follow-up-field="lastRecordDate" value="${escapeHtml(String(data.lastRecordDate || '').slice(0,10))}" ${editable ? '' : 'readonly'}></label><label><span>Próxima revisión</span><input class="input" type="date" data-follow-up-field="nextReviewDate" value="${escapeHtml(String(data.nextReviewDate || '').slice(0,10))}" readonly></label></div>` : ''}</div>`;
   if (data.kind === 'experience') return `<div class="requirement-structured" data-promoter-experience data-promoter-id="${escapeHtml(data.promoterId || '')}"><div class="requirement-structured-section"><strong>Experiencia del promotor</strong><div class="requirement-profile-grid">${REQUIREMENT_PROMOTER_FIELDS.map(([key,label,type]) => { const value = Array.isArray(data.promoter?.[key]) ? data.promoter[key].join(', ') : (data.promoter?.[key] ?? ''); const field = type === 'yesno' ? `<select class="input" data-promoter-field="${key}" data-field-type="${type}" ${editable ? '' : 'disabled'}><option value="">No definido</option><option value="Sí" ${value === 'Sí' ? 'selected' : ''}>Sí</option><option value="No" ${value === 'No' ? 'selected' : ''}>No</option></select>` : type === 'doclevel' ? `<select class="input" data-promoter-field="${key}" data-field-type="${type}" ${editable ? '' : 'disabled'}><option value="">No definido</option>${['Baja','Media','Alta'].map(option => `<option value="${option}" ${value === option ? 'selected' : ''}>${option}</option>`).join('')}</select>` : `<input class="input" data-promoter-field="${key}" data-field-type="${type}" ${type === 'number' ? 'type="number" min="0"' : ''} value="${escapeHtml(value)}" ${editable ? '' : 'readonly'}>`; return `<label><span>${escapeHtml(label)}</span>${field}</label>`; }).join('')}</div></div></div>`;
   if (data.kind === 'shareholders') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Accionistas</strong><div data-legal-rows="shareholder">${legalRowsHtml(data.shareholders || [], 'shareholder', editable)}</div>${editable ? '<button class="btn btn-ghost btn-xs" type="button" data-add-legal-row="shareholder">+ Accionista</button>' : ''}</div></div>`;
+  if (data.kind === 'architecturalPlans') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Modelos/tipologías — información actual de Comercial</strong><div class="requirement-model-grid">${(data.models || []).map(model => `<div><strong>${escapeHtml(model.name || 'Modelo')}</strong><span>${escapeHtml(String(model.unitsCount || 0))} unidades · ${escapeHtml(String(model.bedrooms || 0))} rec. · ${escapeHtml(String(model.bathrooms || 0))} baños</span><span>${escapeHtml(String(model.openAreaM2 || 0))} m² abiertos · ${escapeHtml(String(model.closedAreaM2 || 0))} m² cerrados</span></div>`).join('') || '<span class="requirement-empty">Sin modelos informados.</span>'}</div><p class="requirement-context-warning">Las tipologías son solo contexto. No cuentan como planos ni acreditan por sí solas el requisito.</p></div></div>`;
   if (data.kind === 'legalParties') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Accionistas e identificación</strong><div data-legal-rows="shareholder-id">${legalRowsHtml(data.shareholders || [], 'shareholder-id', editable)}</div>${editable ? '<button class="btn btn-ghost btn-xs" type="button" data-add-legal-row="shareholder-id">+ Accionista</button>' : ''}</div><div class="requirement-structured-section"><strong>Dignatarios</strong><div data-legal-rows="dignitary">${legalRowsHtml(data.dignitaries || [], 'dignitary', editable)}</div>${editable ? '<button class="btn btn-ghost btn-xs" type="button" data-add-legal-row="dignitary">+ Dignatario</button>' : ''}</div></div>`;
   if (data.kind === 'cashflow') return `<div class="requirement-structured">${requirementLinesHtml('Usos', data.uses || [])}${requirementLinesHtml('Fuentes', data.sources || [])}</div>`;
   if (data.kind === 'schedule') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Fase', data.phaseName || '—')}${requirementMetric('Inicio previsto', data.startDate ? String(data.startDate).slice(0,10) : '—')}${requirementMetric('Fin previsto', data.endDate ? String(data.endDate).slice(0,10) : '—')}</div></div>`;
   if (data.kind === 'plans') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Anteproyecto', data.preliminaryDesign === true ? 'Informado' : 'No informado')}${requirementMetric('Planos aprobados', data.approvedPlans === true ? 'Sí' : 'No informado')}</div></div>`;
   if (data.kind === 'flag') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric(data.label || 'Estado', data.value ? 'Sí' : 'No')}</div></div>`;
+  if (data.kind === 'insurancePolicies') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Pólizas aplicables registradas en Datos técnicos</strong>${insurancePolicyCardsHtml(data.policies || projectInsurancePolicies())}</div></div>`;
   const simpleValue = data.technicalInspector ?? data.value ?? (data.exists === true ? 'Sí' : data.exists === false ? 'No' : 'No informado');
   return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Dato registrado en Bank73', simpleValue || 'No informado')}</div></div>`;
 }
@@ -7959,8 +8104,11 @@ function ensureFinanceRequirementsModal() {
   return modal;
 }
 
-function financeRequirementDocsHtml(requirementId) {
-  const docs = FINANCE_REQUIREMENT_DOCS.filter(doc => String(doc.requirementId || '') === String(requirementId || ''));
+function financeRequirementDocsHtml(requirement) {
+  const requirementIds = new Set([requirement?._id, ...(requirement?.legacyRequirementIds || [])].map(String).filter(Boolean));
+  const docs = Number(requirement?.number) === 4
+    ? ARCHITECTURAL_PLAN_DOCS
+    : FINANCE_REQUIREMENT_DOCS.filter(doc => requirementIds.has(String(doc.requirementId || '')));
   if (!docs.length) return '<span class="small muted">Sin documentos adjuntos</span>';
   return `<div style="display:flex;flex-wrap:wrap;gap:6px;">${docs.map(doc => `<a class="btn btn-ghost btn-xs js-secure-file" href="#" data-url="${secureDocUrl(doc._id)}" data-filename="${escapeHtml(doc.originalname || 'documento')}" data-action="view">${escapeHtml(doc.originalname || 'Documento')}</a>`).join('')}</div>`;
 }
@@ -7970,10 +8118,17 @@ async function openFinanceRequirements(phase, mode = 'plan') {
   const modal = ensureFinanceRequirementsModal();
   setFinanceRequirementsFullscreen(modal, false);
   const requirements = Array.isArray(phase?.requirements) ? phase.requirements.map(item => ({ ...item })) : [];
+  if (!INSURANCE_UNITS_CACHE.length) {
+    try { INSURANCE_UNITS_CACHE = await apiGet(`/api/units?projectId=${id}`); } catch (_) { /* La cobertura global sigue disponible. */ }
+  }
   try {
-    FINANCE_REQUIREMENT_DOCS = await API.get(`/api/documents?projectId=${encodeURIComponent(id)}&category=financeRequirement&ts=${Date.now()}`);
+    [FINANCE_REQUIREMENT_DOCS, ARCHITECTURAL_PLAN_DOCS] = await Promise.all([
+      API.get(`/api/documents?projectId=${encodeURIComponent(id)}&category=financeRequirement&ts=${Date.now()}`),
+      API.get(`/api/documents?projectId=${encodeURIComponent(id)}&category=architecturalPlans&ts=${Date.now()}`)
+    ]);
   } catch (_) {
     FINANCE_REQUIREMENT_DOCS = [];
+    ARCHITECTURAL_PLAN_DOCS = [];
   }
   modal.dataset.phaseId = String(phase?._id || '');
   modal.dataset.mode = mode;
@@ -7990,24 +8145,43 @@ async function openFinanceRequirements(phase, mode = 'plan') {
   modal.querySelector('[data-finance-requirements-list]').innerHTML = requirements.map(item => {
     const isManual = item.sourceKey !== 'bank73';
     const guidance = financeRequirementInputGuidance(item.title || '');
+    const presalesTargetReached = mode === 'real' && Number(item.number) === 20
+      && numOr0(item.structuredData?.presalesPct) >= numOr0(item.structuredData?.requiredPresalesPct ?? 50);
+    const performanceBondReached = mode === 'real' && Number(item.number) === 25
+      && financeBondValidity(item.structuredData).status === 'CURRENT'
+      && numOr0(item.structuredData?.actualAmount) >= numOr0(item.structuredData?.requiredAmount)
+      && numOr0(item.structuredData?.requiredAmount) > 0;
+    const paymentBondReached = mode === 'real' && Number(item.number) === 26
+      && financeBondValidity(item.structuredData).status === 'CURRENT'
+      && numOr0(item.structuredData?.actualAmount) >= numOr0(item.structuredData?.requiredAmount)
+      && numOr0(item.structuredData?.requiredAmount) > 0;
+    const bondExpired = mode === 'real' && [25, 26].includes(Number(item.number))
+      && financeBondValidity(item.structuredData).status === 'EXPIRED';
+    const followUpMeta = mode === 'real' && [27, 29].includes(Number(item.number))
+      ? financePeriodicFollowUpMeta(item.structuredData)
+      : { current:false, due:false };
+    const displayedStatus = bondExpired
+      ? 'VENCIDA / PENDIENTE'
+      : followUpMeta.due ? 'REVISIÓN PENDIENTE' : (item.status || 'PENDIENTE');
     return `
-    <article class="requirement-card" data-finance-requirement="${escapeHtml(item._id || '')}" data-requirement-number="${item.number}">
+    <article class="requirement-card${presalesTargetReached || performanceBondReached || paymentBondReached || followUpMeta.current ? ' is-requirement-target-reached' : ''}${bondExpired || followUpMeta.due ? ' is-requirement-expired' : ''}" data-finance-requirement="${escapeHtml(item._id || '')}" data-requirement-number="${item.number}">
       <div class="requirement-card-heading">
         <strong class="requirement-title"><span>${item.number}</span>${escapeHtml(item.title || '')}</strong>
-        <span class="requirement-status ${item.status === 'CUMPLIDO' ? 'is-complete' : 'is-pending'}">${escapeHtml(item.status || 'PENDIENTE')}</span>
+        <span class="requirement-status ${item.status === 'CUMPLIDO' && !bondExpired ? 'is-complete' : 'is-pending'}">${escapeHtml(displayedStatus)}</span>
       </div>
       <div class="requirement-source ${isManual ? 'is-manual' : 'is-bank73'}">${escapeHtml(item.sourceLabel || 'Entrada manual')}</div>
-      ${isManual ? `<div class="requirement-help">${escapeHtml(guidance)}</div>` : ''}
-      ${financeStructuredRequirementHtml(item, editable)}
+      <div class="requirement-help">${escapeHtml(guidance)}</div>
+      ${financeStructuredRequirementHtml(item, editable, mode)}
+      ${Number(item.number) === 24 && editable ? `<div class="requirement-structured-section"><strong>Editar pólizas en la fuente de Datos técnicos</strong><div data-requirement-policy-editor>${projectInsurancePolicies().map(policy => insurancePolicyEditorRow(policy)).join('')}</div><button class="btn btn-ghost btn-xs" type="button" data-add-requirement-policy>+ Añadir póliza</button></div>` : ''}
       <label class="requirement-field"><span>${item.number === 2 ? 'Experiencia del contratista' : 'Información manual o adicional'}</span>
-        <textarea class="input" rows="3" data-requirement-information placeholder="${escapeHtml(guidance)}" ${editable ? '' : 'readonly'}>${escapeHtml(item.manualInformation || (item.sourceKey === 'manual' ? item.information || '' : ''))}</textarea>
+        <textarea class="input" rows="3" data-requirement-information placeholder="Introduce información adicional…" ${editable ? '' : 'readonly'}>${escapeHtml(item.manualInformation || (item.sourceKey === 'manual' ? item.information || '' : ''))}</textarea>
       </label>
       ${mode === 'real' ? `<div style="display:grid;grid-template-columns:minmax(180px,260px) 1fr;gap:10px;margin-top:8px;">
-        <label>Estado<select class="input" data-requirement-status ${editable ? '' : 'disabled'}><option value="PENDIENTE" ${item.status !== 'CUMPLIDO' ? 'selected' : ''}>Pendiente</option><option value="CUMPLIDO" ${item.status === 'CUMPLIDO' ? 'selected' : ''}>Cumplido</option></select></label>
+        <label>Estado<select class="input" data-requirement-status ${editable && ![25, 26, 27, 29].includes(Number(item.number)) ? '' : 'disabled'}><option value="PENDIENTE" ${item.status !== 'CUMPLIDO' ? 'selected' : ''}>Pendiente</option><option value="CUMPLIDO" ${item.status === 'CUMPLIDO' ? 'selected' : ''}>Cumplido</option></select></label>
         <label>Observaciones<textarea class="input" rows="2" data-requirement-observations ${editable ? '' : 'readonly'}>${escapeHtml(item.observations || '')}</textarea></label>
       </div>` : ''}
-      <div class="requirement-evidence"><strong>Documentos/evidencias</strong>${financeRequirementDocsHtml(item._id)}</div>
-      ${editable ? `<div class="requirement-documents-row"><label class="btn btn-ghost btn-xs requirement-upload-button">Adjuntar documentos<input type="file" multiple data-requirement-files></label><span class="requirement-file-name" data-requirement-file-name>Sin nuevos archivos</span></div>` : ''}
+      ${Number(item.number) === 24 ? '' : `<div class="requirement-evidence"><strong>${item.number === 4 ? 'Planos compartidos con Datos técnicos' : 'Documentos/evidencias'}</strong>${financeRequirementDocsHtml(item)}</div>`}
+      ${editable && Number(item.number) !== 24 ? `<div class="requirement-documents-row"><label class="btn btn-ghost btn-xs requirement-upload-button">${item.number === 4 ? 'Adjuntar planos' : 'Adjuntar documentos'}<input type="file" multiple data-requirement-files ${item.number === 4 ? 'accept=".pdf,.jpg,.jpeg,.png"' : ''}></label><span class="requirement-file-name" data-requirement-file-name>Sin nuevos archivos</span></div>` : ''}
     </article>`;
   }).join('') || '<div class="small muted">No hay requisitos configurados para esta fase.</div>';
 
@@ -8016,6 +8190,64 @@ async function openFinanceRequirements(phase, mode = 'plan') {
     const files = Array.from(input.files || []);
     if (label) label.textContent = files.length ? files.map(file => file.name).join(', ') : 'Sin nuevos archivos';
   }));
+  const syncBondRequirementCard = card => {
+    const number = Number(card?.dataset.requirementNumber);
+    if (![25, 26].includes(number)) return;
+    const prefix = number === 25 ? 'performance' : 'payment';
+    const item = requirements.find(requirement => Number(requirement.number) === number);
+    const read = field => card.querySelector(`[data-${prefix}-bond-field="${field}"]`)?.value || '';
+    const draft = { ...(item?.structuredData || {}), actualAmount:numOr0(read('actualAmount')), startDate:read('startDate'), expiryDate:read('expiryDate') };
+    const validity = financeBondValidity(draft);
+    const reached = validity.status === 'CURRENT' && numOr0(draft.requiredAmount) > 0 && draft.actualAmount >= numOr0(draft.requiredAmount);
+    const expired = validity.status === 'EXPIRED';
+    card.classList.toggle('is-requirement-target-reached', reached);
+    card.classList.toggle('is-requirement-expired', expired);
+    const badge = card.querySelector('.requirement-status');
+    if (badge) {
+      badge.textContent = expired ? 'VENCIDA / PENDIENTE' : reached ? 'CUMPLIDO' : 'PENDIENTE';
+      badge.classList.toggle('is-complete', reached);
+      badge.classList.toggle('is-pending', !reached);
+    }
+    const status = card.querySelector('[data-requirement-status]');
+    if (status) status.value = reached ? 'CUMPLIDO' : 'PENDIENTE';
+    const validityLabel = card.querySelector('[data-bond-validity-label]');
+    if (validityLabel) validityLabel.textContent = validity.label;
+  };
+  modal.querySelectorAll('[data-performance-bond-field], [data-payment-bond-field]').forEach(input => {
+    if (['actualAmount', 'startDate', 'expiryDate'].includes(input.getAttribute(input.hasAttribute('data-performance-bond-field') ? 'data-performance-bond-field' : 'data-payment-bond-field'))) {
+      input.addEventListener('input', () => syncBondRequirementCard(input.closest('[data-finance-requirement]')));
+    }
+  });
+  const syncPeriodicFollowUpCard = card => {
+    if (!card) return;
+    const periodicityMonths = Math.max(1, Math.min(120, Math.round(Number(card.querySelector('[data-follow-up-field="periodicityMonths"]')?.value) || (Number(card.dataset.requirementNumber) === 27 ? 4 : 1))));
+    const lastRecordDate = card.querySelector('[data-follow-up-field="lastRecordDate"]')?.value || '';
+    const nextReviewDate = financeAddMonthsClamped(lastRecordDate, periodicityMonths);
+    const nextInput = card.querySelector('[data-follow-up-field="nextReviewDate"]');
+    if (nextInput) nextInput.value = nextReviewDate;
+    const meta = financePeriodicFollowUpMeta({ nextReviewDate });
+    card.classList.toggle('is-requirement-target-reached', meta.current);
+    card.classList.toggle('is-requirement-expired', meta.due);
+    const label = card.querySelector('[data-follow-up-status-label]');
+    if (label) label.textContent = meta.label;
+    const badge = card.querySelector('.requirement-status');
+    if (badge) {
+      badge.textContent = meta.due ? 'REVISIÓN PENDIENTE' : meta.current ? 'CUMPLIDO' : 'PENDIENTE';
+      badge.classList.toggle('is-complete', meta.current);
+      badge.classList.toggle('is-pending', !meta.current);
+    }
+    const status = card.querySelector('[data-requirement-status]');
+    if (status) status.value = meta.current ? 'CUMPLIDO' : 'PENDIENTE';
+  };
+  modal.querySelectorAll('[data-follow-up-field="periodicityMonths"], [data-follow-up-field="lastRecordDate"]').forEach(input => {
+    input.addEventListener('input', () => syncPeriodicFollowUpCard(input.closest('[data-finance-requirement]')));
+  });
+  bindInsurancePolicyEditor(modal);
+  modal.querySelector('[data-add-requirement-policy]')?.addEventListener('click', event => {
+    const host = event.currentTarget.parentElement.querySelector('[data-requirement-policy-editor]');
+    host.insertAdjacentHTML('beforeend', insurancePolicyEditorRow({}));
+    bindInsurancePolicyEditor(host);
+  });
 
   modal.querySelector('[data-copy-finance-requirements]').onclick = () => {
     const sourcePhase = otherPhases.find(item => String(item._id) === String(sourceSelect.value));
@@ -8053,6 +8285,7 @@ async function openFinanceRequirements(phase, mode = 'plan') {
     button.disabled = true;
     try {
       const rows = Array.from(modal.querySelectorAll('[data-finance-requirement]'));
+      if (modal.querySelector('[data-requirement-policy-editor]')) await saveInsurancePoliciesFrom(modal);
       const experienceRow = rows.find(row => Number(row.dataset.requirementNumber) === 2);
       if (experienceRow?.querySelector('[data-promoter-experience]')) {
         const originalPromoter = requirements.find(item => Number(item.number) === 2)?.structuredData?.promoter || {};
@@ -8084,17 +8317,59 @@ async function openFinanceRequirements(phase, mode = 'plan') {
         await API.put(`/api/projects/${id}/finance/legal-parties`, { values: legalValues, base: legalBase, allowOverwrite: !!hasExistingLegal });
       }
 
+      const followUpWithoutDate = rows.find(row => [27, 29].includes(Number(row.dataset.requirementNumber))
+        && (row.querySelector('[data-requirement-files]')?.files?.length || 0) > 0
+        && !row.querySelector('[data-follow-up-field="lastRecordDate"]')?.value);
+      if (followUpWithoutDate) {
+        followUpWithoutDate.querySelector('[data-follow-up-field="lastRecordDate"]')?.focus();
+        alert('Indica la fecha del nuevo documento para calcular la siguiente revisión.');
+        return;
+      }
+
       const updated = rows.map(row => {
         const original = requirements.find(item => String(item._id) === String(row.dataset.financeRequirement)) || {};
         const manualInformation = row.querySelector('[data-requirement-information]')?.value.trim() || '';
+        const number = Number(row.dataset.requirementNumber);
+        const structuredData = number === 25 ? {
+          ...(original.structuredData || {}),
+          kind: 'performanceBond',
+          actualAmount: Math.max(0, Number(row.querySelector('[data-performance-bond-field="actualAmount"]')?.value || 0)),
+          bondNumber: row.querySelector('[data-performance-bond-field="bondNumber"]')?.value.trim() || '',
+          issuer: row.querySelector('[data-performance-bond-field="issuer"]')?.value.trim() || '',
+          startDate: row.querySelector('[data-performance-bond-field="startDate"]')?.value || null,
+          expiryDate: row.querySelector('[data-performance-bond-field="expiryDate"]')?.value || null,
+          alertDaysBefore: Math.max(0, Math.min(3650, Math.round(Number(row.querySelector('[data-performance-bond-field="alertDaysBefore"]')?.value ?? 30))))
+        } : number === 26 ? {
+          ...(original.structuredData || {}),
+          kind: 'paymentBond',
+          actualAmount: Math.max(0, Number(row.querySelector('[data-payment-bond-field="actualAmount"]')?.value || 0)),
+          bondNumber: row.querySelector('[data-payment-bond-field="bondNumber"]')?.value.trim() || '',
+          issuer: row.querySelector('[data-payment-bond-field="issuer"]')?.value.trim() || '',
+          startDate: row.querySelector('[data-payment-bond-field="startDate"]')?.value || null,
+          expiryDate: row.querySelector('[data-payment-bond-field="expiryDate"]')?.value || null,
+          alertDaysBefore: Math.max(0, Math.min(3650, Math.round(Number(row.querySelector('[data-payment-bond-field="alertDaysBefore"]')?.value ?? 30))))
+        } : [27, 29].includes(number) ? {
+          ...(original.structuredData || {}),
+          kind: 'periodicFollowUp',
+          followUpType: number === 27 ? 'engineeringInspection' : 'accountAdvance',
+          periodicityMonths: Math.max(1, Math.min(120, Math.round(Number(row.querySelector('[data-follow-up-field="periodicityMonths"]')?.value) || (number === 27 ? 4 : 1)))),
+          lastRecordDate: row.querySelector('[data-follow-up-field="lastRecordDate"]')?.value || null,
+          nextReviewDate: row.querySelector('[data-follow-up-field="nextReviewDate"]')?.value || null
+        } : original.structuredData;
+        const automaticStatus = [25, 26].includes(number)
+          ? (financeBondValidity(structuredData).status === 'CURRENT' && numOr0(structuredData?.requiredAmount) > 0 && numOr0(structuredData?.actualAmount) >= numOr0(structuredData?.requiredAmount) ? 'CUMPLIDO' : 'PENDIENTE')
+          : [27, 29].includes(number)
+            ? (financePeriodicFollowUpMeta(structuredData).current ? 'CUMPLIDO' : 'PENDIENTE')
+            : null;
         return {
           ...original,
-          number: Number(row.dataset.requirementNumber),
+          number,
+          ...(structuredData ? { structuredData } : {}),
           manualInformation,
           information: original.information || manualInformation,
           sourceKey: original.structuredData?.kind ? (original.sourceKey || 'bank73') : 'manual',
           sourceLabel: original.structuredData?.kind ? (original.sourceLabel || 'Precargado desde Bank73') : 'Entrada manual',
-          status: row.querySelector('[data-requirement-status]')?.value || original.status || 'PENDIENTE',
+          status: automaticStatus || row.querySelector('[data-requirement-status]')?.value || original.status || 'PENDIENTE',
           observations: row.querySelector('[data-requirement-observations]')?.value.trim() || ''
         };
       });
@@ -8106,17 +8381,25 @@ async function openFinanceRequirements(phase, mode = 'plan') {
           const fd = new FormData();
           fd.append('files', file);
           fd.append('projectId', id);
-          fd.append('requirementId', requirementId);
-          fd.append('financePhaseId', phase._id);
-          fd.append('category', 'financeRequirement');
-          fd.append('folder', 'financiero');
-          await API.upload('/api/documents/upload?category=financeRequirement', fd);
+          const requirementNumber = Number(row.dataset.requirementNumber);
+          if (requirementNumber === 4) {
+            fd.append('category', 'architecturalPlans');
+            fd.append('folder', 'tecnico');
+            await API.upload('/api/documents/upload?category=architecturalPlans', fd);
+          } else {
+            fd.append('requirementId', requirementId);
+            fd.append('financePhaseId', phase._id);
+            fd.append('category', 'financeRequirement');
+            fd.append('folder', 'financiero');
+            await API.upload('/api/documents/upload?category=financeRequirement', fd);
+          }
         }
       }
       setFinanceRequirementsFullscreen(modal, false);
       modal.style.display = 'none';
       await loadFinance();
       await markProjectDataChanged();
+      await window.refreshProjectExpiryAlerts?.();
     } catch (error) {
       console.error(error);
       alert(error.message || 'No se pudieron guardar los requisitos.');
@@ -9498,6 +9781,7 @@ function deselectAllVisible() {
     // proyección legacy de /api/inventory si falla la carga principal.
     const units = await apiGet(`/api/units?projectId=${id}&estado=${estado}&q=${qEnc}`);
     unitsCache = units;
+    INSURANCE_UNITS_CACHE = units;
 
     // Ventas (dato único)
     try { await loadVentasMap(); } catch(e){ console.warn('ventas map err', e); }
@@ -9725,7 +10009,7 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
             color:#64748b;
             font-size:14px;
           ">
-            Revisa CPP y líneas de crédito antes de que venza su vigencia.
+            Revisa CPP, líneas de crédito, pólizas, fianzas y seguimientos periódicos.
           </div>
         </div>
 
@@ -9764,7 +10048,17 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
               ">
                 ${a.kind === 'credit_line'
                   ? `${a.line}${a.loanNumber ? ` · ${a.loanNumber}` : ''}`
-                  : `Unidad ${a.unit}`}
+                  : a.kind === 'insurance_policy'
+                    ? `Póliza ${a.policyType}${a.policyNumber ? ` · ${a.policyNumber}` : ''}`
+                    : a.kind === 'performance_bond'
+                      ? `Fianza de cumplimiento · ${escapeHtml(a.phaseName || 'Fase')}${a.bondNumber ? ` · ${escapeHtml(a.bondNumber)}` : ''}`
+                      : a.kind === 'payment_bond'
+                        ? `Fianza de pago · ${escapeHtml(a.phaseName || 'Fase')}${a.bondNumber ? ` · ${escapeHtml(a.bondNumber)}` : ''}`
+                        : a.kind === 'engineering_inspection_follow_up'
+                          ? `Informe de Inspección de Ingeniería · ${escapeHtml(a.phaseName || 'Fase')}`
+                          : a.kind === 'account_advance_follow_up'
+                            ? `Cuenta Avance · ${escapeHtml(a.phaseName || 'Fase')}`
+                    : `Unidad ${a.unit}`}
               </div>
 
               <div style="
@@ -9775,6 +10069,9 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
                 Vencimiento: <b>${a.due}</b>
                 ${a.banco ? ` · Banco: <b>${a.banco}</b>` : ''}
                 ${a.cpp ? ` · CPP: <b>${a.cpp}</b>` : ''}
+                ${a.insurer ? ` · Aseguradora: <b>${escapeHtml(a.insurer)}</b>` : ''}
+                ${a.issuer ? ` · Entidad emisora: <b>${escapeHtml(a.issuer)}</b>` : ''}
+                ${a.periodicityMonths ? ` · Periodicidad: <b>${escapeHtml(a.periodicityMonths)} meses</b>` : ''}
                 ${a.balance ? ` · Saldo: <b>${financeMoney(a.balance)}</b>` : ''}
               </div>
               ${canResolveExpiryAlerts && a.days < 0 && a.alertKey && a.sourceId ? `
@@ -9841,6 +10138,92 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
   });
 }
 
+function getInsurancePolicyExpiryAlerts() {
+  return projectInsurancePolicies().map(policy => {
+    const days = daysUntil(policy.expiryDate);
+    if (days === null || days > 30) return null;
+    const due = String(policy.expiryDate).slice(0, 10);
+    const sourceId = String(policy._id || policy.policyNumber || 'policy');
+    return { kind:'insurance_policy', sourceId, alertKey:expiryAlertKey('insurance_policy', sourceId, due), days, due, policyType:policy.type || 'CAR', policyNumber:policy.policyNumber || '', insurer:policy.insurer || '', banco:policy.bank || '' };
+  }).filter(Boolean);
+}
+
+async function getRequirementBondExpiryAlerts() {
+  try {
+    const res = await getProjectFinanceSnapshot();
+    return (res?.finance?.phases || []).flatMap(phase => (phase.requirements || []).map(requirement => {
+      const number = Number(requirement.number);
+      if (![25, 26].includes(number)) return null;
+      const data = requirement.structuredData || {};
+      const days = daysUntil(data.expiryDate);
+      const advanceDays = Math.max(0, Number(data.alertDaysBefore ?? 30));
+      if (days === null || days > advanceDays) return null;
+      const due = String(data.expiryDate).slice(0, 10);
+      const sourceId = `${phase._id || 'phase'}:${requirement._id || number}`;
+      return {
+        kind: number === 25 ? 'performance_bond' : 'payment_bond',
+        sourceId,
+        alertKey: expiryAlertKey(number === 25 ? 'performance_bond' : 'payment_bond', sourceId, due),
+        days,
+        due,
+        phaseName: phase.name || 'Fase',
+        bondNumber: data.bondNumber || '',
+        issuer: data.issuer || '',
+        advanceDays
+      };
+    }).filter(Boolean));
+  } catch (error) {
+    console.warn('[Finance] no se pudieron cargar alertas de vencimiento de fianzas', error);
+    return [];
+  }
+}
+
+async function getPeriodicRequirementAlerts() {
+  try {
+    const res = await getProjectFinanceSnapshot();
+    return (res?.finance?.phases || []).flatMap(phase => (phase.requirements || []).map(requirement => {
+      const number = Number(requirement.number);
+      if (![27, 29].includes(number)) return null;
+      const data = requirement.structuredData || {};
+      const days = daysUntil(data.nextReviewDate);
+      if (days === null || days > 0) return null;
+      const due = String(data.nextReviewDate).slice(0, 10);
+      const sourceId = `${phase._id || 'phase'}:${requirement._id || number}`;
+      return {
+        kind: number === 27 ? 'engineering_inspection_follow_up' : 'account_advance_follow_up',
+        sourceId,
+        alertKey: expiryAlertKey(number === 27 ? 'engineering_inspection_follow_up' : 'account_advance_follow_up', sourceId, due),
+        days,
+        due,
+        phaseName: phase.name || 'Fase',
+        periodicityMonths: data.periodicityMonths || (number === 27 ? 4 : 1)
+      };
+    }).filter(Boolean));
+  } catch (error) {
+    console.warn('[Finance] no se pudieron cargar alertas de seguimientos periódicos', error);
+    return [];
+  }
+}
+
+async function refreshProjectExpiryAlerts() {
+  const cppAlerts = unitsCache
+    .map(unit => getCppExpiryAlert(unit, ventasMap.get(String(unit._id)), { includeOverdue: true }))
+    .filter(Boolean);
+  const creditLineAlerts = await getCreditLineExpiryAlerts();
+  const insurancePolicyAlerts = getInsurancePolicyExpiryAlerts();
+  const requirementBondAlerts = await getRequirementBondExpiryAlerts();
+  const periodicRequirementAlerts = await getPeriodicRequirementAlerts();
+  const resolvedExpiryAlertKeys = new Set(
+    (state.project?.expiryAlertResolutions || []).map(item => String(item?.key || '')).filter(Boolean)
+  );
+  showCppExpiryPopup(
+    [...cppAlerts, ...creditLineAlerts, ...insurancePolicyAlerts, ...requirementBondAlerts, ...periodicRequirementAlerts]
+      .filter(alertItem => !resolvedExpiryAlertKeys.has(alertItem.alertKey))
+      .sort((a, b) => (a.days ?? 9999) - (b.days ?? 9999))
+  );
+}
+window.refreshProjectExpiryAlerts = refreshProjectExpiryAlerts;
+
 if (projectAlertsBtn) {
   projectAlertsBtn.addEventListener('click', () => {
     showCppExpiryPopup(latestFinanceExpiryAlerts, { force: true });
@@ -9870,6 +10253,7 @@ function renderUnitCard(u) {
   const estadoTxt = estadoLabel(u.estado || 'disponible');
   const impago = /mora|impago|rechaz|atras|vencid|moros/i.test(venta?.statusBanco || '');
   const cppAlert = getCppExpiryAlert(u, venta);
+  const applicablePolicies = effectivePoliciesForUnit(u);
 
   return `
     <div class="unit-card estado-${normalizeUnitEstadoFrontend(u.estado)} ${selected.has(idu) ? 'selected' : ''}"
@@ -9906,6 +10290,7 @@ ${cppAlert ? `
         ${cliente ? `<span class="chip">${cliente}</span>` : `<span class="chip ghost">Sin cliente</span>`}
         ${banco ? `<span class="chip">Banco: ${banco}</span>` : ``}
         ${cpp ? `<span class="chip">CPP: ${cpp}</span>` : ``}
+        ${applicablePolicies.map(policy => `<span class="chip">${escapeHtml(policy.type)}: ${escapeHtml(policy.policyNumber || 'sin número')}${policy.endorsedToBank ? ' · Endosada' : ' · No endosada'}</span>`).join('')}
       </div>
     </div>`;
 }
@@ -10008,19 +10393,7 @@ grid.innerHTML = `
   }).join('')}
 `;
 
-const cppAlerts = units
-  .map(u => getCppExpiryAlert(u, ventasMap.get(String(u._id)), { includeOverdue: true }))
-  .filter(Boolean);
-
-const creditLineAlerts = await getCreditLineExpiryAlerts();
-const resolvedExpiryAlertKeys = new Set(
-  (state.project?.expiryAlertResolutions || []).map(item => String(item?.key || '')).filter(Boolean)
-);
-showCppExpiryPopup(
-  [...cppAlerts, ...creditLineAlerts]
-    .filter(alertItem => !resolvedExpiryAlertKeys.has(alertItem.alertKey))
-    .sort((a, b) => (a.days ?? 9999) - (b.days ?? 9999))
-);
+await refreshProjectExpiryAlerts();
 
 wireUnitCards();
 wireCommercialFolders();
@@ -10997,6 +11370,15 @@ ${inputNum('fv-valorMejoras', `Valor mejoras ${info('Valor de las mejoras/constr
 ${inputNum('fv-valorTerreno', `Valor terreno ${info('Valor asignado al terreno dentro del precio total de la unidad.')}`, v.valorTerreno || 0)}
 `);
 
+  const htmlInsurance = seccion('Póliza CAR / incendio aplicable', `
+    <div class="insurance-unit-current">${insurancePolicyCardsHtml(effectivePoliciesForUnit(u), { showCoverage:false })}</div>
+    <details style="grid-column:1/-1;margin-top:10px;"><summary><strong>Asignar una póliza distinta solo a esta unidad</strong></summary>
+      <p class="small muted">La póliza específica tendrá prioridad para esta unidad sin modificar la póliza global ni las demás unidades.</p>
+      <div data-unit-policy-editor>${insurancePolicyEditorRow({}, { forcedUnitId:unitId })}</div>
+      <button type="button" class="btn btn-ghost" data-save-unit-policy>Guardar póliza específica</button>
+    </details>
+  `);
+
 const htmlCliente1 = seccion('Cliente 1 / Solicitante principal', `
 ${input('fv-clienteNombre', `Nickname ${info('Nombre resumen del cliente para búsquedas, tarjetas y reportes comerciales.')}`, v.clienteNombre || '')}
 ${input('fv-primerNombre', `Primer nombre ${info('Primer nombre del solicitante principal.')}`, v.primerNombre || '')}
@@ -11235,6 +11617,7 @@ ${input('fv-comentario', `Comentario interno ${info('Comentario interno para seg
 
   const fichaHTML =
     htmlUnidad +
+    htmlInsurance +
     htmlCliente1 +
     htmlCliente2 +
     htmlReferencias +
@@ -11318,6 +11701,20 @@ const viewExports = document.createElement('div');
     { includeEmpty: false }
   );
   window.BankSelect?.bindBankSelect?.('fv-banco');
+  bindInsurancePolicyEditor(viewFicha);
+  viewFicha.querySelector('[data-save-unit-policy]')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      await saveInsurancePoliciesFrom(viewFicha.querySelector('[data-unit-policy-editor]'), { preserveUnrendered:true });
+      await loadProject();
+      await loadUnits();
+      await abrirFichaUnidad(unitId);
+    } catch (error) {
+      console.error(error);
+      alert(error.message || 'No se pudo guardar la póliza específica.');
+    } finally { button.disabled = false; }
+  });
 
   const elCons = document.getElementById('fv-constructora');
   if (elCons) elCons.value = safeVal(v.constructora);
@@ -13127,6 +13524,7 @@ if (chatLoadMore) {
 
 
 // ====== Init ======
+try {
 applyRoleVisibility();
 await syncProvidersModuleVisibility();
 
@@ -13159,6 +13557,9 @@ if (['tecnico','legal'].includes(myRole)) {
   await loadDocs();           // ✅
   await refreshCommercialDossier(true);
   await loadChatMessages();
+}
+} finally {
+  finishInitialProjectLoad();
 }
 
   // logout

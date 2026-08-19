@@ -176,8 +176,51 @@ function sanitizeTechnicalData(raw = {}) {
     phasesCount: Math.max(0, Math.round(parsePanamaNumber(raw.phasesCount ?? raw.cantidadFases) || 0)),
     totalUnits: Math.max(0, Math.round(parsePanamaNumber(raw.totalUnits ?? raw.cantidadTotalUnidades) || 0)),
     notes: String(raw.notes || raw.observations || '').trim(),
+    insurancePolicies: sanitizeInsurancePolicies(raw.insurancePolicies),
     assessment: Object.fromEntries(['conceptualProject','preliminaryDesign','approvedPlans','executiveProject','constructionBudget','contractorDefined','technicalOpinionAttached'].map(key => [key, raw.assessment?.[key] == null ? null : raw.assessment[key] === true]))
   };
+}
+
+function sanitizeInsurancePolicies(items = []) {
+  if (!Array.isArray(items)) return [];
+  return items.slice(0, 100).map(item => {
+    const type = String(item?.type || '').trim().toUpperCase();
+    const cleanObjectIds = values => (Array.isArray(values) ? values : [])
+      .map(value => String(value || '').trim())
+      .filter(value => mongoose.Types.ObjectId.isValid(value));
+    const cleanDate = value => {
+      if (!value) return null;
+      const date = new Date(value);
+      return Number.isFinite(date.getTime()) ? date : null;
+    };
+    return {
+      ...(mongoose.Types.ObjectId.isValid(item?._id) ? { _id: item._id } : {}),
+      type: type === 'INCENDIO' ? 'INCENDIO' : 'CAR',
+      insurer: String(item?.insurer || '').trim().slice(0, 200),
+      policyNumber: String(item?.policyNumber || '').trim().slice(0, 120),
+      insuredAmount: Math.max(0, parsePanamaNumber(item?.insuredAmount) || 0),
+      startDate: cleanDate(item?.startDate),
+      expiryDate: cleanDate(item?.expiryDate),
+      endorsedToBank: item?.endorsedToBank === true,
+      bank: item?.endorsedToBank === true ? String(item?.bank || '').trim().slice(0, 200) : '',
+      appliesToAllUnits: item?.appliesToAllUnits !== false,
+      unitIds: item?.appliesToAllUnits !== false ? [] : cleanObjectIds(item?.unitIds),
+      unitRefs: item?.appliesToAllUnits !== false
+        ? []
+        : (Array.isArray(item?.unitRefs) ? item.unitRefs : []).map(value => String(value || '').trim().slice(0, 120)).filter(Boolean),
+      documentId: mongoose.Types.ObjectId.isValid(item?.documentId) ? item.documentId : null,
+      documentName: String(item?.documentName || '').trim().slice(0, 240)
+    };
+  });
+}
+
+function assertInsurancePolicies(policies = []) {
+  const missingBank = (policies || []).find(policy => policy.endorsedToBank === true && !String(policy.bank || '').trim());
+  if (missingBank) {
+    const error = new Error('Indica el banco cuando la póliza está marcada como endosada');
+    error.status = 400;
+    throw error;
+  }
 }
 
 function sanitizeCoverImage(raw = {}) {
@@ -1474,6 +1517,7 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
       ...(body.legalData || {})
     });
     body.technicalData = sanitizeTechnicalData(body.technicalData || {});
+    assertInsurancePolicies(body.technicalData.insurancePolicies);
     body.housingModels = sanitizeHousingModels(body.housingModels || []);
     const initialUnits = sanitizeInitialUnits(body.initialUnits || []);
     delete body.initialUnits;
@@ -1630,7 +1674,7 @@ router.post('/:id/expiry-alerts/resolve', requireProjectAccess({ commercialOnlyS
     const sourceId = String(req.body?.sourceId || '').trim();
     const due = String(req.body?.due || '').trim();
 
-    if (!['cpp', 'credit_line'].includes(kind)) {
+    if (!['cpp', 'credit_line', 'insurance_policy'].includes(kind)) {
       return res.status(400).json({ error: 'Tipo de alerta no válido' });
     }
     if (!sourceId || sourceId.length > 80 || !/^\d{4}-\d{2}-\d{2}$/.test(due)) {
@@ -1737,6 +1781,36 @@ router.get('/:id/checklists', requireProjectAccess({ commercialOnlySales: false 
 // PUT /api/projects/:id
 // - admin: puede editar nombre, descripción, KPIs y status (como antes)
 // - bank:  solo puede cambiar el status del proyecto
+router.put('/:id/insurance-policies', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
+  try {
+    const allowedRoles = new Set(['admin', 'bank', 'promoter', 'gerencia', 'socios', 'financiero', 'tecnico', 'commercial']);
+    const role = String(req.user?.role || '').toLowerCase();
+    if (!allowedRoles.has(role)) return res.status(403).json({ error: 'No puedes modificar las pólizas del proyecto' });
+
+    const project = await Project.findOne({ _id: req.params.id, tenantKey: req.tenantKey });
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+    const policies = sanitizeInsurancePolicies(req.body?.insurancePolicies || []);
+    assertInsurancePolicies(policies);
+    project.technicalData = project.technicalData || {};
+    project.technicalData.insurancePolicies = policies;
+    await project.save();
+
+    await audit(req, 'project.insurance_policies.updated', {
+      targetType: 'project',
+      targetId: project._id,
+      projectId: project._id,
+      message: 'Pólizas CAR/incendio actualizadas',
+      metadata: { policies: policies.length }
+    });
+
+    res.json({ insurancePolicies: project.technicalData.insurancePolicies });
+  } catch (error) {
+    console.error('[PUT /projects/:id/insurance-policies] error:', error);
+    res.status(500).json({ error: 'No se pudieron guardar las pólizas' });
+  }
+});
+
 router.put('/:id', requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -1769,6 +1843,11 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
     }
     if (req.body.technicalData && typeof req.body.technicalData === 'object') {
       payload.technicalData = sanitizeTechnicalData(req.body.technicalData);
+      if (!Array.isArray(req.body.technicalData.insurancePolicies)) {
+        const existingTechnical = await Project.findOne({ _id: id, tenantKey }).select('technicalData.insurancePolicies').lean();
+        payload.technicalData.insurancePolicies = existingTechnical?.technicalData?.insurancePolicies || [];
+      }
+      assertInsurancePolicies(payload.technicalData.insurancePolicies);
       if (payload.technicalData.totalUnits) payload.unitsTotal = payload.technicalData.totalUnits;
     }
     if (req.body.seeksFinancing !== undefined) payload.seeksFinancing = !!req.body.seeksFinancing;
@@ -3095,6 +3174,19 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       }
     }
 
+    for (const policy of (project.technicalData?.insurancePolicies || [])) {
+      if (!policy.expiryDate) continue;
+      const diff = new Date(policy.expiryDate).getTime() - now;
+      if (diff <= d30) expiries.push({
+        type: 'Póliza',
+        name: `${policy.type || 'CAR'}${policy.policyNumber ? ` — ${policy.policyNumber}` : ''}`,
+        due: policy.expiryDate,
+        bank: policy.bank || '',
+        endorsedToBank: policy.endorsedToBank === true,
+        policyId: policy._id
+      });
+    }
+
     const financeAllocationsByLine = new Map();
     for (const unitFinance of (financeDoc?.unitAmortizations || [])) {
       for (const allocation of (unitFinance.allocations || [])) {
@@ -3537,6 +3629,7 @@ if (isSoldLikeStatus(st)) U.sold++;
 
     const now = Date.now();
     const d90 = 90 * 24 * 3600 * 1000;
+    const d30 = 30 * 24 * 3600 * 1000;
 
     const expiries = [];
 
@@ -3573,6 +3666,19 @@ if (isSoldLikeStatus(st)) U.sold++;
           docId: d._id
         });
       }
+    }
+
+    for (const policy of (project.technicalData?.insurancePolicies || [])) {
+      if (!policy.expiryDate) continue;
+      const diff = new Date(policy.expiryDate).getTime() - now;
+      if (diff <= d30) expiries.push({
+        type: 'Póliza',
+        name: `${policy.type || 'CAR'}${policy.policyNumber ? ` — ${policy.policyNumber}` : ''}`,
+        due: policy.expiryDate,
+        bank: policy.bank || '',
+        endorsedToBank: policy.endorsedToBank === true,
+        policyId: policy._id
+      });
     }
 
     expiries.sort((a, b) => new Date(a.due) - new Date(b.due));

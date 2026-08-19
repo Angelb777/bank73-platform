@@ -5,10 +5,68 @@
   <title>Proyecto — Bank73</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link href="/css/base.css" rel="stylesheet" />
-  <link href="/css/theme.css?v=requirements-structured-v2" rel="stylesheet" />
+  <link href="/css/theme.css?v=bond-validity-v1" rel="stylesheet" />
   <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
 
   <style>
+/* ===== Carga inicial del proyecto ===== */
+body.project-loading { overflow: hidden; }
+body.project-loading > .topbar,
+body.project-loading > .container,
+body.project-loading > .modal-backdrop { visibility: hidden; }
+.project-loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(90, 162, 255, .12), transparent 34%),
+    #0f1422;
+  color: #e5edf7;
+  transition: opacity .2s ease, visibility .2s ease;
+}
+body:not(.project-loading) .project-loading-screen {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.project-loading-content {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  text-align: center;
+}
+.project-loading-spinner {
+  width: 42px;
+  height: 42px;
+  border: 3px solid rgba(148, 163, 184, .22);
+  border-top-color: #5aa2ff;
+  border-radius: 50%;
+  animation: project-loading-spin .75s linear infinite;
+}
+.project-loading-text {
+  margin: 0;
+  color: #b8c6d9;
+  font-size: .95rem;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+body.light-theme .project-loading-screen {
+  background:
+    radial-gradient(circle at 50% 42%, rgba(90, 162, 255, .14), transparent 34%),
+    #f4f7fb;
+  color: #172033;
+}
+body.light-theme .project-loading-text { color: #647089; }
+body.light-theme .project-loading-spinner { border-color: rgba(100, 112, 137, .2); border-top-color: #3b82f6; }
+@keyframes project-loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .project-loading-spinner { animation-duration: 1.5s; }
+  .project-loading-screen { transition: none; }
+}
+
    /* ===== Ajustes existentes ===== */
 /* ===== Proyecto: layout y componentes ===== */
 .proyecto-topbar {
@@ -1586,7 +1644,14 @@ body.light-theme .provider-exclusive {
 }
   </style>
 </head>
-<body class="dark-theme">
+<body class="dark-theme project-loading">
+  <div id="projectLoadingScreen" class="project-loading-screen" role="status" aria-live="polite" aria-label="Cargando proyecto">
+    <div class="project-loading-content">
+      <div class="project-loading-spinner" aria-hidden="true"></div>
+      <p class="project-loading-text">Cargando proyecto&hellip;</p>
+    </div>
+  </div>
+
   <div class="topbar">
     <div class="brand"><a class="link" href="/portfolio">← Volver</a> &nbsp; Proyecto</div>
     <div class="topbar-actions">
@@ -2799,7 +2864,7 @@ body.light-theme .provider-exclusive {
   <script src="/js/banks.js"></script>
   <script src="/lib/chart.umd.min.js"></script>
   <script src="/js/theme-toggle.js"></script>
-  <script src="/js/project.js?v=requirements-structured-v2"><!-- ROLE-SEP: bump --></script>
+  <script src="/js/project.js?v=requirements-29-v1"><!-- ROLE-SEP: bump --></script>
 
 </body>
 </html>

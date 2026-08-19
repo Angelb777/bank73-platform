@@ -4099,6 +4099,17 @@ body.finance-modal-open { overflow: hidden; }
   box-shadow: 0 3px 10px rgba(15, 23, 42, .05);
 }
 
+.requirement-card.is-presales-target-reached,
+.requirement-card.is-requirement-target-reached {
+  border-color: #22c55e;
+  background: #f0fdf4 !important;
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, .12), 0 3px 10px rgba(22, 101, 52, .08);
+}
+.requirement-card.is-presales-target-reached .requirement-structured,
+.requirement-card.is-requirement-target-reached .requirement-structured { border-color: #86efac; background: #f7fff9; }
+.requirement-card.is-requirement-expired { border-color:#ef4444; background:#fff7f7 !important; box-shadow:0 0 0 1px rgba(239,68,68,.12),0 3px 10px rgba(153,27,27,.08); }
+.requirement-card.is-requirement-expired .requirement-structured { border-color:#fca5a5; background:#fffafa; }
+
 .requirement-card-heading {
   display: flex;
   align-items: flex-start;
@@ -4181,6 +4192,13 @@ body.finance-modal-open { overflow: hidden; }
 .requirement-line-list { display: grid; gap: 5px; }
 .requirement-line-list > div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 9px; border-radius: 8px; background: #fff; color: #334155; font-size: .78rem; }
 .requirement-line-list b { flex: 0 0 auto; color: #0f172a; }
+.requirement-model-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; }
+.requirement-model-grid > div { display: grid; gap: 3px; padding: 9px 10px; border: 1px solid #dbeafe; border-radius: 10px; background: #fff; }
+.requirement-model-grid strong { color: #0f172a; font-size: .82rem; }
+.requirement-model-grid span { color: #64748b; font-size: .72rem; }
+.requirement-context-warning { margin: 1px 0 0; color: #92400e; font-size: .75rem; font-weight: 700; }
+.requirement-presales-target { display: grid; grid-template-columns: minmax(180px, 1fr) 110px auto; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid #bfdbfe; border-radius: 10px; background: #fff; color: #334155; font-size: .78rem; font-weight: 750; }
+.requirement-presales-target input { width: 100%; min-width: 0; border: 1px solid #94a3b8; border-radius: 8px; padding: 7px 8px; background: #fff; color: #0f172a; }
 .requirement-profile-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .requirement-profile-grid label { display: grid; gap: 5px; color: #475569; font-size: .7rem; font-weight: 700; }
 .requirement-profile-grid input,
@@ -4191,6 +4209,42 @@ body.finance-modal-open { overflow: hidden; }
 .requirement-legal-row input[readonly] { background: #f1f5f9; color: #334155; }
 .requirement-legal-row { display: grid; grid-template-columns: minmax(150px, 1.25fr) minmax(140px, 1fr) minmax(90px, .7fr) auto; gap: 7px; margin-bottom: 7px; align-items: center; }
 .requirement-empty { color: #64748b; font-size: .78rem; }
+
+.create-technical-subsection { margin-top:20px; padding-top:18px; border-top:1px solid #dbe2ea; }
+.create-technical-subsection .create-section-title { margin-bottom:10px; }
+.create-architectural-plans {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  align-items: center;
+  gap: 10px 14px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #f8fbff;
+  color: #0f172a;
+}
+.create-architectural-plans p { margin: 4px 0 0; color: #64748b; font-size: .78rem; }
+.create-architectural-plans > span { grid-column: 1 / -1; }
+.create-insurance-section { margin-top:10px; padding:16px; border:1px solid #dbe2ea; border-radius:16px; background:#f8fafc; }
+.insurance-policy-row { position:relative; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; padding:14px; margin:10px 0; border:1px solid #cbd5e1; border-radius:14px; background:#fff; }
+.insurance-policy-row label { display:grid; gap:5px; color:#334155; font-size:.8rem; font-weight:700; }
+.insurance-policy-row input,.insurance-policy-row select { min-width:0; }
+.insurance-policy-row .insurance-policy-wide { grid-column:1/-1; }
+.insurance-policy-row .insurance-policy-remove { position:absolute; top:8px; right:8px; }
+.insurance-policy-units { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; max-height:150px; overflow:auto; padding:9px; border:1px solid #e2e8f0; border-radius:10px; }
+.insurance-policy-units label { display:flex; align-items:center; gap:6px; font-weight:500; }
+.insurance-policy-card { border:1px solid #cbd5e1; border-left:5px solid #2563eb; border-radius:12px; padding:12px; background:#fff; color:#0f172a; }
+.insurance-policy-card.is-not-endorsed { border-left-color:#dc2626; background:#fff7f7; }
+.insurance-policy-card.is-endorsed { border-left-color:#16a34a; background:#f0fdf4; }
+.insurance-policy-card-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:8px; }
+.insurance-policy-card-grid span { display:block; color:#64748b; font-size:.74rem; }
+.insurance-policy-card-grid strong { color:#0f172a; font-size:.85rem; }
+.insurance-endorsement { display:inline-flex; align-items:center; gap:5px; border-radius:999px; padding:4px 9px; font-size:.75rem; font-weight:800; }
+.insurance-endorsement.yes { background:#dcfce7; color:#166534; }
+.insurance-endorsement.no { background:#fee2e2; color:#991b1b; }
+@media (max-width:900px) { .insurance-policy-row { grid-template-columns:repeat(2,minmax(0,1fr)); } .insurance-policy-card-grid,.insurance-policy-units { grid-template-columns:1fr 1fr; } }
+@media (max-width:600px) { .insurance-policy-row,.insurance-policy-card-grid,.insurance-policy-units { grid-template-columns:1fr; } }
 
 .requirement-field {
   display: block;
@@ -4284,6 +4338,8 @@ body.finance-modal-open { overflow: hidden; }
   .requirement-card-heading { flex-direction: column; gap: 8px; }
   .requirement-profile-grid { grid-template-columns: 1fr; }
   .requirement-legal-row { grid-template-columns: 1fr; padding: 9px; border: 1px solid #e2e8f0; border-radius: 9px; }
+  .create-architectural-plans { grid-template-columns: 1fr; }
+  .create-architectural-plans > span { grid-column: auto; }
   .requirement-help { margin-left: 0; }
   .requirements-modal-actions { padding: 11px 12px; }
 }

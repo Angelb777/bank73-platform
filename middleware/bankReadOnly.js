@@ -4,7 +4,8 @@ function bankReadOnly(req, res, next) {
   const path = String(req.originalUrl || req.url || '').split('?')[0].replace(/\/+$/, '');
   const isProjectCreate = method === 'POST' && path === '/api/projects';
   const isFundingInterest = method === 'POST' && /^\/api\/funding\/opportunities\/[^/]+\/interests$/.test(path);
-  const isFinanceRequirementUpload = method === 'POST' && path === '/api/documents/upload' && String(req.query?.category || '').toLowerCase() === 'financerequirement';
+  const requirementUploadCategory = String(req.query?.category || '').toLowerCase();
+  const isFinanceRequirementUpload = method === 'POST' && path === '/api/documents/upload' && ['financerequirement', 'architecturalplans'].includes(requirementUploadCategory);
   const isFinanceRequirementSourceUpdate = method === 'PUT' && /^\/api\/projects\/[^/]+\/finance\/(?:promoter-experience|legal-parties)$/.test(path);
 
   if (role === 'bank' && !isProjectCreate && !isFundingInterest && !isFinanceRequirementUpload && !isFinanceRequirementSourceUpdate && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {

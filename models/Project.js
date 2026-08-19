@@ -133,6 +133,24 @@ const projectSchema = new Schema({
     phasesCount: { type: Number, default: 0 },
     totalUnits: { type: Number, default: 0 },
     notes: { type: String, trim: true, default: '' },
+    insurancePolicies: {
+      type: [{
+        type: { type: String, enum: ['CAR', 'INCENDIO'], required: true },
+        insurer: { type: String, trim: true, default: '' },
+        policyNumber: { type: String, trim: true, default: '' },
+        insuredAmount: { type: Number, default: 0 },
+        startDate: { type: Date, default: null },
+        expiryDate: { type: Date, default: null },
+        endorsedToBank: { type: Boolean, default: false },
+        bank: { type: String, trim: true, default: '' },
+        appliesToAllUnits: { type: Boolean, default: true },
+        unitIds: [{ type: Schema.Types.ObjectId, ref: 'Unit' }],
+        unitRefs: [{ type: String, trim: true }],
+        documentId: { type: Schema.Types.ObjectId, ref: 'Document', default: null },
+        documentName: { type: String, trim: true, default: '' }
+      }],
+      default: []
+    },
     assessment: {
       conceptualProject: { type: Boolean, default: null },
       preliminaryDesign: { type: Boolean, default: null },

@@ -18,16 +18,15 @@ const REQUIREMENT_TITLES = Object.freeze([
   'Formulario de Debida Diligencia',
   'Manual de Cumplimiento',
   'Estudio hidrológico del río y validación de niveles de inundación en planos aprobados por el MOP',
-  'Preventas netas equivalentes al 50% de la etapa a financiar y cesión suficiente para cubrir la facilidad aprobada',
+  'Preventas netas requeridas de la etapa a financiar y cesión suficiente para cubrir la facilidad aprobada',
   'Certificación inicial del inspector independiente sobre costos, permisos, pólizas y documentos requeridos',
   'Revisión y validación del presupuesto de construcción por la Gerencia de Ingeniería',
   'Contrato de construcción',
   'Póliza CAR por el 100% del valor de construcción, endosada al Banco / Póliza incendio',
-  'Fianza de cumplimiento equivalente al 50% del valor de la etapa',
-  'Fianza de pago equivalente al 25% del valor de la etapa',
+  'Fianza de cumplimiento requerida sobre el valor de la etapa',
+  'Fianza de pago requerida sobre el valor de la etapa',
   'Informe de Inspección de Ingeniería',
   'Revisión y validación del presupuesto de construcción por la Gerencia de Ingeniería',
-  'Planos de anteproyecto firmados por arquitecto e ingeniero',
   'Cuenta Avance'
 ]);
 
@@ -35,6 +34,57 @@ const REQUIREMENT_STATUSES = Object.freeze(['PENDIENTE', 'CUMPLIDO']);
 
 function cleanText(value, max = 12000) {
   return String(value || '').trim().slice(0, max);
+}
+
+function requiredPresalesPct(value, fallback = 50) {
+  const match = String(value ?? '').replace(',', '.').match(/-?\d+(?:\.\d+)?/);
+  const parsed = match ? Number(match[0]) : Number(fallback);
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : 50;
+}
+
+function cleanDate(value) {
+  if (!value) return null;
+  const raw = value instanceof Date ? value.toISOString() : String(value);
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const timestamp = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isFinite(timestamp) ? `${match[1]}-${match[2]}-${match[3]}` : null;
+}
+
+function alertDays(value, fallback = 30) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(3650, Math.round(parsed))) : fallback;
+}
+
+function bondValidity(startDate, expiryDate, now = new Date()) {
+  const start = cleanDate(startDate);
+  const expiry = cleanDate(expiryDate);
+  if (!start || !expiry) return { status: 'MISSING_DATES', daysUntilExpiry: null };
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const startUtc = Date.parse(`${start}T00:00:00Z`);
+  const expiryUtc = Date.parse(`${expiry}T00:00:00Z`);
+  const daysUntilExpiry = Math.round((expiryUtc - todayUtc) / 86400000);
+  if (expiryUtc < todayUtc) return { status: 'EXPIRED', daysUntilExpiry };
+  if (startUtc > todayUtc) return { status: 'NOT_STARTED', daysUntilExpiry };
+  return { status: 'CURRENT', daysUntilExpiry };
+}
+
+function addMonthsClamped(dateValue, months) {
+  const date = cleanDate(dateValue);
+  if (!date) return null;
+  const [year, month, day] = date.split('-').map(Number);
+  const targetMonth = month - 1 + Math.max(1, Math.round(Number(months) || 1));
+  const targetYear = year + Math.floor(targetMonth / 12);
+  const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
+  return `${targetYear}-${String(normalizedMonth + 1).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
+}
+
+function periodicFollowUpStatus(nextReviewDate, now = new Date()) {
+  const due = cleanDate(nextReviewDate);
+  if (!due) return 'PENDIENTE';
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Date.parse(`${due}T00:00:00Z`) > todayUtc ? 'CUMPLIDO' : 'PENDIENTE';
 }
 
 function money(value) {
@@ -169,6 +219,36 @@ function commercialPresalesStructured(project = {}, commercialUnits = []) {
   return data;
 }
 
+function architecturalModelsStructured(project = {}, commercialUnits = []) {
+  if (Array.isArray(commercialUnits) && commercialUnits.length) {
+    const grouped = new Map();
+    commercialUnits.forEach(unit => {
+      const name = cleanText(unit.modelName || unit.modelo || '', 180);
+      if (!name) return;
+      const signature = [name, Number(unit.bedrooms || 0), Number(unit.bathrooms || 0), Number(unit.openAreaM2 || 0), Number(unit.closedAreaM2 || 0)].join('|');
+      const current = grouped.get(signature) || {
+        name,
+        bedrooms: Number(unit.bedrooms || 0),
+        bathrooms: Number(unit.bathrooms || 0),
+        openAreaM2: Number(unit.openAreaM2 || 0),
+        closedAreaM2: Number(unit.closedAreaM2 || 0),
+        unitsCount: 0
+      };
+      current.unitsCount += 1;
+      grouped.set(signature, current);
+    });
+    if (grouped.size) return Array.from(grouped.values());
+  }
+  return (Array.isArray(project.housingModels) ? project.housingModels : []).map(model => ({
+    name: cleanText(model?.name, 180),
+    bedrooms: Number(model?.bedrooms || 0),
+    bathrooms: Number(model?.bathrooms || 0),
+    openAreaM2: Number(model?.openAreaM2 || 0),
+    closedAreaM2: Number(model?.closedAreaM2 || 0),
+    unitsCount: Number(model?.unitsCount || 0)
+  })).filter(model => model.name || model.unitsCount);
+}
+
 function defaultRequirementStructuredData(number, { project = {}, promoterProfile = {}, phase = {}, commercialUnits = [] } = {}) {
   const legal = project.legalData || {};
   const technical = project.technicalData || {};
@@ -176,16 +256,49 @@ function defaultRequirementStructuredData(number, { project = {}, promoterProfil
   if (number === 1) return { kind: 'budget', projectTotal: Number(project.financialConditions?.projectTotal || project.budgetApproved || conditions.phaseTotal || 0), phaseTotal: Number(conditions.phaseTotal || 0), uses: phase.planUses || [] };
   if (number === 2) return { kind: 'experience', promoterId: String(project.assignedPromoters?.[0] || ''), promoter: Object.fromEntries(PROMOTER_EXPERIENCE_FIELDS.map(key => [key, promoterProfile?.[key] ?? (['countries','banksWorkedWith'].includes(key) ? [] : null)])) };
   if (number === 3) return { kind: 'shareholders', shareholders: legal.shareholders || [] };
+  if (number === 4) return { kind: 'architecturalPlans', models: architecturalModelsStructured(project, commercialUnits) };
   if (number === 9) return { kind: 'legalParties', shareholders: legal.shareholders || [], dignitaries: legal.boardMembers || [] };
   if (number === 10) return { kind: 'flag', label: 'EIA aprobado', value: !!project.financialConditions?.precedentConditions?.environmentalStudyApproved };
   if (number === 11) return { kind: 'schedule', phaseName: phase.name || '', startDate: phase.startDate || null, endDate: phase.endDate || null };
   if (number === 12) return { kind: 'cashflow', uses: phase.planUses || [], sources: phase.planSources || [] };
-  if (number === 16 || number === 29) return { kind: 'plans', preliminaryDesign: technical.assessment?.preliminaryDesign ?? null, approvedPlans: technical.assessment?.approvedPlans ?? null };
-  if (number === 20) return { kind: 'presales', ...commercialPresalesStructured(project, commercialUnits), requiredPresales: cleanText(conditions.requiredPresales) };
+  if (number === 16 && project.seeksFinancing === true) return { kind: 'plans', preliminaryDesign: technical.assessment?.preliminaryDesign ?? null, approvedPlans: technical.assessment?.approvedPlans ?? null };
+  if (number === 20) return {
+    kind: 'presales',
+    ...commercialPresalesStructured(project, commercialUnits),
+    requiredPresales: cleanText(conditions.requiredPresales),
+    requiredPresalesPct: requiredPresalesPct(conditions.requiredPresales)
+  };
   if (number === 21) return { kind: 'inspector', technicalInspector: cleanText(conditions.technicalInspector) };
   if (number === 22 || number === 28) return { kind: 'constructionBudget', exists: technical.assessment?.constructionBudget ?? null };
-  if (number === 24) return { kind: 'insurance', value: cleanText(conditions.insurance) };
-  if (number === 25 || number === 26) return { kind: 'guarantees', value: cleanText(conditions.guarantees) };
+  if (number === 24) return {
+    kind: 'insurancePolicies',
+    policies: (Array.isArray(technical.insurancePolicies) ? technical.insurancePolicies : []).map(policy => ({
+      _id: policy?._id,
+      type: cleanText(policy?.type),
+      insurer: cleanText(policy?.insurer),
+      policyNumber: cleanText(policy?.policyNumber),
+      insuredAmount: Number(policy?.insuredAmount || 0),
+      startDate: policy?.startDate || null,
+      expiryDate: policy?.expiryDate || null,
+      endorsedToBank: policy?.endorsedToBank === true,
+      bank: cleanText(policy?.bank),
+      appliesToAllUnits: policy?.appliesToAllUnits !== false,
+      unitIds: (policy?.unitIds || []).map(String),
+      unitRefs: (policy?.unitRefs || []).map(String),
+      documentId: policy?.documentId ? String(policy.documentId) : '',
+      documentName: cleanText(policy?.documentName)
+    }))
+  };
+  if (number === 25) {
+    const phaseValue = Number(conditions.phaseTotal || 0);
+    return { kind: 'performanceBond', phaseValue, requiredPct: 50, requiredAmount: phaseValue * 0.5, actualAmount: 0, bondNumber: '', issuer: '', startDate: null, expiryDate: null, alertDaysBefore: 30, validityStatus: 'MISSING_DATES', daysUntilExpiry: null };
+  }
+  if (number === 26) {
+    const phaseValue = Number(conditions.phaseTotal || 0);
+    return { kind: 'paymentBond', phaseValue, requiredPct: 25, requiredAmount: phaseValue * 0.25, actualAmount: 0, bondNumber: '', issuer: '', startDate: null, expiryDate: null, alertDaysBefore: 30, validityStatus: 'MISSING_DATES', daysUntilExpiry: null };
+  }
+  if (number === 27) return { kind: 'periodicFollowUp', followUpType: 'engineeringInspection', periodicityMonths: 4, lastRecordDate: null, nextReviewDate: null };
+  if (number === 29) return { kind: 'periodicFollowUp', followUpType: 'accountAdvance', periodicityMonths: 1, lastRecordDate: null, nextReviewDate: null };
   return undefined;
 }
 
@@ -231,7 +344,7 @@ function defaultRequirementInformation(number, { project = {}, promoterProfile =
         listAmounts(phase.planSources || []) ? `Fuentes: ${listAmounts(phase.planSources || [])}` : ''
       ].filter(Boolean).join('\n');
     case 16:
-    case 29:
+      if (project.seeksFinancing !== true) return '';
       return technical.assessment?.preliminaryDesign === true || technical.assessment?.approvedPlans === true
         ? `Anteproyecto: ${technical.assessment?.preliminaryDesign === true ? 'informado' : 'no informado'}; planos aprobados: ${technical.assessment?.approvedPlans === true ? 'sí' : 'no informado'}. Bank73 no registra aquí las firmas del arquitecto y el ingeniero.`
         : '';
@@ -248,26 +361,131 @@ function defaultRequirementInformation(number, { project = {}, promoterProfile =
         ? 'Bank73 registra la existencia de un presupuesto de construcción; no consta aquí su validación por la Gerencia de Ingeniería.'
         : '';
     case 24:
-      return cleanText(conditions.insurance) ? `Seguros registrados en las condiciones financieras: ${cleanText(conditions.insurance)}` : '';
+      return (technical.insurancePolicies || []).length ? `${technical.insurancePolicies.length} póliza(s) CAR/incendio registrada(s) en Datos técnicos.` : '';
     case 25:
+      return phaseTotal ? `Valor de la fase: B/. ${money(phaseTotal)}. Fianza de cumplimiento requerida: 50%.` : '';
     case 26:
-      return cleanText(conditions.guarantees) ? `Garantías registradas en las condiciones financieras: ${cleanText(conditions.guarantees)}` : '';
+      return phaseTotal ? `Valor de la fase: B/. ${money(phaseTotal)}. Fianza de pago requerida: 25%.` : '';
     default:
       return '';
   }
 }
 
 function normalizePhaseRequirements(raw = [], context = {}) {
-  const byNumber = new Map((Array.isArray(raw) ? raw : []).map(item => [Number(item?.number), item]));
+  const original = Array.isArray(raw) ? raw : [];
+  const legacyNumbering = original.some(item => Number(item?.number) === 30)
+    || original.some(item => Number(item?.number) === 29 && (item?.structuredData?.kind === 'plans' || /Planos de anteproyecto/i.test(String(item?.title || ''))));
+  let prepared = original;
+  if (legacyNumbering) {
+    const old16 = original.find(item => Number(item?.number) === 16);
+    const old29 = original.find(item => Number(item?.number) === 29);
+    const old30 = original.find(item => Number(item?.number) === 30);
+    const mergeText = (...values) => [...new Set(values.map(value => cleanText(value)).filter(Boolean))].join('\n');
+    const unifiedPlans = old16 || old29 ? {
+      ...(old16 || old29),
+      number: 16,
+      information: mergeText(old16?.information, old29?.information),
+      manualInformation: mergeText(old16?.manualInformation, old29?.manualInformation),
+      observations: mergeText(old16?.observations, old29?.observations),
+      status: old16?.status === 'CUMPLIDO' || old29?.status === 'CUMPLIDO' ? 'CUMPLIDO' : 'PENDIENTE',
+      legacyRequirementIds: [...new Set([
+        ...(old16?.legacyRequirementIds || []).map(String),
+        ...(old29?.legacyRequirementIds || []).map(String),
+        ...(old16?._id && old29?._id && String(old16._id) !== String(old29._id) ? [String(old29._id)] : [])
+      ])]
+    } : null;
+    prepared = original
+      .filter(item => ![16, 29, 30].includes(Number(item?.number)))
+      .concat(unifiedPlans ? [unifiedPlans] : [])
+      .concat(old30 ? [{ ...old30, number: 29 }] : []);
+  }
+  const byNumber = new Map(prepared.map(item => [Number(item?.number), item]));
   return REQUIREMENT_TITLES.map((title, index) => {
     const number = index + 1;
     const existing = byNumber.get(number) || {};
-    const status = REQUIREMENT_STATUSES.includes(String(existing.status || '').toUpperCase())
+    let status = REQUIREMENT_STATUSES.includes(String(existing.status || '').toUpperCase())
       ? String(existing.status).toUpperCase()
       : 'PENDIENTE';
-    const legacyInformation = cleanText(existing.information);
-    const automaticInformation = defaultRequirementInformation(number, context);
-    const automaticStructuredData = defaultRequirementStructuredData(number, context);
+    const guidance = `Información solicitada: ${title}. Describe los datos disponibles y adjunta la documentación correspondiente.`;
+    const stripGeneratedGuidance = value => {
+      const cleaned = cleanText(value);
+      return cleaned === guidance ? '' : cleaned;
+    };
+    const legacyInformation = stripGeneratedGuidance(existing.information);
+    let automaticInformation = defaultRequirementInformation(number, context);
+    let automaticStructuredData = defaultRequirementStructuredData(number, context);
+    if (number === 25 && automaticStructuredData) {
+      const stored = existing.structuredData || {};
+      const requiredPct = requiredPresalesPct(stored.requiredPct, 50);
+      const phaseValue = Number(automaticStructuredData.phaseValue || 0);
+      const startDate = cleanDate(stored.startDate);
+      const expiryDate = cleanDate(stored.expiryDate);
+      const validity = bondValidity(startDate, expiryDate);
+      automaticStructuredData = {
+        ...automaticStructuredData,
+        requiredPct,
+        requiredAmount: phaseValue * requiredPct / 100,
+        actualAmount: Math.max(0, Number(stored.actualAmount || 0)),
+        bondNumber: cleanText(stored.bondNumber, 240),
+        issuer: cleanText(stored.issuer, 240),
+        startDate,
+        expiryDate,
+        alertDaysBefore: alertDays(stored.alertDaysBefore, 30),
+        validityStatus: validity.status,
+        daysUntilExpiry: validity.daysUntilExpiry
+      };
+      automaticInformation = phaseValue
+        ? `Valor de la fase: B/. ${money(phaseValue)}. Fianza de cumplimiento requerida: ${requiredPct}%.`
+        : '';
+      status = validity.status === 'CURRENT'
+        && automaticStructuredData.requiredAmount > 0
+        && automaticStructuredData.actualAmount >= automaticStructuredData.requiredAmount
+        ? 'CUMPLIDO'
+        : 'PENDIENTE';
+    }
+    if (number === 26 && automaticStructuredData) {
+      const stored = existing.structuredData || {};
+      const requiredPct = requiredPresalesPct(stored.requiredPct, 25);
+      const phaseValue = Number(automaticStructuredData.phaseValue || 0);
+      const startDate = cleanDate(stored.startDate);
+      const expiryDate = cleanDate(stored.expiryDate);
+      const validity = bondValidity(startDate, expiryDate);
+      automaticStructuredData = {
+        ...automaticStructuredData,
+        requiredPct,
+        requiredAmount: phaseValue * requiredPct / 100,
+        actualAmount: Math.max(0, Number(stored.actualAmount || 0)),
+        bondNumber: cleanText(stored.bondNumber, 240),
+        issuer: cleanText(stored.issuer, 240),
+        startDate,
+        expiryDate,
+        alertDaysBefore: alertDays(stored.alertDaysBefore, 30),
+        validityStatus: validity.status,
+        daysUntilExpiry: validity.daysUntilExpiry
+      };
+      automaticInformation = phaseValue
+        ? `Valor de la fase: B/. ${money(phaseValue)}. Fianza de pago requerida: ${requiredPct}%.`
+        : '';
+      status = validity.status === 'CURRENT'
+        && automaticStructuredData.requiredAmount > 0
+        && automaticStructuredData.actualAmount >= automaticStructuredData.requiredAmount
+        ? 'CUMPLIDO'
+        : 'PENDIENTE';
+    }
+    if ([27, 29].includes(number) && automaticStructuredData) {
+      const stored = existing.structuredData || {};
+      const defaultMonths = number === 27 ? 4 : 1;
+      const periodicityMonths = Math.max(1, Math.min(120, Math.round(Number(stored.periodicityMonths) || defaultMonths)));
+      const lastRecordDate = cleanDate(stored.lastRecordDate);
+      const nextReviewDate = lastRecordDate ? addMonthsClamped(lastRecordDate, periodicityMonths) : null;
+      automaticStructuredData = {
+        ...automaticStructuredData,
+        periodicityMonths,
+        lastRecordDate,
+        nextReviewDate
+      };
+      status = periodicFollowUpStatus(nextReviewDate);
+    }
     const hasAutomaticSource = Boolean(automaticInformation || automaticStructuredData);
     const explicitlyManual = String(existing.sourceKey || '').toLowerCase() === 'manual'
       && Object.prototype.hasOwnProperty.call(existing, 'information');
@@ -280,13 +498,14 @@ function normalizePhaseRequirements(raw = [], context = {}) {
       : cleanText(existing.sourceKey || (hasAutomaticSource ? 'bank73' : 'manual'), 80);
     return {
       ...(existing._id ? { _id: existing._id } : {}),
+      ...(existing.legacyRequirementIds?.length ? { legacyRequirementIds: existing.legacyRequirementIds } : {}),
       number,
       title,
       information,
-      manualInformation: cleanText(existing.manualInformation ?? (String(existing.sourceKey || '').toLowerCase() === 'manual' ? existing.information : '')),
-      ...(automaticStructuredData ? { structuredData: automaticStructuredData } : (existing.structuredData ? { structuredData: existing.structuredData } : {})),
+      manualInformation: stripGeneratedGuidance(existing.manualInformation ?? (String(existing.sourceKey || '').toLowerCase() === 'manual' ? existing.information : '')),
+      ...(automaticStructuredData ? { structuredData: automaticStructuredData } : (existing.structuredData && !(number === 16 && context.project?.seeksFinancing !== true) ? { structuredData: existing.structuredData } : {})),
       sourceKey,
-      sourceLabel: sourceKey === 'bank73' ? 'Precargado desde Bank73' : 'Entrada manual',
+      sourceLabel: sourceKey === 'bank73' ? (number === 4 ? 'Contexto desde Bank73' : 'Precargado desde Bank73') : 'Entrada manual',
       status,
       observations: cleanText(existing.observations)
     };
@@ -299,5 +518,9 @@ module.exports = {
   normalizePhaseRequirements,
   defaultRequirementInformation,
   defaultRequirementStructuredData,
+  architecturalModelsStructured,
+  bondValidity,
+  addMonthsClamped,
+  periodicFollowUpStatus,
   PROMOTER_EXPERIENCE_FIELDS
 };

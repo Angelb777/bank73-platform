@@ -325,7 +325,7 @@ async function getFinanceCommercialUnits(projectId, tenantKey) {
   }
 
   const [units, ventas] = await Promise.all([
-    Unit.find(unitFilter).select('_id manzana lote estado precioLista modelo').sort({ manzana: 1, lote: 1 }).lean(),
+    Unit.find(unitFilter).select('_id manzana lote estado precioLista modelo recamaras banos areaAbierta areaCerrada').sort({ manzana: 1, lote: 1 }).lean(),
     Venta.find(ventaFilter).select('unitId clienteNombre primerNombre segundoNombre primerApellido segundoApellido apellidoCasada banco valor montoFinanciamientoCPP precioVenta abonoInicial abonoCliente numCPP estatusCPP statusBanco').lean()
   ]);
 
@@ -336,6 +336,11 @@ async function getFinanceCommercialUnits(projectId, tenantKey) {
       unitId: String(u._id),
       lot: [u.manzana, u.lote].filter(Boolean).join('-') || u.lote || u.manzana || '',
       unitLabel: [u.manzana, u.lote].filter(Boolean).join('-') || u.modelo || 'Unidad',
+      modelName: u.modelo || '',
+      bedrooms: toNum(u.recamaras),
+      bathrooms: toNum(u.banos),
+      openAreaM2: toNum(u.areaAbierta),
+      closedAreaM2: toNum(u.areaCerrada),
       commercialStatus: u.estado || '',
       clientName: commercialClientName(venta),
       buyerBank: venta.banco || '',

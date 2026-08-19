@@ -5,7 +5,7 @@
   <title>Portfolio — Bank73</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link href="/css/base.css" rel="stylesheet" />
-  <link href="/css/theme.css?v=requirements-structured-v2" rel="stylesheet" />
+  <link href="/css/theme.css?v=bond-validity-v1" rel="stylesheet" />
   <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
 
   <style>
@@ -1289,6 +1289,26 @@
           <div id="createHousingModels"></div>
           <button id="addCreateHousingModel" class="btn ghost" type="button">+ Anadir modelo</button>
         </div>
+        <div class="create-technical-subsection">
+        <div class="create-section-title">Planos arquitectónicos <span class="create-section-kicker">Documentación técnica</span></div>
+        <div class="create-architectural-plans">
+          <div>
+            <strong>Planta arquitectónica / planos de los modelos</strong>
+            <p>Adjunta aquí los planos o plantas correspondientes a las tipologías del proyecto. Estos mismos archivos se reutilizarán en el requisito 4.</p>
+          </div>
+          <label class="btn ghost" for="createArchitecturalPlans">Adjuntar planos</label>
+          <input id="createArchitecturalPlans" type="file" multiple accept=".pdf,.jpg,.jpeg,.png" hidden>
+          <span id="createArchitecturalPlansName" class="small muted">Sin planos adjuntos</span>
+        </div>
+        </div>
+        <div class="create-technical-subsection">
+        <div class="create-section-title">Seguros y pólizas <span class="create-section-kicker">CAR / Incendio</span></div>
+        <div class="create-insurance-section">
+          <p class="small muted">Registra las pólizas del proyecto. Una póliza global se aplicará a todas las unidades; también puedes limitarla a unidades concretas.</p>
+          <div id="createInsurancePolicies"></div>
+          <button id="addCreateInsurancePolicy" class="btn ghost" type="button">+ Añadir póliza</button>
+        </div>
+        </div>
         <div id="createTechnicalAssessmentSection" style="display:none;">
         <h4>Comprobaciones técnicas para valoración</h4>
         <div class="create-precedent-grid">
@@ -1459,6 +1479,6 @@
   <script src="/js/api.js"></script>
   <script src="/js/banks.js"></script>
   <script src="/js/theme-toggle.js"></script>
-  <script src="/js/portfolio.js?v=requirements-structured-v2"></script>
+  <script src="/js/portfolio.js?v=requirements-29-v1"></script>
 </body>
 </html>

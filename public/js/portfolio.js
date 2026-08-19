@@ -566,16 +566,15 @@
     'Formulario de Debida Diligencia',
     'Manual de Cumplimiento',
     'Estudio hidrológico del río y validación de niveles de inundación en planos aprobados por el MOP',
-    'Preventas netas equivalentes al 50% de la etapa a financiar y cesión suficiente para cubrir la facilidad aprobada',
+    'Preventas netas requeridas de la etapa a financiar y cesión suficiente para cubrir la facilidad aprobada',
     'Certificación inicial del inspector independiente sobre costos, permisos, pólizas y documentos requeridos',
     'Revisión y validación del presupuesto de construcción por la Gerencia de Ingeniería',
     'Contrato de construcción',
     'Póliza CAR por el 100% del valor de construcción, endosada al Banco / Póliza incendio',
-    'Fianza de cumplimiento equivalente al 50% del valor de la etapa',
-    'Fianza de pago equivalente al 25% del valor de la etapa',
+    'Fianza de cumplimiento requerida sobre el valor de la etapa',
+    'Fianza de pago requerida sobre el valor de la etapa',
     'Informe de Inspección de Ingeniería',
     'Revisión y validación del presupuesto de construcción por la Gerencia de Ingeniería',
-    'Planos de anteproyecto firmados por arquitecto e ingeniero',
     'Cuenta Avance'
   ];
   const REQUIREMENT_PROMOTER_FIELDS = [
@@ -587,11 +586,99 @@
   ];
   const createPhaseRequirementsState = new Map();
   const createRequirementFilesState = new Map();
+  let createArchitecturalPlanFilesState = [];
   let createRequirementPromoterDraft = null;
   let createRequirementPromoterOriginal = null;
   let createRequirementLegalDraft = null;
   let createTotalUnitsManuallyEdited = false;
   let createLastSuggestedUnitsTotal = 0;
+
+  function setCreateArchitecturalPlanFiles(files = []) {
+    createArchitecturalPlanFilesState = Array.from(files || []);
+    const text = createArchitecturalPlanFilesState.length
+      ? createArchitecturalPlanFilesState.map(file => file.name).join(', ')
+      : 'Sin planos adjuntos';
+    const technicalLabel = document.getElementById('createArchitecturalPlansName');
+    if (technicalLabel) technicalLabel.textContent = text;
+    document.querySelectorAll('[data-create-architectural-plan-name]').forEach(label => { label.textContent = text; });
+  }
+
+  function createInsuranceUnitOptions(selectedRefs = []) {
+    const selected = new Set((selectedRefs || []).map(String));
+    return collectInitialUnits().map(unit => {
+      const ref = String(unit.code || `${unit.manzana || unit.modelo || ''}-${unit.lote || ''}`).trim();
+      return ref ? `<label><input type="checkbox" data-insurance-unit-ref value="${escapeHtml(ref)}" ${selected.has(ref) ? 'checked' : ''}> ${escapeHtml(ref)}</label>` : '';
+    }).join('') || '<span class="small muted">Define primero las unidades del proyecto.</span>';
+  }
+
+  function createInsurancePolicyRow(policy = {}) {
+    const appliesAll = policy.appliesToAllUnits !== false;
+    return `<div class="insurance-policy-row" data-create-insurance-policy>
+      <button type="button" class="btn btn-ghost btn-xs insurance-policy-remove" data-remove-insurance-policy aria-label="Eliminar póliza">×</button>
+      <label>Tipo<select data-insurance-field="type"><option value="CAR" ${policy.type !== 'INCENDIO' ? 'selected' : ''}>CAR</option><option value="INCENDIO" ${policy.type === 'INCENDIO' ? 'selected' : ''}>Incendio</option></select></label>
+      <label>Aseguradora<input data-insurance-field="insurer" value="${escapeHtml(policy.insurer || '')}"></label>
+      <label>Nº de póliza<input data-insurance-field="policyNumber" value="${escapeHtml(policy.policyNumber || '')}"></label>
+      <label>Suma asegurada<input data-insurance-field="insuredAmount" data-bank-number inputmode="decimal" value="${policy.insuredAmount ? escapeHtml(formatBankNumber(policy.insuredAmount)) : ''}"></label>
+      <label>Fecha de inicio<input data-insurance-field="startDate" type="date" value="${policy.startDate ? String(policy.startDate).slice(0,10) : ''}"></label>
+      <label>Fecha de vencimiento<input data-insurance-field="expiryDate" type="date" value="${policy.expiryDate ? String(policy.expiryDate).slice(0,10) : ''}"></label>
+      <label>Endosada al banco<select data-insurance-field="endorsedToBank"><option value="false" ${policy.endorsedToBank ? '' : 'selected'}>No</option><option value="true" ${policy.endorsedToBank ? 'selected' : ''}>Sí</option></select></label>
+      <label>Banco<input data-insurance-field="bank" value="${escapeHtml(policy.bank || '')}" ${policy.endorsedToBank ? '' : 'disabled'}></label>
+      <label class="insurance-policy-wide">Aplicación<select data-insurance-field="appliesToAllUnits"><option value="true" ${appliesAll ? 'selected' : ''}>Todas las unidades</option><option value="false" ${appliesAll ? '' : 'selected'}>Unidades concretas</option></select></label>
+      <div class="insurance-policy-wide insurance-policy-units" data-insurance-units style="display:${appliesAll ? 'none' : 'grid'}">${createInsuranceUnitOptions(policy.unitRefs || [])}</div>
+      <label class="insurance-policy-wide">Documento<input data-insurance-document type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"><span class="small muted" data-insurance-document-name>${escapeHtml(policy.documentName || 'Sin documento')}</span></label>
+    </div>`;
+  }
+
+  function bindCreateInsurancePolicyRow(row) {
+    bindBankNumberFormatting(row);
+    row.querySelector('[data-remove-insurance-policy]')?.addEventListener('click', () => row.remove());
+    row.querySelector('[data-insurance-field="appliesToAllUnits"]')?.addEventListener('change', event => {
+      row.querySelector('[data-insurance-units]').style.display = event.target.value === 'true' ? 'none' : 'grid';
+    });
+    row.querySelector('[data-insurance-field="endorsedToBank"]')?.addEventListener('change', event => {
+      const bank = row.querySelector('[data-insurance-field="bank"]');
+      bank.disabled = event.target.value !== 'true';
+      if (bank.disabled) bank.value = '';
+    });
+    row.querySelector('[data-insurance-document]')?.addEventListener('change', event => {
+      row.querySelector('[data-insurance-document-name]').textContent = event.target.files?.[0]?.name || 'Sin documento';
+    });
+  }
+
+  function addCreateInsurancePolicy(policy = {}) {
+    const host = document.getElementById('createInsurancePolicies');
+    if (!host) return;
+    host.insertAdjacentHTML('beforeend', createInsurancePolicyRow(policy));
+    bindCreateInsurancePolicyRow(host.lastElementChild);
+  }
+
+  function collectCreateInsurancePolicies({ includeFiles = false } = {}) {
+    return Array.from(document.querySelectorAll('[data-create-insurance-policy]')).map(row => {
+      const get = key => row.querySelector(`[data-insurance-field="${key}"]`)?.value || '';
+      const appliesToAllUnits = get('appliesToAllUnits') !== 'false';
+      const item = {
+        type: get('type') || 'CAR', insurer: get('insurer').trim(), policyNumber: get('policyNumber').trim(),
+        insuredAmount: numberFromCreate(get('insuredAmount')), startDate: get('startDate') || null, expiryDate: get('expiryDate') || null,
+        endorsedToBank: get('endorsedToBank') === 'true', bank: get('bank').trim(), appliesToAllUnits,
+        unitRefs: appliesToAllUnits ? [] : Array.from(row.querySelectorAll('[data-insurance-unit-ref]:checked')).map(input => input.value),
+        documentId: row.dataset.documentId || null,
+        documentName: row.querySelector('[data-insurance-document]')?.files?.[0]?.name || row.querySelector('[data-insurance-document-name]')?.textContent || ''
+      };
+      if (includeFiles) item.__file = row.querySelector('[data-insurance-document]')?.files?.[0] || null;
+      return item;
+    });
+  }
+
+  function refreshCreatePolicyUnitOptions() {
+    document.querySelectorAll('[data-create-insurance-policy]').forEach(row => {
+      const box = row.querySelector('[data-insurance-units]');
+      if (!box) return;
+      const selected = Array.from(box.querySelectorAll('[data-insurance-unit-ref]:checked')).map(input => input.value);
+      box.innerHTML = createInsuranceUnitOptions(selected);
+    });
+  }
+
+  document.getElementById('addCreateInsurancePolicy')?.addEventListener('click', () => addCreateInsurancePolicy());
 
   function syncCreateFundingRequestVisibility() {
     const seeks = fundingModuleEnabled && document.getElementById('pSeeksFinancing')?.value === 'true';
@@ -1091,6 +1178,7 @@
       phasesCount: numberFromCreate(document.getElementById('td-phasesCount')?.value),
       totalUnits: numberFromCreate(document.getElementById('td-totalUnits')?.value),
       notes: document.getElementById('td-notes')?.value?.trim() || '',
+      insurancePolicies: collectCreateInsurancePolicies(),
       assessment: Object.fromEntries(Array.from(document.querySelectorAll('[data-technical-assessment]')).map(input => [input.dataset.technicalAssessment, input.value === '' ? null : input.value === 'true']))
     };
   }
@@ -1530,7 +1618,7 @@
       promoterContributionPct: numberFromCreate(condition.promoterContributionPct)
     };
     const conditionField = ([key, label, type, placeholder]) => {
-      const value = condition[key] || '';
+      const value = condition[key] || (key === 'requiredPresales' ? '50%' : '');
       const attrs = `data-create-phase-condition="${key}" placeholder="${escapeHtml(placeholder || '')}"`;
       if (type === 'textarea') return `<label style="grid-column:1/-1">${label}<textarea ${attrs} rows="2">${escapeHtml(value)}</textarea></label>`;
       return `<label>${label}<input ${attrs} value="${escapeHtml(value)}"></label>`;
@@ -1889,7 +1977,7 @@
     if (number === 10) return document.querySelector('[data-create-precedent="environmentalStudyApproved"]')?.checked ? 'Estudio ambiental marcado como aprobado en Bank73.' : '';
     if (number === 11) return `Fase prevista: ${row?.querySelector('[data-create-phase="name"]')?.value.trim() || `Fase ${phaseIndex + 1}`}`;
     if (number === 12) return [uses.length ? `Usos: ${lineList(uses)}` : '', sources.length ? `Fuentes: ${lineList(sources)}` : ''].filter(Boolean).join('\n');
-    if (number === 16 || number === 29) return technical.assessment?.preliminaryDesign === true || technical.assessment?.approvedPlans === true
+    if (number === 16 && fundingModuleEnabled && document.getElementById('pSeeksFinancing')?.value === 'true') return technical.assessment?.preliminaryDesign === true || technical.assessment?.approvedPlans === true
       ? `Anteproyecto: ${technical.assessment.preliminaryDesign === true ? 'informado' : 'no informado'}; planos aprobados: ${technical.assessment.approvedPlans === true ? 'sí' : 'no informado'}. Bank73 no registra aquí las firmas del arquitecto y el ingeniero.`
       : '';
     if (number === 20) {
@@ -1914,8 +2002,9 @@
     }
     if (number === 21) return conditions.technicalInspector ? `Inspector técnico registrado: ${conditions.technicalInspector}. Este dato no acredita por sí solo la certificación inicial.` : '';
     if (number === 22 || number === 28) return technical.assessment?.constructionBudget === true ? 'Bank73 registra la existencia de un presupuesto de construcción; no consta aquí su validación por la Gerencia de Ingeniería.' : '';
-    if (number === 24) return conditions.insurance ? `Seguros registrados en las condiciones financieras: ${conditions.insurance}` : '';
-    if (number === 25 || number === 26) return conditions.guarantees ? `Garantías registradas en las condiciones financieras: ${conditions.guarantees}` : '';
+    if (number === 24) return technical.insurancePolicies?.length ? `${technical.insurancePolicies.length} póliza(s) CAR/incendio registrada(s) en Datos técnicos.` : '';
+    if (number === 25) return numberFromCreate(conditions.phaseTotal) ? `Valor de la fase: B/. ${formatBankNumber(numberFromCreate(conditions.phaseTotal))}. Fianza de cumplimiento requerida: 50%.` : '';
+    if (number === 26) return numberFromCreate(conditions.phaseTotal) ? `Valor de la fase: B/. ${formatBankNumber(numberFromCreate(conditions.phaseTotal))}. Fianza de pago requerida: 25%.` : '';
     return '';
   }
 
@@ -1929,21 +2018,33 @@
     if (number === 1) return { kind:'budget', projectTotal:numberFromCreate(document.getElementById('fc-projectTotal')?.value), phaseTotal:numberFromCreate(conditions.phaseTotal), uses:row ? collectPhaseLineItems(row, 'planUses') : [] };
     if (number === 2) return { kind:'experience', promoter: Object.fromEntries(REQUIREMENT_PROMOTER_FIELDS.map(([key]) => [key, profile[key] ?? (['countries','banksWorkedWith'].includes(key) ? [] : null)])) };
     if (number === 3) return { kind:'shareholders', shareholders:legal.shareholders || [] };
+    if (number === 4) return { kind:'architecturalPlans', models:collectHousingModels().map(model => ({ name:model.name || '', bedrooms:numberFromCreate(model.bedrooms), bathrooms:numberFromCreate(model.bathrooms), openAreaM2:numberFromCreate(model.openAreaM2), closedAreaM2:numberFromCreate(model.closedAreaM2), unitsCount:numberFromCreate(model.unitsCount) })).filter(model => model.name || model.unitsCount) };
     if (number === 9) return { kind:'legalParties', shareholders:legal.shareholders || [], dignitaries:legal.boardMembers || [] };
     if (number === 12) return { kind:'cashflow', uses:row ? collectPhaseLineItems(row, 'planUses') : [], sources:row ? autoPhaseSourcesForUses(phaseUsesTotal(row), currentPhaseFinancialNumbers(row)) : [] };
     if (number === 20) {
       const data = collectHousingModels().reduce((out, model) => { const states = model.initialStatuses || {}; const marketed = numberFromCreate(states.reservado) + numberFromCreate(states.con_cpp) + numberFromCreate(states.tramite_legal_activado) + numberFromCreate(states.escriturado_traspasado) + numberFromCreate(states.vivienda_entregada); out.total += numberFromCreate(model.unitsCount); out.reserved += numberFromCreate(states.reservado); out.cpp += numberFromCreate(states.con_cpp); out.legal += numberFromCreate(states.tramite_legal_activado); out.deeded += numberFromCreate(states.escriturado_traspasado); out.delivered += numberFromCreate(states.vivienda_entregada); out.saleValue += marketed * numberFromCreate(model.price); return out; }, { total:0,reserved:0,cpp:0,legal:0,deeded:0,delivered:0,saleValue:0 });
       data.presales = data.reserved + data.cpp + data.legal + data.deeded + data.delivered;
       data.presalesPct = data.total ? data.presales / data.total * 100 : 0;
-      return { kind:'presales', ...data, cppAmount:0, requiredPresales:conditions.requiredPresales || '' };
+      const requiredMatch = String(conditions.requiredPresales || '50').replace(',', '.').match(/-?\d+(?:\.\d+)?/);
+      const requiredPresalesPct = Math.max(0, Math.min(100, Number(requiredMatch?.[0] ?? 50)));
+      return { kind:'presales', ...data, cppAmount:0, requiredPresales:conditions.requiredPresales || '50%', requiredPresalesPct };
     }
     if (number === 11) return { kind:'schedule', phaseName:row?.querySelector('[data-create-phase="name"]')?.value || `Fase ${phaseIndex + 1}` };
     if (number === 10) return { kind:'flag', label:'EIA aprobado', value:!!document.querySelector('[data-create-precedent="environmentalStudyApproved"]')?.checked };
-    if (number === 16 || number === 29) return { kind:'plans', preliminaryDesign:technical.assessment?.preliminaryDesign ?? null, approvedPlans:technical.assessment?.approvedPlans ?? null };
+    if (number === 16 && fundingModuleEnabled && document.getElementById('pSeeksFinancing')?.value === 'true') return { kind:'plans', preliminaryDesign:technical.assessment?.preliminaryDesign ?? null, approvedPlans:technical.assessment?.approvedPlans ?? null };
     if (number === 21) return { kind:'inspector', technicalInspector:conditions.technicalInspector || '' };
     if (number === 22 || number === 28) return { kind:'constructionBudget', exists:technical.assessment?.constructionBudget ?? null };
-    if (number === 24) return { kind:'insurance', value:conditions.insurance || '' };
-    if (number === 25 || number === 26) return { kind:'guarantees', value:conditions.guarantees || '' };
+    if (number === 24) return { kind:'insurancePolicies', policies:technical.insurancePolicies || [] };
+    if (number === 25) {
+      const phaseValue = numberFromCreate(conditions.phaseTotal);
+      return { kind:'performanceBond', phaseValue, requiredPct:50, requiredAmount:phaseValue * 0.5, actualAmount:0, bondNumber:'', issuer:'', startDate:null, expiryDate:null, alertDaysBefore:30 };
+    }
+    if (number === 26) {
+      const phaseValue = numberFromCreate(conditions.phaseTotal);
+      return { kind:'paymentBond', phaseValue, requiredPct:25, requiredAmount:phaseValue * 0.25, actualAmount:0, bondNumber:'', issuer:'', startDate:null, expiryDate:null, alertDaysBefore:30 };
+    }
+    if (number === 27) return { kind:'periodicFollowUp', followUpType:'engineeringInspection', periodicityMonths:4, lastRecordDate:null, nextReviewDate:null };
+    if (number === 29) return { kind:'periodicFollowUp', followUpType:'accountAdvance', periodicityMonths:1, lastRecordDate:null, nextReviewDate:null };
     return undefined;
   }
 
@@ -1954,7 +2055,19 @@
       const number = index + 1;
       const current = byNumber.get(number) || {};
       const automatic = createRequirementAutomaticInformation(number, phaseIndex);
-      const structuredData = createRequirementStructuredData(number, phaseIndex);
+      let structuredData = createRequirementStructuredData(number, phaseIndex);
+      if (number === 25 && structuredData && current.structuredData) {
+        const requiredPct = Math.max(0, Math.min(100, Number(current.structuredData.requiredPct ?? 50)));
+        structuredData = { ...structuredData, requiredPct, requiredAmount:structuredData.phaseValue * requiredPct / 100 };
+      }
+      if (number === 26 && structuredData && current.structuredData) {
+        const requiredPct = Math.max(0, Math.min(100, Number(current.structuredData.requiredPct ?? 25)));
+        structuredData = { ...structuredData, requiredPct, requiredAmount:structuredData.phaseValue * requiredPct / 100 };
+      }
+      if ([27, 29].includes(number) && structuredData && current.structuredData) {
+        const defaultMonths = number === 27 ? 4 : 1;
+        structuredData = { ...structuredData, periodicityMonths:Math.max(1, Math.min(120, Math.round(Number(current.structuredData.periodicityMonths) || defaultMonths))) };
+      }
       const useAutomatic = !byNumber.has(number) || current.sourceKey === 'bank73';
       const hasAutomaticSource = Boolean(automatic || structuredData);
       return {
@@ -1964,7 +2077,7 @@
         manualInformation: current.manualInformation || '',
         structuredData,
         sourceKey: useAutomatic ? (hasAutomaticSource ? 'bank73' : 'manual') : (current.sourceKey || 'manual'),
-        sourceLabel: useAutomatic && hasAutomaticSource ? 'Precargado desde Bank73' : 'Entrada manual',
+        sourceLabel: useAutomatic && hasAutomaticSource ? (number === 4 ? 'Contexto desde Bank73' : 'Precargado desde Bank73') : 'Entrada manual',
         status: 'PENDIENTE',
         observations: current.observations || ''
       };
@@ -1990,9 +2103,13 @@
   function createStructuredRequirementHtml(item) {
     const data = item.structuredData || {};
     if (data.kind === 'budget') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric('Total del proyecto',data.projectTotal,'money')}${createRequirementMetric('Presupuesto de fase',data.phaseTotal,'money')}</div><div class="requirement-line-list">${(data.uses || []).map(use => `<div><span>${escapeHtml(use.name || 'Partida')}</span><b>B/. ${escapeHtml(formatBankNumber(use.amount))}</b></div>`).join('')}</div></div>`;
-    if (data.kind === 'presales') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric('Unidades totales',data.total)}${createRequirementMetric('Reservadas',data.reserved)}${createRequirementMetric('Con CPP',data.cpp)}${createRequirementMetric('Trámite legal',data.legal)}${createRequirementMetric('Escrituradas',data.deeded)}${createRequirementMetric('Entregadas',data.delivered)}${createRequirementMetric('Preventas',data.presales)}${createRequirementMetric('% preventa',data.presalesPct,'pct')}${createRequirementMetric('Valor asociado',data.saleValue,'money')}</div></div>`;
+    if (data.kind === 'presales') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric('Unidades totales',data.total)}${createRequirementMetric('Reservadas',data.reserved)}${createRequirementMetric('Con CPP',data.cpp)}${createRequirementMetric('Trámite legal',data.legal)}${createRequirementMetric('Escrituradas',data.deeded)}${createRequirementMetric('Entregadas',data.delivered)}${createRequirementMetric('Preventas',data.presales)}${createRequirementMetric('% preventa actual',data.presalesPct,'pct')}${createRequirementMetric('Valor asociado',data.saleValue,'money')}</div><label class="requirement-presales-target"><span>% de preventas requerido</span><input type="number" min="0" max="100" step="0.1" data-create-required-presales-pct value="${escapeHtml(data.requiredPresalesPct ?? 50)}"><b>%</b></label></div>`;
+    if (data.kind === 'performanceBond') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric('Valor de la fase',data.phaseValue,'money')}<div class="requirement-metric"><span>Importe de fianza requerido</span><strong data-performance-bond-required-amount>B/. ${escapeHtml(formatBankNumber(data.requiredAmount || 0))}</strong></div></div><label class="requirement-presales-target"><span>% de fianza requerido</span><input type="number" min="0" max="100" step="0.1" data-create-performance-bond-pct value="${escapeHtml(data.requiredPct ?? 50)}"><b>%</b></label></div>`;
+    if (data.kind === 'paymentBond') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric('Valor de la fase',data.phaseValue,'money')}<div class="requirement-metric"><span>Importe de fianza de pago requerido</span><strong data-payment-bond-required-amount>B/. ${escapeHtml(formatBankNumber(data.requiredAmount || 0))}</strong></div></div><label class="requirement-presales-target"><span>% de fianza de pago requerido</span><input type="number" min="0" max="100" step="0.1" data-create-payment-bond-pct value="${escapeHtml(data.requiredPct ?? 25)}"><b>%</b></label></div>`;
+    if (data.kind === 'periodicFollowUp') return `<div class="requirement-structured"><label class="requirement-presales-target"><span>Periodicidad del seguimiento</span><input type="number" min="1" max="120" step="1" data-create-follow-up-months="${escapeHtml(item.number)}" value="${escapeHtml(data.periodicityMonths ?? (item.number === 27 ? 4 : 1))}"><b>meses</b></label></div>`;
     if (data.kind === 'experience') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Experiencia del promotor</strong><div class="requirement-profile-grid">${REQUIREMENT_PROMOTER_FIELDS.map(([key,label,type]) => { const value = Array.isArray(data.promoter?.[key]) ? data.promoter[key].join(', ') : (data.promoter?.[key] ?? ''); const field = type === 'yesno' ? `<select data-create-promoter-field="${key}" data-field-type="${type}"><option value="">No definido</option><option value="Sí" ${value === 'Sí' ? 'selected' : ''}>Sí</option><option value="No" ${value === 'No' ? 'selected' : ''}>No</option></select>` : type === 'doclevel' ? `<select data-create-promoter-field="${key}" data-field-type="${type}"><option value="">No definido</option>${['Baja','Media','Alta'].map(option => `<option value="${option}" ${value === option ? 'selected' : ''}>${option}</option>`).join('')}</select>` : `<input data-create-promoter-field="${key}" data-field-type="${type}" ${type === 'number' ? 'type="number" min="0"' : ''} value="${escapeHtml(value)}">`; return `<label><span>${escapeHtml(label)}</span>${field}</label>`; }).join('')}</div></div></div>`;
     if (data.kind === 'shareholders') return `<div class="requirement-structured"><strong>Accionistas</strong><div data-create-legal-rows="shareholder">${createLegalRowsHtml(data.shareholders || [],'shareholder')}</div><button class="btn btn-ghost btn-xs" type="button" data-add-create-legal-row="shareholder">+ Accionista</button></div>`;
+    if (data.kind === 'architecturalPlans') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Modelos/tipologías — información de contexto</strong><div class="requirement-model-grid">${(data.models || []).map(model => `<div><strong>${escapeHtml(model.name || 'Modelo')}</strong><span>${escapeHtml(String(model.unitsCount || 0))} unidades · ${escapeHtml(String(model.bedrooms || 0))} rec. · ${escapeHtml(String(model.bathrooms || 0))} baños</span><span>${escapeHtml(formatBankNumber(model.openAreaM2 || 0))} m² abiertos · ${escapeHtml(formatBankNumber(model.closedAreaM2 || 0))} m² cerrados</span></div>`).join('') || '<span class="requirement-empty">Sin modelos informados.</span>'}</div><p class="requirement-context-warning">Las tipologías son solo contexto y no acreditan la existencia de planos o plantas arquitectónicas.</p></div></div>`;
     if (data.kind === 'legalParties') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Accionistas e identificación</strong><div data-create-legal-rows="shareholder-id">${createLegalRowsHtml(data.shareholders || [],'shareholder-id')}</div><button class="btn btn-ghost btn-xs" type="button" data-add-create-legal-row="shareholder-id">+ Accionista</button></div><div class="requirement-structured-section"><strong>Dignatarios</strong><div data-create-legal-rows="dignitary">${createLegalRowsHtml(data.dignitaries || [],'dignitary')}</div><button class="btn btn-ghost btn-xs" type="button" data-add-create-legal-row="dignitary">+ Dignatario</button></div></div>`;
     if (data.kind === 'cashflow') return `<div class="requirement-structured">${['uses','sources'].map(key => `<div class="requirement-structured-section"><strong>${key === 'uses' ? 'Usos' : 'Fuentes'}</strong><div class="requirement-line-list">${(data[key] || []).map(line => `<div><span>${escapeHtml(line.name || 'Partida')}</span><b>B/. ${escapeHtml(formatBankNumber(line.amount))}</b></div>`).join('')}</div></div>`).join('')}</div>`;
     if (data.kind === 'schedule') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric('Fase',data.phaseName || '—')}</div></div>`;
@@ -2000,6 +2117,10 @@
     if (data.kind === 'flag') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric(data.label || 'Estado',data.value ? 'Sí' : 'No')}</div></div>`;
     if (data.kind === 'inspector') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric('Inspector técnico',data.technicalInspector || 'No informado')}</div></div>`;
     if (data.kind === 'constructionBudget') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric('Presupuesto de construcción registrado',data.exists === true ? 'Sí' : 'No informado')}</div></div>`;
+    if (data.kind === 'insurancePolicies') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Pólizas registradas en Datos técnicos</strong><div style="display:grid;gap:8px;margin-top:8px;">${(data.policies || []).map(policy => {
+      const coverage = policy.appliesToAllUnits !== false ? 'Todas las unidades' : ((policy.unitRefs || []).join(', ') || 'Sin unidades seleccionadas');
+      return `<div class="insurance-policy-card ${policy.endorsedToBank ? 'is-endorsed' : 'is-not-endorsed'}"><div style="display:flex;justify-content:space-between;gap:8px;"><strong>${escapeHtml(policy.type || 'CAR')} · ${escapeHtml(policy.policyNumber || 'Sin número')}</strong><span class="insurance-endorsement ${policy.endorsedToBank ? 'yes' : 'no'}">${policy.endorsedToBank ? '✓ Endosada al banco' : '⚠ No endosada al banco'}</span></div><div class="insurance-policy-card-grid"><div><span>Aseguradora</span><strong>${escapeHtml(policy.insurer || 'No informada')}</strong></div><div><span>Suma asegurada</span><strong>${escapeHtml(formatBankNumber(policy.insuredAmount || 0))}</strong></div><div><span>Vencimiento</span><strong>${escapeHtml(policy.expiryDate ? String(policy.expiryDate).slice(0,10) : 'No informado')}</strong></div><div><span>Banco</span><strong>${escapeHtml(policy.bank || 'No informado')}</strong></div><div><span>Cobertura</span><strong>${escapeHtml(coverage)}</strong></div><div><span>Documento</span><strong>${escapeHtml(policy.documentName || 'Sin documento')}</strong></div></div></div>`;
+    }).join('') || '<span class="requirement-empty">Sin pólizas. Añádelas en Datos técnicos.</span>'}</div></div></div>`;
     if (data.kind === 'insurance' || data.kind === 'guarantees') return `<div class="requirement-structured"><div class="requirement-metrics">${createRequirementMetric(data.kind === 'insurance' ? 'Seguros registrados' : 'Garantías registradas',data.value || 'No informado')}</div></div>`;
     return '';
   }
@@ -2088,6 +2209,15 @@
       if (event.target.matches('[data-create-promoter-field],[data-create-legal-field]')) syncCreateRequirementStructuredDrafts(modal);
     });
     modal.addEventListener('click', event => {
+      if (event.target.closest('[data-add-policy-from-requirement]')) {
+        syncCreateRequirementStructuredDrafts(modal);
+        addCreateInsurancePolicy();
+        setCreateRequirementsFullscreen(modal, false);
+        modal.style.display = 'none';
+        setCreateStep('technical');
+        document.getElementById('createInsurancePolicies')?.scrollIntoView({ behavior:'smooth', block:'center' });
+        return;
+      }
       const remove = event.target.closest('[data-remove-create-legal-row]');
       if (remove) {
         remove.closest('[data-create-legal-row]')?.remove();
@@ -2129,16 +2259,15 @@
     sourceSelect.innerHTML = otherPhases.map(item => `<option value="${item.index}">${escapeHtml(item.name)}</option>`).join('');
     modal.querySelector('[data-create-requirements-list]').innerHTML = requirements.map(item => {
       const fileKey = `${phaseIndex}:${item.number}`;
-      const files = createRequirementFilesState.get(fileKey) || [];
+      const files = item.number === 4 ? createArchitecturalPlanFilesState : (createRequirementFilesState.get(fileKey) || []);
       const isManual = item.sourceKey !== 'bank73';
       const guidance = requirementInputGuidance(item.title);
       return `<article class="requirement-card" data-create-requirement="${item.number}">
         <div class="requirement-card-heading"><strong class="requirement-title"><span>${item.number}</span>${escapeHtml(item.title)}</strong><span class="requirement-source ${isManual ? 'is-manual' : 'is-bank73'}">${escapeHtml(item.sourceLabel)}</span></div>
         ${createStructuredRequirementHtml(item)}
-        ${isManual ? `<div class="requirement-help">${escapeHtml(guidance)}</div>` : ''}
-        <label class="requirement-field"><span>${item.number === 2 ? 'Experiencia del contratista' : 'Información manual o adicional'}</span><textarea rows="3" data-create-requirement-information placeholder="${escapeHtml(guidance)}">${escapeHtml(item.manualInformation || '')}</textarea></label>
-        <div class="requirement-documents-row"><label class="btn btn-ghost btn-xs requirement-upload-button">Adjuntar documentos<input type="file" multiple data-create-requirement-files="${item.number}"></label>
-        <span class="requirement-file-name" data-create-requirement-file-name>${files.length ? files.map(file => escapeHtml(file.name)).join(', ') : 'Sin archivos seleccionados'}</span></div>
+        <div class="requirement-help">${escapeHtml(guidance)}</div>
+        <label class="requirement-field"><span>${item.number === 2 ? 'Experiencia del contratista' : 'Información manual o adicional'}</span><textarea rows="3" data-create-requirement-information placeholder="Introduce información adicional…">${escapeHtml(item.manualInformation || '')}</textarea></label>
+        ${item.number === 24 ? '<div class="requirement-documents-row"><button class="btn btn-ghost btn-xs" type="button" data-add-policy-from-requirement>+ Añadir póliza en Datos técnicos</button><span class="small muted">La póliza y su documento se guardarán en una única fuente.</span></div>' : `<div class="requirement-documents-row"><label class="btn btn-ghost btn-xs requirement-upload-button">${item.number === 4 ? 'Adjuntar planos' : 'Adjuntar documentos'}<input type="file" multiple ${item.number === 4 ? 'data-create-architectural-plan-files accept=".pdf,.jpg,.jpeg,.png"' : `data-create-requirement-files="${item.number}"`}></label><span class="requirement-file-name" ${item.number === 4 ? 'data-create-architectural-plan-name' : 'data-create-requirement-file-name'}>${files.length ? files.map(file => escapeHtml(file.name)).join(', ') : (item.number === 4 ? 'Sin planos adjuntos' : 'Sin archivos seleccionados')}</span></div>`}
       </article>`;
     }).join('');
     modal.querySelectorAll('[data-create-requirement-information]').forEach(input => {
@@ -2148,6 +2277,49 @@
         if (item) item.manualInformation = input.value;
       });
     });
+    modal.querySelector('[data-create-required-presales-pct]')?.addEventListener('input', event => {
+      const pct = Math.max(0, Math.min(100, Number(event.target.value || 0)));
+      const phaseCondition = document.querySelector(`[data-create-phase-row="${phaseIndex}"] [data-create-phase-condition="requiredPresales"]`);
+      if (phaseCondition) phaseCondition.value = `${pct}%`;
+      const requirement = requirements.find(entry => entry.number === 20);
+      if (requirement?.structuredData) {
+        requirement.structuredData.requiredPresalesPct = pct;
+        requirement.structuredData.requiredPresales = `${pct}%`;
+      }
+      createPhaseRequirementsState.set(phaseIndex, requirements);
+    });
+    modal.querySelector('[data-create-performance-bond-pct]')?.addEventListener('input', event => {
+      const pct = Math.max(0, Math.min(100, Number(event.target.value || 0)));
+      const requirement = requirements.find(entry => entry.number === 25);
+      if (requirement?.structuredData) {
+        requirement.structuredData.requiredPct = pct;
+        requirement.structuredData.requiredAmount = Number(requirement.structuredData.phaseValue || 0) * pct / 100;
+        requirement.information = requirement.structuredData.phaseValue ? `Valor de la fase: B/. ${formatBankNumber(requirement.structuredData.phaseValue)}. Fianza de cumplimiento requerida: ${pct}%.` : '';
+        const card = event.target.closest('[data-create-requirement]');
+        const amount = card?.querySelector('[data-performance-bond-required-amount]');
+        if (amount) amount.textContent = `B/. ${formatBankNumber(requirement.structuredData.requiredAmount)}`;
+      }
+      createPhaseRequirementsState.set(phaseIndex, requirements);
+    });
+    modal.querySelector('[data-create-payment-bond-pct]')?.addEventListener('input', event => {
+      const pct = Math.max(0, Math.min(100, Number(event.target.value || 0)));
+      const requirement = requirements.find(entry => entry.number === 26);
+      if (requirement?.structuredData) {
+        requirement.structuredData.requiredPct = pct;
+        requirement.structuredData.requiredAmount = Number(requirement.structuredData.phaseValue || 0) * pct / 100;
+        requirement.information = requirement.structuredData.phaseValue ? `Valor de la fase: B/. ${formatBankNumber(requirement.structuredData.phaseValue)}. Fianza de pago requerida: ${pct}%.` : '';
+        const card = event.target.closest('[data-create-requirement]');
+        const amount = card?.querySelector('[data-payment-bond-required-amount]');
+        if (amount) amount.textContent = `B/. ${formatBankNumber(requirement.structuredData.requiredAmount)}`;
+      }
+      createPhaseRequirementsState.set(phaseIndex, requirements);
+    });
+    modal.querySelectorAll('[data-create-follow-up-months]').forEach(input => input.addEventListener('input', event => {
+      const number = Number(event.target.dataset.createFollowUpMonths);
+      const requirement = requirements.find(entry => entry.number === number);
+      if (requirement?.structuredData) requirement.structuredData.periodicityMonths = Math.max(1, Math.min(120, Math.round(Number(event.target.value) || (number === 27 ? 4 : 1))));
+      createPhaseRequirementsState.set(phaseIndex, requirements);
+    }));
     modal.querySelector('[data-copy-create-requirements]').onclick = () => {
       const sourceIndex = Number(sourceSelect.value);
       if (!Number.isInteger(sourceIndex)) return;
@@ -2168,6 +2340,9 @@
         const label = input.closest('[data-create-requirement]').querySelector('[data-create-requirement-file-name]');
         if (label) label.textContent = files.length ? files.map(file => file.name).join(', ') : 'Sin archivos';
       });
+    });
+    modal.querySelector('[data-create-architectural-plan-files]')?.addEventListener('change', event => {
+      setCreateArchitecturalPlanFiles(event.target.files);
     });
     modal.style.display = 'flex';
   }
@@ -2222,21 +2397,27 @@
     const row = createHousingModels?.lastElementChild;
     if (row) syncCreateUnitsPreview(row);
     syncTechnicalUnitsFromModels();
+    refreshCreatePolicyUnitOptions();
+  });
+  document.getElementById('createArchitecturalPlans')?.addEventListener('change', event => {
+    setCreateArchitecturalPlanFiles(event.target.files);
   });
   [createBoardMembers, createShareholders, createHousingModels].forEach(container => {
     container?.addEventListener('click', event => {
       event.target.closest('[data-remove-create-row]')?.closest('.create-repeat-row')?.remove();
       syncTechnicalUnitsFromModels();
       validateCreateModelStatuses();
+      refreshCreatePolicyUnitOptions();
     });
   });
   createHousingModels?.addEventListener('input', event => {
     if (event.target?.matches?.('[data-create-unit]')) return;
-    syncTechnicalUnitsFromModels();
+      syncTechnicalUnitsFromModels();
     createHousingModels.querySelectorAll('[data-create-model-row]').forEach(row => {
       syncCreateModelStatusRow(row, { autoFill: true });
       syncCreateUnitsPreview(row);
     });
+    refreshCreatePolicyUnitOptions();
   });
   createHousingModels?.addEventListener('change', event => {
     const unitStatus = event.target?.matches?.('[data-create-unit="estado"]') ? event.target : null;
@@ -2676,6 +2857,7 @@
           const checklistFiles = Array.from(document.querySelectorAll('[data-create-checklist-file]'))
             .flatMap(input => Array.from(input.files || []).map(file => ({ key: input.dataset.createChecklistFile, file })))
             .filter(item => item.key && item.file);
+          const insurancePoliciesWithFiles = collectCreateInsurancePolicies({ includeFiles: true });
 
           const payload = {
             name,
@@ -2738,6 +2920,50 @@
             }
             if (uploadFailures.length) alert(`Proyecto creado, pero no se pudieron adjuntar: ${uploadFailures.join(', ')}.`);
           }
+          if (createdProject?._id && createArchitecturalPlanFilesState.length) {
+            const uploadFailures = [];
+            for (const file of createArchitecturalPlanFilesState) {
+              const fd = new FormData();
+              fd.append('files', file);
+              fd.append('projectId', createdProject._id);
+              fd.append('category', 'architecturalPlans');
+              fd.append('folder', 'tecnico');
+              try { await API.upload('/api/documents/upload?category=architecturalPlans', fd); }
+              catch (uploadErr) { console.error(uploadErr); uploadFailures.push(file.name); }
+            }
+            if (uploadFailures.length) alert(`Proyecto creado, pero no se pudieron adjuntar estos planos: ${uploadFailures.join(', ')}.`);
+          }
+          if (createdProject?._id && insurancePoliciesWithFiles.length) {
+            const savedPolicies = [];
+            const uploadFailures = [];
+            for (const sourcePolicy of insurancePoliciesWithFiles) {
+              const { __file, ...policy } = sourcePolicy;
+              if (__file) {
+                const fd = new FormData();
+                fd.append('files', __file);
+                fd.append('projectId', createdProject._id);
+                fd.append('category', 'insurancePolicy');
+                fd.append('folder', 'tecnico');
+                try {
+                  const uploaded = await API.upload('/api/documents/upload?category=insurancePolicy', fd);
+                  const document = Array.isArray(uploaded) ? uploaded[0] : uploaded;
+                  policy.documentId = document?._id || null;
+                  policy.documentName = document?.originalname || __file.name;
+                } catch (uploadErr) {
+                  console.error(uploadErr);
+                  uploadFailures.push(__file.name);
+                }
+              }
+              savedPolicies.push(policy);
+            }
+            try {
+              await API.put(`/api/projects/${createdProject._id}/insurance-policies`, { insurancePolicies: savedPolicies });
+            } catch (policyErr) {
+              console.error(policyErr);
+              alert('Proyecto creado, pero no se pudieron guardar las pólizas.');
+            }
+            if (uploadFailures.length) alert(`Proyecto creado, pero no se pudieron adjuntar estas pólizas: ${uploadFailures.join(', ')}.`);
+          }
           if (createdProject?._id && createRequirementFilesState.size) {
             const requirementIds = createdProject.initialRequirementIds || {};
             const phaseIds = createdProject.initialFinancePhaseIds || {};
@@ -2787,10 +3013,13 @@
           if (createBoardMembers) createBoardMembers.innerHTML = '';
           if (createShareholders) createShareholders.innerHTML = '';
           if (createHousingModels) createHousingModels.innerHTML = '';
+          const createInsurancePolicies = document.getElementById('createInsurancePolicies');
+          if (createInsurancePolicies) createInsurancePolicies.innerHTML = '';
           if (createFinancePhases) createFinancePhases.innerHTML = '';
           if (createFinanceLines) createFinanceLines.innerHTML = '';
           createPhaseRequirementsState.clear();
           createRequirementFilesState.clear();
+          setCreateArchitecturalPlanFiles([]);
           createRequirementPromoterDraft = null;
           createRequirementPromoterOriginal = null;
           createRequirementLegalDraft = null;
@@ -2806,6 +3035,8 @@
             const name = upload?.querySelector('[data-create-checklist-file-name]');
             if (name) name.textContent = 'Sin archivos';
           });
+          const architecturalPlansInput = document.getElementById('createArchitecturalPlans');
+          if (architecturalPlansInput) architecturalPlansInput.value = '';
           const createPermitTemplate = document.getElementById('createPermitTemplate');
           if (createPermitTemplate) createPermitTemplate.value = '';
           renderCreatePermitItems();
