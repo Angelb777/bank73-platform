@@ -163,10 +163,14 @@ html[data-brand='cajadeahorros'] .fab { background:var(--brand-700) !important; 
 @media (max-width:720px) {
   html[data-brand='cajadeahorros'] body.bg-gradient .brand-panel .brand-logo[data-brand-logo='dark'] {
     content:url('/assets/brands/Caja%20de%20Ahorros/logos/caja-ahorros-logo-estrecho-blanco.svg');
-    width:min(360px,88%);
+    display:block;
+    width:min(300px,76%);
     height:auto;
-    max-width:88%;
+    max-width:76%;
+    margin-inline:auto;
   }
+  html[data-brand='cajadeahorros'] body.bg-gradient .brand-panel .brand-kpis { margin-top:16px; }
+  html[data-brand='cajadeahorros'] body.bg-gradient .brand-panel .brand-footer { margin-top:20px; }
 }
 
 /* Refinement v2: Caja atmosphere across the authenticated application. */

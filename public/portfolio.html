@@ -969,6 +969,37 @@
       .funding-detail-kpis,.funding-risk-grid { grid-template-columns:1fr; }
       .funding-detail-interest { position:static; }
     }
+
+    /* Controles del app bar: una misma altura visual, conservando sus anchos naturales. */
+    .topbar-right { --portfolio-appbar-control-height:40px; }
+    .topbar-right > button {
+      box-sizing:border-box;
+      height:var(--portfolio-appbar-control-height) !important;
+      min-height:var(--portfolio-appbar-control-height) !important;
+      max-height:var(--portfolio-appbar-control-height) !important;
+      margin-block:0;
+    }
+    .topbar-right .dashboard-nav-button {
+      --dashboard-button-size:var(--portfolio-appbar-control-height);
+      --dashboard-icon-size:20px;
+    }
+    .topbar-right #logoutBtn {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      padding-block:0;
+      line-height:1;
+    }
+    @media (max-width:720px) {
+      .topbar-right { --portfolio-appbar-control-height:36px; }
+      .topbar-right .filter-button,
+      .topbar-right .profile-button,
+      .topbar-right .theme-toggle,
+      .topbar-right .dashboard-nav-button {
+        width:var(--portfolio-appbar-control-height) !important;
+        min-width:var(--portfolio-appbar-control-height) !important;
+      }
+    }
   </style>
   <link href="/css/brands.css?v=2" rel="stylesheet" />
 </head>
