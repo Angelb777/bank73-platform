@@ -287,6 +287,14 @@ app.get('/', (req, res) => {
   res.sendFile(file);
 });
 
+// White-label frontend aliases: serve the same pages; branding is selected client-side.
+app.get('/cajadeahorros', (_req, res) => res.sendFile(path.join(__dirname, 'public/login.html')));
+app.get('/cajadeahorros/login', (_req, res) => res.sendFile(path.join(__dirname, 'public/login.html')));
+app.get('/cajadeahorros/register', (_req, res) => res.sendFile(path.join(__dirname, 'public/register.html')));
+app.get('/cajadeahorros/dashboard', (_req, res) => res.sendFile(path.join(__dirname, 'public/dashboard.html')));
+app.get('/cajadeahorros/portfolio', (_req, res) => res.sendFile(path.join(__dirname, 'public/portfolio.html')));
+app.get('/cajadeahorros/project', (_req, res) => res.sendFile(path.join(__dirname, 'public/project.html')));
+
 app.get('/dashboard', (_req, res) => res.sendFile(path.join(__dirname, 'public/dashboard.html')));
 app.get('/portfolio', (_req, res) => res.sendFile(path.join(__dirname, 'public/portfolio.html')));
 app.get('/project', (_req, res) => res.sendFile(path.join(__dirname, 'public/project.html')));

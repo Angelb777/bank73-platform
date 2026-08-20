@@ -1,5 +1,6 @@
 (function () {
-  const STORAGE_KEY = 'theme';
+  const brand = document.documentElement.dataset.brand || 'bank73';
+  const STORAGE_KEY = brand === 'bank73' ? 'theme' : `theme:${brand}`;
   const DARK = 'dark';
   const LIGHT = 'light';
 

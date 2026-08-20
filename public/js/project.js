@@ -9946,7 +9946,7 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
   }
 
   const rows = alerts.map(a => `
-    <div style="
+    <div class="finance-expiry-alert-row" style="
       border:1px solid #fecaca;
       background:#fff1f2;
       border-radius:14px;
@@ -9967,7 +9967,7 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
   openModal(
   'Vencimientos financieros próximos',
   `
-    <div style="
+    <div class="finance-expiry-alert-shell" style="
       border:1px solid rgba(220,38,38,.28);
       border-left:7px solid #dc2626;
       border-radius:22px;
@@ -9976,15 +9976,15 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
         linear-gradient(135deg, #fff7f7 0%, #ffffff 55%, #f8fafc 100%);
       box-shadow:0 18px 45px rgba(15,23,42,.12);
     ">
-      <div style="
+      <div class="finance-expiry-alert-heading" style="
         display:flex;
         align-items:flex-start;
         justify-content:space-between;
         gap:18px;
         margin-bottom:18px;
       ">
-        <div>
-          <div style="
+        <div class="finance-expiry-alert-copy">
+          <div class="finance-expiry-alert-eyebrow" style="
             font-size:13px;
             font-weight:800;
             letter-spacing:.08em;
@@ -9995,7 +9995,7 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
             Control de riesgo financiero
           </div>
 
-          <div style="
+          <div class="finance-expiry-alert-title" style="
             font-size:24px;
             line-height:1.15;
             font-weight:900;
@@ -10004,7 +10004,7 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
             Vencimientos próximos
           </div>
 
-          <div style="
+          <div class="finance-expiry-alert-subtitle" style="
             margin-top:7px;
             color:#64748b;
             font-size:14px;
@@ -10013,7 +10013,7 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
           </div>
         </div>
 
-        <div style="
+        <div class="finance-expiry-alert-icon" style="
           min-width:58px;
           height:58px;
           border-radius:18px;
@@ -10030,7 +10030,7 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
 
       <div style="display:grid;gap:12px;">
         ${alerts.map(a => `
-          <div style="
+          <div class="finance-expiry-alert-item" style="
             border:1px solid #fecaca;
             background:rgba(255,241,242,.82);
             border-radius:18px;
@@ -10041,7 +10041,7 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
             align-items:center;
           ">
             <div>
-              <div style="
+              <div class="finance-expiry-alert-item-title" style="
                 font-size:17px;
                 font-weight:900;
                 color:#991b1b;
@@ -10061,7 +10061,7 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
                     : `Unidad ${a.unit}`}
               </div>
 
-              <div style="
+              <div class="finance-expiry-alert-item-meta" style="
                 margin-top:6px;
                 color:#7f1d1d;
                 font-size:14px;
@@ -10081,7 +10081,7 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
               ` : ''}
             </div>
 
-            <div style="
+            <div class="finance-expiry-alert-days" style="
               min-width:112px;
               text-align:center;
               background:#111827;

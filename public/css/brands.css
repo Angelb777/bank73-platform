@@ -1,0 +1,420 @@
+/* White-label tokens. Unscoped Bank73 styles remain unchanged. */
+@font-face { font-family:'Poppins Caja'; src:url('/assets/brands/Caja%20de%20Ahorros/fonts/Poppins-Light.ttf') format('truetype'); font-weight:300; font-display:swap; }
+@font-face { font-family:'Poppins Caja'; src:url('/assets/brands/Caja%20de%20Ahorros/fonts/Poppins-Regular.ttf') format('truetype'); font-weight:400; font-display:swap; }
+@font-face { font-family:'Poppins Caja'; src:url('/assets/brands/Caja%20de%20Ahorros/fonts/Poppins-Medium.ttf') format('truetype'); font-weight:500; font-display:swap; }
+@font-face { font-family:'Poppins Caja'; src:url('/assets/brands/Caja%20de%20Ahorros/fonts/Poppins-SemiBold.ttf') format('truetype'); font-weight:600; font-display:swap; }
+@font-face { font-family:'Poppins Caja'; src:url('/assets/brands/Caja%20de%20Ahorros/fonts/Poppins-Bold.ttf') format('truetype'); font-weight:700; font-display:swap; }
+
+html[data-brand='cajadeahorros'] {
+  --brand-50:#eaf5ff; --brand-100:#c6e4ff; --brand-200:#9eb9d1; --brand-300:#7cc1ff; --brand-400:#58b0ff;
+  --brand-500:#2f92eb; --brand-600:#1370c2; --brand-700:#005199; --brand-800:#003b70; --brand-900:#002647;
+  --gold-100:#fbf3d6; --gold-200:#f7e8b7; --gold-300:#f2dc97; --gold-400:#ecbc6b; --gold-500:#e2b73a;
+  --gold-600:#bc9826; --gold-700:#9a7c1d; --gold-800:#7a6217; --gold-900:#5a4912;
+  --teal-100:#def4f1; --teal-200:#bfeae6; --teal-300:#93ddd8; --teal-400:#5ecdc6; --teal-500:#25b5ac;
+  --teal-600:#1b928d; --teal-700:#15706d; --teal-800:#114f4f; --teal-900:#0d3b3b;
+  --amiga-orange-100:#fde3d2; --amiga-orange-200:#fccfb1; --amiga-orange-300:#fab68a; --amiga-orange-400:#f59758;
+  --amiga-orange-500:#ed7b22; --amiga-orange-600:#c25e1a; --amiga-orange-700:#9a4a14; --amiga-orange-800:#7a3a10; --amiga-orange-900:#5a2a0b;
+  --amiga-blue-100:#dae8f8; --amiga-blue-200:#b6d5f5; --amiga-blue-300:#8bbef0; --amiga-blue-400:#5ba1e8;
+  --amiga-blue-500:#2782da; --amiga-blue-600:#1664b6; --amiga-blue-700:#0e4a8c; --amiga-blue-800:#073564; --amiga-blue-900:#052240;
+  --neutral-0:#fff; --neutral-50:#f7f8fa; --neutral-100:#eef1f4; --neutral-200:#e1e5eb; --neutral-300:#c9d0d9;
+  --neutral-400:#9ba3ae; --neutral-500:#6c7480; --neutral-600:#4b525c; --neutral-700:#333941; --neutral-800:#1f242b; --neutral-900:#0f1217;
+  --info-500:#1f8ad0; --success-500:#2e9e50; --warning-500:#e59a1a; --danger-500:#d8332e;
+  --brand-opacity-100:rgba(0,81,153,1); --brand-opacity-72:rgba(0,81,153,.72); --brand-opacity-60:rgba(0,81,153,.6);
+  --brand-opacity-50:rgba(0,81,153,.5); --brand-opacity-20:rgba(0,81,153,.2); --brand-opacity-10:rgba(0,81,153,.1);
+  --radius-sm:6px; --radius-md:10px; --radius-lg:24px; --radius-xl:32px; --radius-pill:100px;
+  --primary:var(--brand-500); --ok:var(--success-500); --warn:var(--warning-500); --danger:var(--danger-500);
+  --bg:var(--neutral-900); --bg1:var(--neutral-900); --bg2:var(--brand-900); --panel:var(--neutral-800); --panel-2:var(--neutral-700);
+  --card:var(--neutral-800); --card-bg:var(--neutral-800); --text:var(--neutral-50); --muted:var(--neutral-400); --text-muted:var(--neutral-400);
+  --border:rgba(198,228,255,.18); --card-border:rgba(198,228,255,.14); --input-bg:rgba(255,255,255,.055);
+  --input-border:rgba(198,228,255,.24); --btn-bg:var(--brand-700); --btn-text:var(--neutral-0); --progress-bar:var(--teal-500);
+  --shadow:0 12px 32px rgba(0,38,71,.28);
+  --admin-bg-1:var(--neutral-900); --admin-bg-2:var(--brand-900);
+  --admin-panel:rgba(31,36,43,.86); --admin-panel-2:rgba(31,36,43,.64);
+  --admin-border:rgba(198,228,255,.16); --admin-border-strong:rgba(198,228,255,.3);
+  --admin-text:var(--neutral-50); --admin-muted:var(--neutral-400);
+  --admin-blue:var(--brand-500); --admin-blue-2:var(--brand-300);
+  --admin-green:var(--success-500); --admin-red:var(--danger-500); --admin-amber:var(--warning-500);
+  --admin-radius:var(--radius-lg);
+  font-family:'Poppins Caja',sans-serif;
+}
+
+html[data-brand='cajadeahorros'] body,
+html[data-brand='cajadeahorros'] button,
+html[data-brand='cajadeahorros'] input,
+html[data-brand='cajadeahorros'] select,
+html[data-brand='cajadeahorros'] textarea { font-family:'Poppins Caja',sans-serif; }
+
+html[data-brand='cajadeahorros'] body { background-color:var(--bg); color:var(--text); }
+html[data-brand='cajadeahorros'] body.bg-gradient {
+  background:radial-gradient(900px 620px at 12% 16%,var(--brand-opacity-50),transparent 62%),
+    radial-gradient(760px 560px at 92% 88%,rgba(37,181,172,.16),transparent 58%),
+    linear-gradient(145deg,var(--neutral-900),var(--brand-900));
+}
+html[data-brand='cajadeahorros'] .topbar,
+html[data-brand='cajadeahorros'] .site-header {
+  background:rgba(0,38,71,.9) !important; border-color:var(--brand-opacity-20) !important;
+  color:var(--neutral-0); box-shadow:0 8px 24px rgba(0,38,71,.2);
+}
+html[data-brand='cajadeahorros'] .topbar .brand { display:flex; align-items:center; gap:10px; }
+html[data-brand='cajadeahorros'] .topbar .brand::before {
+  content:''; display:inline-block; flex:0 0 30px; width:30px; height:30px;
+  background:center/contain no-repeat url('/assets/brands/Caja%20de%20Ahorros/logos/caja-ahorros-symbol-blanco.svg');
+}
+html[data-brand='cajadeahorros'] .brand-panel {
+  background:radial-gradient(circle at 24% 16%,rgba(124,193,255,.25),transparent 34%),linear-gradient(145deg,var(--brand-700),var(--brand-900));
+  border-color:var(--brand-opacity-50); border-radius:var(--radius-lg);
+}
+html[data-brand='cajadeahorros'] .brand-panel::after { background:radial-gradient(600px 300px at 50% 0%,rgba(88,176,255,.28),transparent 60%); }
+html[data-brand='cajadeahorros'] .brand-logo {
+  width:min(320px,82%); height:180px; max-width:82%; object-fit:contain; filter:drop-shadow(0 10px 24px rgba(0,38,71,.24));
+}
+html[data-brand='cajadeahorros'] .glass,
+html[data-brand='cajadeahorros'] .card,
+html[data-brand='cajadeahorros'] .kpi,
+html[data-brand='cajadeahorros'] .section,
+html[data-brand='cajadeahorros'] .phase,
+html[data-brand='cajadeahorros'] .fin-card,
+html[data-brand='cajadeahorros'] .unit-card,
+html[data-brand='cajadeahorros'] .summary-block,
+html[data-brand='cajadeahorros'] .summary-chart-card { border-color:var(--card-border); border-radius:var(--radius-md); }
+html[data-brand='cajadeahorros'] .login-card,
+html[data-brand='cajadeahorros'] .modal,
+html[data-brand='cajadeahorros'] .create-modal,
+html[data-brand='cajadeahorros'] [role='dialog'] { border-radius:var(--radius-lg); }
+html[data-brand='cajadeahorros'] body:not(.light-theme) .modal { background:var(--neutral-800); color:var(--neutral-50); border-color:var(--card-border); }
+html[data-brand='cajadeahorros'] button,
+html[data-brand='cajadeahorros'] .btn,
+html[data-brand='cajadeahorros'] input,
+html[data-brand='cajadeahorros'] select,
+html[data-brand='cajadeahorros'] textarea { border-radius:var(--radius-sm); }
+html[data-brand='cajadeahorros'] .btn.primary,
+html[data-brand='cajadeahorros'] .btn-primary,
+html[data-brand='cajadeahorros'] button.primary,
+html[data-brand='cajadeahorros'] .admin-tab.active,
+html[data-brand='cajadeahorros'] .tabs .tab.active,
+html[data-brand='cajadeahorros'] .tab.active {
+  background:var(--brand-700) !important; border-color:var(--brand-700) !important; color:var(--neutral-0) !important;
+}
+html[data-brand='cajadeahorros'] .btn.primary:hover,
+html[data-brand='cajadeahorros'] .btn-primary:hover,
+html[data-brand='cajadeahorros'] button.primary:hover { background:var(--brand-800) !important; border-color:var(--brand-800) !important; }
+html[data-brand='cajadeahorros'] .link,
+html[data-brand='cajadeahorros'] a:not(.btn):not(.nav-link) { color:var(--brand-300); }
+html[data-brand='cajadeahorros'] .badge,
+html[data-brand='cajadeahorros'] .chip,
+html[data-brand='cajadeahorros'] .kpi-pill,
+html[data-brand='cajadeahorros'] .portfolio-status-pill {
+  background:rgba(226,183,58,.14); border-color:rgba(226,183,58,.34); color:var(--gold-300); border-radius:var(--radius-pill);
+}
+html[data-brand='cajadeahorros'] .spinner,
+html[data-brand='cajadeahorros'] .project-loading-spinner { border-top-color:var(--brand-400) !important; }
+html[data-brand='cajadeahorros'] .progress > div,
+html[data-brand='cajadeahorros'] .progress-bar { background:var(--teal-500); }
+
+html[data-brand='cajadeahorros'] body.light-theme {
+  --bg:var(--neutral-50); --panel:var(--neutral-0); --panel-2:var(--neutral-100); --card:var(--neutral-0); --card-bg:var(--neutral-0);
+  --text:var(--neutral-900); --muted:var(--neutral-500); --text-muted:var(--neutral-500); --border:var(--neutral-200); --card-border:var(--neutral-200);
+  --input-bg:var(--neutral-0); --input-border:var(--neutral-300); --input-text:var(--neutral-900);
+  --btn-ghost-bg:var(--neutral-0); --btn-ghost-text:var(--brand-800); --btn-ghost-border:var(--brand-200);
+  --shadow:0 10px 28px rgba(0,59,112,.09); background:var(--neutral-50) !important;
+  --admin-bg-1:var(--neutral-50); --admin-bg-2:var(--brand-50);
+  --admin-panel:rgba(255,255,255,.94); --admin-panel-2:rgba(238,241,244,.8);
+  --admin-border:var(--neutral-200); --admin-border-strong:var(--neutral-300);
+  --admin-text:var(--neutral-900); --admin-muted:var(--neutral-500);
+}
+html[data-brand='cajadeahorros'] body.light-theme .topbar {
+  background:rgba(255,255,255,.94) !important; border-color:var(--neutral-200) !important; color:var(--neutral-900);
+}
+html[data-brand='cajadeahorros'] body.light-theme .topbar .link,
+html[data-brand='cajadeahorros'] body.light-theme .topbar a { color:var(--brand-700); }
+html[data-brand='cajadeahorros'] body.light-theme .topbar .brand::before {
+  background-image:url('/assets/brands/Caja%20de%20Ahorros/logos/caja-ahorros-symbol-azul.svg');
+}
+html[data-brand='cajadeahorros'] body.light-theme .card,
+html[data-brand='cajadeahorros'] body.light-theme .kpi,
+html[data-brand='cajadeahorros'] body.light-theme .section,
+html[data-brand='cajadeahorros'] body.light-theme .phase,
+html[data-brand='cajadeahorros'] body.light-theme .fin-card,
+html[data-brand='cajadeahorros'] body.light-theme .unit-card,
+html[data-brand='cajadeahorros'] body.light-theme .summary-block,
+html[data-brand='cajadeahorros'] body.light-theme .summary-chart-card,
+html[data-brand='cajadeahorros'] body.light-theme .modal {
+  background:var(--neutral-0); border-color:var(--neutral-200); color:var(--neutral-900); box-shadow:var(--shadow);
+}
+html[data-brand='cajadeahorros'] body.light-theme .badge,
+html[data-brand='cajadeahorros'] body.light-theme .chip,
+html[data-brand='cajadeahorros'] body.light-theme .kpi-pill,
+html[data-brand='cajadeahorros'] body.light-theme .portfolio-status-pill {
+  background:var(--gold-100); border-color:var(--gold-300); color:var(--gold-800);
+}
+html[data-brand='cajadeahorros'] body.light-theme .link,
+html[data-brand='cajadeahorros'] body.light-theme a:not(.btn):not(.nav-link) { color:var(--brand-700); }
+
+html[data-brand='cajadeahorros'] body:not(.light-theme) .site-header,
+html[data-brand='cajadeahorros'] body:not(.light-theme) .site-footer { background:var(--brand-900) !important; }
+html[data-brand='cajadeahorros'] .hero,
+html[data-brand='cajadeahorros'] .problem,
+html[data-brand='cajadeahorros'] .solution { --primary:var(--brand-400); }
+html[data-brand='cajadeahorros'] .site-header .brand-logo,
+html[data-brand='cajadeahorros'] .site-footer .brand-logo,
+html[data-brand='cajadeahorros'] .footer-brand img { width:190px; height:80px; max-width:100%; object-fit:contain; }
+html[data-brand='cajadeahorros'] .fab { background:var(--brand-700) !important; }
+@media (max-width:980px) { html[data-brand='cajadeahorros'] .brand-logo { height:120px; } }
+
+/* Refinement v2: Caja atmosphere across the authenticated application. */
+html[data-brand='cajadeahorros'] body:not(.bg-gradient) {
+  background:
+    radial-gradient(900px 520px at 12% -8%, rgba(0,81,153,.28), transparent 62%),
+    radial-gradient(720px 460px at 96% 12%, rgba(37,181,172,.08), transparent 68%),
+    linear-gradient(145deg, var(--neutral-900) 0%, #151c23 52%, var(--brand-900) 145%) !important;
+  background-attachment:fixed !important;
+}
+
+/* Login and register: intentionally bright, premium and distinct from Bank73. */
+html[data-brand='cajadeahorros'] body.bg-gradient {
+  background:
+    radial-gradient(760px 520px at 8% 8%, rgba(198,228,255,.78), transparent 65%),
+    radial-gradient(620px 460px at 92% 92%, rgba(222,244,241,.68), transparent 62%),
+    linear-gradient(145deg, var(--neutral-50), var(--brand-50)) !important;
+  color:var(--neutral-900);
+}
+html[data-brand='cajadeahorros'] body.bg-gradient .login-wrap { gap:24px; }
+html[data-brand='cajadeahorros'] body.bg-gradient .brand-panel {
+  background:
+    radial-gradient(circle at 18% 14%, rgba(124,193,255,.34), transparent 34%),
+    radial-gradient(circle at 88% 86%, rgba(37,181,172,.18), transparent 32%),
+    linear-gradient(145deg, var(--brand-700), var(--brand-900));
+  border-color:rgba(255,255,255,.22);
+  box-shadow:0 24px 60px rgba(0,59,112,.22);
+}
+html[data-brand='cajadeahorros'] body.bg-gradient .brand-subtitle,
+html[data-brand='cajadeahorros'] body.bg-gradient .brand-footer { color:var(--brand-100); }
+html[data-brand='cajadeahorros'] body.bg-gradient .kpi-pill {
+  color:var(--neutral-0); background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.24);
+}
+html[data-brand='cajadeahorros'] body.bg-gradient .login-card.glass {
+  background:rgba(255,255,255,.96) !important;
+  color:var(--neutral-900);
+  border:1px solid var(--brand-100);
+  box-shadow:0 28px 70px rgba(0,59,112,.14);
+  backdrop-filter:blur(18px);
+}
+html[data-brand='cajadeahorros'] body.bg-gradient .login-header h2 { color:var(--brand-900); }
+html[data-brand='cajadeahorros'] body.bg-gradient .login-header .muted,
+html[data-brand='cajadeahorros'] body.bg-gradient .login-meta,
+html[data-brand='cajadeahorros'] body.bg-gradient .small { color:var(--neutral-500); }
+html[data-brand='cajadeahorros'] body.bg-gradient label { color:var(--neutral-700); font-weight:600; }
+html[data-brand='cajadeahorros'] body.bg-gradient input,
+html[data-brand='cajadeahorros'] body.bg-gradient select,
+html[data-brand='cajadeahorros'] body.bg-gradient textarea {
+  background:var(--neutral-0); color:var(--neutral-900); border-color:var(--neutral-300);
+  box-shadow:inset 0 1px 2px rgba(15,18,23,.03);
+}
+html[data-brand='cajadeahorros'] body.bg-gradient input::placeholder,
+html[data-brand='cajadeahorros'] body.bg-gradient textarea::placeholder { color:var(--neutral-400); }
+html[data-brand='cajadeahorros'] body.bg-gradient input:focus,
+html[data-brand='cajadeahorros'] body.bg-gradient select:focus,
+html[data-brand='cajadeahorros'] body.bg-gradient textarea:focus {
+  outline:3px solid var(--brand-opacity-10); border-color:var(--brand-600);
+}
+html[data-brand='cajadeahorros'] body.bg-gradient .ghost {
+  background:var(--brand-50); color:var(--brand-800); border-color:var(--brand-100);
+}
+
+/* App bar remains Caja blue in both theme modes. */
+html[data-brand='cajadeahorros'] .topbar,
+html[data-brand='cajadeahorros'] body.light-theme .topbar {
+  background:linear-gradient(100deg, var(--brand-800), var(--brand-700)) !important;
+  color:var(--neutral-0) !important;
+  border-color:rgba(255,255,255,.13) !important;
+  box-shadow:0 10px 26px rgba(0,38,71,.22) !important;
+  backdrop-filter:blur(16px);
+}
+html[data-brand='cajadeahorros'] .topbar .brand,
+html[data-brand='cajadeahorros'] .topbar .link,
+html[data-brand='cajadeahorros'] .topbar a,
+html[data-brand='cajadeahorros'] body.light-theme .topbar .brand,
+html[data-brand='cajadeahorros'] body.light-theme .topbar .link,
+html[data-brand='cajadeahorros'] body.light-theme .topbar a { color:var(--neutral-0) !important; }
+html[data-brand='cajadeahorros'] body.light-theme .topbar .brand::before {
+  background-image:url('/assets/brands/Caja%20de%20Ahorros/logos/caja-ahorros-symbol-blanco.svg');
+}
+html[data-brand='cajadeahorros'] .topbar .theme-toggle,
+html[data-brand='cajadeahorros'] body.light-theme .topbar .theme-toggle,
+html[data-brand='cajadeahorros'] .topbar .filter-button {
+  background:rgba(255,255,255,.1); color:var(--neutral-0); border-color:rgba(255,255,255,.24);
+  box-shadow:none;
+}
+html[data-brand='cajadeahorros'] .topbar .theme-toggle:hover,
+html[data-brand='cajadeahorros'] body.light-theme .topbar .theme-toggle:hover,
+html[data-brand='cajadeahorros'] .topbar .filter-button:hover { background:rgba(255,255,255,.18); }
+html[data-brand='cajadeahorros'] .topbar-search,
+html[data-brand='cajadeahorros'] body.light-theme .topbar-search {
+  background:rgba(255,255,255,.12); color:var(--neutral-0); border-color:rgba(255,255,255,.22);
+}
+html[data-brand='cajadeahorros'] .topbar-search::placeholder,
+html[data-brand='cajadeahorros'] body.light-theme .topbar-search::placeholder { color:rgba(255,255,255,.7); }
+html[data-brand='cajadeahorros'] .topbar-search:focus,
+html[data-brand='cajadeahorros'] body.light-theme .topbar-search:focus {
+  background:rgba(255,255,255,.18); border-color:rgba(255,255,255,.5); color:var(--neutral-0);
+}
+
+/* Dark surfaces: neutral foundations with restrained Caja blue depth. */
+html[data-brand='cajadeahorros'] body:not(.light-theme) .card,
+html[data-brand='cajadeahorros'] body:not(.light-theme) .kpi,
+html[data-brand='cajadeahorros'] body:not(.light-theme) .section,
+html[data-brand='cajadeahorros'] body:not(.light-theme) .phase,
+html[data-brand='cajadeahorros'] body:not(.light-theme) .fin-card,
+html[data-brand='cajadeahorros'] body:not(.light-theme) .unit-card,
+html[data-brand='cajadeahorros'] body:not(.light-theme) .summary-block,
+html[data-brand='cajadeahorros'] body:not(.light-theme) .summary-chart-card,
+html[data-brand='cajadeahorros'] body:not(.light-theme) #cards .portfolio-project-card {
+  background:linear-gradient(155deg, rgba(31,36,43,.98), rgba(20,30,39,.98));
+  border-color:rgba(158,185,209,.16);
+  box-shadow:0 16px 38px rgba(0,18,32,.24), inset 0 1px 0 rgba(255,255,255,.025);
+}
+html[data-brand='cajadeahorros'] body:not(.light-theme) .kpi,
+html[data-brand='cajadeahorros'] body:not(.light-theme) #kpis .kpi {
+  border-color:rgba(88,176,255,.18);
+  box-shadow:inset 0 3px 0 var(--brand-700), 0 12px 28px rgba(0,18,32,.18);
+}
+html[data-brand='cajadeahorros'] #kpis .kpi[data-key='commercial-value'] {
+  border-color:rgba(226,183,58,.34); box-shadow:inset 0 3px 0 var(--gold-500), 0 12px 28px rgba(0,18,32,.18);
+}
+html[data-brand='cajadeahorros'] body:not(.light-theme) .tabs {
+  background:rgba(0,59,112,.2); border-color:rgba(88,176,255,.2);
+}
+html[data-brand='cajadeahorros'] body:not(.light-theme) .tabs .tab,
+html[data-brand='cajadeahorros'] body:not(.light-theme) .tab {
+  background:rgba(15,18,23,.72); border-color:rgba(158,185,209,.16); color:var(--neutral-200);
+}
+html[data-brand='cajadeahorros'] body:not(.light-theme) .tabs .tab:hover,
+html[data-brand='cajadeahorros'] body:not(.light-theme) .tab:hover {
+  background:rgba(0,81,153,.32); border-color:var(--brand-opacity-50);
+}
+html[data-brand='cajadeahorros'] .project-loading-screen {
+  background:radial-gradient(circle at 50% 42%, rgba(47,146,235,.17), transparent 34%),var(--neutral-900) !important;
+}
+html[data-brand='cajadeahorros'] #cards progress.portfolio-card-progress::-webkit-progress-bar { background:var(--neutral-700); }
+html[data-brand='cajadeahorros'] #cards progress.portfolio-card-progress::-webkit-progress-value { background:linear-gradient(90deg,var(--brand-700),var(--teal-500)); }
+html[data-brand='cajadeahorros'] #cards progress.portfolio-card-progress::-moz-progress-bar { background:linear-gradient(90deg,var(--brand-700),var(--teal-500)); }
+
+/* Admin panels replace the remaining slate-blue Bank73 atmosphere. */
+html[data-brand='cajadeahorros'] .admin-tabs,
+html[data-brand='cajadeahorros'] .admin-subcard,
+html[data-brand='cajadeahorros'] .audit-kpi,
+html[data-brand='cajadeahorros'] .payment-kpi,
+html[data-brand='cajadeahorros'] .funding-section,
+html[data-brand='cajadeahorros'] .funding-list-card,
+html[data-brand='cajadeahorros'] .provider-module-toggle {
+  background:rgba(31,36,43,.78); border-color:rgba(158,185,209,.17); box-shadow:0 12px 30px rgba(0,18,32,.18);
+}
+html[data-brand='cajadeahorros'] .admin-tab:hover { background:rgba(0,81,153,.22); color:var(--brand-100); }
+html[data-brand='cajadeahorros'] .admin-tab.active { box-shadow:0 8px 20px rgba(0,81,153,.28); }
+
+/* Light mode keeps clear surfaces while retaining visible Caja identity. */
+html[data-brand='cajadeahorros'] body.light-theme:not(.bg-gradient) {
+  background:
+    radial-gradient(760px 420px at 10% -8%, rgba(198,228,255,.9), transparent 68%),
+    linear-gradient(160deg, var(--neutral-50), #edf3f7) !important;
+  color:var(--neutral-900);
+}
+html[data-brand='cajadeahorros'] body.light-theme .card,
+html[data-brand='cajadeahorros'] body.light-theme .kpi,
+html[data-brand='cajadeahorros'] body.light-theme .section,
+html[data-brand='cajadeahorros'] body.light-theme .phase,
+html[data-brand='cajadeahorros'] body.light-theme .fin-card,
+html[data-brand='cajadeahorros'] body.light-theme .unit-card,
+html[data-brand='cajadeahorros'] body.light-theme #cards .portfolio-project-card {
+  border-color:var(--brand-100); box-shadow:0 12px 30px rgba(0,59,112,.09);
+}
+html[data-brand='cajadeahorros'] body.light-theme .tabs {
+  background:var(--brand-50); border-color:var(--brand-100); box-shadow:inset 0 1px 0 var(--neutral-0);
+}
+html[data-brand='cajadeahorros'] body.light-theme .tabs .tab,
+html[data-brand='cajadeahorros'] body.light-theme .tab {
+  background:var(--neutral-0); color:var(--brand-800); border-color:var(--brand-100);
+}
+html[data-brand='cajadeahorros'] body.light-theme .tabs .tab:hover,
+html[data-brand='cajadeahorros'] body.light-theme .tab:hover { background:var(--brand-100); border-color:var(--brand-200); }
+html[data-brand='cajadeahorros'] body.light-theme .admin-tabs,
+html[data-brand='cajadeahorros'] body.light-theme .admin-subcard,
+html[data-brand='cajadeahorros'] body.light-theme .audit-kpi,
+html[data-brand='cajadeahorros'] body.light-theme .payment-kpi,
+html[data-brand='cajadeahorros'] body.light-theme .funding-section,
+html[data-brand='cajadeahorros'] body.light-theme .funding-list-card,
+html[data-brand='cajadeahorros'] body.light-theme .provider-module-toggle {
+  background:var(--neutral-0); color:var(--neutral-900); border-color:var(--brand-100); box-shadow:0 10px 26px rgba(0,59,112,.08);
+}
+
+/* Forms, modals and semantic feedback. */
+html[data-brand='cajadeahorros'] input:focus,
+html[data-brand='cajadeahorros'] textarea:focus,
+html[data-brand='cajadeahorros'] select:focus { outline:3px solid var(--brand-opacity-10); border-color:var(--brand-500); }
+html[data-brand='cajadeahorros'] body:not(.light-theme) .modal,
+html[data-brand='cajadeahorros'] body:not(.light-theme) .requirements-modal {
+  background:var(--neutral-800) !important; color:var(--neutral-50) !important; border:1px solid rgba(158,185,209,.2) !important;
+  box-shadow:0 28px 70px rgba(0,18,32,.46) !important;
+}
+html[data-brand='cajadeahorros'] body:not(.light-theme) .modal-head b,
+html[data-brand='cajadeahorros'] body:not(.light-theme) .modal h1,
+html[data-brand='cajadeahorros'] body:not(.light-theme) .modal h2,
+html[data-brand='cajadeahorros'] body:not(.light-theme) .modal h3,
+html[data-brand='cajadeahorros'] body:not(.light-theme) .modal h4 { color:var(--neutral-50) !important; }
+html[data-brand='cajadeahorros'] body:not(.light-theme) .modal .muted,
+html[data-brand='cajadeahorros'] body:not(.light-theme) .modal .small { color:var(--neutral-300); }
+html[data-brand='cajadeahorros'] body.light-theme .modal-head b,
+html[data-brand='cajadeahorros'] body.light-theme .modal h1,
+html[data-brand='cajadeahorros'] body.light-theme .modal h2,
+html[data-brand='cajadeahorros'] body.light-theme .modal h3,
+html[data-brand='cajadeahorros'] body.light-theme .modal h4 { color:var(--brand-900) !important; }
+html[data-brand='cajadeahorros'] .alert {
+  background:rgba(31,138,208,.12); color:#c6eaff; border:1px solid rgba(31,138,208,.38); border-left:4px solid var(--info-500);
+}
+html[data-brand='cajadeahorros'] .alert.success,
+html[data-brand='cajadeahorros'] .msg.success { background:rgba(46,158,80,.12); color:#bdebc9; border-color:rgba(46,158,80,.4); }
+html[data-brand='cajadeahorros'] .alert.warning,
+html[data-brand='cajadeahorros'] .msg.warning { background:rgba(229,154,26,.12); color:#ffe0a3; border-color:rgba(229,154,26,.42); }
+html[data-brand='cajadeahorros'] .alert.danger,
+html[data-brand='cajadeahorros'] .msg.error { background:rgba(216,51,46,.12); color:#ffc9c7; border-color:rgba(216,51,46,.42); }
+html[data-brand='cajadeahorros'] body.light-theme .alert { color:#0d4f75; background:#e8f5fc; }
+html[data-brand='cajadeahorros'] body.light-theme .alert.success,
+html[data-brand='cajadeahorros'] body.light-theme .msg.success { color:#1f7139; background:#eaf7ee; }
+html[data-brand='cajadeahorros'] body.light-theme .alert.warning,
+html[data-brand='cajadeahorros'] body.light-theme .msg.warning { color:#85570d; background:#fff6e5; }
+html[data-brand='cajadeahorros'] body.light-theme .alert.danger,
+html[data-brand='cajadeahorros'] body.light-theme .msg.error { color:#9f2824; background:#fff0ef; }
+
+/* Financial expiry modal: readable in Caja dark and still crisp in light. */
+html[data-brand='cajadeahorros'] .finance-expiry-alert-shell {
+  background:linear-gradient(145deg, var(--neutral-800), #17232d) !important;
+  border:1px solid rgba(216,51,46,.44) !important; border-left:7px solid var(--danger-500) !important;
+  box-shadow:0 20px 50px rgba(0,18,32,.34) !important;
+}
+html[data-brand='cajadeahorros'] .finance-expiry-alert-eyebrow { color:#ffaaa7 !important; }
+html[data-brand='cajadeahorros'] .finance-expiry-alert-title { color:var(--neutral-0) !important; }
+html[data-brand='cajadeahorros'] .finance-expiry-alert-subtitle { color:var(--neutral-300) !important; }
+html[data-brand='cajadeahorros'] .finance-expiry-alert-icon { background:rgba(216,51,46,.15) !important; border-color:rgba(216,51,46,.38) !important; }
+html[data-brand='cajadeahorros'] .finance-expiry-alert-item,
+html[data-brand='cajadeahorros'] .finance-expiry-alert-row {
+  background:rgba(216,51,46,.08) !important; border-color:rgba(216,51,46,.3) !important;
+}
+html[data-brand='cajadeahorros'] .finance-expiry-alert-item-title { color:#ffaaa7 !important; }
+html[data-brand='cajadeahorros'] .finance-expiry-alert-item-meta { color:#f3c3c1 !important; }
+html[data-brand='cajadeahorros'] .finance-expiry-alert-days { background:var(--brand-800) !important; box-shadow:0 10px 24px rgba(0,38,71,.26) !important; }
+html[data-brand='cajadeahorros'] body.light-theme .finance-expiry-alert-shell {
+  background:linear-gradient(145deg,#fff7f7,var(--neutral-0)) !important; box-shadow:0 18px 44px rgba(0,59,112,.1) !important;
+}
+html[data-brand='cajadeahorros'] body.light-theme .finance-expiry-alert-title { color:var(--brand-900) !important; }
+html[data-brand='cajadeahorros'] body.light-theme .finance-expiry-alert-subtitle { color:var(--neutral-600) !important; }
+html[data-brand='cajadeahorros'] body.light-theme .finance-expiry-alert-item,
+html[data-brand='cajadeahorros'] body.light-theme .finance-expiry-alert-row { background:#fff1f2 !important; border-color:#fecaca !important; }
+html[data-brand='cajadeahorros'] body.light-theme .finance-expiry-alert-item-title { color:#991b1b !important; }
+html[data-brand='cajadeahorros'] body.light-theme .finance-expiry-alert-item-meta { color:#7f1d1d !important; }
+
+@media (max-width:720px) {
+  html[data-brand='cajadeahorros'] .finance-expiry-alert-heading,
+  html[data-brand='cajadeahorros'] .finance-expiry-alert-item { align-items:flex-start !important; }
+  html[data-brand='cajadeahorros'] .finance-expiry-alert-item { flex-direction:column; }
+  html[data-brand='cajadeahorros'] .finance-expiry-alert-days { min-width:0 !important; width:100%; }
+}
