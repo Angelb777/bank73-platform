@@ -784,6 +784,135 @@
       .provider-form{ grid-template-columns:1fr; }
       .admin-hero-main{ padding:18px; }
     }
+
+    /* Responsive exclusivo del dashboard de administración. */
+    @media (max-width: 768px){
+      main.container{
+        margin:12px auto 28px;
+        padding-inline:10px;
+      }
+
+      .admin-tabs{
+        width:100%;
+        max-width:100%;
+        justify-content:flex-start;
+        overflow-x:auto;
+        overflow-y:hidden;
+        scroll-snap-type:x proximity;
+        overscroll-behavior-inline:contain;
+        -webkit-overflow-scrolling:touch;
+      }
+      .admin-tab{
+        flex:0 0 auto;
+        scroll-snap-align:start;
+      }
+
+      .card{ padding:16px; }
+      .admin-subcard{ padding:12px; }
+
+      .section-head,
+      .admin-card-head,
+      .funding-dossier-head{
+        flex-direction:column;
+        align-items:stretch;
+        gap:12px;
+      }
+      .section-head > .btn,
+      .section-head > button{
+        align-self:flex-start;
+      }
+      .audit-actions{
+        width:100%;
+        justify-content:flex-start;
+      }
+
+      .toolbar{
+        width:100%;
+        align-items:stretch;
+      }
+      .toolbar > .input,
+      .toolbar > input,
+      .toolbar > select{
+        flex:1 1 220px;
+        min-width:0;
+        max-width:100%;
+      }
+
+      .table-scroll{
+        width:100%;
+        max-width:100%;
+        overflow-x:auto;
+        overflow-y:hidden;
+        -webkit-overflow-scrolling:touch;
+      }
+      .table-scroll .table{
+        width:100%;
+        min-width:720px;
+        table-layout:auto;
+      }
+      .table-scroll .table th,
+      .table-scroll .table td{
+        word-break:normal;
+        overflow-wrap:normal;
+      }
+
+      #pendingUsersTable{ min-width:980px; }
+      #pendingProjectsTable{ min-width:680px; }
+      #usersTable{ min-width:980px; table-layout:auto; }
+      #allProjectsTable{ min-width:1080px; }
+      #tenantsTable{ min-width:820px; }
+      #providersTable{ min-width:1120px; }
+      #pendingUsersTable select{ max-width:none; min-width:140px; }
+
+      #tenantDetail{
+        width:100%;
+        max-width:100%;
+        overflow-x:auto;
+        -webkit-overflow-scrolling:touch;
+      }
+      #tenantDetail .table{
+        min-width:640px;
+        table-layout:auto;
+      }
+
+      .audit-table-wrap,
+      .payment-table-wrap{
+        width:100%;
+        max-width:100%;
+        overflow-x:auto;
+        -webkit-overflow-scrolling:touch;
+      }
+      #auditTable{ min-width:980px; }
+      #paymentsTable{ min-width:1160px; }
+
+      .provider-form,
+      .payment-form{
+        grid-template-columns:1fr;
+      }
+      .provider-form .wide-2,
+      .provider-form .wide-4,
+      .payment-form .wide-2,
+      .payment-form .wide-3,
+      .payment-form .wide-6{
+        grid-column:1 / -1;
+      }
+      .provider-form-actions,
+      .payment-form-actions{
+        justify-content:flex-start;
+      }
+
+      .provider-module-toggle > div{ min-width:0; }
+
+      .funding-list-card img,
+      .funding-cover-fallback{
+        width:100%;
+        max-width:100%;
+        height:180px;
+      }
+      .funding-section div[style*="grid-template-columns:minmax(140px"]{
+        grid-template-columns:1fr !important;
+      }
+    }
   </style>
   <link href="/css/brands.css?v=2" rel="stylesheet" />
 </head>

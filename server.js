@@ -281,6 +281,7 @@ app.use('/api/chat', ...guard, chatRoutes);
    ========================================================================= */
 app.get('/register', (_req, res) => res.sendFile(path.join(__dirname, 'public/register.html')));
 app.get('/login', (_req, res) => res.sendFile(path.join(__dirname, 'public/login.html')));
+app.get('/pending.html', (_req, res) => res.sendFile(path.join(__dirname, 'public/lib/pending.html')));
 
 app.get('/', (req, res) => {
   const file = path.join(__dirname, 'public/index.html');
