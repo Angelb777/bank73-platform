@@ -1643,6 +1643,42 @@ body.light-theme .provider-exclusive {
     text-align:center;
   }
 }
+  /* Controles del app bar: mismas dimensiones que en Portfolio. */
+  .topbar-actions { --project-appbar-control-height:40px; }
+  .topbar-actions > button {
+    box-sizing:border-box;
+    height:var(--project-appbar-control-height) !important;
+    min-height:var(--project-appbar-control-height) !important;
+    max-height:var(--project-appbar-control-height) !important;
+    margin-block:0;
+  }
+  .topbar-actions .dashboard-nav-button {
+    --dashboard-button-size:var(--project-appbar-control-height);
+    --dashboard-icon-size:28px;
+    padding:0 !important;
+  }
+  .topbar-actions .dashboard-nav-button svg {
+    width:22px !important;
+    height:22px !important;
+    min-width:28px;
+    flex:0 0 28px;
+    display:block;
+  }
+  .topbar-actions #logoutBtn {
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding-block:0;
+    line-height:1;
+  }
+  @media (max-width:720px) {
+    .topbar-actions { --project-appbar-control-height:36px; }
+    .topbar-actions .theme-toggle,
+    .topbar-actions .dashboard-nav-button {
+      width:var(--project-appbar-control-height) !important;
+      min-width:var(--project-appbar-control-height) !important;
+    }
+  }
   </style>
   <link href="/css/brands.css?v=2" rel="stylesheet" />
 </head>
@@ -2866,7 +2902,7 @@ body.light-theme .provider-exclusive {
   <script src="/js/banks.js"></script>
   <script src="/lib/chart.umd.min.js"></script>
   <script src="/js/theme-toggle.js"></script>
-  <script src="/js/project.js?v=requirements-29-v1"><!-- ROLE-SEP: bump --></script>
+  <script src="/js/project.js?v=requirements-29-project-top-v1"><!-- ROLE-SEP: bump --></script>
 
 </body>
 </html>

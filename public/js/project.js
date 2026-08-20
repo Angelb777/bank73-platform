@@ -13,6 +13,7 @@
   if (!id) { location.href = '/portfolio'; return; }
 
   function finishInitialProjectLoad() {
+    window.scrollTo(0, 0);
     document.body.classList.remove('project-loading');
     document.getElementById('projectLoadingScreen')?.setAttribute('aria-hidden', 'true');
   }
