@@ -10,7 +10,12 @@ function assignedTenantList(user = {}) {
   const assigned = Array.isArray(user.tenantKeys)
     ? Array.from(new Set(user.tenantKeys.map(v => String(v || '').trim()).filter(Boolean)))
     : [];
-  if (role === 'bank') return assigned;
+  if (role === 'bank') {
+    if (!assigned.length && String(user.tenantKey || '').trim() === 'bancodemo') {
+      return ['bancodemo'];
+    }
+    return assigned;
+  }
   return tenantList(user.tenantKey, assigned);
 }
 

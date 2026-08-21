@@ -9,6 +9,7 @@ const Project = require('../models/Project');
 const ProjectFinance = require('../models/ProjectFinance');
 const mongoose = require('mongoose');
 const { opportunityFilterFor, applyPublicationAction } = require('../services/fundingPublication');
+const { fundingProjectFilter } = require('../routes/funding');
 const sift = require('sift').default;
 
 function runBankGuard(method, originalUrl) {
@@ -112,6 +113,19 @@ test('bank write guard allows only project creation and published-opportunity in
   assert.equal(blocked.nextCalled, false);
   assert.equal(blocked.responseStatus, 403);
   assert.match(blocked.responseBody.error, /solo de lectura/i);
+});
+
+test('funding management always scopes projects to the active tenant', () => {
+  const projectId = new mongoose.Types.ObjectId();
+  assert.deepEqual(fundingProjectFilter({ tenantKey: 'bank-a' }), {
+    tenantKey: 'bank-a',
+    seeksFinancing: true
+  });
+  assert.deepEqual(fundingProjectFilter({ tenantKey: 'bank-a' }, projectId), {
+    _id: projectId,
+    tenantKey: 'bank-a',
+    seeksFinancing: true
+  });
 });
 
 test('request amounts and review notification are stored independently from financial and interest status', () => {

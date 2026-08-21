@@ -948,6 +948,46 @@ function anyAssignedFilter(userId) {
   };
 }
 
+function assignedToTenantUsersFilter(userIds = []) {
+  return {
+    $or: [
+      { assignedUsers:       { $in: userIds } },
+      { teamUsers:           { $in: userIds } },
+      { members:             { $in: userIds } },
+      { assignedPromoters:   { $in: userIds } },
+      { assignedCommercials: { $in: userIds } },
+      { assignedBanks:       { $in: userIds } },
+      { assignedLegal:       { $in: userIds } },
+      { assignedTecnicos:    { $in: userIds } },
+      { assignedGerencia:    { $in: userIds } },
+      { assignedSocios:      { $in: userIds } },
+      { assignedFinanciero:  { $in: userIds } },
+      { assignedContable:    { $in: userIds } },
+      { 'assignees.promoter':   { $in: userIds } },
+      { 'assignees.commercial': { $in: userIds } },
+      { 'assignees.bank':       { $in: userIds } },
+      { 'assignees.legal':      { $in: userIds } },
+      { 'assignees.tecnico':    { $in: userIds } },
+      { 'assignees.gerencia':   { $in: userIds } },
+      { 'assignees.socios':     { $in: userIds } },
+      { 'assignees.financiero': { $in: userIds } },
+      { 'assignees.contable':   { $in: userIds } }
+    ]
+  };
+}
+
+async function buildBankPortfolioQuery(req) {
+  const tenantKey = String(req.tenantKey || '').trim();
+  const tenantUsers = await User.find({
+    $or: [{ tenantKey }, { tenantKeys: tenantKey }]
+  }).select('_id').lean();
+  const tenantUserIds = tenantUsers.map(user => user._id);
+  const scope = [{ tenantKey }];
+  if (tenantUserIds.length) scope.push(assignedToTenantUsersFilter(tenantUserIds));
+
+  return { publishStatus: 'approved', $or: scope };
+}
+
 
 function buildProjectVisibilityQuery(req) {
   const base = { tenantKey: req.tenantKey };
@@ -1279,7 +1319,10 @@ router.get('/', async (req, res) => {
 // GET /api/projects/portfolio (solo aprobados)
 router.get('/portfolio', async (req, res) => {
   try {
-    const q = buildPortfolioQuery(req);
+    const role = String(req.user?.role || '').toLowerCase();
+    const q = role === 'bank'
+      ? await buildBankPortfolioQuery(req)
+      : buildPortfolioQuery(req);
 
     const search = String(req.query.q || '').trim();
     const promoterId = String(req.query.promoterId || '').trim();

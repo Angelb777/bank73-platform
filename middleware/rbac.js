@@ -1,6 +1,7 @@
 // middleware/rbac.js
 // Control de acceso por rol + acceso a proyectos asignados
 const Project = require('../models/Project');
+const User = require('../models/User');
 const {
   FULL_ACCESS_ROLES,
   LIMITED_AREA_ROLES,
@@ -125,6 +126,42 @@ function isUserAssignedToProject(project, userId) {
   return pools.some(arr => includesObjectId(arr, u));
 }
 
+async function isProjectAssignedToTenantMember(project, tenantKey) {
+  if (!project || !tenantKey) return false;
+
+  const assignees = project.assignees || {};
+  const ids = Array.from(new Set([
+    project.assignedUsers,
+    project.teamUsers,
+    project.members,
+    project.assignedPromoters,
+    project.assignedCommercials,
+    project.assignedBanks,
+    project.assignedLegal,
+    project.assignedTecnicos,
+    project.assignedGerencia,
+    project.assignedSocios,
+    project.assignedFinanciero,
+    project.assignedContable,
+    assignees.promoter,
+    assignees.commercial,
+    assignees.bank,
+    assignees.legal,
+    assignees.tecnico,
+    assignees.gerencia,
+    assignees.socios,
+    assignees.financiero,
+    assignees.contable
+  ].flat().filter(Boolean).map(String)));
+
+  if (!ids.length) return false;
+
+  return !!(await User.exists({
+    _id: { $in: ids },
+    $or: [{ tenantKey }, { tenantKeys: tenantKey }]
+  }));
+}
+
 // Detección de áreas por URL
 function detectArea(req) {
   const url = (req.baseUrl || '') + (req.path || '');
@@ -231,7 +268,8 @@ function requireProjectAccess(options = {}) {
           ? req.user.tenantKeys.map(String)
           : [];
         const assigned = isUserAssignedToProject(project, getUserId(req));
-        if (sameTenant(req, project) || tenantKeys.includes(projectTenant) || assigned) {
+        const assignedToTenantMember = await isProjectAssignedToTenantMember(project, getTenantKeyFromReq(req));
+        if (sameTenant(req, project) || tenantKeys.includes(projectTenant) || assigned || assignedToTenantMember) {
           // El portfolio bancario puede incluir proyectos autorizados de otro
           // tenant (por multi-tenant o por asignacion explicita). Las consultas
           // de detalle deben ejecutarse en el tenant real del proyecto; si se

@@ -269,11 +269,6 @@ if (roleSelectDefault) {
     return data;
   }
 
-  if (roleL === 'bank') {
-    await initBankDashboard();
-    return;
-  }
-
   async function initBankDashboard() {
     const workspace = document.getElementById('adminWorkspace');
     const notAdmin = document.getElementById('notAdmin');
@@ -284,12 +279,11 @@ if (roleSelectDefault) {
     document.querySelector('[data-admin-tab="payments"]')?.remove();
     document.querySelector('[data-admin-tab="multiTenant"]')?.remove();
     document.querySelector('[data-admin-tab="providers"]')?.remove();
-    document.querySelector('[data-admin-tab="funding"]')?.remove();
     document.querySelector('[data-admin-panel="pending"]')?.remove();
     document.querySelector('[data-admin-panel="payments"]')?.remove();
     document.querySelector('[data-admin-panel="multiTenant"]')?.remove();
     document.querySelector('[data-admin-panel="providers"]')?.remove();
-    document.querySelector('[data-admin-panel="funding"]')?.remove();
+    fundingModuleToggle?.closest('.provider-module-toggle')?.remove();
 
     const tabs = Array.from(document.querySelectorAll('[data-admin-tab]'));
     const panels = Array.from(document.querySelectorAll('[data-admin-panel]'));
@@ -2830,25 +2824,20 @@ function shortProjectDescription(value, maxLength = 150) {
   }
 
   async function loadFundingAdmin() {
-    if (!fundingAdminList || roleL !== 'admin') return;
+    if (!fundingAdminList || !['admin', 'bank'].includes(roleL)) return;
     activeFundingProjectId = '';
     if (fundingAdminDetail) fundingAdminDetail.style.display = 'none';
     fundingAdminList.style.display = '';
     setFundingAdminMessage();
     try {
       const list = await API.get('/api/funding/admin');
-      const pending = list.reduce((sum, item) => sum + Number(item.pendingNotificationCount || 0), 0);
-      if (fundingBadge) { fundingBadge.textContent = pending; fundingBadge.classList.toggle('is-visible', pending > 0); }
+      if (fundingBadge) { fundingBadge.textContent = '0'; fundingBadge.classList.remove('is-visible'); }
       fundingAdminList.innerHTML = list.length ? list.map(item => `
-        <article class="funding-list-card${Number(item.pendingNotificationCount || 0) > 0 ? ' has-alert' : ''}">
+        <article class="funding-list-card">
           ${item.coverImage?.path ? `<img src="${escapeHtml(item.coverImage.path)}" alt="">` : '<div class="funding-cover-fallback"></div>'}
           <div>
             <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
               <div><h3>${escapeHtml(item.name || '-')}</h3><div class="muted">${escapeHtml(item.projectType || 'Tipo no indicado')}</div></div>
-              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                ${Number(item.pendingNotificationCount || 0) > 0 ? `<span class="funding-card-alert">${Number(item.pendingNotificationCount)} ${Number(item.pendingNotificationCount) === 1 ? 'interés nuevo' : 'intereses nuevos'}</span>` : ''}
-                <span class="badge">${escapeHtml(fundingStatusLabel(item.fundingStatus))}</span>
-              </div>
             </div>
             <div class="funding-list-metrics">
               ${fundingMetric('Coste total', fundingMoney(item.totalCost))}
@@ -2856,9 +2845,7 @@ function shortProjectDescription(value, maxLength = 150) {
               ${fundingMetric('Fondos cubiertos', fundingMoney(item.coveredAmount))}
               ${fundingMetric('Pendiente de la solicitud', fundingMoney(item.requestPendingAmount))}
               ${fundingMetric('Scoring automático', Number(item.automaticScore || 0).toFixed(1))}
-              ${fundingMetric('Scoring final', item.finalScore == null ? 'Sin decidir' : Number(item.finalScore).toFixed(1))}
-              ${fundingMetric('Intereses recibidos', String(item.interestCount || 0))}
-              ${fundingMetric('Pendientes de revisión', String(item.pendingNotificationCount || 0))}
+              ${fundingMetric('Scoring final', item.finalScore == null ? 'Pendiente' : Number(item.finalScore).toFixed(1))}
             </div>
             <button class="btn small" type="button" data-funding-open="${escapeHtml(item.projectId)}">Ver expediente</button>
           </div>
@@ -2934,69 +2921,27 @@ function shortProjectDescription(value, maxLength = 150) {
     const f = detail.funding || {};
     const s = detail.financialSummary || {};
     const market = f.marketAnalysis || {};
-    const selectedFields = new Set(f.publicFields || []);
-    const selectedDocs = new Set((f.publicDocumentIds || []).map(String));
-    const selectedTenants = new Set((f.visibleToTenantKeys || []).map(String));
-    const tenantOptions = bankOptionList().filter(bank => bankTenantKey(bank) !== 'bancodemo').map(bank => ({ key: bankTenantKey(bank), label: bank }));
-    selectedTenants.forEach(key => { if (!tenantOptions.some(option => option.key === key)) tenantOptions.push({ key, label: key }); });
-    const visibilityMode = f.visibilityMode || (selectedTenants.size ? 'selected_tenants' : 'all_banks');
-    const restrictedTenants = visibilityMode === 'selected_tenants';
-    const isPublished = !!f.isVisibleToBanks && (
-      ['published', 'partially_funded'].includes(f.status) || (f.status === 'approved' && !!f.publishedAt)
-    );
-    const publishedBy = detail.publishedByUser?.name || detail.publishedByUser?.email || 'Superadmin';
-    const publicationRequirements = [
-      [detail.project.publishStatus === 'approved', 'Proyecto aprobado en el portfolio ordinario'],
-      [detail.project.seeksFinancing === true, 'Proyecto marcado como búsqueda de financiación'],
-      [Number(s.requestedAmount || 0) > 0, 'Monto solicitado informado'],
-      [f.finalScore !== null && f.finalScore !== undefined, 'Scoring final decidido por el superadmin'],
-      [!!f.fundingDeadline, 'Fecha límite de financiación informada'],
-      [!restrictedTenants || selectedTenants.size > 0, 'Tenants bancarios seleccionados']
-    ];
-    const missingPublicationRequirements = publicationRequirements.filter(([ready]) => !ready);
-    const publicGroups = [
-      ['Ficha del proyecto', ['description', 'images', 'location', 'housingModels']],
-      ['Información comercial', ['units', 'prices', 'phases']],
-      ['Información financiera', ['financialSummary', 'score', 'conclusions']]
-    ];
+    const canEditRequest = roleL === 'admin';
+    const finalScoreLabel = f.finalScore == null ? 'Pendiente' : `${Number(f.finalScore).toFixed(1)} / 100`;
     const declaredStatus = value => value === true ? ['Cumplido', '#166534', '#f0fdf4'] : value === false ? ['No cumplido', '#991b1b', '#fef2f2'] : ['No informado', '#475569', '#f8fafc'];
     const renderDeclaredChecks = (title, assessment, definitions) => `<section class="funding-section"><h3>${title}</h3><p class="small muted">Información declarada por el creador del proyecto. No constituye la valoración final de Bank73.</p><div class="funding-checks">${definitions.map(([key, label]) => { const [status, color, background] = declaredStatus(assessment?.[key]); return `<div style="display:flex;justify-content:space-between;gap:12px;padding:9px 11px;border:1px solid #e2e8f0;border-radius:10px;background:${background};"><span>${escapeHtml(label)}</span><strong style="color:${color};white-space:nowrap;">${status}</strong></div>`; }).join('')}</div></section>`;
     const legalChecks = [['landOwned','Terreno en propiedad'],['purchaseOptionOrPromise','Opción o promesa de compraventa'],['titleVerified','Titularidad verificada'],['relevantEncumbrances','Cargas relevantes'],['zoningApproved','Uso de suelo aprobado'],['licensesRequested','Licencias solicitadas'],['licensesApproved','Licencias aprobadas'],['legalOpinionAttached','Dictamen jurídico adjunto']];
     const technicalChecks = [['conceptualProject','Proyecto conceptual'],['preliminaryDesign','Anteproyecto'],['approvedPlans','Planos aprobados'],['executiveProject','Proyecto ejecutivo'],['constructionBudget','Presupuesto de construcción'],['contractorDefined','Constructora definida'],['technicalOpinionAttached','Dictamen técnico adjunto']];
     const phases = Array.isArray(detail.project.financePhases) ? detail.project.financePhases : [];
     const phasesHtml = `<section class="funding-section"><h3>Bancos seleccionados por fase</h3><p class="small muted">Información declarada para la solicitud. No crea asignaciones, tenants ni permisos.</p><div style="display:grid;gap:10px;">${phases.length ? phases.map((phase, index) => { const cost = Number(phase.financialConditions?.phaseTotal || (phase.planUses || []).reduce((sum, item) => sum + Number(item.amount || 0), 0)); const banks = Array.isArray(phase.financierBanks) ? phase.financierBanks.filter(Boolean) : []; return `<div style="display:grid;grid-template-columns:minmax(140px,1fr) minmax(140px,1fr) minmax(200px,2fr);gap:12px;padding:11px;border:1px solid #e2e8f0;border-radius:10px;"><strong>${escapeHtml(phase.name || `Fase ${index + 1}`)}</strong><span>Coste total: ${fundingMoney(cost)}</span><span>Bancos seleccionados: ${banks.length ? banks.map(escapeHtml).join(', ') : 'Por definir'}</span></div>`; }).join('') : '<span class="muted">No hay fases informadas.</span>'}</div></section>`;
-    fundingAdminDetail.innerHTML = `<div class="funding-dossier" data-funding-project="${escapeHtml(detail.project._id)}" data-funding-published="${isPublished ? '1' : '0'}">
-      <div class="funding-dossier-head"><div><button class="btn ghost small" type="button" data-funding-back>← Volver al listado</button><h2>${escapeHtml(detail.project.name || 'Expediente')}</h2><p class="muted">${escapeHtml(detail.project.projectType || '')} · ${escapeHtml(detail.project.location || '')}</p></div><span class="badge">${escapeHtml(fundingStatusLabel(f.status))}</span></div>
+    fundingAdminDetail.innerHTML = `<div class="funding-dossier" data-funding-project="${escapeHtml(detail.project._id)}">
+      <div class="funding-dossier-head"><div><button class="btn ghost small" type="button" data-funding-back>← Volver al listado</button><h2>${escapeHtml(detail.project.name || 'Expediente')}</h2><p class="muted">${escapeHtml(detail.project.projectType || '')} · ${escapeHtml(detail.project.location || '')}</p></div></div>
       <section class="funding-section"><h3>Resumen financiero</h3><div class="funding-list-metrics">
         ${fundingMetric('Coste total', fundingMoney(s.totalCost))}${fundingMetric('Aporte del promotor', fundingMoney(s.promoterContribution))}${fundingMetric('Otras fuentes', fundingMoney(s.otherSources))}${fundingMetric('Financiación bancaria aprobada', fundingMoney(s.approvedBankFinancing))}${fundingMetric('Financiación desembolsada', fundingMoney(s.disbursedAmount))}${fundingMetric('Fondos asegurados', fundingMoney(s.securedRequestAmount))}${fundingMetric('Monto solicitado', fundingMoney(s.requestedAmount))}${fundingMetric('Pendiente de la solicitud', fundingMoney(s.requestPendingAmount))}${fundingMetric('Porcentaje cubierto', `${Number(s.requestCoveredPct || 0).toFixed(2)}%`)}
-      </div><div class="funding-form-grid" style="margin-top:14px;"><label>Monto solicitado<input id="fundingDossierRequested" type="number" min="0" step="any" value="${Number(s.requestedAmount || 0)}"></label><label>Fondos ya asegurados para esta solicitud<input id="fundingDossierSecured" type="number" min="0" step="any" value="${Number(s.securedRequestAmount || 0)}"></label></div><div class="funding-actions"><button class="btn small" type="button" data-save-funding-request>Actualizar solicitud</button></div></section>
+      </div><div class="funding-form-grid" style="margin-top:14px;"><label>Monto solicitado<input id="fundingDossierRequested" type="number" min="0" step="any" value="${Number(s.requestedAmount || 0)}" ${canEditRequest ? '' : 'readonly'}></label><label>Fondos ya asegurados para esta solicitud<input id="fundingDossierSecured" type="number" min="0" step="any" value="${Number(s.securedRequestAmount || 0)}" ${canEditRequest ? '' : 'readonly'}></label></div>${canEditRequest ? '<div class="funding-actions"><button class="btn small" type="button" data-save-funding-request>Actualizar solicitud</button></div>' : ''}</section>
       ${renderDeclaredChecks('Comprobaciones jurídicas declaradas', detail.project.legalData?.assessment, legalChecks)}
       ${renderDeclaredChecks('Comprobaciones técnicas declaradas', detail.project.technicalData?.assessment, technicalChecks)}
       ${phasesHtml}
-      <section class="funding-section"><h3>Scoring</h3><h4>Datos procedentes del perfil del promotor</h4>${renderPromoterProfile(detail.promoter || {})}${renderFundingScore(detail)}
+      <section class="funding-section"><h3>Scoring</h3><div class="funding-list-metrics"><div class="funding-metric"><span>Scoring final</span><strong>${escapeHtml(finalScoreLabel)}</strong></div><div class="funding-metric"><span>Scoring automático</span><strong>${Number(f.automaticScore || 0).toFixed(1)} / 100</strong></div></div><div class="funding-form-grid" style="margin:14px 0 18px;"><label>Puntuación final<input id="fundingFinalScore" type="number" min="0" max="100" step="any" value="${f.finalScore == null ? '' : Number(f.finalScore)}" placeholder="Pendiente"></label></div><h4>Datos procedentes del perfil del promotor</h4>${renderPromoterProfile(detail.promoter || {})}${renderFundingScore(detail)}
         <div class="funding-form-grid" style="margin-top:16px;"><label class="wide">Valoración de mercado<textarea id="fundingMarketAssessment" rows="3">${escapeHtml(f.marketAssessment || '')}</textarea></label><label class="wide">Comentarios internos<textarea id="fundingInternalComments" rows="3">${escapeHtml(f.internalComments || '')}</textarea></label></div>
         <h4>Análisis de mercado</h4><div class="funding-form-grid" data-funding-market-form><label>Ingreso mensual medio estimado del hogar objetivo<input type="number" min="0" step="any" data-market-field="targetHouseholdMonthlyIncome" value="${Number(market.targetHouseholdMonthlyIncome || 0)}"></label><label>Precio medio de venta del proyecto<input type="number" readonly value="${Number(detail.derivedAverageSalePrice || 0)}"></label><label>Cuota hipotecaria mensual estimada<input type="number" min="0" step="any" data-market-field="estimatedMonthlyMortgagePayment" value="${Number(market.estimatedMonthlyMortgagePayment || 0)}"></label><label>Ratio cuota/ingresos (%)<input type="number" readonly data-market-field="paymentToIncomeRatio" value="${Number(market.paymentToIncomeRatio || 0).toFixed(2)}"></label><label>Precio medio de proyectos comparables<input type="number" min="0" step="any" data-market-field="comparableProjectsAveragePrice" value="${Number(market.comparableProjectsAveragePrice || 0)}"></label><label>Velocidad de venta estimada<input data-market-field="estimatedSalesVelocity" value="${escapeHtml(market.estimatedSalesVelocity || '')}"></label><label>Fuente de los datos<input data-market-field="dataSource" value="${escapeHtml(market.dataSource || '')}"></label><label>Fecha de referencia<input type="date" data-market-field="referenceDate" value="${market.referenceDate ? escapeHtml(String(market.referenceDate).slice(0, 10)) : ''}"></label><label>Puntuación de mercado<input type="number" min="0" max="100" step="any" data-market-field="marketScore" value="${Number(market.marketScore || 0)}"></label><label class="wide">Comentario del analista<textarea rows="3" data-market-field="analystComment">${escapeHtml(market.analystComment || '')}</textarea></label></div>
         <div class="funding-actions"><button class="btn small" type="button" data-save-funding-score>Guardar scoring y análisis</button><button class="btn ghost small" type="button" data-recalculate-funding-score>Recalcular scoring automático</button></div>
       </section>
-      <section class="funding-section"><h3>Publicación</h3><div class="funding-publication-state ${isPublished ? 'is-published' : ''}"><strong>${isPublished ? 'Publicado en marketplace' : 'No publicado en marketplace'}</strong><span>Modalidad: ${restrictedTenants ? 'solo tenants seleccionados' : 'todos los bancos'}${f.publishedAt ? ` · Fecha: ${new Date(f.publishedAt).toLocaleString('es-ES')} · Publicado por: ${escapeHtml(publishedBy)}` : ''}</span></div>
-        <div class="funding-publication-readiness ${missingPublicationRequirements.length ? 'has-missing' : 'is-ready'}"><strong>${missingPublicationRequirements.length ? 'Faltan requisitos para publicar' : 'Expediente listo para publicar'}</strong><div>${publicationRequirements.map(([ready, label]) => `<span class="${ready ? 'is-ready' : 'is-missing'}">${ready ? '✓' : '!' } ${escapeHtml(label)}</span>`).join('')}</div></div>
-        <p class="msg" data-funding-publication-message style="display:none;" aria-live="polite"></p>
-        <div class="funding-form-grid"><label>Scoring final para publicar<input id="fundingFinalScore" type="number" min="0" max="100" step="any" value="${f.finalScore == null ? '' : Number(f.finalScore)}" placeholder="Sugerido automático: ${Number(f.automaticScore || 0).toFixed(1)}"><span class="small muted">Scoring automático sugerido: ${Number(f.automaticScore || 0).toFixed(1)}. El valor final lo decide el superadmin.</span></label><label>Fecha límite de financiación<input id="fundingDossierDeadline" type="date" value="${f.fundingDeadline ? escapeHtml(String(f.fundingDeadline).slice(0, 10)) : ''}"></label><label>Estado de financiación<select id="fundingStatus">${Object.entries(FUNDING_STATUS_LABELS).filter(([value]) => value !== 'published' || f.status === 'published').map(([value,label]) => `<option value="${value}" ${f.status === value ? 'selected' : ''} ${value === 'published' ? 'disabled' : ''}>${label}</option>`).join('')}</select></label><label><span>Visibilidad en marketplace</span><span><input id="fundingVisible" type="checkbox" ${f.isVisibleToBanks ? 'checked' : ''}> Publicar para bancos autorizados al guardar</span></label><label class="wide">Conclusiones públicas<textarea id="fundingPublicConclusions" rows="3">${escapeHtml(f.publicConclusions || '')}</textarea></label></div>
-        <details class="funding-advanced" ${restrictedTenants ? 'open' : ''}><summary>Acceso y contenido visible para bancos</summary><div class="funding-advanced-body">
-          <p class="small muted">Esta configuración no cambia los tenants del proyecto. Solo decide qué bancos pueden ver este anuncio y qué información aparece al abrirlo.</p>
-          <h4>¿Quién puede ver la oportunidad?</h4><div class="funding-access-options">
-            <label class="funding-access-option"><input type="radio" name="fundingTenantMode" value="all" ${restrictedTenants ? '' : 'checked'}> <span><b>Todos los bancos</b><br><small class="muted">Disponible para cualquier tenant bancario.</small></span></label>
-            <label class="funding-access-option"><input type="radio" name="fundingTenantMode" value="selected" ${restrictedTenants ? 'checked' : ''}> <span><b>Solo bancos seleccionados</b><br><small class="muted">Restringe la oportunidad a tenants concretos.</small></span></label>
-          </div>
-          <div data-funding-tenant-picker style="display:${restrictedTenants ? '' : 'none'};"><label>Selecciona uno o varios bancos<select class="funding-tenant-picker" multiple data-public-tenant-select>${tenantOptions.map(option => `<option value="${escapeHtml(option.key)}" ${selectedTenants.has(option.key) ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select></label><p class="small muted">Usa Ctrl o Cmd para seleccionar varios bancos.</p></div>
-          <h4>¿Qué verá el banco al abrir el anuncio?</h4><p class="small muted">Nombre, portada, tipo, estado e importes principales siempre aparecen en la tarjeta. Aquí eliges el contenido adicional del detalle.</p>
-          <div class="funding-preset-actions"><button class="btn ghost small" type="button" data-public-preset="summary">Aplicar ficha resumida</button><button class="btn ghost small" type="button" data-public-preset="extended">Aplicar ficha ampliada</button><button class="btn ghost small" type="button" data-public-preset="clear">Limpiar selección</button></div>
-          <div class="funding-public-groups">${publicGroups.map(([group, keys]) => `<section class="funding-public-group"><h5>${group}</h5><div>${keys.map(value => `<label class="funding-public-option"><input type="checkbox" data-public-field value="${value}" ${selectedFields.has(value) ? 'checked' : ''}> ${PUBLIC_FIELD_LABELS[value]}</label>`).join('')}</div></section>`).join('')}</div>
-          <h4>Documentos públicos</h4><label class="funding-public-option" style="margin-bottom:10px!important;"><input type="checkbox" data-public-field value="documents" ${selectedFields.has('documents') ? 'checked' : ''}> Permitir los documentos seleccionados abajo</label><div class="funding-checks">${(detail.documents || []).length ? detail.documents.map(doc => `<label class="funding-public-option"><input type="checkbox" data-public-document value="${escapeHtml(doc._id)}" ${selectedDocs.has(String(doc._id)) ? 'checked' : ''}> ${escapeHtml(doc.title || doc.originalname || 'Documento')}</label>`).join('') : '<span class="muted">No hay documentos disponibles.</span>'}</div>
-        </div></details>
-        <div class="funding-actions"><button class="btn small" type="button" data-save-funding-publication>Guardar cambios</button><button class="btn ghost small" type="button" data-funding-quick-status="approved">Aprobar oportunidad</button><button class="btn ghost small" type="button" data-funding-quick-status="rejected">Rechazar oportunidad</button>${isPublished ? '<button class="btn ghost small" type="button" data-funding-withdraw>Retirar del marketplace</button>' : '<button class="btn small" type="button" data-funding-publish>Publicar</button>'}</div>
-      </section>
-      <section class="funding-section"><h3>Intereses recibidos</h3><div style="display:grid;gap:12px;">${renderFundingInterests(detail)}</div></section>
     </div>`;
   }
 
@@ -3903,6 +3848,11 @@ allProjectsNext?.addEventListener('click', () => {
 });
 
   // ---------- INIT ----------
+  if (roleL === 'bank') {
+    await initBankDashboard();
+    await loadFundingAdmin();
+    return;
+  }
   await syncFundingModuleSettings();
   await Promise.all([
     loadPendingUsers(),

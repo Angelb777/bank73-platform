@@ -26,6 +26,13 @@ const PORTFOLIO_SOLD_STATUSES = new Set([
 ]);
 const role = req => String(req.user?.role || '').toLowerCase();
 const uid = req => req.user?.userId || req.user?._id;
+const canManageFunding = req => ['admin', 'bank'].includes(role(req));
+const BANK_SCORING_FIELDS = new Set(['finalScore', 'marketAssessment', 'marketAnalysis', 'internalComments', 'scoreBreakdown']);
+const fundingProjectFilter = (req, projectId) => ({
+  ...(projectId ? { _id: projectId } : {}),
+  tenantKey: req.tenantKey,
+  seeksFinancing: true
+});
 const isId = value => mongoose.Types.ObjectId.isValid(value);
 const cleanText = (value, max = 3000) => String(value || '').trim().slice(0, max);
 const money = value => Math.max(0, Number(value) || 0);
@@ -45,7 +52,7 @@ async function scoreFor(project, funding) {
 }
 
 async function ensureFunding(project) {
-  let funding = await ProjectFunding.findOne({ project: project._id });
+  let funding = await ProjectFunding.findOne({ project: project._id, tenantKey: project.tenantKey });
   if (!funding) funding = await ProjectFunding.create({ tenantKey: project.tenantKey, project: project._id });
   return funding;
 }
@@ -116,11 +123,11 @@ router.get('/module-settings', async (_req, res) => {
 });
 
 router.get('/admin', async (req, res) => {
-  if (role(req) !== 'admin') return res.status(403).json({ error: 'Acceso solo para superadmin' });
-  const projects = await Project.find({ tenantKey: req.tenantKey, seeksFinancing: true }).sort({ createdAt: -1 }).lean();
+  if (!canManageFunding(req)) return res.status(403).json({ error: 'Acceso solo para administradores y bancos' });
+  const projects = await Project.find(fundingProjectFilter(req)).sort({ createdAt: -1 }).lean();
   const projectIds = projects.map(p => p._id);
   const [fundings, finances, units] = await Promise.all([
-    ProjectFunding.find({ project: { $in: projectIds } }).lean(),
+    ProjectFunding.find({ tenantKey: req.tenantKey, project: { $in: projectIds } }).lean(),
     ProjectFinance.find({ project: { $in: projectIds }, tenantKey: req.tenantKey }).lean(),
     Unit.find({ projectId: { $in: projectIds }, $and: [{ $or: [{ tenantKey: req.tenantKey }, { tenantKey: { $exists: false } }] }, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] }).select('projectId precioLista').lean()
   ]);
@@ -153,8 +160,8 @@ router.get('/admin', async (req, res) => {
 });
 
 router.get('/admin/:projectId', async (req, res) => {
-  if (role(req) !== 'admin') return res.status(403).json({ error: 'Acceso solo para superadmin' });
-  const project = await Project.findOne({ _id: req.params.projectId, tenantKey: req.tenantKey }).lean();
+  if (!canManageFunding(req)) return res.status(403).json({ error: 'Acceso solo para administradores y bancos' });
+  const project = await Project.findOne(fundingProjectFilter(req, req.params.projectId)).lean();
   if (!project || !project.seeksFinancing) return res.status(404).json({ error: 'Solicitud no encontrada' });
   const funding = await ensureFunding(project);
   const promoterId = project.assignedPromoters?.[0];
@@ -184,8 +191,8 @@ router.get('/admin/:projectId', async (req, res) => {
 });
 
 router.post('/admin/:projectId/recalculate', async (req, res) => {
-  if (role(req) !== 'admin') return res.status(403).json({ error: 'Acceso solo para superadmin' });
-  const project = await Project.findOne({ _id: req.params.projectId, tenantKey: req.tenantKey }).lean();
+  if (!canManageFunding(req)) return res.status(403).json({ error: 'Acceso solo para administradores y bancos' });
+  const project = await Project.findOne(fundingProjectFilter(req, req.params.projectId)).lean();
   if (!project?.seeksFinancing) return res.status(404).json({ error: 'Solicitud no encontrada' });
   const funding = await ensureFunding(project);
   const result = await scoreFor(project, funding);
@@ -199,8 +206,12 @@ router.post('/admin/:projectId/recalculate', async (req, res) => {
 });
 
 router.patch('/admin/:projectId', async (req, res) => {
-  if (role(req) !== 'admin') return res.status(403).json({ error: 'Acceso solo para superadmin' });
-  const project = await Project.findOne({ _id: req.params.projectId, tenantKey: req.tenantKey }).lean();
+  if (!canManageFunding(req)) return res.status(403).json({ error: 'Acceso solo para administradores y bancos' });
+  if (role(req) === 'bank') {
+    const forbiddenFields = Object.keys(req.body || {}).filter(key => !BANK_SCORING_FIELDS.has(key));
+    if (forbiddenFields.length) return res.status(403).json({ error: 'El banco solo puede modificar el scoring y su analisis' });
+  }
+  const project = await Project.findOne(fundingProjectFilter(req, req.params.projectId)).lean();
   if (!project?.seeksFinancing) return res.status(404).json({ error: 'Solicitud no encontrada' });
   const funding = await ensureFunding(project);
   const publicationAction = cleanText(req.body.publicationAction, 30);
@@ -398,3 +409,4 @@ router.post('/opportunities/:id/interests', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.fundingProjectFilter = fundingProjectFilter;

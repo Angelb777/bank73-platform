@@ -455,7 +455,6 @@
 
       // Reaplicar filtro si ya había texto
       if (searchInput && searchInput.value) applyAllFilters();
-      if (fundingModuleEnabled && ['bank', 'admin'].includes((API.getRole?.() || '').toLowerCase())) loadFundingOpportunities();
     } catch (e) {
       container.innerHTML = `<div class="card">Error: ${escapeHtml(e.message || e)}</div>`;
       if (banner) banner.style.display = 'none';

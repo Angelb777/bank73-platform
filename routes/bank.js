@@ -44,12 +44,13 @@ router.get('/dashboard', requireRole('bank'), async (req, res) => {
     const tenantKeys = Array.isArray(req.user?.tenantKeys)
       ? Array.from(new Set(req.user.tenantKeys.map(v => String(v || '').trim()).filter(Boolean)))
       : [];
+    const activeTenantKey = String(req.tenantKey || '').trim();
 
-    if (!tenantKeys.length) {
+    if (!activeTenantKey || !tenantKeys.includes(activeTenantKey)) {
       return res.status(403).json({ error: 'No tienes tenants asignados.' });
     }
 
-    const tenantFilter = { $in: tenantKeys };
+    const tenantFilter = activeTenantKey;
     const tenantUsers = await User.find(
       { $or: [{ tenantKey: tenantFilter }, { tenantKeys: tenantFilter }] },
       { password: 0 }
@@ -81,7 +82,7 @@ router.get('/dashboard', requireRole('bank'), async (req, res) => {
             $or: [{ tenantKey: projectTenantFilter }, { tenantKeys: projectTenantFilter }]
           }, { password: 0 }).lean()
         : [],
-      AuditLog.find({ tenantKey: tenantFilter }).sort({ createdAt: -1 }).limit(50).lean(),
+      AuditLog.find({ tenantKey: req.tenantKey }).sort({ createdAt: -1 }).limit(50).lean(),
       projectIds.length ? Document.countDocuments({ tenantKey: projectTenantFilter, projectId: { $in: projectIds } }) : 0,
       projectIds.length
         ? Milestone.find({ tenantKey: projectTenantFilter, projectId: { $in: projectIds } }).sort({ createdAt: -1 }).limit(20).lean()
@@ -92,7 +93,7 @@ router.get('/dashboard', requireRole('bank'), async (req, res) => {
     [...tenantUsers, ...relatedUsers].forEach(user => projectUsersById.set(String(user._id), user));
 
     res.json({
-      tenantKey: tenantKeys[0],
+      tenantKey: activeTenantKey,
       tenantKeys,
       projects,
       users: tenantUsers,
