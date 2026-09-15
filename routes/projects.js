@@ -11,6 +11,7 @@ const Document          = require('../models/Document');
 const Venta             = require('../models/Venta');
 const Unit              = require('../models/Unit');
 const User              = require('../models/User');
+const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment');
 const ProjectFinance    = require('../models/ProjectFinance');
 const ProjectFunding    = require('../models/ProjectFunding');
 const { calculateFundingScore } = require('../services/fundingScoring');
@@ -1040,13 +1041,24 @@ function buildPortfolioQuery(req) {
 async function validateAssignees({ tenantKey, role, ids }) {
   const uniq = Array.from(new Set((ids || []).filter(Boolean)));
   if (!uniq.length) return [];
-  const tenantMembership = role === 'bank'
+  const tenantMembership = role === 'bank' || role === 'avaluador'
     ? { $or: [{ tenantKey }, { tenantKeys: tenantKey }] }
     : { tenantKey };
   const users = await User.find({
     ...tenantMembership, role, status: 'active', _id: { $in: uniq.map(toObjectId) }
-  }).select('_id').lean();
-  return users.map(u => u._id);
+  }).select('_id avaluatorBankMemberships').lean();
+  return users
+    .filter(user => {
+      if (role !== 'avaluador') return true;
+      const memberships = Array.isArray(user.avaluatorBankMemberships)
+        ? user.avaluatorBankMemberships
+        : [];
+      return !memberships.length || memberships.some(item =>
+        String(item?.bankTenantKey || '') === String(tenantKey) &&
+        String(item?.status || '').toLowerCase() === 'active'
+      );
+    })
+    .map(user => user._id);
 }
 
 function sanitizeTeamSuggestion(input) {
@@ -1478,21 +1490,32 @@ router.get('/portfolio', async (req, res) => {
   }
 });
 
-// GET /api/projects/assignees?role=bank|promoter|commercial|legal|tecnico|gerencia|socios|financiero|contable
+// GET /api/projects/assignees?role=bank|promoter|commercial|legal|tecnico|gerencia|socios|financiero|contable|avaluador
 router.get('/assignees', requireRole('admin','bank'), async (req, res) => {
   try {
     const role = (req.query.role || '').toLowerCase();
-    const allowed = ['bank','promoter','commercial','legal','tecnico','gerencia','socios','financiero','contable'];
+    const allowed = ['bank','promoter','commercial','legal','tecnico','gerencia','socios','financiero','contable','avaluador'];
     if (!allowed.includes(role)) {
       return res.status(400).json({ error: `role inválido. Usa ${allowed.join('|')}` });
     }
-    const tenantMembership = role === 'bank'
+    const tenantMembership = role === 'bank' || role === 'avaluador'
       ? { $or: [{ tenantKey: req.tenantKey }, { tenantKeys: req.tenantKey }] }
       : { tenantKey: req.tenantKey };
-    const users = await User.find(
+    let users = await User.find(
       { ...tenantMembership, role, status: 'active' },
       { password: 0 }
     ).sort({ name: 1 }).lean();
+    if (role === 'avaluador') {
+      users = users.filter(user => {
+        const memberships = Array.isArray(user.avaluatorBankMemberships)
+          ? user.avaluatorBankMemberships
+          : [];
+        return !memberships.length || memberships.some(item =>
+          String(item?.bankTenantKey || '') === String(req.tenantKey) &&
+          String(item?.status || '').toLowerCase() === 'active'
+        );
+      });
+    }
     res.json({ users });
   } catch (e) {
     console.error('[ASSIGNEES ERROR]', e);
@@ -1700,6 +1723,21 @@ router.get('/:id', requireProjectAccess(), async (req, res) => {
     const role = String(req.user?.role || '').toLowerCase();
     if (role !== 'admin' && p.publishStatus !== 'approved') {
       return res.status(403).json({ error: 'Proyecto pendiente de aprobación del administrador.' });
+    }
+
+    // Los avaluadores no se guardan dentro de Project. Para precargar el
+    // selector del dashboard se añaden al DTO exclusivamente para el admin.
+    if (role === 'admin') {
+      const assignments = await ProjectAvaluatorAssignment.find({
+        bankTenantKey: tenantKey,
+        projectId: p._id,
+        projectTenantKey: p.tenantKey,
+        status: 'active'
+      }).select('avaluadorId').lean();
+      p.assignees = {
+        ...(p.assignees || {}),
+        avaluador: assignments.map(item => item.avaluadorId)
+      };
     }
 
     res.json(p);
@@ -2060,8 +2098,8 @@ router.delete('/:id', requireRole('admin'), async (req, res) => {
 
 // PUT /api/projects/:id/assign
 // Body admite:
-// 1) genérico: { assignments: { promoter:[], commercial:[], legal:[], tecnico:[], gerencia:[], socios:[], financiero:[], contable:[] } }
-// 2) legacy:   { promoters, commercials, legal, tecnico, gerencia, socios, financiero, contable }
+// 1) genérico: { assignments: { promoter:[], commercial:[], legal:[], tecnico:[], gerencia:[], socios:[], financiero:[], contable:[], avaluador:[] } }
+// 2) legacy:   { promoters, commercials, legal, tecnico, gerencia, socios, financiero, contable, avaluadores }
 router.put('/:id/assign', requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -2083,7 +2121,8 @@ router.put('/:id/assign', requireRole('admin'), async (req, res) => {
         gerencia:   body.gerencia,
         socios:     body.socios,
         financiero: body.financiero,
-        contable:   body.contable
+        contable:   body.contable,
+        avaluador:  body.avaluadores
       };
       assignments = Object.fromEntries(
         Object.entries(legacyMap).filter(([_, v]) => Array.isArray(v))
@@ -2095,7 +2134,7 @@ router.put('/:id/assign', requireRole('admin'), async (req, res) => {
     }
 
     // --- VALIDACIÓN POR ROL ---
-    const roles = ['bank','promoter','commercial','legal','tecnico','gerencia','socios','financiero','contable'];
+    const roles = ['bank','promoter','commercial','legal','tecnico','gerencia','socios','financiero','contable','avaluador'];
     const validated = {};
     for (const r of roles) {
       if (Array.isArray(assignments[r])) {
@@ -2115,13 +2154,58 @@ router.put('/:id/assign', requireRole('admin'), async (req, res) => {
     if (validated.financiero) update.assignedFinanciero  = validated.financiero;
     if (validated.contable)   update.assignedContable    = validated.contable;
 
-    const proj = await Project.findOneAndUpdate(
-      { _id: id, tenantKey },
-      update,
-      { new: true }
-    );
-
+    let proj = await Project.findOne({ _id: id, tenantKey });
     if (!proj) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+    if (Object.keys(update).length) {
+      proj = await Project.findOneAndUpdate(
+        { _id: id, tenantKey },
+        update,
+        { new: true }
+      );
+    }
+
+    if (validated.avaluador) {
+      const now = new Date();
+      const selectedIds = validated.avaluador;
+      const revokeFilter = {
+        bankTenantKey: tenantKey,
+        projectId: proj._id,
+        status: 'active'
+      };
+      if (selectedIds.length) revokeFilter.avaluadorId = { $nin: selectedIds };
+
+      await ProjectAvaluatorAssignment.updateMany(revokeFilter, {
+        $set: {
+          status: 'revoked',
+          revokedBy: req.user.userId,
+          revokedAt: now
+        }
+      });
+
+      await Promise.all(selectedIds.map(avaluadorId =>
+        ProjectAvaluatorAssignment.findOneAndUpdate(
+          { bankTenantKey: tenantKey, projectId: proj._id, avaluadorId },
+          {
+            $set: {
+              projectTenantKey: proj.tenantKey,
+              status: 'active',
+              assignedBy: req.user.userId,
+              assignedAt: now,
+              revokedBy: null,
+              revokedAt: null
+            },
+            $setOnInsert: {
+              bankTenantKey: tenantKey,
+              projectId: proj._id,
+              avaluadorId
+            }
+          },
+          { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
+        )
+      ));
+    }
+
     await audit(req, 'project.assigned', {
       targetType: 'project',
       targetId: proj._id,

@@ -38,7 +38,8 @@ const ALL_ROLES = [
   'contable',
   'financiero',
   'legal',
-  'tecnico'
+  'tecnico',
+  'avaluador'
 ];
 
 // Solo los roles que el endpoint /api/projects/assignees admite
@@ -51,7 +52,8 @@ const ASSIGNABLE_ROLES = [
   'gerencia',
   'socios',
   'financiero',
-  'contable'
+  'contable',
+  'avaluador'
 ];
 
 const PROJECT_TYPES = [
@@ -90,7 +92,8 @@ const ROLE_LABEL = (r) => ({
   contable: 'Contable',
   financiero: 'Financiero',
   legal: 'Legal',
-  tecnico: 'Técnico'
+  tecnico: 'Técnico',
+  avaluador: 'Avaluador'
 }[String(r).toLowerCase()] || r);
 
 const ASSIGNMENT_ROLE_LABEL = (r) => ({
