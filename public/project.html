@@ -1768,6 +1768,7 @@ body.light-theme .provider-exclusive {
       <button type="button" class="tab" data-tab="comercial" id="tabBtn-comercial">Comercial</button>
       <button type="button" class="tab" data-tab="proveedores" id="tabBtn-proveedores">Proveedores</button>
       <button type="button" class="tab" data-tab="docs" id="tabBtn-docs">Docs</button>
+      <button type="button" class="tab" data-tab="avaluadores" id="tabBtn-avaluadores" style="display:none;">Avaluadores</button>
       <button type="button" class="tab" data-tab="chat" id="tabBtn-chat">Chat</button>
     </div>
 
@@ -2866,6 +2867,33 @@ body.light-theme .provider-exclusive {
 </div>
 
     <!-- 👇 Pestaña Chat -->
+<div class="tabpane" id="tab-avaluadores" style="display:none;">
+  <section class="card">
+    <div class="section-head">
+      <div>
+        <h2>Avaluadores</h2>
+        <p class="muted">Crea avaluadores del banco y gestiona su asignación a este proyecto.</p>
+      </div>
+      <button id="refreshAvaluadoresBtn" class="btn btn-ghost btn-xs" type="button">Actualizar</button>
+    </div>
+    <div id="avaluadoresMessage" class="small muted" aria-live="polite"></div>
+    <form id="createAvaluadorForm" class="grid cols-2" style="margin-top:14px;">
+      <label>Nombre<input id="avaluadorName" required maxlength="180" autocomplete="name"></label>
+      <label>Email<input id="avaluadorEmail" required type="email" maxlength="254" autocomplete="email"></label>
+      <label>Contraseña temporal<input id="avaluadorPassword" required type="password" minlength="8" autocomplete="new-password"></label>
+      <div class="row" style="align-items:end;"><button class="btn" type="submit">Crear / invitar</button></div>
+    </form>
+    <hr style="margin:20px 0;border:0;border-top:1px solid var(--stroke);">
+    <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap;">
+      <label style="min-width:260px;">Avaluador activo<select id="avaluadorAssignSelect"></select></label>
+      <button id="assignAvaluadorBtn" class="btn" type="button">Asignar al proyecto</button>
+    </div>
+    <div id="avaluadoresBankList" style="margin-top:18px;"></div>
+    <h3 style="margin-top:22px;">Asignados a este proyecto</h3>
+    <div id="avaluadoresProjectList"></div>
+  </section>
+</div>
+
 <div class="tabpane" id="tab-chat">
   <div class="chat-wrap">
     <!-- Caja de composición -->
@@ -2903,6 +2931,7 @@ body.light-theme .provider-exclusive {
   <script src="/lib/chart.umd.min.js"></script>
   <script src="/js/theme-toggle.js"></script>
   <script src="/js/project.js?v=requirements-29-project-top-v1"><!-- ROLE-SEP: bump --></script>
+  <script src="/js/avaluadores.js?v=1"></script>
 
 </body>
 </html>

@@ -12,14 +12,12 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _tenant = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _obscure = true;
 
   @override
   void dispose() {
-    _tenant.dispose();
     _email.dispose();
     _password.dispose();
     super.dispose();
@@ -30,11 +28,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     FocusScope.of(context).unfocus();
     await ref
         .read(authControllerProvider.notifier)
-        .login(
-          email: _email.text,
-          password: _password.text,
-          tenantKey: _tenant.text.trim(),
-        );
+        .login(email: _email.text, password: _password.text);
   }
 
   @override
@@ -77,26 +71,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ),
                             const SizedBox(height: 8),
                             const Text(
-                              'Utiliza las credenciales y el identificador de tu banco.',
+                              'Utiliza tus credenciales de avaluador.',
                               style: TextStyle(color: Bank73Colors.muted),
                             ),
                             const SizedBox(height: 24),
-                            TextFormField(
-                              controller: _tenant,
-                              enabled: !busy,
-                              textInputAction: TextInputAction.next,
-                              decoration: const InputDecoration(
-                                labelText: 'Banco / tenant',
-                                prefixIcon: Icon(
-                                  Icons.account_balance_outlined,
-                                ),
-                              ),
-                              validator: (value) =>
-                                  value == null || value.trim().isEmpty
-                                  ? 'Indica el banco o tenant.'
-                                  : null,
-                            ),
-                            const SizedBox(height: 14),
                             TextFormField(
                               controller: _email,
                               enabled: !busy,

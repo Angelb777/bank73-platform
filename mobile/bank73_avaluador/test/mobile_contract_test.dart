@@ -1,4 +1,5 @@
 import 'package:bank73_avaluador/core/api/api_client.dart';
+import 'package:bank73_avaluador/core/api/api_config.dart';
 import 'package:bank73_avaluador/core/errors/api_exception.dart';
 import 'package:bank73_avaluador/core/models/models.dart';
 import 'package:bank73_avaluador/core/storage/secure_session_store.dart';
@@ -51,7 +52,6 @@ class FakeTransport implements ApiTransport {
   Future<Map<String, dynamic>> post(
     String path, {
     Map<String, dynamic>? body,
-    String? tenantKey,
     bool authenticated = true,
   }) async {
     method = 'POST';
@@ -87,15 +87,19 @@ Map<String, dynamic> inspectionUnitJson({
 };
 
 void main() {
+  test('default physical-device backend is the real HTTPS service', () {
+    expect(ApiConfig.baseUrl, 'https://www.bank73.com');
+  });
+
   test(
-    'authenticated API requests include Bearer token and bank tenant',
+    'authenticated API requests include Bearer token without client tenant',
     () async {
       final store = MemorySessionStore(
-        const SessionCredentials(token: 'secret-token', tenantKey: 'bank-a'),
+        const SessionCredentials(token: 'secret-token'),
       );
       final client = MockClient((request) async {
         expect(request.headers['authorization'], 'Bearer secret-token');
-        expect(request.headers['x-tenant'], 'bank-a');
+        expect(request.headers.containsKey('x-tenant'), isFalse);
         return http.Response(
           '{"projects":[]}',
           200,

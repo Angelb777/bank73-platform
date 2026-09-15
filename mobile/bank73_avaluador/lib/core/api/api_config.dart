@@ -8,7 +8,7 @@ abstract final class ApiConfig {
   static String get baseUrl {
     final value = _configuredBaseUrl.trim().isNotEmpty
         ? _configuredBaseUrl.trim()
-        : 'http://10.0.2.2:3000';
+        : 'https://www.bank73.com';
     final uri = Uri.tryParse(value);
     if (uri == null || !uri.hasScheme || uri.host.isEmpty)
       throw StateError('API_BASE_URL no es una URL valida.');

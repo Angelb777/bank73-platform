@@ -39,13 +39,15 @@ const UNIT_FIELDS = [
 
 function activeAvaluatorContext(req) {
   const userId = req.user?.userId || req.user?._id;
-  const bankTenantKey = String(req.tenantKey || '').trim();
-  const allowedTenants = Array.isArray(req.user?.tenantKeys)
-    ? req.user.tenantKeys.map(value => String(value || '').trim()).filter(Boolean)
-    : [];
+  const sourceTenants = Array.isArray(req.user?.avaluatorBankTenantKeys)
+    ? req.user.avaluatorBankTenantKeys
+    : (Array.isArray(req.user?.tenantKeys) ? req.user.tenantKeys : []);
+  const bankTenantKeys = sourceTenants
+    .map(value => String(value || '').trim())
+    .filter(Boolean);
 
-  if (!userId || !bankTenantKey || !allowedTenants.includes(bankTenantKey)) return null;
-  return { userId, bankTenantKey };
+  if (!userId || !bankTenantKeys.length) return null;
+  return { userId, bankTenantKeys: Array.from(new Set(bankTenantKeys)) };
 }
 
 function coverImageDto(coverImage) {
@@ -259,7 +261,7 @@ async function activeAssignmentFor(req, projectId) {
   if (!context || !mongoose.Types.ObjectId.isValid(String(projectId || ''))) return null;
 
   return ProjectAvaluatorAssignment.findOne({
-    bankTenantKey: context.bankTenantKey,
+    bankTenantKey: { $in: context.bankTenantKeys },
     projectId,
     avaluadorId: context.userId,
     status: 'active'
@@ -284,14 +286,14 @@ async function authorizedInspectionFor(req, inspectionId) {
 
   const inspection = await Inspection.findOne({
     _id: inspectionId,
-    bankTenantKey: context.bankTenantKey,
+    bankTenantKey: { $in: context.bankTenantKeys },
     avaluadorId: context.userId
   }).lean();
   if (!inspection) return null;
 
   const assignment = await ProjectAvaluatorAssignment.findOne({
     _id: inspection.assignmentId,
-    bankTenantKey: context.bankTenantKey,
+    bankTenantKey: inspection.bankTenantKey,
     projectTenantKey: inspection.projectTenantKey,
     projectId: inspection.projectId,
     avaluadorId: context.userId,
@@ -316,7 +318,7 @@ router.get('/projects', async (req, res) => {
     if (!context) return res.status(404).json({ error: 'Proyectos no encontrados.' });
 
     const assignments = await ProjectAvaluatorAssignment.find({
-      bankTenantKey: context.bankTenantKey,
+      bankTenantKey: { $in: context.bankTenantKeys },
       avaluadorId: context.userId,
       status: 'active'
     }).sort({ assignedAt: -1 }).lean();
@@ -494,7 +496,7 @@ router.patch('/inspections/:inspectionId', async (req, res) => {
     const inspection = await Inspection.findOneAndUpdate(
       {
         _id: resolved.inspection._id,
-        bankTenantKey: resolved.context.bankTenantKey,
+        bankTenantKey: resolved.inspection.bankTenantKey,
         projectTenantKey: resolved.inspection.projectTenantKey,
         projectId: resolved.inspection.projectId,
         avaluadorId: resolved.context.userId,
@@ -540,7 +542,7 @@ router.put('/inspections/:inspectionId/units/:unitId', async (req, res) => {
     if (!unit) return res.status(404).json({ error: 'Unidad no encontrada.' });
 
     const identity = {
-      bankTenantKey: resolved.context.bankTenantKey,
+      bankTenantKey: resolved.inspection.bankTenantKey,
       projectTenantKey: resolved.inspection.projectTenantKey,
       inspectionId: resolved.inspection._id,
       projectId: resolved.inspection.projectId,
@@ -627,7 +629,7 @@ router.get('/inspections/:inspectionId/units', async (req, res) => {
     if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
 
     const units = await InspectionUnit.find({
-      bankTenantKey: resolved.context.bankTenantKey,
+      bankTenantKey: resolved.inspection.bankTenantKey,
       projectTenantKey: resolved.inspection.projectTenantKey,
       inspectionId: resolved.inspection._id,
       projectId: resolved.inspection.projectId
@@ -647,7 +649,7 @@ router.get('/inspections/:inspectionId/units/:unitId', async (req, res) => {
     if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
 
     const item = await InspectionUnit.findOne({
-      bankTenantKey: resolved.context.bankTenantKey,
+      bankTenantKey: resolved.inspection.bankTenantKey,
       projectTenantKey: resolved.inspection.projectTenantKey,
       inspectionId: resolved.inspection._id,
       projectId: resolved.inspection.projectId,

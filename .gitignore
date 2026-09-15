@@ -1,6 +1,6 @@
 # Mongo local (NO subir)
 data/db
-data/
+/data/
 *.lock
 *.wt
 *.bson

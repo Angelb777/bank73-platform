@@ -1,9 +1,8 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class SessionCredentials {
-  const SessionCredentials({required this.token, required this.tenantKey});
+  const SessionCredentials({required this.token});
   final String token;
-  final String tenantKey;
 }
 
 abstract interface class SessionStore {
@@ -20,30 +19,23 @@ class SecureSessionStore implements SessionStore {
             aOptions: AndroidOptions(encryptedSharedPreferences: true),
           );
   static const _tokenKey = 'bank73.jwt';
-  static const _tenantKey = 'bank73.tenant';
   final FlutterSecureStorage _storage;
 
   @override
   Future<void> save(SessionCredentials credentials) async {
     await _storage.write(key: _tokenKey, value: credentials.token);
-    await _storage.write(key: _tenantKey, value: credentials.tenantKey);
   }
 
   @override
   Future<SessionCredentials?> read() async {
     final token = await _storage.read(key: _tokenKey);
-    final tenantKey = await _storage.read(key: _tenantKey);
-    if (token == null ||
-        token.isEmpty ||
-        tenantKey == null ||
-        tenantKey.isEmpty)
-      return null;
-    return SessionCredentials(token: token, tenantKey: tenantKey);
+    if (token == null || token.isEmpty) return null;
+    return SessionCredentials(token: token);
   }
 
   @override
   Future<void> clear() async {
     await _storage.delete(key: _tokenKey);
-    await _storage.delete(key: _tenantKey);
+    await _storage.delete(key: 'bank73.tenant');
   }
 }

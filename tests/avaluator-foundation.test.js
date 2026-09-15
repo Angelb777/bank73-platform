@@ -115,18 +115,18 @@ test('bank router exposes only the minimum avaluador management endpoints', () =
 
 test('bank-created avaluador always belongs to the authenticated bank tenant', async (t) => {
   const handler = routeHandler('post', '/avaluadores');
-  const originalFindOne = User.findOne;
+  const originalFind = User.find;
   const originalCreate = User.create;
   const originalAuditCreate = AuditLog.create;
   let createdPayload;
 
   t.after(() => {
-    User.findOne = originalFindOne;
+    User.find = originalFind;
     User.create = originalCreate;
     AuditLog.create = originalAuditCreate;
   });
 
-  User.findOne = () => ({ select: () => ({ lean: async () => null }) });
+  User.find = () => ({ limit: async () => [] });
   User.create = async payload => {
     createdPayload = payload;
     return { _id: '64b000000000000000000010', ...payload };
@@ -150,7 +150,53 @@ test('bank-created avaluador always belongs to the authenticated bank tenant', a
   assert.deepEqual(createdPayload.tenantKeys, ['bank-a']);
   assert.equal(createdPayload.role, 'avaluador');
   assert.equal(createdPayload.status, 'pending');
+  assert.equal(createdPayload.avaluatorBankMemberships[0].bankTenantKey, 'bank-a');
   assert.notEqual(createdPayload.password, 'Password123!');
+});
+
+test('a second bank invites the same evaluator identity without duplicating the user', async (t) => {
+  const handler = routeHandler('post', '/avaluadores');
+  const originalFind = User.find;
+  const originalCreate = User.create;
+  const originalAuditCreate = AuditLog.create;
+  const existing = {
+    _id: '64b000000000000000000010',
+    tenantKey: 'bank-a',
+    tenantKeys: ['bank-a'],
+    avaluatorBankMemberships: [{ bankTenantKey: 'bank-a', status: 'active' }],
+    name: 'Avaluador compartido',
+    email: 'shared@example.test',
+    role: 'avaluador',
+    status: 'active',
+    async save() { this.saved = true; }
+  };
+  let createCalled = false;
+
+  t.after(() => {
+    User.find = originalFind;
+    User.create = originalCreate;
+    AuditLog.create = originalAuditCreate;
+  });
+  User.find = () => ({ limit: async () => [existing] });
+  User.create = async () => { createCalled = true; };
+  AuditLog.create = async () => ({});
+
+  const capture = responseCapture();
+  await handler({
+    tenantKey: 'bank-b',
+    user: { userId: '64b000000000000000000002', tenantKeys: ['bank-b'] },
+    body: {
+      name: 'Avaluador compartido',
+      email: 'shared@example.test',
+      temporaryPassword: 'IgnoredPassword123!'
+    }
+  }, capture.res);
+
+  assert.equal(capture.statusCode, 201);
+  assert.equal(createCalled, false);
+  assert.equal(existing.saved, true);
+  assert.deepEqual(existing.tenantKeys, ['bank-a', 'bank-b']);
+  assert.equal(existing.avaluatorBankMemberships.find(item => item.bankTenantKey === 'bank-b').status, 'pending');
 });
 
 test('bank cannot manage an avaluador whose primary tenant is different', async (t) => {
@@ -173,7 +219,7 @@ test('bank cannot manage an avaluador whose primary tenant is different', async 
   }, capture.res);
 
   assert.equal(capture.statusCode, 404);
-  assert.equal(userFilter.tenantKey, 'bank-a');
+  assert.deepEqual(userFilter.$or, [{ tenantKey: 'bank-a' }, { tenantKeys: 'bank-a' }]);
   assert.equal(userFilter.role, 'avaluador');
 });
 
@@ -237,7 +283,7 @@ test('cross-tenant assignment persists bank and project tenants separately', asy
   assert.equal(projectFilter.publishStatus, 'approved');
   assert.deepEqual(projectFilter.$or[0], { tenantKey: 'bank-a' });
   assert.ok(projectFilter.$or[1].$or.some(condition => condition.assignedBanks));
-  assert.equal(evaluatorFilter.tenantKey, 'bank-a');
+  assert.deepEqual(evaluatorFilter.$or, [{ tenantKey: 'bank-a' }, { tenantKeys: 'bank-a' }]);
   assert.equal(evaluatorFilter.status, 'active');
   assert.equal(assignmentFilter.bankTenantKey, 'bank-a');
   assert.equal(assignmentUpdate.$set.projectTenantKey, 'project-owner');

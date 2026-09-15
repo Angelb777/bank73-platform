@@ -55,17 +55,43 @@ function bankTenantKeyFromSession(req) {
     : '';
 }
 
-function publicAvaluator(user) {
+function publicAvaluator(user, bankTenantKey = '') {
+  const membership = (user.avaluatorBankMemberships || [])
+    .find(item => String(item.bankTenantKey) === String(bankTenantKey));
   return {
     _id: user._id,
     name: user.name,
     email: user.email,
     role: user.role,
-    status: user.status,
+    status: membership?.status || user.status,
     tenantKey: user.tenantKey,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt
   };
+}
+
+function ensureAvaluatorMemberships(user) {
+  if (!Array.isArray(user.avaluatorBankMemberships)) user.avaluatorBankMemberships = [];
+  const known = new Set(user.avaluatorBankMemberships.map(item => String(item.bankTenantKey)));
+  const tenantKeys = Array.from(new Set([
+    user.tenantKey,
+    ...(Array.isArray(user.tenantKeys) ? user.tenantKeys : [])
+  ].map(value => String(value || '').trim()).filter(Boolean)));
+  tenantKeys.forEach(bankTenantKey => {
+    if (!known.has(bankTenantKey)) {
+      user.avaluatorBankMemberships.push({
+        bankTenantKey,
+        status: ['active', 'blocked'].includes(user.status) ? user.status : 'pending',
+        managedAt: new Date()
+      });
+    }
+  });
+  return user.avaluatorBankMemberships;
+}
+
+function bankMembership(user, bankTenantKey) {
+  const memberships = ensureAvaluatorMemberships(user);
+  return memberships.find(item => String(item.bankTenantKey) === String(bankTenantKey));
 }
 
 function avaluationTemplateDto(template) {
@@ -139,10 +165,13 @@ router.get('/avaluadores', requireRole('bank'), async (req, res) => {
     const bankTenantKey = bankTenantKeyFromSession(req);
     if (!bankTenantKey) return res.status(403).json({ error: 'No tienes un tenant bancario activo.' });
 
-    const users = await User.find({ tenantKey: bankTenantKey, role: 'avaluador' }, { password: 0 })
+    const users = await User.find({
+      role: 'avaluador',
+      $or: [{ tenantKey: bankTenantKey }, { tenantKeys: bankTenantKey }]
+    }, { password: 0 })
       .sort({ name: 1, email: 1 })
       .lean();
-    res.json({ tenantKey: bankTenantKey, users: users.map(publicAvaluator) });
+    res.json({ tenantKey: bankTenantKey, users: users.map(user => publicAvaluator(user, bankTenantKey)) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -166,22 +195,47 @@ router.post('/avaluadores', requireRole('bank'), async (req, res) => {
       return res.status(400).json({ error: 'La password temporal debe tener al menos 8 caracteres.' });
     }
 
-    const exists = await User.findOne({
-      email,
-      $or: [{ tenantKey: bankTenantKey }, { tenantKeys: bankTenantKey }]
-    }).select('_id').lean();
-    if (exists) return res.status(409).json({ error: 'El email ya esta registrado en este banco.' });
+    const matchingUsers = await User.find({
+      email: { $regex: `^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' }
+    }).limit(2);
+    if (matchingUsers.length > 1) {
+      return res.status(409).json({ error: 'Existen cuentas legacy duplicadas con este email. Requiere revision administrativa.' });
+    }
+    let user = matchingUsers[0] || null;
+    if (user && user.role !== 'avaluador') {
+      return res.status(409).json({ error: 'El email ya pertenece a un usuario con otro rol.' });
+    }
+    if (user && bankMembership(user, bankTenantKey)) {
+      return res.status(409).json({ error: 'El email ya esta registrado en este banco.' });
+    }
 
-    const user = await User.create({
-      tenantKey: bankTenantKey,
-      tenantKeys: [bankTenantKey],
-      name,
-      email,
-      password: hashPassword(password),
-      role: 'avaluador',
-      roleRequested: null,
-      status: 'pending'
-    });
+    if (user) {
+      user.tenantKeys = Array.from(new Set([...(user.tenantKeys || []), bankTenantKey]));
+      user.avaluatorBankMemberships.push({
+        bankTenantKey,
+        status: 'pending',
+        managedBy: req.user.userId,
+        managedAt: new Date()
+      });
+      await user.save();
+    } else {
+      user = await User.create({
+        tenantKey: bankTenantKey,
+        tenantKeys: [bankTenantKey],
+        name,
+        email,
+        password: hashPassword(password),
+        role: 'avaluador',
+        roleRequested: null,
+        status: 'pending',
+        avaluatorBankMemberships: [{
+          bankTenantKey,
+          status: 'pending',
+          managedBy: req.user.userId,
+          managedAt: new Date()
+        }]
+      });
+    }
 
     await audit(req, 'avaluador.created', {
       tenantKey: bankTenantKey,
@@ -191,7 +245,7 @@ router.post('/avaluadores', requireRole('bank'), async (req, res) => {
       metadata: { email: user.email, status: user.status }
     });
 
-    res.status(201).json({ ok: true, user: publicAvaluator(user) });
+    res.status(201).json({ ok: true, user: publicAvaluator(user, bankTenantKey) });
   } catch (e) {
     if (e?.code === 11000) return res.status(409).json({ error: 'El email ya esta registrado en este banco.' });
     res.status(e?.name === 'ValidationError' ? 400 : 500).json({ error: e.message });
@@ -210,12 +264,19 @@ router.patch('/avaluadores/:id/status', requireRole('bank'), async (req, res) =>
 
     const user = await User.findOne({
       _id: req.params.id,
-      tenantKey: bankTenantKey,
-      role: 'avaluador'
+      role: 'avaluador',
+      $or: [{ tenantKey: bankTenantKey }, { tenantKeys: bankTenantKey }]
     });
     if (!user) return res.status(404).json({ error: 'Avaluador no encontrado.' });
 
-    user.status = status;
+    const membership = bankMembership(user, bankTenantKey);
+    if (!membership) return res.status(404).json({ error: 'Avaluador no encontrado.' });
+    membership.status = status;
+    membership.managedBy = req.user.userId;
+    membership.managedAt = new Date();
+    user.status = user.avaluatorBankMemberships.some(item => item.status === 'active')
+      ? 'active'
+      : (user.avaluatorBankMemberships.some(item => item.status === 'pending') ? 'pending' : 'blocked');
     await user.save();
     await audit(req, status === 'active' ? 'avaluador.activated' : 'avaluador.blocked', {
       tenantKey: bankTenantKey,
@@ -226,7 +287,7 @@ router.patch('/avaluadores/:id/status', requireRole('bank'), async (req, res) =>
       metadata: { email: user.email }
     });
 
-    res.json({ ok: true, user: publicAvaluator(user) });
+    res.json({ ok: true, user: publicAvaluator(user, bankTenantKey) });
   } catch (e) {
     res.status(e?.name === 'CastError' ? 404 : 500).json({ error: e.message });
   }
@@ -267,11 +328,16 @@ router.put('/projects/:projectId/avaluadores/:avaluadorId', requireRole('bank'),
 
     const avaluador = await User.findOne({
       _id: req.params.avaluadorId,
-      tenantKey: bankTenantKey,
       role: 'avaluador',
-      status: 'active'
-    }).select('_id name email role status tenantKey').lean();
-    if (!avaluador) return res.status(404).json({ error: 'Avaluador activo no encontrado en este banco.' });
+      status: 'active',
+      $or: [{ tenantKey: bankTenantKey }, { tenantKeys: bankTenantKey }]
+    }).select('_id name email role status tenantKey tenantKeys avaluatorBankMemberships').lean();
+    const memberships = avaluador?.avaluatorBankMemberships || [];
+    const membership = memberships
+      .find(item => String(item.bankTenantKey) === bankTenantKey);
+    if (!avaluador || (memberships.length && membership?.status !== 'active')) {
+      return res.status(404).json({ error: 'Avaluador activo no encontrado en este banco.' });
+    }
 
     const now = new Date();
     const assignment = await ProjectAvaluatorAssignment.findOneAndUpdate(
@@ -315,8 +381,8 @@ router.delete('/projects/:projectId/avaluadores/:avaluadorId', requireRole('bank
 
     const avaluador = await User.findOne({
       _id: req.params.avaluadorId,
-      tenantKey: bankTenantKey,
-      role: 'avaluador'
+      role: 'avaluador',
+      $or: [{ tenantKey: bankTenantKey }, { tenantKeys: bankTenantKey }]
     }).select('_id').lean();
     if (!avaluador) return res.status(404).json({ error: 'Avaluador no encontrado.' });
 

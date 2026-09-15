@@ -51,6 +51,16 @@ const ProjectRoleSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const AvaluatorBankMembershipSchema = new mongoose.Schema(
+  {
+    bankTenantKey: { type: String, required: true, trim: true },
+    status: { type: String, enum: ['pending', 'active', 'blocked'], default: 'pending' },
+    managedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    managedAt: { type: Date, default: Date.now }
+  },
+  { _id: false }
+);
+
 const PromoterProfileSchema = new mongoose.Schema(
   {
     companyName: { type: String, trim: true, default: '' },
@@ -212,6 +222,10 @@ const userSchema = new mongoose.Schema(
     // (Opcional) Roles por proyecto para ACL fino
     projectRoles: [ProjectRoleSchema],
 
+    // Estado del avaluador en cada banco. Evita que un banco pueda bloquear
+    // accidentalmente el trabajo que el mismo profesional realiza para otro.
+    avaluatorBankMemberships: { type: [AvaluatorBankMembershipSchema], default: undefined },
+
     // Perfil opcional para usuarios promotores. No bloquea registro ni uso.
     promoterProfile: { type: PromoterProfileSchema, default: undefined },
     promoterCategory: { type: String, enum: PROMOTER_CATEGORIES, default: 'No definido' },
@@ -232,6 +246,15 @@ userSchema.pre('validate', function (next) {
 
   if (this.role) this.role = String(this.role).toLowerCase();
   if (this.roleRequested) this.roleRequested = String(this.roleRequested).toLowerCase();
+
+  if (Array.isArray(this.avaluatorBankMemberships)) {
+    const byBank = new Map();
+    this.avaluatorBankMemberships.forEach(item => {
+      const bankTenantKey = String(item?.bankTenantKey || '').trim();
+      if (bankTenantKey) byBank.set(bankTenantKey, item);
+    });
+    this.avaluatorBankMemberships = Array.from(byBank.values());
+  }
 
   const isPromoter =
     this.role === 'promoter' ||

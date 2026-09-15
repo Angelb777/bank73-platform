@@ -19,6 +19,23 @@ function assignedTenantList(user = {}) {
   return tenantList(user.tenantKey, assigned);
 }
 
+function activeAvaluatorBankTenants(user = {}) {
+  if (String(user.role || '').toLowerCase() !== 'avaluador') return [];
+  const memberships = Array.isArray(user.avaluatorBankMemberships)
+    ? user.avaluatorBankMemberships
+    : [];
+  if (memberships.length) {
+    return Array.from(new Set(memberships
+      .filter(item => String(item?.status || '').toLowerCase() === 'active')
+      .map(item => String(item?.bankTenantKey || '').trim())
+      .filter(Boolean)));
+  }
+  // Compatibilidad con avaluadores creados antes de existir membresias por banco.
+  return String(user.status || '').toLowerCase() === 'active'
+    ? assignedTenantList(user)
+    : [];
+}
+
 function tenantKeyFromBankName(value) {
   return String(value || '')
     .normalize('NFD')
@@ -32,5 +49,6 @@ function tenantKeyFromBankName(value) {
 module.exports = {
   tenantList,
   assignedTenantList,
+  activeAvaluatorBankTenants,
   tenantKeyFromBankName
 };

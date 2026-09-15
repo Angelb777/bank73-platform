@@ -44,20 +44,10 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
-  Future<void> login({
-    required String email,
-    required String password,
-    required String tenantKey,
-  }) async {
+  Future<void> login({required String email, required String password}) async {
     state = const AuthState(AuthStatus.authenticating);
     try {
-      await _accept(
-        await _repository.login(
-          email: email,
-          password: password,
-          tenantKey: tenantKey,
-        ),
-      );
+      await _accept(await _repository.login(email: email, password: password));
     } catch (error) {
       state = AuthState(
         AuthStatus.unauthenticated,

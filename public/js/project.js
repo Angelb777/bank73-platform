@@ -65,6 +65,7 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
     comercial: document.getElementById('tab-comercial'),
     proveedores: document.getElementById('tab-proveedores'),
     docs:      document.getElementById('tab-docs'),
+    avaluadores: document.getElementById('tab-avaluadores'),
     chat:      document.getElementById('tab-chat'),
   };
   let __summaryDirty = false;
@@ -1844,6 +1845,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
     comercial: document.getElementById('tabBtn-comercial'),
     proveedores: document.getElementById('tabBtn-proveedores'),
     docs:      document.getElementById('tabBtn-docs'),
+    avaluadores: document.getElementById('tabBtn-avaluadores'),
     chat:      document.getElementById('tabBtn-chat'),
   };
   const tabPanes = {
@@ -1853,6 +1855,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
     comercial: document.getElementById('tab-comercial'),
     proveedores: document.getElementById('tab-proveedores'),
     docs:      document.getElementById('tab-docs'),
+    avaluadores: document.getElementById('tab-avaluadores'),
     chat:      document.getElementById('tab-chat'), 
   };
   const show = (k) => { if (tabBtns[k]) tabBtns[k].style.display = '';  if (tabPanes[k]) tabPanes[k].style.display = '';  };
@@ -1879,6 +1882,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
 
   if (isFull) {
     ['resumen','proyecto','finanzas','comercial','proveedores','docs','chat'].forEach(show);
+    if (myRole === 'bank') show('avaluadores'); else hide('avaluadores');
     activateTab('resumen');
     togglePartialUI(false);
     if (typeof renderProyecto === 'function') renderProyecto();

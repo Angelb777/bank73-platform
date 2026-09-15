@@ -13,7 +13,6 @@ abstract interface class ApiTransport {
   Future<Map<String, dynamic>> post(
     String path, {
     Map<String, dynamic>? body,
-    String? tenantKey,
     bool authenticated = true,
   });
   Future<Map<String, dynamic>> patch(String path, {Map<String, dynamic>? body});
@@ -33,15 +32,8 @@ class ApiClient implements ApiTransport {
   Future<Map<String, dynamic>> post(
     String path, {
     Map<String, dynamic>? body,
-    String? tenantKey,
     bool authenticated = true,
-  }) => _request(
-    'POST',
-    path,
-    body: body,
-    explicitTenant: tenantKey,
-    authenticated: authenticated,
-  );
+  }) => _request('POST', path, body: body, authenticated: authenticated);
 
   @override
   Future<Map<String, dynamic>> patch(
@@ -57,14 +49,10 @@ class ApiClient implements ApiTransport {
     String method,
     String path, {
     Map<String, dynamic>? body,
-    String? explicitTenant,
     bool authenticated = true,
   }) async {
     final credentials = await _sessionStore.read();
-    final tenantKey = explicitTenant ?? credentials?.tenantKey;
     final headers = <String, String>{'Accept': 'application/json'};
-    if (tenantKey != null && tenantKey.isNotEmpty)
-      headers['x-tenant'] = tenantKey;
     if (authenticated) {
       if (credentials == null)
         throw const ApiException('La sesion ha caducado.', statusCode: 401);

@@ -262,7 +262,7 @@ test('other evaluator or bank tenant cannot read or edit an inspection by ID', a
     evaluatorReq({ inspectionId: IDS.inspectionB }), readCapture.res
   );
   assert.equal(readCapture.statusCode, 404);
-  assert.equal(filter.bankTenantKey, 'bank-a');
+  assert.deepEqual(filter.bankTenantKey, { $in: ['bank-a'] });
   assert.equal(filter.avaluadorId, IDS.evaluatorA);
 
   const editCapture = responseCapture();

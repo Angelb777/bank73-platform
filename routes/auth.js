@@ -8,7 +8,7 @@ const { promoterProfileCompletion } = User;
 const auth = require('../middleware/auth');
 const { hashPassword, isHashedPassword, verifyPassword } = require('../utils/passwords');
 const audit = require('../utils/audit');
-const { assignedTenantList, tenantKeyFromBankName } = require('../utils/tenants');
+const { assignedTenantList, activeAvaluatorBankTenants, tenantKeyFromBankName } = require('../utils/tenants');
 const { sanitizePromoterProfile } = require('../utils/promoterProfile');
 
 const router = express.Router();
@@ -23,6 +23,79 @@ function signToken(user) {
     { expiresIn: '8h' }
   );
 }
+
+// POST /api/auth/mobile-login
+// Acceso exclusivo de avaluadores, independiente del tenant seleccionado en web.
+router.post('/mobile-login', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email y password requeridos' });
+    }
+
+    const norm = String(email).trim().toLowerCase();
+    const users = await User.find({
+      role: 'avaluador',
+      email: { $regex: `^${esc(norm)}$`, $options: 'i' }
+    }).limit(2);
+    if (users.length !== 1 || !verifyPassword(password, users[0].password)) {
+      return res.status(401).json({ error: 'Credenciales invalidas' });
+    }
+
+    const user = users[0];
+    if (!isHashedPassword(user.password)) {
+      user.password = hashPassword(password);
+      await user.save();
+    }
+    if (user.status !== 'active') {
+      return res.status(403).json({
+        error: user.status === 'pending'
+          ? 'Cuenta pendiente de activacion por un banco.'
+          : 'Cuenta bloqueada.'
+      });
+    }
+
+    const bankTenantKeys = activeAvaluatorBankTenants(user);
+    if (!bankTenantKeys.length) {
+      return res.status(403).json({ error: 'No tienes bancos activos asignados.' });
+    }
+    const activeTenantKey = bankTenantKeys[0];
+    const token = jwt.sign(
+      {
+        userId: user._id.toString(),
+        role: 'avaluador',
+        status: user.status,
+        tenantKey: activeTenantKey,
+        tenantKeys: bankTenantKeys
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+
+    await audit(req, 'auth.mobile_login_success', {
+      tenantKey: activeTenantKey,
+      actorUserId: user._id,
+      actorEmail: user.email,
+      actorRole: user.role,
+      targetType: 'user',
+      targetId: user._id,
+      message: 'Login movil de avaluador correcto'
+    });
+
+    res.json({
+      token,
+      role: user.role,
+      status: user.status,
+      userId: user._id.toString(),
+      tenantKey: activeTenantKey,
+      tenantKeys: bankTenantKeys,
+      name: user.name,
+      email: user.email
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // POST /api/auth/login
 // POST /api/auth/login

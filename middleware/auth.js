@@ -1,7 +1,7 @@
 // middleware/auth.js
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const { tenantList, assignedTenantList } = require('../utils/tenants');
+const { tenantList, assignedTenantList, activeAvaluatorBankTenants } = require('../utils/tenants');
 
 function readReqTenantKey(req) {
   return (
@@ -105,6 +105,9 @@ async function requireActiveUser(req, res, next) {
       email: user.email,
       name: user.name
     };
+    if (user.role === 'avaluador') {
+      req.user.avaluatorBankTenantKeys = activeAvaluatorBankTenants(user);
+    }
 
     next();
   } catch (err) {

@@ -7,19 +7,19 @@ Aplicación móvil independiente para ejecutar inspecciones de obra asignadas po
 El backend se configura exclusivamente mediante `dart-define`:
 
 ```powershell
-# Emulador Android, backend local en el puerto 3000
+# Emulador Android, backend local en el puerto 3000 (opcional)
 flutter run --dart-define=APP_ENV=development --dart-define=API_BASE_URL=http://10.0.2.2:3000
 
 # Dispositivo físico en la misma red
 flutter run --dart-define=APP_ENV=development --dart-define=API_BASE_URL=http://192.168.1.20:3000
 
-# Producción (HTTPS obligatorio)
-flutter run --dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://api.example.com
+# Backend real (HTTPS obligatorio en production)
+flutter run --dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://www.bank73.com
 ```
 
-Sin `API_BASE_URL`, development utiliza `http://10.0.2.2:3000`. Production rechaza URLs sin HTTPS.
+Sin `API_BASE_URL`, la app utiliza `https://www.bank73.com`, también desde un Android físico. `API_BASE_URL` permite sustituirlo para desarrollo local.
 
-El login solicita el `tenantKey` del banco, email y contraseña. El JWT y el tenant resuelto se guardan con `flutter_secure_storage`; no se guardan credenciales.
+El login solicita solo email y contraseña. El JWT se guarda con `flutter_secure_storage`; no se guardan credenciales ni se selecciona un tenant en el cliente.
 
 ## Verificación
 

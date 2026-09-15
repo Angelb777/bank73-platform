@@ -25,8 +25,14 @@ class InspectionScreen extends ConsumerStatefulWidget {
 }
 
 class _InspectionBundle {
-  const _InspectionBundle(this.inspection, this.units, this.saved);
+  const _InspectionBundle(
+    this.inspection,
+    this.project,
+    this.units,
+    this.saved,
+  );
   final Inspection inspection;
+  final MobileProject project;
   final List<MobileUnit> units;
   final List<InspectionUnit> saved;
 }
@@ -56,6 +62,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
           .read(inspectionRepositoryProvider)
           .inspection(widget.inspectionId);
       final results = await Future.wait([
+        ref.read(projectRepositoryProvider).project(widget.projectId),
         ref.read(projectRepositoryProvider).units(widget.projectId),
         ref
             .read(inspectionRepositoryProvider)
@@ -68,8 +75,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
       }
       return _InspectionBundle(
         inspection,
-        results[0] as List<MobileUnit>,
-        results[1] as List<InspectionUnit>,
+        results[0] as MobileProject,
+        results[1] as List<MobileUnit>,
+        results[2] as List<InspectionUnit>,
       );
     } catch (error) {
       if (mounted) await presentApiError(context, ref, error);
@@ -160,6 +168,19 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(
+                      bundle.project.name,
+                      style: Theme.of(context).textTheme.titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    if (bundle.project.location.display.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        bundle.project.location.display,
+                        style: const TextStyle(color: Bank73Colors.muted),
+                      ),
+                    ],
+                    const Divider(height: 28),
                     Row(
                       children: [
                         const StatusPill('Borrador'),

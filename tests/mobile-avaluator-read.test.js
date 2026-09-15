@@ -127,7 +127,7 @@ test('portfolio queries only active assignments for authenticated evaluator and 
 
   assert.equal(capture.statusCode, 200);
   assert.deepEqual(assignmentFilter, {
-    bankTenantKey: 'bank-a',
+    bankTenantKey: { $in: ['bank-a'] },
     avaluadorId: IDS.evaluatorA,
     status: 'active'
   });
@@ -206,7 +206,7 @@ test('project detail requires evaluator, bank tenant and project in the same act
   const capture = responseCapture();
   await handler(evaluatorReq({ projectId: IDS.projectA }), capture.res);
   assert.equal(capture.statusCode, 200);
-  assert.equal(assignmentFilter.bankTenantKey, 'bank-a');
+  assert.deepEqual(assignmentFilter.bankTenantKey, { $in: ['bank-a'] });
   assert.equal(assignmentFilter.avaluadorId, IDS.evaluatorA);
   assert.equal(assignmentFilter.status, 'active');
   assert.deepEqual(projectFilter, { _id: IDS.projectA, tenantKey: 'project-owner' });
@@ -327,7 +327,7 @@ test('assignment lookup cannot cross evaluator or bank boundaries', async (t) =>
     IDS.projectB
   );
   assert.equal(result, null);
-  assert.equal(filter.bankTenantKey, 'bank-a');
+  assert.deepEqual(filter.bankTenantKey, { $in: ['bank-a'] });
   assert.equal(filter.avaluadorId, IDS.evaluatorA);
   assert.notEqual(filter.avaluadorId, IDS.evaluatorB);
   assert.equal(filter.status, 'active');
