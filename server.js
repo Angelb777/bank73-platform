@@ -224,8 +224,9 @@ app.use('/api', tenantMw);
    ========================================================================= */
 app.use('/api/auth', authLimiter, authRoutes);
 
-// API movil del avaluador: autenticacion comun, superficie propia y solo lectura.
+// API movil del avaluador: autenticacion comun y superficie propia.
 // Se monta antes del bloqueo explicito del backoffice para este rol.
+app.use('/api/mobile/v1/inspections/:inspectionId/evidence', uploadLimiter);
 app.use('/api/mobile/v1', authMw, requireActiveUser, mobileAvaluatorRoutes);
 
 /* =========================================================================

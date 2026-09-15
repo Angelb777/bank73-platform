@@ -31,10 +31,24 @@ class FakeTransport implements ApiTransport {
   Map<String, dynamic>? body;
 
   @override
+  Future<Map<String, dynamic>> delete(String path) async {
+    method = 'DELETE';
+    this.path = path;
+    return response;
+  }
+
+  @override
   Future<Map<String, dynamic>> get(String path) async {
     method = 'GET';
     this.path = path;
     return response;
+  }
+
+  @override
+  Future<List<int>> getBytes(String path) async {
+    method = 'GET_BYTES';
+    this.path = path;
+    return const [];
   }
 
   @override
@@ -61,6 +75,18 @@ class FakeTransport implements ApiTransport {
   }
 
   @override
+  Future<Map<String, dynamic>> postMultipart(
+    String path, {
+    required String field,
+    required String filePath,
+    Map<String, String> fields = const {},
+  }) async {
+    method = 'POST_MULTIPART';
+    this.path = path;
+    return response;
+  }
+
+  @override
   Future<Map<String, dynamic>> put(
     String path, {
     Map<String, dynamic>? body,
@@ -69,6 +95,35 @@ class FakeTransport implements ApiTransport {
     this.path = path;
     this.body = body;
     return response;
+  }
+}
+
+class HistoryTransport extends FakeTransport {
+  final requestedPaths = <String>[];
+
+  @override
+  Future<Map<String, dynamic>> get(String path) async {
+    requestedPaths.add(path);
+    if (path == '/api/mobile/v1/projects/project-1/inspections') {
+      return {
+        'inspections': [
+          {
+            'id': 'inspection-current',
+            'projectId': 'project-1',
+            'status': 'draft',
+          },
+          {
+            'id': 'inspection-previous',
+            'projectId': 'project-1',
+            'status': 'draft',
+          },
+        ],
+      };
+    }
+    if (path == '/api/mobile/v1/inspections/inspection-previous/units/unit-1') {
+      return {'inspectionUnit': inspectionUnitJson()};
+    }
+    throw const ApiException('No encontrado', statusCode: 404);
   }
 }
 
@@ -229,6 +284,22 @@ void main() {
       'progressPercent': 42.5,
     });
     expect(transport.body?.containsKey('progressSections'), isFalse);
+  });
+
+  test('new inspection can start from the previous unit progress', () async {
+    final transport = HistoryTransport();
+    final previous = await InspectionRepository(transport)
+        .previousInspectedUnit(
+          projectId: 'project-1',
+          currentInspectionId: 'inspection-current',
+          unitId: 'unit-1',
+        );
+
+    expect(previous?.progressPercent, 55);
+    expect(
+      transport.requestedPaths,
+      contains('/api/mobile/v1/inspections/inspection-previous/units/unit-1'),
+    );
   });
 
   test('version conflict is distinguished from other API failures', () {

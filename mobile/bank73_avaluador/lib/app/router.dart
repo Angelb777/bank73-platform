@@ -6,7 +6,9 @@ import '../features/auth/application/auth_controller.dart';
 import '../features/auth/presentation/login_screen.dart';
 import '../features/auth/presentation/splash_screen.dart';
 import '../features/inspections/presentation/inspection_screen.dart';
+import '../features/inspections/presentation/inspection_report_screen.dart';
 import '../features/inspections/presentation/inspections_screen.dart';
+import '../features/inspections/presentation/project_progress_screen.dart';
 import '../features/inspections/presentation/unit_progress_screen.dart';
 import '../features/portfolio/presentation/portfolio_screen.dart';
 import '../features/project/presentation/project_screen.dart';
@@ -78,6 +80,18 @@ final routerProvider = Provider<GoRouter>((ref) {
                   inspectionId: state.pathParameters['inspectionId']!,
                 ),
                 routes: [
+                  GoRoute(
+                    path: 'project-progress',
+                    builder: (_, state) => ProjectProgressScreen(
+                      inspectionId: state.pathParameters['inspectionId']!,
+                    ),
+                  ),
+                  GoRoute(
+                    path: 'report',
+                    builder: (_, state) => InspectionReportScreen(
+                      inspectionId: state.pathParameters['inspectionId']!,
+                    ),
+                  ),
                   GoRoute(
                     path: 'units/:unitId',
                     builder: (_, state) => UnitProgressScreen(

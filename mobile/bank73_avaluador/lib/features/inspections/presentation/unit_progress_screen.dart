@@ -8,6 +8,7 @@ import '../../../core/models/models.dart';
 import '../../../core/widgets/app_widgets.dart';
 import '../../portfolio/data/project_repository.dart';
 import '../data/inspection_repository.dart';
+import 'evidence_section.dart';
 
 class UnitProgressScreen extends ConsumerStatefulWidget {
   const UnitProgressScreen({
@@ -24,10 +25,11 @@ class UnitProgressScreen extends ConsumerStatefulWidget {
 }
 
 class _ProgressBundle {
-  const _ProgressBundle(this.inspection, this.unit, this.saved);
+  const _ProgressBundle(this.inspection, this.unit, this.saved, this.previous);
   final Inspection inspection;
   final MobileUnit unit;
   final InspectionUnit? saved;
+  final InspectionUnit? previous;
 }
 
 class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
@@ -53,31 +55,37 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
 
   Future<_ProgressBundle> _loadAndApply() async {
     try {
+      final repository = ref.read(inspectionRepositoryProvider);
       final results = await Future.wait([
-        ref.read(inspectionRepositoryProvider).inspection(widget.inspectionId),
+        repository.inspection(widget.inspectionId),
         ref
             .read(projectRepositoryProvider)
             .unit(widget.projectId, widget.unitId),
-        ref
-            .read(inspectionRepositoryProvider)
-            .inspectedUnit(widget.inspectionId, widget.unitId),
+        repository.inspectedUnit(widget.inspectionId, widget.unitId),
+        repository.previousInspectedUnit(
+          projectId: widget.projectId,
+          currentInspectionId: widget.inspectionId,
+          unitId: widget.unitId,
+        ),
       ]);
       final bundle = _ProgressBundle(
         results[0] as Inspection,
         results[1] as MobileUnit,
         results[2] as InspectionUnit?,
+        results[3] as InspectionUnit?,
       );
       if (mounted) {
         _saved = bundle.saved;
         _dirty = false;
         _observations.text = bundle.saved?.observations ?? '';
-        _legacyProgress = bundle.saved?.progressPercent ?? 0;
+        final startingPoint = bundle.saved ?? bundle.previous;
+        _legacyProgress = startingPoint?.progressPercent ?? 0;
         _sections.clear();
         for (final section
             in bundle.inspection.methodology?.sections ??
                 const <MethodologySection>[]) {
           _sections[section.key] =
-              bundle.saved?.progressSections
+              startingPoint?.progressSections
                   ?.where((item) => item.key == section.key)
                   .firstOrNull
                   ?.progressPercent ??
@@ -261,6 +269,29 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
               ),
             ),
             const SizedBox(height: 14),
+            if (bundle.saved == null && bundle.previous != null) ...[
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.history_rounded,
+                        color: Bank73Colors.strongBlue,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Partimos del ${formatPercent(bundle.previous!.progressPercent)} registrado en la visita anterior. Ajusta únicamente el avance observado hoy.',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(18),
@@ -284,10 +315,12 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
                       _ProgressSlider(
                         name: 'Avance observado',
                         value: _legacyProgress,
-                        onChanged: (value) => setState(() {
-                          _legacyProgress = value;
-                          _dirty = true;
-                        }),
+                        onChanged: bundle.inspection.isFinalized
+                            ? null
+                            : (value) => setState(() {
+                                _legacyProgress = value;
+                                _dirty = true;
+                              }),
                       )
                     else
                       ...methodology.sections.map(
@@ -295,10 +328,12 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
                           name: section.name,
                           secondary: 'Peso ${formatPercent(section.weight)}',
                           value: _sections[section.key] ?? 0,
-                          onChanged: (value) => setState(() {
-                            _sections[section.key] = value;
-                            _dirty = true;
-                          }),
+                          onChanged: bundle.inspection.isFinalized
+                              ? null
+                              : (value) => setState(() {
+                                  _sections[section.key] = value;
+                                  _dirty = true;
+                                }),
                         ),
                       ),
                   ],
@@ -308,6 +343,7 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
             const SizedBox(height: 14),
             TextField(
               controller: _observations,
+              readOnly: bundle.inspection.isFinalized,
               minLines: 4,
               maxLines: 8,
               decoration: const InputDecoration(
@@ -315,12 +351,20 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
                 alignLabelWithHint: true,
               ),
             ),
-            const SizedBox(height: 18),
-            FilledButton.icon(
-              onPressed: _saving ? null : () => _save(bundle),
-              icon: const Icon(Icons.save_outlined),
-              label: Text(_saving ? 'Guardando…' : 'Guardar avance'),
+            const SizedBox(height: 14),
+            EvidenceSection(
+              inspectionId: widget.inspectionId,
+              unitId: widget.unitId,
+              editable: !bundle.inspection.isFinalized,
             ),
+            if (!bundle.inspection.isFinalized) ...[
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                onPressed: _saving ? null : () => _save(bundle),
+                icon: const Icon(Icons.save_outlined),
+                label: Text(_saving ? 'Guardando…' : 'Guardar avance'),
+              ),
+            ],
             const SizedBox(height: 20),
           ],
         );
@@ -339,7 +383,7 @@ class _ProgressSlider extends StatelessWidget {
   final String name;
   final String? secondary;
   final double value;
-  final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChanged;
 
   @override
   Widget build(BuildContext context) => Padding(

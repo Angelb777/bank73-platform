@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_theme.dart';
-import '../../../core/api/api_config.dart';
 import '../../../core/errors/error_presenter.dart';
 import '../../../core/models/models.dart';
 import '../../../core/widgets/app_widgets.dart';
@@ -49,27 +48,15 @@ class _ProjectScreenState extends ConsumerState<ProjectScreen> {
         if (snapshot.hasError || !snapshot.hasData)
           return ErrorView(onRetry: _retry);
         final project = snapshot.data!;
-        final imageUrl = ApiConfig.assetUrl(project.coverSource);
         return ListView(
           padding: const EdgeInsets.only(bottom: 24),
           children: [
             SizedBox(
               height: 220,
-              child: imageUrl == null
-                  ? const ColoredBox(
-                      color: Bank73Colors.navy,
-                      child: Icon(
-                        Icons.apartment_rounded,
-                        size: 70,
-                        color: Colors.white54,
-                      ),
-                    )
-                  : Image.network(
-                      imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          const ColoredBox(color: Bank73Colors.navy),
-                    ),
+              child: ProjectCover(
+                source: project.coverSource,
+                fallbackIcon: Icons.apartment_rounded,
+              ),
             ),
             Padding(
               padding: const EdgeInsets.all(20),
@@ -122,18 +109,21 @@ class _ProjectScreenState extends ConsumerState<ProjectScreen> {
                     Text(project.description),
                   ],
                   const SizedBox(height: 26),
-                  _ActionCard(
-                    icon: Icons.home_work_outlined,
-                    title: 'Unidades',
-                    subtitle: 'Consulta las unidades comerciales del proyecto.',
-                    onTap: () =>
-                        context.push('/projects/${widget.projectId}/units'),
+                  Text(
+                    'Trabajo de campo',
+                    style: Theme.of(context).textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w600),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Crea una visita, documenta el avance de las unidades necesarias y prepara el informe.',
+                    style: TextStyle(color: Bank73Colors.muted),
+                  ),
+                  const SizedBox(height: 14),
                   _ActionCard(
                     icon: Icons.fact_check_outlined,
-                    title: 'Inspecciones',
-                    subtitle: 'Crea o continúa tus borradores de inspección.',
+                    title: 'Visitas e inspecciones',
+                    subtitle: 'Inicia una visita o continúa un borrador.',
                     onTap: () => context.push(
                       '/projects/${widget.projectId}/inspections',
                     ),

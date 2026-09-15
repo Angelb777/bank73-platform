@@ -1,4 +1,7 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const PDFDocument = require('pdfkit');
 const Project = require('../models/Project');
 const User = require('../models/User');
 const AuditLog = require('../models/AuditLog');
@@ -6,6 +9,9 @@ const Document = require('../models/Document');
 const Milestone = require('../models/Milestone');
 const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment');
 const AvaluationTemplate = require('../models/AvaluationTemplate');
+const Inspection = require('../models/Inspection');
+const InspectionUnit = require('../models/InspectionUnit');
+const InspectionEvidence = require('../models/InspectionEvidence');
 const { requireRole } = require('../middleware/rbac');
 const { hashPassword } = require('../utils/passwords');
 const audit = require('../utils/audit');
@@ -317,6 +323,123 @@ router.get('/projects/:projectId/avaluadores', requireRole('bank'), async (req, 
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/projects/:projectId/inspection-reports', requireRole('bank'), async (req, res) => {
+  try {
+    const bankTenantKey = bankTenantKeyFromSession(req);
+    const project = await findVisibleProjectForBank(req, req.params.projectId);
+    if (!bankTenantKey || !project) return res.status(404).json({ error: 'Proyecto no encontrado.' });
+    const inspections = await Inspection.find({
+      bankTenantKey,
+      projectTenantKey: project.tenantKey,
+      projectId: project._id,
+      status: 'finalized'
+    })
+      .populate('avaluadorId', 'name email')
+      .sort({ finalizedAt: -1 })
+      .lean();
+    const counts = await InspectionUnit.aggregate([
+      { $match: { inspectionId: { $in: inspections.map(item => item._id) } } },
+      { $group: { _id: '$inspectionId', count: { $sum: 1 }, average: { $avg: '$progressPercent' } } }
+    ]);
+    const byInspection = new Map(counts.map(item => [String(item._id), item]));
+    res.json({
+      reports: inspections.map(item => ({
+        id: String(item._id),
+        reportNumber: String(item.reportNumber || ''),
+        inspectionDate: item.inspectionDate,
+        finalizedAt: item.finalizedAt,
+        projectProgressPercent: Number(item.projectProgressPercent || 0),
+        unitsInspected: Number(byInspection.get(String(item._id))?.count || 0),
+        unitAveragePercent: Number(byInspection.get(String(item._id))?.average || 0),
+        signerName: String(item.signature?.signerName || ''),
+        avaluador: item.avaluadorId ? {
+          name: String(item.avaluadorId.name || ''),
+          email: String(item.avaluadorId.email || '')
+        } : null,
+        reportPath: `/api/bank/projects/${project._id}/inspection-reports/${item._id}/report.pdf`
+      }))
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/projects/:projectId/inspection-reports/:inspectionId/report.pdf', requireRole('bank'), async (req, res) => {
+  try {
+    const bankTenantKey = bankTenantKeyFromSession(req);
+    const project = await findVisibleProjectForBank(req, req.params.projectId);
+    if (!bankTenantKey || !project || !mongoose.Types.ObjectId.isValid(String(req.params.inspectionId || ''))) {
+      return res.status(404).json({ error: 'Informe no encontrado.' });
+    }
+    const inspection = await Inspection.findOne({
+      _id: req.params.inspectionId,
+      bankTenantKey,
+      projectTenantKey: project.tenantKey,
+      projectId: project._id,
+      status: 'finalized'
+    }).lean();
+    if (!inspection) return res.status(404).json({ error: 'Informe no encontrado.' });
+    const [units, evidence] = await Promise.all([
+      InspectionUnit.find({ inspectionId: inspection._id }).sort({ createdAt: 1 }).lean(),
+      InspectionEvidence.find({ inspectionId: inspection._id }).sort({ createdAt: 1 }).lean()
+    ]);
+    const doc = new PDFDocument({ size: 'A4', margin: 48, info: { Title: `Informe ${inspection.reportNumber}` } });
+    res.type('application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${inspection.reportNumber || 'informe-bank73'}.pdf"`);
+    doc.pipe(res);
+    doc.fillColor('#0F1422').fontSize(22).text('BANK73', { continued: true });
+    doc.fillColor('#2563EB').text('  Informe de inspección');
+    doc.moveDown().fillColor('#172033').fontSize(16).text(String(project.name || 'Proyecto'));
+    doc.fontSize(10).fillColor('#647089').text(`Informe: ${inspection.reportNumber}`);
+    doc.text(`Fecha de visita: ${new Date(inspection.inspectionDate).toLocaleDateString('es-PA')}`);
+    doc.text(`Finalizado: ${new Date(inspection.finalizedAt).toLocaleString('es-PA')}`);
+    doc.moveDown().fillColor('#172033').fontSize(14).text('Resumen de avance');
+    doc.fontSize(11).text(`Avance general de la obra: ${Number(inspection.projectProgressPercent || 0).toFixed(1)} %`);
+    const unitAverage = units.length ? units.reduce((sum, item) => sum + Number(item.progressPercent || 0), 0) / units.length : 0;
+    doc.text(`Promedio de unidades inspeccionadas: ${unitAverage.toFixed(1)} % (${units.length} unidades)`);
+    doc.moveDown().fontSize(14).text('Zonas comunes e infraestructura');
+    (inspection.commonAreas || []).forEach(area => {
+      doc.fontSize(11).text(`${area.name}: ${Number(area.progressPercent || 0).toFixed(1)} %`);
+      if (area.observations) doc.fontSize(9).fillColor('#647089').text(String(area.observations)).fillColor('#172033');
+    });
+    if (inspection.generalObservations) {
+      doc.moveDown().fontSize(14).text('Observaciones generales');
+      doc.fontSize(10).text(String(inspection.generalObservations));
+    }
+    if (units.length) {
+      doc.moveDown().fontSize(14).text('Unidades inspeccionadas');
+      units.forEach(item => {
+        const ref = item.unitReferenceSnapshot || {};
+        doc.fontSize(10).text(`${ref.code || [ref.manzana, ref.lote].filter(Boolean).join('-') || 'Unidad'} — ${Number(item.progressPercent).toFixed(1)} %`);
+        if (item.observations) doc.fontSize(9).fillColor('#647089').text(String(item.observations)).fillColor('#172033');
+      });
+    }
+    if (evidence.length) {
+      doc.addPage().fontSize(16).text('Evidencia fotográfica');
+      for (const item of evidence) {
+        const absolutePath = path.resolve(__dirname, '..', item.path);
+        try {
+          await fs.promises.access(absolutePath, fs.constants.R_OK);
+          if (doc.y > 520) doc.addPage();
+          doc.moveDown().image(absolutePath, { fit: [490, 300], align: 'center' });
+          doc.fontSize(9).fillColor('#647089').text(item.caption || 'Evidencia de inspección', { align: 'center' }).fillColor('#172033');
+        } catch (_) {}
+      }
+    }
+    doc.addPage().fontSize(14).text('Firma del avaluador');
+    const signatureData = String(inspection.signature?.imageData || '').split(',')[1];
+    if (signatureData) {
+      try { doc.image(Buffer.from(signatureData, 'base64'), { fit: [250, 100] }); } catch (_) {}
+    }
+    doc.fontSize(11).text(String(inspection.signature?.signerName || ''));
+    doc.fontSize(9).fillColor('#647089').text(`Firmado el ${new Date(inspection.signature?.signedAt).toLocaleString('es-PA')}`);
+    doc.end();
+  } catch (e) {
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+    else res.end();
   }
 });
 

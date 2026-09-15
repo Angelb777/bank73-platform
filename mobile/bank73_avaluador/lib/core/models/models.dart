@@ -194,6 +194,30 @@ class InspectionMethodology {
       );
 }
 
+class InspectionCommonArea {
+  const InspectionCommonArea({
+    required this.key,
+    required this.name,
+    required this.weight,
+    required this.progressPercent,
+    required this.observations,
+  });
+  final String key;
+  final String name;
+  final double weight;
+  final double progressPercent;
+  final String observations;
+
+  factory InspectionCommonArea.fromJson(Map<String, dynamic> json) =>
+      InspectionCommonArea(
+        key: (json['key'] ?? '').toString(),
+        name: (json['name'] ?? '').toString(),
+        weight: _number(json['weight']),
+        progressPercent: _number(json['progressPercent']),
+        observations: (json['observations'] ?? '').toString(),
+      );
+}
+
 class Inspection {
   const Inspection({
     required this.id,
@@ -202,8 +226,13 @@ class Inspection {
     required this.inspectionDate,
     required this.startedAt,
     required this.generalObservations,
+    required this.projectProgressPercent,
+    required this.commonAreas,
     required this.version,
     required this.updatedAt,
+    required this.finalizedAt,
+    required this.reportNumber,
+    required this.signerName,
     this.methodology,
   });
   final String id;
@@ -212,8 +241,13 @@ class Inspection {
   final DateTime? inspectionDate;
   final DateTime? startedAt;
   final String generalObservations;
+  final double projectProgressPercent;
+  final List<InspectionCommonArea> commonAreas;
   final int version;
   final DateTime? updatedAt;
+  final DateTime? finalizedAt;
+  final String reportNumber;
+  final String signerName;
   final InspectionMethodology? methodology;
 
   factory Inspection.fromJson(Map<String, dynamic> json) => Inspection(
@@ -223,12 +257,54 @@ class Inspection {
     inspectionDate: _date(json['inspectionDate']),
     startedAt: _date(json['startedAt']),
     generalObservations: (json['generalObservations'] ?? '').toString(),
+    projectProgressPercent: _number(json['projectProgressPercent']),
+    commonAreas: (json['commonAreas'] as List? ?? const [])
+        .map((item) => InspectionCommonArea.fromJson(_map(item)))
+        .toList(),
     version: (json['version'] as num?)?.toInt() ?? 0,
     updatedAt: _date(json['updatedAt']),
+    finalizedAt: _date(json['finalizedAt']),
+    reportNumber: (json['reportNumber'] ?? '').toString(),
+    signerName: (_map(json['signature'])['signerName'] ?? '').toString(),
     methodology: json['methodology'] == null
         ? null
         : InspectionMethodology.fromJson(_map(json['methodology'])),
   );
+
+  bool get isFinalized => status == 'finalized';
+}
+
+class InspectionEvidence {
+  const InspectionEvidence({
+    required this.id,
+    required this.inspectionId,
+    required this.projectId,
+    required this.unitId,
+    required this.commonAreaKey,
+    required this.caption,
+    required this.filePath,
+    required this.createdAt,
+  });
+  final String id;
+  final String inspectionId;
+  final String projectId;
+  final String? unitId;
+  final String commonAreaKey;
+  final String caption;
+  final String filePath;
+  final DateTime? createdAt;
+
+  factory InspectionEvidence.fromJson(Map<String, dynamic> json) =>
+      InspectionEvidence(
+        id: (json['id'] ?? '').toString(),
+        inspectionId: (json['inspectionId'] ?? '').toString(),
+        projectId: (json['projectId'] ?? '').toString(),
+        unitId: json['unitId']?.toString(),
+        commonAreaKey: (json['commonAreaKey'] ?? '').toString(),
+        caption: (json['caption'] ?? '').toString(),
+        filePath: (json['filePath'] ?? '').toString(),
+        createdAt: _date(json['createdAt']),
+      );
 }
 
 class InspectionProgressSection {

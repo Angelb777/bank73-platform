@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_theme.dart';
-import '../../../core/api/api_config.dart';
 import '../../../core/errors/error_presenter.dart';
 import '../../../core/models/models.dart';
 import '../../../core/widgets/app_widgets.dart';
@@ -86,7 +85,6 @@ class _ProjectCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = ApiConfig.assetUrl(project.coverSource);
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -97,27 +95,7 @@ class _ProjectCard extends StatelessWidget {
             SizedBox(
               height: 150,
               width: double.infinity,
-              child: imageUrl == null
-                  ? const ColoredBox(
-                      color: Bank73Colors.navy,
-                      child: Icon(
-                        Icons.location_city_rounded,
-                        color: Colors.white54,
-                        size: 54,
-                      ),
-                    )
-                  : Image.network(
-                      imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const ColoredBox(
-                        color: Bank73Colors.navy,
-                        child: Icon(
-                          Icons.location_city_rounded,
-                          color: Colors.white54,
-                          size: 54,
-                        ),
-                      ),
-                    ),
+              child: ProjectCover(source: project.coverSource),
             ),
             Padding(
               padding: const EdgeInsets.all(18),

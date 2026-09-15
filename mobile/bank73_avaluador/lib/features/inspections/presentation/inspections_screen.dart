@@ -98,11 +98,17 @@ class _InspectionsScreenState extends ConsumerState<InspectionsScreen> {
                     '/projects/${widget.projectId}/inspections/${item.id}',
                   ),
                   contentPadding: const EdgeInsets.all(16),
-                  leading: const CircleAvatar(
-                    backgroundColor: Bank73Colors.background,
+                  leading: CircleAvatar(
+                    backgroundColor: item.isFinalized
+                        ? Bank73Colors.success.withValues(alpha: .14)
+                        : Bank73Colors.background,
                     child: Icon(
-                      Icons.edit_note_rounded,
-                      color: Bank73Colors.strongBlue,
+                      item.isFinalized
+                          ? Icons.verified_outlined
+                          : Icons.edit_note_rounded,
+                      color: item.isFinalized
+                          ? Bank73Colors.success
+                          : Bank73Colors.strongBlue,
                     ),
                   ),
                   title: Text(
@@ -115,12 +121,17 @@ class _InspectionsScreenState extends ConsumerState<InspectionsScreen> {
                   subtitle: Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(
-                      item.updatedAt == null
+                      item.isFinalized
+                          ? 'Informe ${item.reportNumber}'
+                          : item.updatedAt == null
                           ? 'Borrador'
                           : 'Modificada ${DateFormat('dd/MM/yyyy HH:mm').format(item.updatedAt!.toLocal())}',
                     ),
                   ),
-                  trailing: const StatusPill('Borrador'),
+                  trailing: StatusPill(
+                    item.isFinalized ? 'Finalizado' : 'Borrador',
+                    success: item.isFinalized,
+                  ),
                 ),
               );
             },

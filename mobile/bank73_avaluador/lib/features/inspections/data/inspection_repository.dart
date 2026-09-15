@@ -60,6 +60,110 @@ class InspectionRepository {
     );
   }
 
+  Future<Inspection> saveProjectProgress({
+    required String inspectionId,
+    required int version,
+    required double projectProgressPercent,
+    required List<InspectionCommonArea> commonAreas,
+  }) async {
+    final response = await _api.put(
+      '/api/mobile/v1/inspections/$inspectionId/project-progress',
+      body: {
+        'version': version,
+        'projectProgressPercent': projectProgressPercent,
+        'commonAreas': commonAreas
+            .map(
+              (area) => {
+                'key': area.key,
+                'progressPercent': area.progressPercent,
+                'observations': area.observations,
+              },
+            )
+            .toList(),
+      },
+    );
+    return Inspection.fromJson(
+      Map<String, dynamic>.from(response['inspection'] as Map),
+    );
+  }
+
+  Future<List<InspectionEvidence>> evidence(
+    String inspectionId, {
+    String? unitId,
+    String? commonAreaKey,
+  }) async {
+    final query = <String, String>{
+      if (unitId != null && unitId.isNotEmpty) 'unitId': unitId,
+      if (commonAreaKey != null && commonAreaKey.isNotEmpty)
+        'commonAreaKey': commonAreaKey,
+    };
+    final suffix = query.isEmpty ? '' : '?${Uri(queryParameters: query).query}';
+    final response = await _api.get(
+      '/api/mobile/v1/inspections/$inspectionId/evidence$suffix',
+    );
+    return (response['evidence'] as List? ?? const [])
+        .map(
+          (item) => InspectionEvidence.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList();
+  }
+
+  Future<InspectionEvidence> uploadEvidence({
+    required String inspectionId,
+    required String filePath,
+    String? unitId,
+    String? commonAreaKey,
+    String caption = '',
+  }) async {
+    final response = await _api.postMultipart(
+      '/api/mobile/v1/inspections/$inspectionId/evidence',
+      field: 'photo',
+      filePath: filePath,
+      fields: {
+        if (unitId != null && unitId.isNotEmpty) 'unitId': unitId,
+        if (commonAreaKey != null && commonAreaKey.isNotEmpty)
+          'commonAreaKey': commonAreaKey,
+        if (caption.isNotEmpty) 'caption': caption,
+      },
+    );
+    return InspectionEvidence.fromJson(
+      Map<String, dynamic>.from(response['evidence'] as Map),
+    );
+  }
+
+  Future<List<int>> evidenceBytes(InspectionEvidence item) =>
+      _api.getBytes(item.filePath);
+
+  Future<void> deleteEvidence(String inspectionId, String evidenceId) async {
+    await _api.delete(
+      '/api/mobile/v1/inspections/$inspectionId/evidence/$evidenceId',
+    );
+  }
+
+  Future<Inspection> finalize({
+    required String inspectionId,
+    required int version,
+    required String signerName,
+    required String signatureImage,
+  }) async {
+    final response = await _api.post(
+      '/api/mobile/v1/inspections/$inspectionId/finalize',
+      body: {
+        'version': version,
+        'signerName': signerName,
+        'signatureImage': signatureImage,
+      },
+    );
+    return Inspection.fromJson(
+      Map<String, dynamic>.from(response['inspection'] as Map),
+    );
+  }
+
+  Future<List<int>> reportBytes(String inspectionId) =>
+      _api.getBytes('/api/mobile/v1/inspections/$inspectionId/report.pdf');
+
   Future<List<InspectionUnit>> inspectedUnits(String inspectionId) async {
     final response = await _api.get(
       '/api/mobile/v1/inspections/$inspectionId/units',
@@ -87,6 +191,26 @@ class InspectionRepository {
       if (error.statusCode == 404) return null;
       rethrow;
     }
+  }
+
+  /// Finds the latest saved progress before the current inspection.
+  Future<InspectionUnit?> previousInspectedUnit({
+    required String projectId,
+    required String currentInspectionId,
+    required String unitId,
+  }) async {
+    final history = await inspections(projectId);
+    final currentIndex = history.indexWhere(
+      (item) => item.id == currentInspectionId,
+    );
+    final candidates = currentIndex < 0
+        ? history.where((item) => item.id != currentInspectionId)
+        : history.skip(currentIndex + 1);
+    for (final inspection in candidates) {
+      final previous = await inspectedUnit(inspection.id, unitId);
+      if (previous != null) return previous;
+    }
+    return null;
   }
 
   Future<InspectionUnit> saveStructuredProgress({

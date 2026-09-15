@@ -160,19 +160,26 @@ test('inspection schemas keep history outside Unit and define required unique in
   assert.equal(Unit.schema.path('progressPercent'), undefined);
 });
 
-test('mobile API exposes only the seven draft inspection routes added in this phase', () => {
+test('mobile API exposes the inspection lifecycle and evidence routes', () => {
   const actual = mobileRouter.stack
     .filter(layer => layer.route)
     .flatMap(layer => Object.keys(layer.route.methods).map(method => `${method.toUpperCase()} ${layer.route.path}`))
     .filter(route => route.includes('/inspections'))
     .sort();
   assert.deepEqual(actual, [
+    'DELETE /inspections/:inspectionId/evidence/:evidenceId',
     'GET /inspections/:inspectionId',
+    'GET /inspections/:inspectionId/evidence',
+    'GET /inspections/:inspectionId/evidence/:evidenceId/file',
+    'GET /inspections/:inspectionId/report.pdf',
     'GET /inspections/:inspectionId/units',
     'GET /inspections/:inspectionId/units/:unitId',
     'GET /projects/:projectId/inspections',
     'PATCH /inspections/:inspectionId',
+    'POST /inspections/:inspectionId/evidence',
+    'POST /inspections/:inspectionId/finalize',
     'POST /projects/:projectId/inspections',
+    'PUT /inspections/:inspectionId/project-progress',
     'PUT /inspections/:inspectionId/units/:unitId'
   ].sort());
 });
@@ -334,6 +341,69 @@ test('draft edit increments version and stale version returns 409', async (t) =>
   );
   assert.equal(conflict.statusCode, 409);
   assert.equal(conflict.payload.error, 'version_conflict');
+});
+
+test('project progress is stored separately from unit progress', async (t) => {
+  mockAuthorizedInspection(t);
+  const originalUpdate = Inspection.findOneAndUpdate;
+  let stored;
+  t.after(() => { Inspection.findOneAndUpdate = originalUpdate; });
+  Inspection.findOneAndUpdate = (filter, update) => {
+    stored = update.$set;
+    return { lean: async () => inspection({ ...stored, version: 1 }) };
+  };
+  const commonAreas = [
+    { key: 'urbanizacion', progressPercent: 40, observations: 'Viales' },
+    { key: 'infraestructura', progressPercent: 30, observations: 'Redes' },
+    { key: 'zonas_comunes', progressPercent: 20, observations: '' },
+    { key: 'exteriores', progressPercent: 10, observations: '' },
+    { key: 'seguridad', progressPercent: 5, observations: '' }
+  ];
+  const capture = responseCapture();
+  await routeHandler('put', '/inspections/:inspectionId/project-progress')(
+    evaluatorReq(
+      { inspectionId: IDS.inspectionA },
+      { version: 0, projectProgressPercent: 32, commonAreas }
+    ),
+    capture.res
+  );
+  assert.equal(capture.statusCode, 200);
+  assert.equal(stored.projectProgressPercent, 32);
+  assert.equal(stored.commonAreas.length, 5);
+  assert.equal(stored.commonAreas[0].name, 'Urbanización y viales');
+  assert.equal(capture.payload.inspection.projectProgressPercent, 32);
+});
+
+test('finalizing stores signature and makes the inspection immutable', async (t) => {
+  mockAuthorizedInspection(t, { inspectionValue: inspection({ projectProgressPercent: 35 }) });
+  const originalCount = InspectionUnit.countDocuments;
+  const originalUpdate = Inspection.findOneAndUpdate;
+  let filter;
+  let stored;
+  t.after(() => {
+    InspectionUnit.countDocuments = originalCount;
+    Inspection.findOneAndUpdate = originalUpdate;
+  });
+  InspectionUnit.countDocuments = async () => 2;
+  Inspection.findOneAndUpdate = (value, update) => {
+    filter = value;
+    stored = update.$set;
+    return { lean: async () => inspection({ ...stored, version: 1 }) };
+  };
+  const capture = responseCapture();
+  await routeHandler('post', '/inspections/:inspectionId/finalize')(
+    evaluatorReq(
+      { inspectionId: IDS.inspectionA },
+      { version: 0, signerName: 'Perito Bank73', signatureImage: 'data:image/png;base64,aA==' }
+    ),
+    capture.res
+  );
+  assert.equal(capture.statusCode, 200);
+  assert.equal(filter.status, 'draft');
+  assert.equal(stored.status, 'finalized');
+  assert.equal(stored.signature.signerName, 'Perito Bank73');
+  assert.match(stored.reportNumber, /^B73-\d{4}-/);
+  assert.equal(capture.payload.inspection.status, 'finalized');
 });
 
 test('valid unit progress creates a minimal immutable unit snapshot', async (t) => {

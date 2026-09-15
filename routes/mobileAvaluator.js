@@ -1,15 +1,27 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
+const PDFDocument = require('pdfkit');
 
 const Project = require('../models/Project');
 const Unit = require('../models/Unit');
 const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment');
 const Inspection = require('../models/Inspection');
 const InspectionUnit = require('../models/InspectionUnit');
+const InspectionEvidence = require('../models/InspectionEvidence');
 const AvaluationTemplate = require('../models/AvaluationTemplate');
 const { requireRole } = require('../middleware/rbac');
+const { fileFilterFor, handleMulterUpload } = require('../utils/uploadSecurity');
 
 const router = express.Router();
+const evidenceUploadDir = path.join(__dirname, '..', 'uploads', 'inspections');
+const evidenceUpload = handleMulterUpload(multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: fileFilterFor(new Set(['.jpg', '.jpeg', '.png']))
+}).single('photo'));
 
 const PROJECT_LIST_FIELDS = [
   'name',
@@ -36,6 +48,18 @@ const UNIT_FIELDS = [
   'areaTotalConstruccion',
   'estado'
 ].join(' ');
+const DEFAULT_COMMON_AREAS = [
+  { key: 'urbanizacion', name: 'Urbanización y viales', weight: 20, progressPercent: 0, observations: '' },
+  { key: 'infraestructura', name: 'Infraestructura y redes', weight: 25, progressPercent: 0, observations: '' },
+  { key: 'zonas_comunes', name: 'Zonas comunes y amenidades', weight: 25, progressPercent: 0, observations: '' },
+  { key: 'exteriores', name: 'Exteriores y paisajismo', weight: 15, progressPercent: 0, observations: '' },
+  { key: 'seguridad', name: 'Seguridad y accesibilidad', weight: 15, progressPercent: 0, observations: '' }
+];
+
+function commonAreasForInspection(inspection) {
+  const areas = Array.isArray(inspection?.commonAreas) ? inspection.commonAreas : [];
+  return areas.length ? areas : DEFAULT_COMMON_AREAS;
+}
 
 function activeAvaluatorContext(req) {
   const userId = req.user?.userId || req.user?._id;
@@ -121,6 +145,14 @@ function inspectionDto(inspection) {
     inspectionDate: inspection.inspectionDate,
     startedAt: inspection.startedAt,
     generalObservations: String(inspection.generalObservations || ''),
+    projectProgressPercent: Number(inspection.projectProgressPercent || 0),
+    commonAreas: commonAreasForInspection(inspection).map(area => ({
+      key: String(area.key || ''),
+      name: String(area.name || ''),
+      weight: Number(area.weight || 0),
+      progressPercent: Number(area.progressPercent || 0),
+      observations: String(area.observations || '')
+    })),
     methodology: inspection.methodology ? {
       id: String(inspection.methodology.templateId),
       name: String(inspection.methodology.name || ''),
@@ -135,8 +167,29 @@ function inspectionDto(inspection) {
         .sort((a, b) => a.order - b.order)
     } : null,
     version: Number(inspection.version || 0),
+    signature: inspection.signature ? {
+      signerName: String(inspection.signature.signerName || ''),
+      signedAt: inspection.signature.signedAt
+    } : null,
+    finalizedAt: inspection.finalizedAt || null,
+    reportNumber: String(inspection.reportNumber || ''),
     createdAt: inspection.createdAt,
     updatedAt: inspection.updatedAt
+  };
+}
+
+function evidenceDto(item) {
+  return {
+    id: String(item._id),
+    inspectionId: String(item.inspectionId),
+    projectId: String(item.projectId),
+    unitId: item.unitId ? String(item.unitId) : null,
+    commonAreaKey: String(item.commonAreaKey || ''),
+    caption: String(item.caption || ''),
+    mimetype: String(item.mimetype || ''),
+    size: Number(item.size || 0),
+    createdAt: item.createdAt,
+    filePath: `/api/mobile/v1/inspections/${item.inspectionId}/evidence/${item._id}/file`
   };
 }
 
@@ -515,6 +568,70 @@ router.patch('/inspections/:inspectionId', async (req, res) => {
   }
 });
 
+router.put('/inspections/:inspectionId/project-progress', async (req, res) => {
+  try {
+    const extraFields = unexpectedFields(req.body, ['projectProgressPercent', 'commonAreas', 'version']);
+    if (extraFields.length) {
+      return res.status(400).json({ error: 'Campos no permitidos.', fields: extraFields });
+    }
+    const expectedVersion = parseExpectedVersion(req.body?.version);
+    if (expectedVersion === null) return res.status(400).json({ error: 'version requerida.' });
+    const projectProgressPercent = Number(req.body?.projectProgressPercent);
+    if (!Number.isFinite(projectProgressPercent) || projectProgressPercent < 0 || projectProgressPercent > 100) {
+      return res.status(400).json({ error: 'projectProgressPercent debe estar entre 0 y 100.' });
+    }
+
+    const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
+    if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
+    if (resolved.inspection.status !== 'draft') {
+      return res.status(409).json({ error: 'La inspeccion no es editable.' });
+    }
+
+    const incoming = Array.isArray(req.body?.commonAreas) ? req.body.commonAreas : [];
+    const currentByKey = new Map(commonAreasForInspection(resolved.inspection).map(area => [String(area.key), area]));
+    if (incoming.length !== currentByKey.size || incoming.some(area => !currentByKey.has(String(area?.key || '')))) {
+      return res.status(400).json({ error: 'commonAreas no coincide con las zonas de la inspeccion.' });
+    }
+    const commonAreas = incoming.map(area => {
+      const current = currentByKey.get(String(area.key));
+      const progressPercent = Number(area.progressPercent);
+      const observations = String(area.observations || '').trim();
+      if (!Number.isFinite(progressPercent) || progressPercent < 0 || progressPercent > 100) {
+        throw Object.assign(new Error('El avance de cada zona debe estar entre 0 y 100.'), { status: 400 });
+      }
+      if (observations.length > 5000) {
+        throw Object.assign(new Error('Las observaciones de una zona son demasiado largas.'), { status: 400 });
+      }
+      return {
+        key: String(current.key),
+        name: String(current.name),
+        weight: Number(current.weight),
+        progressPercent,
+        observations
+      };
+    });
+
+    const inspection = await Inspection.findOneAndUpdate(
+      {
+        _id: resolved.inspection._id,
+        bankTenantKey: resolved.inspection.bankTenantKey,
+        avaluadorId: resolved.context.userId,
+        status: 'draft',
+        version: expectedVersion
+      },
+      {
+        $set: { projectProgressPercent, commonAreas },
+        $inc: { version: 1 }
+      },
+      { new: true, runValidators: true }
+    ).lean();
+    if (!inspection) return res.status(409).json({ error: 'version_conflict' });
+    res.json({ inspection: inspectionDto(inspection) });
+  } catch (e) {
+    res.status(e?.status || (e?.name === 'ValidationError' ? 400 : 500)).json({ error: e.message });
+  }
+});
+
 router.put('/inspections/:inspectionId/units/:unitId', async (req, res) => {
   try {
     const extraFields = unexpectedFields(req.body, ['progressPercent', 'progressSections', 'observations', 'version']);
@@ -662,6 +779,264 @@ router.get('/inspections/:inspectionId/units/:unitId', async (req, res) => {
   }
 });
 
+router.get('/inspections/:inspectionId/evidence', async (req, res) => {
+  try {
+    const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
+    if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
+    const query = {
+      bankTenantKey: resolved.inspection.bankTenantKey,
+      projectTenantKey: resolved.inspection.projectTenantKey,
+      inspectionId: resolved.inspection._id,
+      projectId: resolved.inspection.projectId
+    };
+    if (req.query.unitId) {
+      if (!mongoose.Types.ObjectId.isValid(String(req.query.unitId))) {
+        return res.status(400).json({ error: 'unitId invalido.' });
+      }
+      query.unitId = req.query.unitId;
+    }
+    if (req.query.commonAreaKey) query.commonAreaKey = String(req.query.commonAreaKey).trim();
+    const evidence = await InspectionEvidence.find(query).sort({ createdAt: 1 }).lean();
+    res.json({ evidence: evidence.map(evidenceDto) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/inspections/:inspectionId/evidence', evidenceUpload, async (req, res) => {
+  let storedPath = null;
+  try {
+    if (!req.file) return res.status(400).json({ error: 'photo requerida.' });
+    const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
+    if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
+    if (resolved.inspection.status !== 'draft') {
+      return res.status(409).json({ error: 'La inspeccion no es editable.' });
+    }
+
+    const unitId = String(req.body?.unitId || '').trim();
+    const commonAreaKey = String(req.body?.commonAreaKey || '').trim();
+    if (unitId && commonAreaKey) {
+      return res.status(400).json({ error: 'La evidencia debe pertenecer a una unidad o a una zona, no a ambas.' });
+    }
+    if (unitId) {
+      if (!mongoose.Types.ObjectId.isValid(unitId)) return res.status(400).json({ error: 'unitId invalido.' });
+      const unit = await Unit.exists({
+        _id: unitId,
+        tenantKey: resolved.inspection.projectTenantKey,
+        projectId: resolved.inspection.projectId,
+        deletedAt: null
+      });
+      if (!unit) return res.status(404).json({ error: 'Unidad no encontrada.' });
+    }
+    if (commonAreaKey && !commonAreasForInspection(resolved.inspection).some(area => String(area.key) === commonAreaKey)) {
+      return res.status(400).json({ error: 'Zona comun invalida.' });
+    }
+    const caption = String(req.body?.caption || '').trim();
+    if (caption.length > 1000) return res.status(400).json({ error: 'caption demasiado largo.' });
+
+    const extension = path.extname(req.file.originalname).toLowerCase();
+    const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
+    storedPath = path.join(evidenceUploadDir, filename);
+    await fs.promises.mkdir(evidenceUploadDir, { recursive: true });
+    await fs.promises.writeFile(storedPath, req.file.buffer, { flag: 'wx' });
+    const item = await InspectionEvidence.create({
+      bankTenantKey: resolved.inspection.bankTenantKey,
+      projectTenantKey: resolved.inspection.projectTenantKey,
+      inspectionId: resolved.inspection._id,
+      projectId: resolved.inspection.projectId,
+      unitId: unitId || null,
+      commonAreaKey,
+      caption,
+      originalname: req.file.originalname,
+      filename,
+      path: `uploads/inspections/${filename}`,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      uploadedBy: resolved.context.userId
+    });
+    res.status(201).json({ evidence: evidenceDto(item) });
+  } catch (e) {
+    if (storedPath) await fs.promises.unlink(storedPath).catch(() => {});
+    res.status(e?.name === 'ValidationError' ? 400 : 500).json({ error: e.message });
+  }
+});
+
+router.get('/inspections/:inspectionId/evidence/:evidenceId/file', async (req, res) => {
+  try {
+    const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
+    if (!resolved || !mongoose.Types.ObjectId.isValid(String(req.params.evidenceId || ''))) {
+      return res.status(404).json({ error: 'Evidencia no encontrada.' });
+    }
+    const item = await InspectionEvidence.findOne({
+      _id: req.params.evidenceId,
+      inspectionId: resolved.inspection._id,
+      bankTenantKey: resolved.inspection.bankTenantKey,
+      projectTenantKey: resolved.inspection.projectTenantKey
+    }).lean();
+    if (!item) return res.status(404).json({ error: 'Evidencia no encontrada.' });
+    const absolutePath = path.resolve(__dirname, '..', item.path);
+    const relative = path.relative(evidenceUploadDir, absolutePath);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      return res.status(404).json({ error: 'Evidencia no encontrada.' });
+    }
+    await fs.promises.access(absolutePath, fs.constants.R_OK);
+    res.type(item.mimetype);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.sendFile(absolutePath);
+  } catch (e) {
+    res.status(e?.code === 'ENOENT' ? 404 : 500).json({ error: e?.code === 'ENOENT' ? 'Evidencia no encontrada.' : e.message });
+  }
+});
+
+router.delete('/inspections/:inspectionId/evidence/:evidenceId', async (req, res) => {
+  try {
+    const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
+    if (!resolved || !mongoose.Types.ObjectId.isValid(String(req.params.evidenceId || ''))) {
+      return res.status(404).json({ error: 'Evidencia no encontrada.' });
+    }
+    if (resolved.inspection.status !== 'draft') {
+      return res.status(409).json({ error: 'La inspeccion no es editable.' });
+    }
+    const item = await InspectionEvidence.findOneAndDelete({
+      _id: req.params.evidenceId,
+      inspectionId: resolved.inspection._id,
+      bankTenantKey: resolved.inspection.bankTenantKey,
+      projectTenantKey: resolved.inspection.projectTenantKey
+    }).lean();
+    if (!item) return res.status(404).json({ error: 'Evidencia no encontrada.' });
+    const absolutePath = path.resolve(__dirname, '..', item.path);
+    const relative = path.relative(evidenceUploadDir, absolutePath);
+    if (!relative.startsWith('..') && !path.isAbsolute(relative)) {
+      await fs.promises.unlink(absolutePath).catch(() => {});
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/inspections/:inspectionId/finalize', async (req, res) => {
+  try {
+    const extraFields = unexpectedFields(req.body, ['version', 'signerName', 'signatureImage']);
+    if (extraFields.length) return res.status(400).json({ error: 'Campos no permitidos.', fields: extraFields });
+    const expectedVersion = parseExpectedVersion(req.body?.version);
+    if (expectedVersion === null) return res.status(400).json({ error: 'version requerida.' });
+    const signerName = String(req.body?.signerName || '').trim();
+    const signatureImage = String(req.body?.signatureImage || '').trim();
+    if (!signerName || signerName.length > 200) return res.status(400).json({ error: 'signerName invalido.' });
+    if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(signatureImage) || signatureImage.length > 1000000) {
+      return res.status(400).json({ error: 'signatureImage invalida.' });
+    }
+
+    const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
+    if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
+    if (resolved.inspection.status !== 'draft') {
+      return res.status(409).json({ error: 'La inspeccion ya fue finalizada.' });
+    }
+    const unitCount = await InspectionUnit.countDocuments({ inspectionId: resolved.inspection._id });
+    if (!unitCount && !Number(resolved.inspection.projectProgressPercent)) {
+      return res.status(400).json({ error: 'Registra el avance general o al menos una unidad antes de finalizar.' });
+    }
+    const finalizedAt = new Date();
+    const reportNumber = `B73-${finalizedAt.getUTCFullYear()}-${String(resolved.inspection._id).slice(-8).toUpperCase()}`;
+    const inspection = await Inspection.findOneAndUpdate(
+      {
+        _id: resolved.inspection._id,
+        bankTenantKey: resolved.inspection.bankTenantKey,
+        avaluadorId: resolved.context.userId,
+        status: 'draft',
+        version: expectedVersion
+      },
+      {
+        $set: {
+          status: 'finalized',
+          signature: { signerName, imageData: signatureImage, signedAt: finalizedAt },
+          finalizedAt,
+          reportNumber
+        },
+        $inc: { version: 1 }
+      },
+      { new: true, runValidators: true }
+    ).lean();
+    if (!inspection) return res.status(409).json({ error: 'version_conflict' });
+    res.json({ inspection: inspectionDto(inspection) });
+  } catch (e) {
+    res.status(e?.name === 'ValidationError' ? 400 : 500).json({ error: e.message });
+  }
+});
+
+router.get('/inspections/:inspectionId/report.pdf', async (req, res) => {
+  try {
+    const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
+    if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
+    if (resolved.inspection.status !== 'finalized') {
+      return res.status(409).json({ error: 'Finaliza la inspeccion antes de generar el informe.' });
+    }
+    const [project, units, evidence] = await Promise.all([
+      Project.findOne({ _id: resolved.inspection.projectId, tenantKey: resolved.inspection.projectTenantKey }).lean(),
+      InspectionUnit.find({ inspectionId: resolved.inspection._id }).sort({ createdAt: 1 }).lean(),
+      InspectionEvidence.find({ inspectionId: resolved.inspection._id }).sort({ createdAt: 1 }).lean()
+    ]);
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado.' });
+
+    const inspection = resolved.inspection;
+    const doc = new PDFDocument({ size: 'A4', margin: 48, info: { Title: `Informe ${inspection.reportNumber}` } });
+    res.type('application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${inspection.reportNumber || 'informe-bank73'}.pdf"`);
+    doc.pipe(res);
+    doc.fillColor('#0F1422').fontSize(22).text('BANK73', { continued: true });
+    doc.fillColor('#2563EB').text('  Informe de inspección');
+    doc.moveDown().fillColor('#172033').fontSize(16).text(String(project.name || 'Proyecto'));
+    doc.fontSize(10).fillColor('#647089').text(`Informe: ${inspection.reportNumber}`);
+    doc.text(`Fecha de visita: ${new Date(inspection.inspectionDate).toLocaleDateString('es-PA')}`);
+    doc.text(`Finalizado: ${new Date(inspection.finalizedAt).toLocaleString('es-PA')}`);
+    doc.moveDown().fillColor('#172033').fontSize(14).text('Resumen de avance');
+    doc.fontSize(11).text(`Avance general de la obra: ${Number(inspection.projectProgressPercent || 0).toFixed(1)} %`);
+    const unitAverage = units.length ? units.reduce((sum, item) => sum + Number(item.progressPercent || 0), 0) / units.length : 0;
+    doc.text(`Promedio de unidades inspeccionadas: ${unitAverage.toFixed(1)} % (${units.length} unidades)`);
+    doc.moveDown().fontSize(14).text('Zonas comunes e infraestructura');
+    (inspection.commonAreas || []).forEach(area => {
+      doc.fontSize(11).text(`${area.name}: ${Number(area.progressPercent || 0).toFixed(1)} %`);
+      if (area.observations) doc.fontSize(9).fillColor('#647089').text(String(area.observations)).fillColor('#172033');
+    });
+    if (inspection.generalObservations) {
+      doc.moveDown().fontSize(14).text('Observaciones generales');
+      doc.fontSize(10).text(String(inspection.generalObservations));
+    }
+    if (units.length) {
+      doc.moveDown().fontSize(14).text('Unidades inspeccionadas');
+      units.forEach(item => {
+        const ref = item.unitReferenceSnapshot || {};
+        doc.fontSize(10).text(`${ref.code || [ref.manzana, ref.lote].filter(Boolean).join('-') || 'Unidad'} — ${Number(item.progressPercent).toFixed(1)} %`);
+        if (item.observations) doc.fontSize(9).fillColor('#647089').text(String(item.observations)).fillColor('#172033');
+      });
+    }
+    if (evidence.length) {
+      doc.addPage().fontSize(16).text('Evidencia fotográfica');
+      for (const item of evidence) {
+        const absolutePath = path.resolve(__dirname, '..', item.path);
+        try {
+          await fs.promises.access(absolutePath, fs.constants.R_OK);
+          if (doc.y > 520) doc.addPage();
+          doc.moveDown().image(absolutePath, { fit: [490, 300], align: 'center' });
+          doc.fontSize(9).fillColor('#647089').text(item.caption || 'Evidencia de inspección', { align: 'center' }).fillColor('#172033');
+        } catch (_) {}
+      }
+    }
+    doc.addPage().fontSize(14).text('Firma del avaluador');
+    const signatureData = String(inspection.signature?.imageData || '').split(',')[1];
+    if (signatureData) {
+      try { doc.image(Buffer.from(signatureData, 'base64'), { fit: [250, 100] }); } catch (_) {}
+    }
+    doc.fontSize(11).text(String(inspection.signature?.signerName || ''));
+    doc.fontSize(9).fillColor('#647089').text(`Firmado el ${new Date(inspection.signature?.signedAt).toLocaleString('es-PA')}`);
+    doc.end();
+  } catch (e) {
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+    else res.end();
+  }
+});
+
 module.exports = router;
 module.exports._helpers = {
   activeAvaluatorContext,
@@ -672,6 +1047,7 @@ module.exports._helpers = {
   unitDto,
   inspectionDto,
   inspectionUnitDto,
+  evidenceDto,
   methodologySnapshot,
   structuredProgress,
   authorizedInspectionFor,

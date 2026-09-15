@@ -54,6 +54,10 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Bank73 necesita la cámara para documentar el avance de la obra.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Bank73 necesita acceder a tus fotos para adjuntar evidencias a la inspección.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

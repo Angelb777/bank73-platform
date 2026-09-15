@@ -11,8 +11,10 @@
   const bankList = document.getElementById('avaluadoresBankList');
   const projectList = document.getElementById('avaluadoresProjectList');
   const assignSelect = document.getElementById('avaluadorAssignSelect');
+  const reportsList = document.getElementById('avaluadoresReportsList');
   let users = [];
   let assignments = [];
+  let reports = [];
   let loaded = false;
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -45,17 +47,31 @@
         return `<tr><td>${escapeHtml(user.name || 'Avaluador')}</td><td>${escapeHtml(user.email || '')}</td><td>${item.assignedAt ? new Date(item.assignedAt).toLocaleDateString() : '—'}</td><td><button class="btn btn-danger btn-xs" type="button" data-revoke-avaluador="${escapeHtml(user._id || user)}">Revocar</button></td></tr>`;
       }).join('')}</tbody></table></div>`
       : '<p class="muted">No hay avaluadores asignados a este proyecto.</p>';
+
+    reportsList.innerHTML = reports.length ? `
+      <div class="table-wrap"><table class="table"><thead><tr><th>Informe</th><th>Fecha</th><th>Avaluador</th><th>Avance obra</th><th>Unidades</th><th>Acción</th></tr></thead><tbody>
+      ${reports.map(item => `<tr>
+        <td><strong>${escapeHtml(item.reportNumber || 'Informe')}</strong><br><span class="small muted">Firmado por ${escapeHtml(item.signerName || '—')}</span></td>
+        <td>${item.inspectionDate ? new Date(item.inspectionDate).toLocaleDateString() : '—'}</td>
+        <td>${escapeHtml(item.avaluador?.name || 'Avaluador')}</td>
+        <td>${Number(item.projectProgressPercent || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })} %</td>
+        <td>${Number(item.unitsInspected || 0)} · media ${Number(item.unitAveragePercent || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })} %</td>
+        <td><button class="btn btn-ghost btn-xs" type="button" data-inspection-report="${escapeHtml(item.reportPath)}">Ver PDF</button></td>
+      </tr>`).join('')}</tbody></table></div>`
+      : '<p class="muted">Todavía no hay informes finalizados para este proyecto.</p>';
   }
 
   async function load() {
     setMessage('Cargando…');
     try {
-      const [userResponse, assignmentResponse] = await Promise.all([
+      const [userResponse, assignmentResponse, reportsResponse] = await Promise.all([
         API.get('/api/bank/avaluadores'),
-        API.get(`/api/bank/projects/${encodeURIComponent(projectId)}/avaluadores`)
+        API.get(`/api/bank/projects/${encodeURIComponent(projectId)}/avaluadores`),
+        API.get(`/api/bank/projects/${encodeURIComponent(projectId)}/inspection-reports`)
       ]);
       users = userResponse.users || [];
       assignments = assignmentResponse.assignments || [];
+      reports = reportsResponse.reports || [];
       loaded = true;
       render();
       setMessage('');
@@ -100,8 +116,23 @@
   panel.addEventListener('click', async event => {
     const statusButton = event.target.closest('[data-avaluador-status]');
     const revokeButton = event.target.closest('[data-revoke-avaluador]');
+    const reportButton = event.target.closest('[data-inspection-report]');
     try {
-      if (statusButton) {
+      if (reportButton) {
+        reportButton.disabled = true;
+        const auth = API.getAuth();
+        const response = await fetch(reportButton.dataset.inspectionReport, {
+          headers: {
+            Authorization: `Bearer ${auth.token}`,
+            'x-tenant': auth.tenantKey
+          }
+        });
+        if (!response.ok) throw new Error('No se pudo abrir el informe.');
+        const url = URL.createObjectURL(await response.blob());
+        window.open(url, '_blank', 'noopener');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        reportButton.disabled = false;
+      } else if (statusButton) {
         await API.patch(`/api/bank/avaluadores/${encodeURIComponent(statusButton.dataset.avaluadorStatus)}/status`, {
           status: statusButton.dataset.nextStatus
         });
@@ -112,6 +143,7 @@
         setMessage('Asignación revocada.');
       }
     } catch (error) {
+      if (reportButton) reportButton.disabled = false;
       setMessage(error.message || 'No se pudo completar la operación.', true);
     }
   });

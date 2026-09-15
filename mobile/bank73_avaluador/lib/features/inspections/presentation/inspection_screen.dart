@@ -43,6 +43,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
   DateTime? _date;
   Inspection? _inspection;
   bool _saving = false;
+  String _query = '';
 
   @override
   void initState() {
@@ -159,6 +160,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
         final progressByUnit = {
           for (final item in bundle.saved) item.unitId: item.progressPercent,
         };
+        final visibleUnits = bundle.units
+            .where((unit) => unit.matches(_query))
+            .toList();
+        final completion = bundle.units.isEmpty
+            ? 0.0
+            : (bundle.saved.length / bundle.units.length).clamp(0.0, 1.0);
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -183,7 +190,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                     const Divider(height: 28),
                     Row(
                       children: [
-                        const StatusPill('Borrador'),
+                        StatusPill(
+                          bundle.inspection.isFinalized
+                              ? 'Informe finalizado'
+                              : 'Borrador',
+                          success: bundle.inspection.isFinalized,
+                        ),
                         const Spacer(),
                         Text(
                           'v${_inspection?.version ?? bundle.inspection.version}',
@@ -199,7 +211,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                     ),
                     const SizedBox(height: 14),
                     InkWell(
-                      onTap: _pickDate,
+                      onTap: bundle.inspection.isFinalized ? null : _pickDate,
                       borderRadius: BorderRadius.circular(14),
                       child: InputDecorator(
                         decoration: const InputDecoration(
@@ -212,6 +224,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                     const SizedBox(height: 14),
                     TextField(
                       controller: _observations,
+                      readOnly: bundle.inspection.isFinalized,
                       minLines: 3,
                       maxLines: 6,
                       decoration: const InputDecoration(
@@ -219,15 +232,32 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                         alignLabelWithHint: true,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: _saving ? null : _saveGeneral,
-                      icon: const Icon(Icons.save_outlined),
-                      label: Text(_saving ? 'Guardando…' : 'Guardar borrador'),
-                    ),
+                    if (!bundle.inspection.isFinalized) ...[
+                      const SizedBox(height: 16),
+                      FilledButton.icon(
+                        onPressed: _saving ? null : _saveGeneral,
+                        icon: const Icon(Icons.save_outlined),
+                        label: Text(
+                          _saving ? 'Guardando…' : 'Guardar borrador',
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
+            ),
+            const SizedBox(height: 14),
+            _InspectionStep(
+              icon: Icons.construction_outlined,
+              title: 'Avance general y zonas comunes',
+              subtitle:
+                  '${formatPercent(bundle.inspection.projectProgressPercent)} de avance general · independiente de las unidades',
+              onTap: () async {
+                await context.push(
+                  '/projects/${widget.projectId}/inspections/${widget.inspectionId}/project-progress',
+                );
+                if (mounted) _reload();
+              },
             ),
             if (bundle.inspection.methodology != null) ...[
               const SizedBox(height: 14),
@@ -275,7 +305,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    'Unidades',
+                    'Unidades de la visita',
                     style: Theme.of(context).textTheme.titleLarge
                         ?.copyWith(fontWeight: FontWeight.w600),
                   ),
@@ -286,7 +316,29 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 5),
+            const Text(
+              'Registra únicamente las unidades revisadas hoy. Las demás quedarán pendientes, no incompletas.',
+              style: TextStyle(color: Bank73Colors.muted),
+            ),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: LinearProgressIndicator(
+                value: completion,
+                minHeight: 7,
+                backgroundColor: Bank73Colors.border,
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              onChanged: (value) => setState(() => _query = value),
+              decoration: const InputDecoration(
+                hintText: 'Buscar código, manzana, lote o modelo',
+                prefixIcon: Icon(Icons.search_rounded),
+              ),
+            ),
+            const SizedBox(height: 12),
             if (bundle.units.isEmpty)
               const Card(
                 child: Padding(
@@ -294,8 +346,15 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                   child: Text('Este proyecto no tiene unidades disponibles.'),
                 ),
               )
+            else if (visibleUnits.isEmpty)
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Text('No hay unidades que coincidan con la búsqueda.'),
+                ),
+              )
             else
-              ...bundle.units.map(
+              ...visibleUnits.map(
                 (unit) => Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: UnitTile(
@@ -310,9 +369,83 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                   ),
                 ),
               ),
+            const SizedBox(height: 12),
+            _InspectionStep(
+              icon: bundle.inspection.isFinalized
+                  ? Icons.verified_outlined
+                  : Icons.draw_outlined,
+              title: bundle.inspection.isFinalized
+                  ? 'Ver informe firmado'
+                  : 'Revisar, firmar y finalizar',
+              subtitle: bundle.inspection.isFinalized
+                  ? bundle.inspection.reportNumber
+                  : 'Comprueba los datos y genera el informe definitivo.',
+              emphasized: true,
+              onTap: () async {
+                await context.push(
+                  '/projects/${widget.projectId}/inspections/${widget.inspectionId}/report',
+                );
+                if (mounted) _reload();
+              },
+            ),
+            const SizedBox(height: 24),
           ],
         );
       },
+    ),
+  );
+}
+
+class _InspectionStep extends StatelessWidget {
+  const _InspectionStep({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.emphasized = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    color: emphasized ? Bank73Colors.navy : Colors.white,
+    child: ListTile(
+      onTap: onTap,
+      contentPadding: const EdgeInsets.all(16),
+      leading: CircleAvatar(
+        backgroundColor: emphasized
+            ? Colors.white.withValues(alpha: .12)
+            : Bank73Colors.blue.withValues(alpha: .14),
+        child: Icon(
+          icon,
+          color: emphasized ? Colors.white : Bank73Colors.strongBlue,
+        ),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: emphasized ? Colors.white : Bank73Colors.ink,
+        ),
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 5),
+        child: Text(
+          subtitle,
+          style: TextStyle(
+            color: emphasized ? Colors.white70 : Bank73Colors.muted,
+          ),
+        ),
+      ),
+      trailing: Icon(
+        Icons.chevron_right,
+        color: emphasized ? Colors.white : null,
+      ),
     ),
   );
 }
