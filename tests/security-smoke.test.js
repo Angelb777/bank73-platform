@@ -420,7 +420,7 @@ test('security integration smoke: tenant isolation, project access, IDOR and upl
     assert.ok(projects.payload.every(p => p.tenantKey === TENANT));
   });
 
-  await t.test('avaluador cannot be selected in public registration', async () => {
+  await t.test('avaluador can register publicly and remains pending', async () => {
     const res = await api('/api/auth/register', {
       method: 'POST',
       body: {
@@ -430,7 +430,9 @@ test('security integration smoke: tenant isolation, project access, IDOR and upl
         roleRequested: 'avaluador'
       }
     });
-    assert.equal(res.status, 400, JSON.stringify(res.payload));
+    assert.equal(res.status, 201, JSON.stringify(res.payload));
+    assert.equal(res.payload.status, 'pending');
+    assert.equal(res.payload.roleRequested, 'avaluador');
   });
 
   let managedAvaluator;

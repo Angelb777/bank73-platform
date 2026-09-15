@@ -22,7 +22,7 @@ const ROLES = [
 
 // Roles disponibles en el registro publico. Los roles operativos que deben
 // ser creados por un banco o administrador no se incluyen aqui.
-const REQUESTABLE_ROLES = ROLES.filter(r => !['admin', 'avaluador'].includes(r));
+const REQUESTABLE_ROLES = ROLES.filter(r => r !== 'admin');
 
 // Roles que ven TODO dentro de Proyectos y Docs (según requisito)
 const FULL_ACCESS_ROLES = [

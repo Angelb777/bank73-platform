@@ -19,7 +19,8 @@
     'contable',
     'financiero',
     'legal',
-    'tecnico'
+    'tecnico',
+    'avaluador'
   ];
 
   // Etiquetas bonitas para UI (opcional)
@@ -32,7 +33,8 @@
     contable: 'Contable',
     financiero: 'Financiero',
     legal: 'Legal',
-    tecnico: 'Técnico'
+    tecnico: 'Técnico',
+    avaluador: 'Avaluador'
   };
 
   // Rellenar <select id="roleRequested"> si existe

@@ -240,7 +240,7 @@ const requested = String(roleRequested || 'bank').toLowerCase();
 
 const allowedRequested = Array.isArray(REQUESTABLE_ROLES)
   ? REQUESTABLE_ROLES
-  : ['bank','promoter','commercial','gerencia','socios','contable','financiero','legal','tecnico'];
+  : ['bank','promoter','commercial','gerencia','socios','contable','financiero','legal','tecnico','avaluador'];
 
 if (!allowedRequested.includes(requested)) {
   return res.status(400).json({ error: 'roleRequested inválido' });

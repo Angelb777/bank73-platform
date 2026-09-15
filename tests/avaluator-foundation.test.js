@@ -27,9 +27,9 @@ function responseCapture() {
   return capture;
 }
 
-test('avaluador is valid but cannot be requested in public registration', async () => {
+test('avaluador is valid and can be requested in public registration', async () => {
   assert.ok(User.ROLES.includes('avaluador'));
-  assert.ok(!User.REQUESTABLE_ROLES.includes('avaluador'));
+  assert.ok(User.REQUESTABLE_ROLES.includes('avaluador'));
   assert.ok(!FULL_ACCESS_ROLES.includes('avaluador'));
   assert.ok(!LIMITED_AREA_ROLES.includes('avaluador'));
 
