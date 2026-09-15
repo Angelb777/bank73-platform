@@ -27,6 +27,8 @@ const { hashPassword } = require('../utils/passwords');
 const ROOT = path.resolve(__dirname, '..');
 const TENANT = 'security-smoke-tenant';
 const OTHER_TENANT = 'security-smoke-other';
+const OTHER_BANK_TENANT = 'security-smoke-other-bank';
+const HIDDEN_PROJECT_TENANT = 'security-smoke-hidden-project';
 const PASSWORD = 'SecuritySmoke123!';
 const PORT = Number(process.env.SECURITY_TEST_PORT || 3199);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -129,6 +131,27 @@ async function seedData() {
     status: 'active'
   });
 
+  const otherBank = await User.create({
+    tenantKey: OTHER_BANK_TENANT,
+    tenantKeys: [OTHER_BANK_TENANT],
+    name: 'Other Bank',
+    email: 'other.bank@example.test',
+    password: hashPassword(PASSWORD),
+    role: 'bank',
+    status: 'active'
+  });
+
+  const otherBankAvaluator = await User.create({
+    tenantKey: OTHER_BANK_TENANT,
+    tenantKeys: [OTHER_BANK_TENANT],
+    name: 'Other Bank Avaluator',
+    email: 'other.bank.avaluator@example.test',
+    password: hashPassword(PASSWORD),
+    role: 'avaluador',
+    roleRequested: null,
+    status: 'active'
+  });
+
   const projectAllowed = await Project.create({
     tenantKey: TENANT,
     name: 'Allowed Project',
@@ -149,6 +172,13 @@ async function seedData() {
     publishStatus: 'approved',
     assignedBanks: [bank._id],
     assignees: { bank: [bank._id] }
+  });
+
+  const hiddenProject = await Project.create({
+    tenantKey: HIDDEN_PROJECT_TENANT,
+    name: 'Hidden Project',
+    publishStatus: 'approved',
+    assignedBanks: [otherBank._id]
   });
 
   const otherTenantUnits = await Unit.create([
@@ -283,9 +313,12 @@ async function seedData() {
     assigned,
     unassigned,
     bank,
+    otherBank,
+    otherBankAvaluator,
     projectAllowed,
     projectDenied,
     otherTenantProject,
+    hiddenProject,
     otherTenantUnits,
     otherTenantFolder,
     otherTenantVenta,
@@ -367,6 +400,7 @@ test('security integration smoke: tenant isolation, project access, IDOR and upl
   const assignedToken = await login(fixtures.assigned.email);
   const unassignedToken = await login(fixtures.unassigned.email);
   const bankToken = await login(fixtures.bank.email);
+  const otherBankToken = await login(fixtures.otherBank.email, OTHER_BANK_TENANT);
 
   await t.test('login and /api/auth/me expose expected role and tenants', async () => {
     const me = await api('/api/auth/me', { token: adminToken });
@@ -384,6 +418,497 @@ test('security integration smoke: tenant isolation, project access, IDOR and upl
     const projects = await api('/api/projects', { token: adminToken, tenant: 'not-assigned-tenant' });
     assert.equal(projects.status, 200);
     assert.ok(projects.payload.every(p => p.tenantKey === TENANT));
+  });
+
+  await t.test('avaluador cannot be selected in public registration', async () => {
+    const res = await api('/api/auth/register', {
+      method: 'POST',
+      body: {
+        name: 'Public Avaluator',
+        email: 'public.avaluator@example.test',
+        password: PASSWORD,
+        roleRequested: 'avaluador'
+      }
+    });
+    assert.equal(res.status, 400, JSON.stringify(res.payload));
+  });
+
+  let managedAvaluator;
+  await t.test('bank creates, lists and activates only its own avaluators', async () => {
+    const created = await api('/api/bank/avaluadores', {
+      token: bankToken,
+      method: 'POST',
+      body: {
+        name: 'Managed Avaluator',
+        email: 'managed.avaluator@example.test',
+        temporaryPassword: PASSWORD
+      }
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.payload));
+    assert.equal(created.payload.user.role, 'avaluador');
+    assert.equal(created.payload.user.status, 'pending');
+    assert.equal(created.payload.user.tenantKey, TENANT);
+    assert.equal('password' in created.payload.user, false);
+    managedAvaluator = created.payload.user;
+
+    const activated = await api(`/api/bank/avaluadores/${managedAvaluator._id}/status`, {
+      token: bankToken,
+      method: 'PATCH',
+      body: { status: 'active', tenantKey: OTHER_BANK_TENANT }
+    });
+    assert.equal(activated.status, 200, JSON.stringify(activated.payload));
+    assert.equal(activated.payload.user.status, 'active');
+    assert.equal(activated.payload.user.tenantKey, TENANT);
+
+    const list = await api('/api/bank/avaluadores', { token: bankToken });
+    assert.equal(list.status, 200, JSON.stringify(list.payload));
+    assert.ok(list.payload.users.some(user => String(user._id) === String(managedAvaluator._id)));
+    assert.ok(list.payload.users.every(user => user.tenantKey === TENANT && user.role === 'avaluador'));
+  });
+
+  await t.test('bank cannot manage or assign an avaluator from another tenant', async () => {
+    const blocked = await api(`/api/bank/avaluadores/${managedAvaluator._id}/status`, {
+      token: otherBankToken,
+      tenant: OTHER_BANK_TENANT,
+      method: 'PATCH',
+      body: { status: 'blocked' }
+    });
+    assert.equal(blocked.status, 404, JSON.stringify(blocked.payload));
+
+    const wrongTenantAssignment = await api(
+      `/api/bank/projects/${fixtures.otherTenantProject._id}/avaluadores/${fixtures.otherBankAvaluator._id}`,
+      { token: bankToken, method: 'PUT' }
+    );
+    assert.equal(wrongTenantAssignment.status, 404, JSON.stringify(wrongTenantAssignment.payload));
+    const assignments = await api(
+      `/api/bank/projects/${fixtures.otherTenantProject._id}/avaluadores`,
+      { token: bankToken }
+    );
+    assert.equal(assignments.status, 200, JSON.stringify(assignments.payload));
+    assert.equal(assignments.payload.assignments.length, 0);
+  });
+
+  await t.test('bank assigns its avaluator to a visible cross-tenant project only', async () => {
+    const assigned = await api(
+      `/api/bank/projects/${fixtures.otherTenantProject._id}/avaluadores/${managedAvaluator._id}`,
+      { token: bankToken, method: 'PUT' }
+    );
+    assert.equal(assigned.status, 200, JSON.stringify(assigned.payload));
+    assert.equal(assigned.payload.assignment.bankTenantKey, TENANT);
+    assert.equal(assigned.payload.assignment.projectTenantKey, OTHER_TENANT);
+    assert.equal(assigned.payload.assignment.status, 'active');
+
+    const hidden = await api(
+      `/api/bank/projects/${fixtures.hiddenProject._id}/avaluadores/${managedAvaluator._id}`,
+      { token: bankToken, method: 'PUT' }
+    );
+    assert.equal(hidden.status, 404, JSON.stringify(hidden.payload));
+
+    const projectAssignments = await api(
+      `/api/bank/projects/${fixtures.otherTenantProject._id}/avaluadores`,
+      { token: bankToken }
+    );
+    assert.equal(projectAssignments.status, 200, JSON.stringify(projectAssignments.payload));
+    assert.equal(projectAssignments.payload.bankTenantKey, TENANT);
+    assert.equal(projectAssignments.payload.projectTenantKey, OTHER_TENANT);
+    assert.equal(projectAssignments.payload.assignments.length, 1);
+  });
+
+  await t.test('revoked assignment is no longer active', async () => {
+    const revoked = await api(
+      `/api/bank/projects/${fixtures.otherTenantProject._id}/avaluadores/${managedAvaluator._id}`,
+      { token: bankToken, method: 'DELETE' }
+    );
+    assert.equal(revoked.status, 200, JSON.stringify(revoked.payload));
+    assert.equal(revoked.payload.assignment.status, 'revoked');
+    assert.ok(revoked.payload.assignment.revokedAt);
+
+    const assignments = await api(
+      `/api/bank/projects/${fixtures.otherTenantProject._id}/avaluadores`,
+      { token: bankToken }
+    );
+    assert.equal(assignments.status, 200, JSON.stringify(assignments.payload));
+    assert.equal(assignments.payload.assignments.length, 0);
+  });
+
+  let avaluadorToken;
+  await t.test('active avaluador can authenticate but cannot access existing backoffice APIs', async () => {
+    avaluadorToken = await login(managedAvaluator.email);
+    const me = await api('/api/auth/me', { token: avaluadorToken });
+    assert.equal(me.status, 200, JSON.stringify(me.payload));
+    assert.equal(me.payload.role, 'avaluador');
+
+    const projects = await api('/api/projects', { token: avaluadorToken });
+    assert.equal(projects.status, 403, JSON.stringify(projects.payload));
+  });
+
+  await t.test('mobile avaluador reads only an actively assigned cross-tenant project', async () => {
+    const assigned = await api(
+      `/api/bank/projects/${fixtures.otherTenantProject._id}/avaluadores/${managedAvaluator._id}`,
+      { token: bankToken, method: 'PUT' }
+    );
+    assert.equal(assigned.status, 200, JSON.stringify(assigned.payload));
+
+    const portfolio = await api('/api/mobile/v1/projects', { token: avaluadorToken });
+    assert.equal(portfolio.status, 200, JSON.stringify(portfolio.payload));
+    assert.equal(portfolio.payload.projects.length, 1);
+    assert.equal(portfolio.payload.projects[0].id, String(fixtures.otherTenantProject._id));
+    assert.equal('financialConditions' in portfolio.payload.projects[0], false);
+    assert.equal('tenantKey' in portfolio.payload.projects[0], false);
+
+    const detail = await api(
+      `/api/mobile/v1/projects/${fixtures.otherTenantProject._id}`,
+      { token: avaluadorToken }
+    );
+    assert.equal(detail.status, 200, JSON.stringify(detail.payload));
+    assert.equal(detail.payload.project.id, String(fixtures.otherTenantProject._id));
+
+    const units = await api(
+      `/api/mobile/v1/projects/${fixtures.otherTenantProject._id}/units`,
+      { token: avaluadorToken }
+    );
+    assert.equal(units.status, 200, JSON.stringify(units.payload));
+    assert.equal(units.payload.units.length, 2);
+    assert.equal('clienteId' in units.payload.units[0], false);
+    assert.equal('precioLista' in units.payload.units[0], false);
+
+    const unit = await api(
+      `/api/mobile/v1/projects/${fixtures.otherTenantProject._id}/units/${fixtures.otherTenantUnits[0]._id}`,
+      { token: avaluadorToken }
+    );
+    assert.equal(unit.status, 200, JSON.stringify(unit.payload));
+    assert.equal(unit.payload.unit.id, String(fixtures.otherTenantUnits[0]._id));
+  });
+
+  await t.test('mobile project and unit IDs cannot bypass assignment boundaries', async () => {
+    const otherBankAssignment = await api(
+      `/api/bank/projects/${fixtures.hiddenProject._id}/avaluadores/${fixtures.otherBankAvaluator._id}`,
+      { token: otherBankToken, tenant: OTHER_BANK_TENANT, method: 'PUT' }
+    );
+    assert.equal(otherBankAssignment.status, 200, JSON.stringify(otherBankAssignment.payload));
+
+    const otherProject = await api(
+      `/api/mobile/v1/projects/${fixtures.hiddenProject._id}`,
+      { token: avaluadorToken }
+    );
+    assert.equal(otherProject.status, 404, JSON.stringify(otherProject.payload));
+
+    const wrongUnit = await api(
+      `/api/mobile/v1/projects/${fixtures.otherTenantProject._id}/units/${fixtures.unitDenied._id}`,
+      { token: avaluadorToken }
+    );
+    assert.equal(wrongUnit.status, 404, JSON.stringify(wrongUnit.payload));
+
+    const bankOnMobileApi = await api('/api/mobile/v1/projects', { token: bankToken });
+    assert.equal(bankOnMobileApi.status, 403, JSON.stringify(bankOnMobileApi.payload));
+  });
+
+  let managedInspection;
+  await t.test('avaluador creates and resumes a draft inspection on an assigned cross-tenant project', async () => {
+    const protectedFields = await api(
+      `/api/mobile/v1/projects/${fixtures.otherTenantProject._id}/inspections`,
+      {
+        token: avaluadorToken,
+        method: 'POST',
+        body: { status: 'draft', bankTenantKey: TENANT }
+      }
+    );
+    assert.equal(protectedFields.status, 400, JSON.stringify(protectedFields.payload));
+
+    const unassigned = await api(
+      `/api/mobile/v1/projects/${fixtures.hiddenProject._id}/inspections`,
+      { token: avaluadorToken, method: 'POST', body: { generalObservations: 'Denied' } }
+    );
+    assert.equal(unassigned.status, 404, JSON.stringify(unassigned.payload));
+
+    const created = await api(
+      `/api/mobile/v1/projects/${fixtures.otherTenantProject._id}/inspections`,
+      {
+        token: avaluadorToken,
+        method: 'POST',
+        body: { generalObservations: 'Initial draft' }
+      }
+    );
+    assert.equal(created.status, 201, JSON.stringify(created.payload));
+    assert.equal(created.payload.inspection.projectId, String(fixtures.otherTenantProject._id));
+    assert.equal(created.payload.inspection.status, 'draft');
+    assert.equal(created.payload.inspection.version, 0);
+    assert.equal('bankTenantKey' in created.payload.inspection, false);
+    assert.equal('avaluadorId' in created.payload.inspection, false);
+    managedInspection = created.payload.inspection;
+
+    const list = await api(
+      `/api/mobile/v1/projects/${fixtures.otherTenantProject._id}/inspections`,
+      { token: avaluadorToken }
+    );
+    assert.equal(list.status, 200, JSON.stringify(list.payload));
+    assert.ok(list.payload.inspections.some(item => item.id === managedInspection.id));
+
+    const detail = await api(`/api/mobile/v1/inspections/${managedInspection.id}`, {
+      token: avaluadorToken
+    });
+    assert.equal(detail.status, 200, JSON.stringify(detail.payload));
+    assert.equal(detail.payload.inspection.generalObservations, 'Initial draft');
+  });
+
+  await t.test('inspection draft uses optimistic versioning and rejects protected edits', async () => {
+    const protectedEdit = await api(`/api/mobile/v1/inspections/${managedInspection.id}`, {
+      token: avaluadorToken,
+      method: 'PATCH',
+      body: { version: 0, projectId: String(fixtures.hiddenProject._id) }
+    });
+    assert.equal(protectedEdit.status, 400, JSON.stringify(protectedEdit.payload));
+
+    const updated = await api(`/api/mobile/v1/inspections/${managedInspection.id}`, {
+      token: avaluadorToken,
+      method: 'PATCH',
+      body: { version: 0, generalObservations: 'Updated draft' }
+    });
+    assert.equal(updated.status, 200, JSON.stringify(updated.payload));
+    assert.equal(updated.payload.inspection.version, 1);
+    assert.equal(updated.payload.inspection.generalObservations, 'Updated draft');
+    managedInspection = updated.payload.inspection;
+
+    const stale = await api(`/api/mobile/v1/inspections/${managedInspection.id}`, {
+      token: avaluadorToken,
+      method: 'PATCH',
+      body: { version: 0, generalObservations: 'Stale edit' }
+    });
+    assert.equal(stale.status, 409, JSON.stringify(stale.payload));
+    assert.equal(stale.payload.error, 'version_conflict');
+  });
+
+  await t.test('unit progress is scoped to the inspection project and updated without duplicates', async () => {
+    const unitId = fixtures.otherTenantUnits[0]._id;
+    for (const progressPercent of [-0.1, 100.1]) {
+      const invalid = await api(
+        `/api/mobile/v1/inspections/${managedInspection.id}/units/${unitId}`,
+        {
+          token: avaluadorToken,
+          method: 'PUT',
+          body: { progressPercent }
+        }
+      );
+      assert.equal(invalid.status, 400, JSON.stringify(invalid.payload));
+    }
+
+    const wrongProject = await api(
+      `/api/mobile/v1/inspections/${managedInspection.id}/units/${fixtures.unitDenied._id}`,
+      {
+        token: avaluadorToken,
+        method: 'PUT',
+        body: { progressPercent: 10 }
+      }
+    );
+    assert.equal(wrongProject.status, 404, JSON.stringify(wrongProject.payload));
+
+    const created = await api(
+      `/api/mobile/v1/inspections/${managedInspection.id}/units/${unitId}`,
+      {
+        token: avaluadorToken,
+        method: 'PUT',
+        body: { progressPercent: 42.5, observations: 'First observation' }
+      }
+    );
+    assert.equal(created.status, 201, JSON.stringify(created.payload));
+    assert.equal(created.payload.inspectionUnit.progressPercent, 42.5);
+    assert.equal(created.payload.inspectionUnit.version, 0);
+    assert.equal('bankTenantKey' in created.payload.inspectionUnit, false);
+
+    const updated = await api(
+      `/api/mobile/v1/inspections/${managedInspection.id}/units/${unitId}`,
+      {
+        token: avaluadorToken,
+        method: 'PUT',
+        body: { progressPercent: 50, observations: 'Second observation', version: 0 }
+      }
+    );
+    assert.equal(updated.status, 200, JSON.stringify(updated.payload));
+    assert.equal(updated.payload.inspectionUnit.version, 1);
+
+    const list = await api(`/api/mobile/v1/inspections/${managedInspection.id}/units`, {
+      token: avaluadorToken
+    });
+    assert.equal(list.status, 200, JSON.stringify(list.payload));
+    assert.equal(list.payload.units.length, 1);
+    assert.equal(list.payload.units[0].progressPercent, 50);
+
+    const detail = await api(
+      `/api/mobile/v1/inspections/${managedInspection.id}/units/${unitId}`,
+      { token: avaluadorToken }
+    );
+    assert.equal(detail.status, 200, JSON.stringify(detail.payload));
+    assert.equal(detail.payload.inspectionUnit.unitId, String(unitId));
+  });
+
+  await t.test('an avaluator from another bank cannot access an inspection by ID', async () => {
+    const otherAvaluatorToken = await login(
+      fixtures.otherBankAvaluator.email,
+      OTHER_BANK_TENANT
+    );
+    const foreignRead = await api(`/api/mobile/v1/inspections/${managedInspection.id}`, {
+      token: otherAvaluatorToken,
+      tenant: OTHER_BANK_TENANT
+    });
+    assert.equal(foreignRead.status, 404, JSON.stringify(foreignRead.payload));
+
+    const foreignEdit = await api(`/api/mobile/v1/inspections/${managedInspection.id}`, {
+      token: otherAvaluatorToken,
+      tenant: OTHER_BANK_TENANT,
+      method: 'PATCH',
+      body: { version: managedInspection.version, generalObservations: 'Foreign edit' }
+    });
+    assert.equal(foreignEdit.status, 404, JSON.stringify(foreignEdit.payload));
+  });
+
+  await t.test('bank methodology is tenant-scoped, versioned and frozen in a new inspection', async () => {
+    const invalid = await api('/api/bank/avaluation-templates', {
+      token: bankToken,
+      method: 'POST',
+      body: {
+        name: 'Invalid weights',
+        sections: [
+          { key: 'estructura', name: 'Estructura', weight: 40, order: 1 },
+          { key: 'acabados', name: 'Acabados', weight: 50, order: 2 }
+        ]
+      }
+    });
+    assert.equal(invalid.status, 400, JSON.stringify(invalid.payload));
+
+    const created = await api('/api/bank/avaluation-templates', {
+      token: bankToken,
+      method: 'POST',
+      body: {
+        name: 'Security methodology',
+        sections: [
+          { key: 'estructura', name: 'Estructura', weight: 40, order: 1 },
+          { key: 'acabados', name: 'Acabados', weight: 60, order: 2 }
+        ]
+      }
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.payload));
+    assert.equal(created.payload.template.version, 1);
+    assert.equal(created.payload.template.status, 'draft');
+
+    const crossBankRead = await api(
+      `/api/bank/avaluation-templates/${created.payload.template.id}`,
+      { token: otherBankToken, tenant: OTHER_BANK_TENANT }
+    );
+    assert.equal(crossBankRead.status, 404, JSON.stringify(crossBankRead.payload));
+
+    const activated = await api(
+      `/api/bank/avaluation-templates/${created.payload.template.id}/activate`,
+      { token: bankToken, method: 'PATCH' }
+    );
+    assert.equal(activated.status, 200, JSON.stringify(activated.payload));
+    assert.equal(activated.payload.template.status, 'active');
+
+    const inspection = await api(
+      `/api/mobile/v1/projects/${fixtures.otherTenantProject._id}/inspections`,
+      { token: avaluadorToken, method: 'POST', body: { generalObservations: 'Structured' } }
+    );
+    assert.equal(inspection.status, 201, JSON.stringify(inspection.payload));
+    assert.equal(inspection.payload.inspection.methodology.name, 'Security methodology');
+    assert.equal(inspection.payload.inspection.methodology.version, 1);
+
+    const unitId = fixtures.otherTenantUnits[1]._id;
+    const forged = await api(
+      `/api/mobile/v1/inspections/${inspection.payload.inspection.id}/units/${unitId}`,
+      {
+        token: avaluadorToken,
+        method: 'PUT',
+        body: {
+          progressPercent: 99,
+          progressSections: [{ key: 'estructura', progressPercent: 100 }]
+        }
+      }
+    );
+    assert.equal(forged.status, 400, JSON.stringify(forged.payload));
+
+    const progress = await api(
+      `/api/mobile/v1/inspections/${inspection.payload.inspection.id}/units/${unitId}`,
+      {
+        token: avaluadorToken,
+        method: 'PUT',
+        body: {
+          progressSections: [
+            { key: 'estructura', progressPercent: 100 },
+            { key: 'acabados', progressPercent: 25 }
+          ]
+        }
+      }
+    );
+    assert.equal(progress.status, 201, JSON.stringify(progress.payload));
+    assert.equal(progress.payload.inspectionUnit.progressPercent, 55);
+    assert.equal(progress.payload.inspectionUnit.progressSections[0].weight, 40);
+
+    const versionTwo = await api('/api/bank/avaluation-templates', {
+      token: bankToken,
+      method: 'POST',
+      body: {
+        name: 'Security methodology revised',
+        sections: [
+          { key: 'estructura', name: 'Estructura revisada', weight: 20, order: 1 },
+          { key: 'acabados', name: 'Acabados revisados', weight: 80, order: 2 }
+        ]
+      }
+    });
+    assert.equal(versionTwo.status, 201, JSON.stringify(versionTwo.payload));
+    assert.equal(versionTwo.payload.template.version, 2);
+    const activateVersionTwo = await api(
+      `/api/bank/avaluation-templates/${versionTwo.payload.template.id}/activate`,
+      { token: bankToken, method: 'PATCH' }
+    );
+    assert.equal(activateVersionTwo.status, 200, JSON.stringify(activateVersionTwo.payload));
+
+    const unchanged = await api(
+      `/api/mobile/v1/inspections/${inspection.payload.inspection.id}`,
+      { token: avaluadorToken }
+    );
+    assert.equal(unchanged.status, 200, JSON.stringify(unchanged.payload));
+    assert.equal(unchanged.payload.inspection.methodology.version, 1);
+    assert.equal(unchanged.payload.inspection.methodology.sections[0].weight, 40);
+  });
+
+  await t.test('revoked mobile assignment disappears and freezes its draft', async () => {
+    const revoked = await api(
+      `/api/bank/projects/${fixtures.otherTenantProject._id}/avaluadores/${managedAvaluator._id}`,
+      { token: bankToken, method: 'DELETE' }
+    );
+    assert.equal(revoked.status, 200, JSON.stringify(revoked.payload));
+
+    const portfolio = await api('/api/mobile/v1/projects', { token: avaluadorToken });
+    assert.equal(portfolio.status, 200, JSON.stringify(portfolio.payload));
+    assert.deepEqual(portfolio.payload.projects, []);
+
+    const project = await api(
+      `/api/mobile/v1/projects/${fixtures.otherTenantProject._id}`,
+      { token: avaluadorToken }
+    );
+    assert.equal(project.status, 404, JSON.stringify(project.payload));
+
+    const create = await api(
+      `/api/mobile/v1/projects/${fixtures.otherTenantProject._id}/inspections`,
+      { token: avaluadorToken, method: 'POST', body: {} }
+    );
+    assert.equal(create.status, 404, JSON.stringify(create.payload));
+
+    const edit = await api(`/api/mobile/v1/inspections/${managedInspection.id}`, {
+      token: avaluadorToken,
+      method: 'PATCH',
+      body: { version: managedInspection.version, generalObservations: 'After revoke' }
+    });
+    assert.equal(edit.status, 404, JSON.stringify(edit.payload));
+
+    const progress = await api(
+      `/api/mobile/v1/inspections/${managedInspection.id}/units/${fixtures.otherTenantUnits[1]._id}`,
+      {
+        token: avaluadorToken,
+        method: 'PUT',
+        body: { progressPercent: 25 }
+      }
+    );
+    assert.equal(progress.status, 404, JSON.stringify(progress.payload));
   });
 
   await t.test('unassigned user receives 403 for projectId-based resources', async () => {

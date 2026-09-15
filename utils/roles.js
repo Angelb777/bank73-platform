@@ -8,7 +8,8 @@ const ROLES = [
   'contable',
   'financiero',
   'legal',
-  'tecnico'
+  'tecnico',
+  'avaluador'
 ];
 
 const FULL_ACCESS_ROLES = [

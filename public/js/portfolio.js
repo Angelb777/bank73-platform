@@ -1626,7 +1626,7 @@
       <summary><strong>${escapeHtml(item.name || `Fase ${index + 1}`)}</strong></summary>
       <div class="create-grid" style="margin-top:10px;">
         <div style="grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #bae6fd;background:#f0f9ff;border-radius:12px;padding:10px 12px;">
-          <div><strong>Requisitos</strong><div class="small muted">30 requisitos aplicables a esta fase. Bank73 precarga la información disponible.</div></div>
+          <div><strong>Requisitos</strong><div class="small muted">${BANK_REQUIREMENT_TITLES.length} requisitos aplicables a esta fase. Bank73 precarga la información disponible.</div></div>
           <button class="btn" type="button" data-open-create-requirements="${index}">Requisitos</button>
         </div>
         <label>Nombre<input data-create-phase="name" value="${escapeHtml(item.name || `Fase ${index + 1}`)}"></label>

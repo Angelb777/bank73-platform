@@ -16,8 +16,13 @@ const ROLES = [
   'contable',
   'financiero',
   'legal',
-  'tecnico'
+  'tecnico',
+  'avaluador'
 ];
+
+// Roles disponibles en el registro publico. Los roles operativos que deben
+// ser creados por un banco o administrador no se incluyen aqui.
+const REQUESTABLE_ROLES = ROLES.filter(r => !['admin', 'avaluador'].includes(r));
 
 // Roles que ven TODO dentro de Proyectos y Docs (según requisito)
 const FULL_ACCESS_ROLES = [
@@ -200,7 +205,7 @@ const userSchema = new mongoose.Schema(
     // Incluimos los nuevos roles; excluimos 'admin' para alta pública.
     roleRequested: {
       type: String,
-      enum: ROLES.filter(r => r !== 'admin'),
+      enum: REQUESTABLE_ROLES,
       default: 'bank'
     },
 
@@ -263,6 +268,7 @@ userSchema.index({ email: 1, tenantKey: 1 }, { unique: true });
 
 module.exports = mongoose.model('User', userSchema);
 module.exports.ROLES = ROLES;
+module.exports.REQUESTABLE_ROLES = REQUESTABLE_ROLES;
 module.exports.FULL_ACCESS_ROLES = FULL_ACCESS_ROLES;
 module.exports.STATUSES = STATUSES;
 module.exports.PROMOTER_CATEGORIES = PROMOTER_CATEGORIES;

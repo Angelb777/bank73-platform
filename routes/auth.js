@@ -3,6 +3,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { ROLES } = User;
+const { REQUESTABLE_ROLES } = User;
 const { promoterProfileCompletion } = User;
 const auth = require('../middleware/auth');
 const { hashPassword, isHashedPassword, verifyPassword } = require('../utils/passwords');
@@ -164,11 +165,9 @@ router.post('/register', async (req, res) => {
     // Validar roleRequested (acepta todos los nuevos menos 'admin')
 const requested = String(roleRequested || 'bank').toLowerCase();
 
-const allowedRequested =
-  (User.REQUESTABLE_ROLES && Array.isArray(User.REQUESTABLE_ROLES))
-    ? User.REQUESTABLE_ROLES                                  // si la exportas desde el modelo
-    : (Array.isArray(ROLES) ? ROLES.filter(r => r !== 'admin') // fallback: todos los ROLES menos admin
-                            : ['bank','promoter','commercial','gerencia','socios','contable','financiero','legal','tecnico']);
+const allowedRequested = Array.isArray(REQUESTABLE_ROLES)
+  ? REQUESTABLE_ROLES
+  : ['bank','promoter','commercial','gerencia','socios','contable','financiero','legal','tecnico'];
 
 if (!allowedRequested.includes(requested)) {
   return res.status(400).json({ error: 'roleRequested inválido' });

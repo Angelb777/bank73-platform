@@ -5803,6 +5803,27 @@ function financeProgressWidth(value, base) {
   return Math.max(0, Math.min(100, (numOr0(value) / denominator) * 100));
 }
 
+function financeRequirementProgress(requirements = []) {
+  const items = Array.isArray(requirements) ? requirements : [];
+  const total = items.length;
+  const completed = items.filter(item => String(item?.status || '').toUpperCase() === 'CUMPLIDO').length;
+  const pending = Math.max(0, total - completed);
+  const percent = total ? Math.round(completed / total * 100) : 0;
+  return { total, completed, pending, percent };
+}
+
+function financeRequirementProgressHtml(requirements = [], { compact = false } = {}) {
+  const progress = financeRequirementProgress(requirements);
+  const label = progress.total
+    ? `${progress.completed} de ${progress.total} cumplidos · ${progress.pending} pendientes`
+    : 'Sin requisitos configurados';
+  return `<div class="finance-requirements-progress${compact ? ' is-compact' : ''}" aria-label="Avance de requisitos">
+    <div class="finance-requirements-progress-copy"><span>Cumplimiento de requisitos</span><strong>${escapeHtml(label)}</strong></div>
+    <div class="finance-requirements-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress.percent}" aria-label="${progress.percent}% de requisitos cumplidos"><div style="width:${progress.percent}%"></div></div>
+    <b class="finance-requirements-progress-percent">${progress.percent}%</b>
+  </div>`;
+}
+
 function financeDateInput(v) {
   if (!v) return '';
   const d = new Date(v);
@@ -7671,6 +7692,7 @@ function renderPhases(phases = []) {
       <div class="small muted" style="margin-top:8px;">
         Recomendación informativa: no modifica tus fuentes guardadas.
       </div>
+      ${financeRequirementProgressHtml(ph?.requirements, { compact: true })}
       <div class="finance-phase-card-actions"><button class="btn btn-xs" data-act="requirements">Requisitos</button><button class="btn btn-xs" data-act="lines">Gestionar desembolsos</button></div>
     `;
 
@@ -7750,6 +7772,7 @@ const hasRealData =
         <div class="is-debt"><span>Saldo por devolver</span><b>${financeMoney(funding.debt)}</b></div>
         <div><span>Pendiente vs recomendación</span><b>${financeMoney(funding.pendingRecommendedDisbursement)}</b></div>
       </div>
+      ${financeRequirementProgressHtml(ph?.requirements, { compact: true })}
       <div class="finance-phase-card-actions">
         <button class="btn btn-xs" data-act="requirements">Requisitos</button>
         <button class="btn btn-xs" data-act="lines">Líneas de la fase</button>
@@ -8091,6 +8114,7 @@ function ensureFinanceRequirementsModal() {
       <div class="requirements-modal-header-actions"><button class="btn btn-ghost requirements-modal-icon" type="button" data-toggle-finance-requirements-fullscreen aria-label="Pantalla completa" title="Pantalla completa">⛶</button><button class="btn btn-ghost" type="button" data-close-finance-requirements>✕ Cerrar</button></div>
     </header>
     <div class="requirements-copy-toolbar" data-finance-requirements-copy><label>Reutilizar información de <select class="input" data-finance-requirements-source></select></label><button class="btn btn-ghost btn-xs" type="button" data-copy-finance-requirements>Copiar información</button></div>
+    <div data-finance-requirements-progress></div>
     <div class="requirements-modal-list" data-finance-requirements-list></div>
     <footer class="requirements-modal-actions" data-finance-requirements-actions><button class="btn" type="button" data-save-finance-requirements>Guardar requisitos</button></footer>
   </div>`;
@@ -8103,6 +8127,16 @@ function ensureFinanceRequirementsModal() {
     setFinanceRequirementsFullscreen(modal, !modal.classList.contains('is-fullscreen'));
   };
   return modal;
+}
+
+function updateFinanceRequirementProgressFromModal(modal) {
+  const cards = Array.from(modal.querySelectorAll('[data-finance-requirement]'));
+  const requirements = cards.map(card => ({
+    status: card.querySelector('[data-requirement-status]')?.value
+      || (card.querySelector('.requirement-status')?.classList.contains('is-complete') ? 'CUMPLIDO' : 'PENDIENTE')
+  }));
+  const host = modal.querySelector('[data-finance-requirements-progress]');
+  if (host) host.innerHTML = financeRequirementProgressHtml(requirements);
 }
 
 function financeRequirementDocsHtml(requirement) {
@@ -8138,6 +8172,8 @@ async function openFinanceRequirements(phase, mode = 'plan') {
     : 'ESTIMACIÓN · Información prevista/exigida';
   modal.querySelector('[data-finance-requirements-title]').textContent = `Requisitos — ${phase?.name || 'Fase'}`;
   modal.querySelector('[data-finance-requirements-actions]').style.display = editable ? '' : 'none';
+  const progressHost = modal.querySelector('[data-finance-requirements-progress]');
+  if (progressHost) progressHost.innerHTML = financeRequirementProgressHtml(requirements);
   const copyToolbar = modal.querySelector('[data-finance-requirements-copy]');
   const sourceSelect = modal.querySelector('[data-finance-requirements-source]');
   const otherPhases = (FINANCE?.phases || []).filter(item => String(item._id) !== String(phase?._id));
@@ -8191,6 +8227,18 @@ async function openFinanceRequirements(phase, mode = 'plan') {
     const files = Array.from(input.files || []);
     if (label) label.textContent = files.length ? files.map(file => file.name).join(', ') : 'Sin nuevos archivos';
   }));
+  modal.querySelectorAll('[data-requirement-status]').forEach(select => {
+    select.addEventListener('change', () => {
+      const badge = select.closest('[data-finance-requirement]')?.querySelector('.requirement-status');
+      const completed = select.value === 'CUMPLIDO';
+      if (badge) {
+        badge.textContent = completed ? 'CUMPLIDO' : 'PENDIENTE';
+        badge.classList.toggle('is-complete', completed);
+        badge.classList.toggle('is-pending', !completed);
+      }
+      updateFinanceRequirementProgressFromModal(modal);
+    });
+  });
   const syncBondRequirementCard = card => {
     const number = Number(card?.dataset.requirementNumber);
     if (![25, 26].includes(number)) return;
@@ -8213,6 +8261,7 @@ async function openFinanceRequirements(phase, mode = 'plan') {
     if (status) status.value = reached ? 'CUMPLIDO' : 'PENDIENTE';
     const validityLabel = card.querySelector('[data-bond-validity-label]');
     if (validityLabel) validityLabel.textContent = validity.label;
+    updateFinanceRequirementProgressFromModal(modal);
   };
   modal.querySelectorAll('[data-performance-bond-field], [data-payment-bond-field]').forEach(input => {
     if (['actualAmount', 'startDate', 'expiryDate'].includes(input.getAttribute(input.hasAttribute('data-performance-bond-field') ? 'data-performance-bond-field' : 'data-payment-bond-field'))) {
@@ -8239,6 +8288,7 @@ async function openFinanceRequirements(phase, mode = 'plan') {
     }
     const status = card.querySelector('[data-requirement-status]');
     if (status) status.value = meta.current ? 'CUMPLIDO' : 'PENDIENTE';
+    updateFinanceRequirementProgressFromModal(modal);
   };
   modal.querySelectorAll('[data-follow-up-field="periodicityMonths"], [data-follow-up-field="lastRecordDate"]').forEach(input => {
     input.addEventListener('input', () => syncPeriodicFollowUpCard(input.closest('[data-finance-requirement]')));

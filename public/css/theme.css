@@ -4089,6 +4089,27 @@ body.finance-modal-open { overflow: hidden; }
 .requirements-copy-toolbar label { display: grid; gap: 5px; font-size: .78rem; font-weight: 750; }
 .requirements-copy-toolbar select { min-width: 240px; border: 1px solid #94a3b8; border-radius: 9px; background: #fff; color: #0f172a; padding: 8px 10px; }
 
+.finance-requirements-progress {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(210px, auto) minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #0f172a;
+}
+.finance-requirements-progress-copy { display: grid; gap: 2px; }
+.finance-requirements-progress-copy span { color: #64748b; font-size: .7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.finance-requirements-progress-copy strong { color: #0f172a; font-size: .84rem; }
+.finance-requirements-progress-track { height: 9px; overflow: hidden; border-radius: 999px; background: #dbe4ee; }
+.finance-requirements-progress-track > div { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2563eb, #22c55e); transition: width .2s ease; }
+.finance-requirements-progress-percent { min-width: 42px; color: #166534; text-align: right; font-size: .86rem; }
+.finance-requirements-progress.is-compact { grid-template-columns: minmax(190px, auto) minmax(110px, 1fr) auto; margin-top: 12px; padding: 10px 11px; border: 1px solid rgba(148,163,184,.24); border-radius: 10px; background: rgba(148,163,184,.07); }
+#tab-finanzas .finance-requirements-progress.is-compact .finance-requirements-progress-copy span { color: var(--muted, #94a3b8); }
+#tab-finanzas .finance-requirements-progress.is-compact .finance-requirements-progress-copy strong { color: var(--text, #e5e7eb); }
+
 .requirement-card {
   display: block;
   padding: 15px 16px;
@@ -4335,6 +4356,9 @@ body.finance-modal-open { overflow: hidden; }
   .requirements-modal-list { padding: 12px; }
   .requirements-copy-toolbar { align-items: stretch; padding: 10px 12px; flex-direction: column; }
   .requirements-copy-toolbar select { width: 100%; min-width: 0; }
+  .finance-requirements-progress,
+  .finance-requirements-progress.is-compact { grid-template-columns: 1fr auto; padding: 10px 12px; }
+  .finance-requirements-progress-track { grid-column: 1 / -1; grid-row: 2; }
   .requirement-card-heading { flex-direction: column; gap: 8px; }
   .requirement-profile-grid { grid-template-columns: 1fr; }
   .requirement-legal-row { grid-template-columns: 1fr; padding: 9px; border: 1px solid #e2e8f0; border-radius: 9px; }

@@ -14,6 +14,7 @@ const authMw = require('./middleware/auth');
 const { requireActiveUser } = require('./middleware/auth');
 const errorMw = require('./middleware/error');
 const bankReadOnly = require('./middleware/bankReadOnly');
+const denyAvaluatorBackoffice = require('./middleware/avaluatorBackoffice');
 const audit = require('./utils/audit');
 
 // Rutas
@@ -40,6 +41,7 @@ const permitRoutes = require('./routes/permits');
 const chatRoutes = require('./routes/chat');
 const bankRoutes = require('./routes/bank');
 const fundingRoutes = require('./routes/funding');
+const mobileAvaluatorRoutes = require('./routes/mobileAvaluator');
 
 const app = express();
 
@@ -222,10 +224,14 @@ app.use('/api', tenantMw);
    ========================================================================= */
 app.use('/api/auth', authLimiter, authRoutes);
 
+// API movil del avaluador: autenticacion comun, superficie propia y solo lectura.
+// Se monta antes del bloqueo explicito del backoffice para este rol.
+app.use('/api/mobile/v1', authMw, requireActiveUser, mobileAvaluatorRoutes);
+
 /* =========================================================================
    Rutas protegidas
    ========================================================================= */
-const guard = [authMw, requireActiveUser];
+const guard = [authMw, requireActiveUser, denyAvaluatorBackoffice];
 
 // ✅ 1) Projects primero
 app.use('/api/projects', ...guard, bankReadOnly, projectRoutes);
