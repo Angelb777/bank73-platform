@@ -83,7 +83,11 @@ void main() {
             widget is RawGestureDetector &&
             widget.gestures.containsKey(EagerGestureRecognizer),
       );
-      await tester.ensureVisible(signature);
+      await tester.scrollUntilVisible(
+        signature,
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
       await tester.pumpAndSettle();
       final rect = tester.getRect(signature);
       final scroll = tester

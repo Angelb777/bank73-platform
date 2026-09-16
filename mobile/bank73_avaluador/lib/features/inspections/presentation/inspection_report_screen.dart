@@ -38,6 +38,8 @@ class _InspectionReportScreenState
   final _signatureKey = GlobalKey();
   final _points = <Offset?>[];
   final _signer = TextEditingController();
+  final _recommendationNotes = TextEditingController();
+  TechnicalVerdict _technicalVerdict = TechnicalVerdict.notAssessed;
   bool _finalizing = false;
   int? _signaturePointer;
 
@@ -59,6 +61,7 @@ class _InspectionReportScreenState
   @override
   void dispose() {
     _signer.dispose();
+    _recommendationNotes.dispose();
     super.dispose();
   }
 
@@ -93,6 +96,17 @@ class _InspectionReportScreenState
     if (_signer.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Indica el nombre del firmante.')),
+      );
+      return;
+    }
+    if (_technicalVerdict != TechnicalVerdict.notAssessed &&
+        _recommendationNotes.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Justifica la recomendación técnica e indica las condiciones, si las hay.',
+          ),
+        ),
       );
       return;
     }
@@ -133,6 +147,8 @@ class _InspectionReportScreenState
             version: inspection.version,
             signerName: _signer.text.trim(),
             signatureImage: signature,
+            technicalVerdict: _technicalVerdict,
+            recommendationNotes: _recommendationNotes.text.trim(),
           );
       if (mounted) _reload();
     } catch (error) {
@@ -247,6 +263,64 @@ class _InspectionReportScreenState
                             ),
                           ],
                         ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Recomendación técnica del avaluador',
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Tu recomendación orienta al banco. La decisión y autorización del desembolso corresponden al banco.',
+                      style: TextStyle(color: Bank73Colors.muted),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<TechnicalVerdict>(
+                      initialValue: _technicalVerdict,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Recomendación de desembolso',
+                      ),
+                      items: TechnicalVerdict.values
+                          .map(
+                            (verdict) => DropdownMenuItem(
+                              value: verdict,
+                              child: Text(verdict.label),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _finalizing
+                          ? null
+                          : (value) => setState(
+                              () => _technicalVerdict =
+                                  value ?? TechnicalVerdict.notAssessed,
+                            ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _recommendationNotes,
+                      readOnly: _finalizing,
+                      minLines: 3,
+                      maxLines: 6,
+                      maxLength: 5000,
+                      decoration: InputDecoration(
+                        labelText:
+                            _technicalVerdict == TechnicalVerdict.notAssessed
+                            ? 'Comentarios (opcional)'
+                            : 'Justificación y condiciones',
+                        alignLabelWithHint: true,
                       ),
                     ),
                   ],

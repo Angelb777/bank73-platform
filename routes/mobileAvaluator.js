@@ -185,6 +185,7 @@ function inspectionDto(inspection) {
     } : null,
     finalizedAt: inspection.finalizedAt || null,
     reportNumber: String(inspection.reportNumber || ''),
+    technicalRecommendation: inspection.technicalRecommendation || null,
     createdAt: inspection.createdAt,
     updatedAt: inspection.updatedAt
   };
@@ -954,7 +955,7 @@ router.delete('/inspections/:inspectionId/evidence/:evidenceId', async (req, res
 
 router.post('/inspections/:inspectionId/finalize', async (req, res) => {
   try {
-    const extraFields = unexpectedFields(req.body, ['version', 'signerName', 'signatureImage']);
+    const extraFields = unexpectedFields(req.body, ['version', 'signerName', 'signatureImage', 'technicalRecommendation']);
     if (extraFields.length) return res.status(400).json({ error: 'Campos no permitidos.', fields: extraFields });
     const expectedVersion = parseExpectedVersion(req.body?.version);
     if (expectedVersion === null) return res.status(400).json({ error: 'version requerida.' });
@@ -964,6 +965,18 @@ router.post('/inspections/:inspectionId/finalize', async (req, res) => {
     if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(signatureImage) || signatureImage.length > 1000000) {
       return res.status(400).json({ error: 'signatureImage invalida.' });
     }
+
+    const rawRecommendation = req.body?.technicalRecommendation;
+    if (rawRecommendation !== undefined && (!rawRecommendation || typeof rawRecommendation !== 'object' || Array.isArray(rawRecommendation) || unexpectedFields(rawRecommendation, ['verdict', 'notes']).length)) {
+      return res.status(400).json({ error: 'Recomendacion tecnica invalida.' });
+    }
+    const verdict = rawRecommendation?.verdict ?? 'not_assessed';
+    const notes = rawRecommendation?.notes ?? '';
+    if (!['favorable', 'conditional', 'unfavorable', 'not_assessed'].includes(verdict) || typeof notes !== 'string' || notes.trim().length > 5000) {
+      return res.status(400).json({ error: 'Recomendacion tecnica invalida.' });
+    }
+    if (verdict !== 'not_assessed' && !notes.trim()) return res.status(400).json({ error: 'Justifica la recomendacion tecnica e indica las condiciones, si las hay.' });
+    const technicalRecommendation = { verdict, notes: notes.trim() };
 
     const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
     if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
@@ -988,6 +1001,7 @@ router.post('/inspections/:inspectionId/finalize', async (req, res) => {
       {
         $set: {
           status: 'finalized',
+          technicalRecommendation,
           signature: { signerName, imageData: signatureImage, signedAt: finalizedAt },
           finalizedAt,
           reportNumber

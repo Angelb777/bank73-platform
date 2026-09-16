@@ -153,12 +153,56 @@ class _InspectionsScreenState extends ConsumerState<InspectionsScreen> {
                   ),
                   subtitle: Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      item.isFinalized
-                          ? 'Informe ${item.reportNumber}'
-                          : item.updatedAt == null
-                          ? 'Borrador'
-                          : 'Modificada ${DateFormat('dd/MM/yyyy HH:mm').format(item.updatedAt!.toLocal())}',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.isFinalized
+                              ? 'Informe ${item.reportNumber}'
+                              : item.updatedAt == null
+                              ? 'Borrador'
+                              : 'Modificada ${DateFormat('dd/MM/yyyy HH:mm').format(item.updatedAt!.toLocal())}',
+                        ),
+                        if (item.isFinalized) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Icon(
+                                item.technicalVerdict ==
+                                        TechnicalVerdict.favorable
+                                    ? Icons.check_circle_outline
+                                    : item.technicalVerdict ==
+                                          TechnicalVerdict.conditional
+                                    ? Icons.info_outline
+                                    : item.technicalVerdict ==
+                                          TechnicalVerdict.unfavorable
+                                    ? Icons.cancel_outlined
+                                    : Icons.remove_circle_outline,
+                                size: 15,
+                                color:
+                                    item.technicalVerdict ==
+                                        TechnicalVerdict.favorable
+                                    ? Bank73Colors.success
+                                    : Bank73Colors.muted,
+                              ),
+                              const SizedBox(width: 5),
+                              Expanded(
+                                child: Text(
+                                  item.technicalVerdict.label,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color:
+                                        item.technicalVerdict ==
+                                            TechnicalVerdict.favorable
+                                        ? Bank73Colors.success
+                                        : Bank73Colors.muted,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                   trailing: item.isFinalized

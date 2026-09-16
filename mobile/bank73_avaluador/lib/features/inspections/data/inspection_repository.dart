@@ -153,6 +153,8 @@ class InspectionRepository {
     required int version,
     required String signerName,
     required String signatureImage,
+    TechnicalVerdict technicalVerdict = TechnicalVerdict.notAssessed,
+    String recommendationNotes = '',
   }) async {
     final response = await _api.post(
       '/api/mobile/v1/inspections/$inspectionId/finalize',
@@ -160,6 +162,10 @@ class InspectionRepository {
         'version': version,
         'signerName': signerName,
         'signatureImage': signatureImage,
+        'technicalRecommendation': {
+          'verdict': technicalVerdict.code,
+          'notes': recommendationNotes,
+        },
       },
     );
     return Inspection.fromJson(

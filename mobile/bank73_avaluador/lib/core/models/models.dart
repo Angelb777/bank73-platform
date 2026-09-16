@@ -222,6 +222,21 @@ class InspectionCommonArea {
       );
 }
 
+enum TechnicalVerdict {
+  favorable('favorable', 'Favorable al desembolso'),
+  conditional('conditional', 'Favorable con condiciones'),
+  unfavorable('unfavorable', 'Desfavorable al desembolso'),
+  notAssessed('not_assessed', 'Sin pronunciamiento');
+
+  const TechnicalVerdict(this.code, this.label);
+  final String code;
+  final String label;
+  static TechnicalVerdict fromCode(dynamic value) => values.firstWhere(
+    (entry) => entry.code == value,
+    orElse: () => notAssessed,
+  );
+}
+
 class Inspection {
   const Inspection({
     required this.id,
@@ -238,6 +253,8 @@ class Inspection {
     required this.reportNumber,
     required this.signerName,
     this.methodology,
+    this.technicalVerdict = TechnicalVerdict.notAssessed,
+    this.recommendationNotes = '',
   });
   final String id;
   final String projectId;
@@ -253,6 +270,8 @@ class Inspection {
   final String reportNumber;
   final String signerName;
   final InspectionMethodology? methodology;
+  final TechnicalVerdict technicalVerdict;
+  final String recommendationNotes;
 
   factory Inspection.fromJson(Map<String, dynamic> json) => Inspection(
     id: (json['id'] ?? '').toString(),
@@ -270,6 +289,11 @@ class Inspection {
     finalizedAt: _date(json['finalizedAt']),
     reportNumber: (json['reportNumber'] ?? '').toString(),
     signerName: (_map(json['signature'])['signerName'] ?? '').toString(),
+    technicalVerdict: TechnicalVerdict.fromCode(
+      _map(json['technicalRecommendation'])['verdict'],
+    ),
+    recommendationNotes: (_map(json['technicalRecommendation'])['notes'] ?? '')
+        .toString(),
     methodology: json['methodology'] == null
         ? null
         : InspectionMethodology.fromJson(_map(json['methodology'])),

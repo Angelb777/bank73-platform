@@ -644,3 +644,38 @@ test('promoter progress matches checklist progress including empty subtasks', ()
     { status: 'EN_PROCESO' }, { status: 'COMPLETADO' }, { status: 'PENDIENTE' }
   ]), 46);
 });
+
+
+test('finalization validates and stores technical recommendation with signed inspection', async (t) => {
+  mockAuthorizedInspection(t, { inspectionValue: inspection({ projectProgressPercent: 35 }) });
+  const originalCount = InspectionUnit.countDocuments;
+  const originalUpdate = Inspection.findOneAndUpdate;
+  t.after(() => { InspectionUnit.countDocuments = originalCount; Inspection.findOneAndUpdate = originalUpdate; });
+  InspectionUnit.countDocuments = async () => 1;
+  let stored;
+  Inspection.findOneAndUpdate = (filter, update) => {
+    stored = update.$set;
+    return { lean: async () => inspection({ ...stored, version: 1 }) };
+  };
+  const handler = routeHandler('post', '/inspections/:inspectionId/finalize');
+  const body = { version: 0, signerName: 'Avaluador', signatureImage: 'data:image/png;base64,aA==' };
+  for (const verdict of ['favorable', 'conditional', 'unfavorable', 'not_assessed']) {
+    const capture = responseCapture();
+    await handler(evaluatorReq({ inspectionId: IDS.inspectionA }, { ...body, technicalRecommendation: { verdict, notes: ' Justificacion y condiciones ' } }), capture.res);
+    assert.equal(capture.statusCode, 200);
+    assert.deepEqual(stored.technicalRecommendation, { verdict, notes: 'Justificacion y condiciones' });
+    assert.deepEqual(capture.payload.inspection.technicalRecommendation, stored.technicalRecommendation);
+  }
+  for (const technicalRecommendation of [
+    { verdict: 'approved', notes: 'No permitido' },
+    { verdict: 'conditional', notes: ' ' },
+    { verdict: 'favorable', notes: '' },
+    { verdict: 'unfavorable', notes: '' },
+    { verdict: 'favorable', notes: 'x'.repeat(5001) },
+    { verdict: 'favorable', notes: 'Justificado', bankApproval: true }, null
+  ]) {
+    const capture = responseCapture();
+    await handler(evaluatorReq({ inspectionId: IDS.inspectionA }, { ...body, technicalRecommendation }), capture.res);
+    assert.equal(capture.statusCode, 400);
+  }
+});

@@ -132,6 +132,17 @@ async function renderInspectionReport(doc, { project, inspection, units, evidenc
   }
   const remaining = evidence.filter(item => !used.has(item));
   if (remaining.length) { section('Otras evidencias de la visita'); await photos(remaining, 'Otras evidencias'); }
+  section('Recomendaci\u00f3n t\u00e9cnica del avaluador');
+  const recommendation = inspection.technicalRecommendation;
+  const verdictLabels = {
+    favorable: 'Favorable al desembolso',
+    conditional: 'Favorable con condiciones',
+    unfavorable: 'Desfavorable al desembolso',
+    not_assessed: 'Sin pronunciamiento'
+  };
+  text(verdictLabels[recommendation?.verdict] || verdictLabels.not_assessed);
+  if (recommendation?.notes) text(recommendation.notes);
+  text('Esta recomendaci\u00f3n es t\u00e9cnica. La decisi\u00f3n y autorizaci\u00f3n del desembolso corresponden al banco.', true);
   ensure(190);
   section('Firma del avaluador');
   const signature = String(inspection.signature?.imageData || '').split(',')[1];

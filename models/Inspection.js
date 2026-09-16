@@ -114,6 +114,13 @@ const inspectionSchema = new mongoose.Schema({
     default: 0,
     required: true
   },
+  technicalRecommendation: {
+    type: new mongoose.Schema({
+      verdict: { type: String, enum: ['favorable', 'conditional', 'unfavorable', 'not_assessed'], required: true },
+      notes: { type: String, trim: true, default: '', maxlength: 5000 }
+    }, { _id: false }),
+    default: undefined
+  },
   signature: { type: signatureSchema, default: undefined },
   finalizedAt: { type: Date, default: null },
   reportNumber: { type: String, trim: true, default: '' }
