@@ -86,7 +86,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
     }
   }
 
-  void _reload() => setState(() => _future = _load());
+  void _reload() {
+    final future = _load();
+    setState(() {
+      _future = future;
+    });
+  }
 
   Future<void> _pickDate() async {
     final selected = await showDatePicker(
@@ -152,7 +157,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
     body: FutureBuilder<_InspectionBundle>(
       future: _future,
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done)
+        // Keep the existing list mounted while refreshing after a unit visit,
+        // preserving its scroll position and expansion state.
+        if (snapshot.connectionState != ConnectionState.done &&
+            !snapshot.hasData)
           return const LoadingView();
         if (snapshot.hasError || !snapshot.hasData)
           return ErrorView(onRetry: _reload);
@@ -334,6 +342,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                   ),
                   const SizedBox(height: 14),
                   TextField(
+                    // Keep the search scroll offset separate from the tile's
+                    // persisted expanded/collapsed boolean in PageStorage.
+                    key: PageStorageKey(
+                      'visit-units-search-${widget.inspectionId}',
+                    ),
                     onChanged: (value) => setState(() => _query = value),
                     decoration: const InputDecoration(
                       hintText: 'Buscar código, manzana, lote o modelo',
