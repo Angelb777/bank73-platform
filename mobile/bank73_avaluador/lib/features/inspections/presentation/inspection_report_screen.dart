@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:printing/printing.dart';
@@ -38,6 +39,15 @@ class _InspectionReportScreenState
   final _points = <Offset?>[];
   final _signer = TextEditingController();
   bool _finalizing = false;
+  int? _signaturePointer;
+
+  void _endSignature(int pointer) {
+    if (_signaturePointer != pointer) return;
+    setState(() {
+      _points.add(null);
+      _signaturePointer = null;
+    });
+  }
 
   @override
   void initState() {
@@ -165,6 +175,9 @@ class _InspectionReportScreenState
                   ) /
                   bundle.units.length;
         return ListView(
+          physics: _signaturePointer == null
+              ? null
+              : const NeverScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           children: [
             const StatusPill('Vista previa · borrador'),
@@ -269,21 +282,63 @@ class _InspectionReportScreenState
                         ),
                       ],
                     ),
-                    RepaintBoundary(
-                      key: _signatureKey,
-                      child: GestureDetector(
-                        onPanStart: (details) =>
-                            setState(() => _points.add(details.localPosition)),
-                        onPanUpdate: (details) =>
-                            setState(() => _points.add(details.localPosition)),
-                        onPanEnd: (_) => setState(() => _points.add(null)),
-                        child: CustomPaint(
-                          foregroundPainter: _SignaturePainter(_points),
-                          child: const ColoredBox(
-                            color: Colors.white,
-                            child: SizedBox(
-                              height: 180,
-                              width: double.infinity,
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Bank73Colors.border),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: RepaintBoundary(
+                          key: _signatureKey,
+                          child: RawGestureDetector(
+                            gestures: {
+                              EagerGestureRecognizer:
+                                  GestureRecognizerFactoryWithHandlers<
+                                    EagerGestureRecognizer
+                                  >(
+                                    EagerGestureRecognizer.new,
+                                    (recognizer) {},
+                                  ),
+                            },
+                            child: Listener(
+                              behavior: HitTestBehavior.opaque,
+                              onPointerDown: (event) => setState(() {
+                                _signaturePointer ??= event.pointer;
+                                if (_signaturePointer == event.pointer) {
+                                  _points.add(null);
+                                  _points.add(event.localPosition);
+                                }
+                              }),
+                              onPointerMove: (event) {
+                                if (_signaturePointer != event.pointer) return;
+                                final box =
+                                    _signatureKey.currentContext
+                                            ?.findRenderObject()
+                                        as RenderBox?;
+                                if (box == null) return;
+                                final inside = (Offset.zero & box.size)
+                                    .contains(event.localPosition);
+                                setState(
+                                  () => _points.add(
+                                    inside ? event.localPosition : null,
+                                  ),
+                                );
+                              },
+                              onPointerUp: (event) =>
+                                  _endSignature(event.pointer),
+                              onPointerCancel: (event) =>
+                                  _endSignature(event.pointer),
+                              child: CustomPaint(
+                                foregroundPainter: _SignaturePainter(_points),
+                                child: const ColoredBox(
+                                  color: Colors.white,
+                                  child: SizedBox(
+                                    height: 180,
+                                    width: double.infinity,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -342,6 +397,7 @@ class _SignaturePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    canvas.clipRect(Offset.zero & size);
     final paint = Paint()
       ..color = Bank73Colors.ink
       ..strokeCap = StrokeCap.round

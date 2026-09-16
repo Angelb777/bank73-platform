@@ -63,6 +63,7 @@ const inspectionSchema = new mongoose.Schema({
     required: true,
     index: true
   },
+  deletedAt: { type: Date, default: null, index: true },
   status: {
     type: String,
     enum: ['draft', 'finalized'],

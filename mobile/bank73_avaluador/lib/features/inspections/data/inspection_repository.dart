@@ -24,6 +24,12 @@ class InspectionRepository {
         .toList();
   }
 
+  Future<void> deleteDraft(Inspection inspection) async {
+    await _api.delete(
+      '/api/mobile/v1/inspections/${inspection.id}?version=${inspection.version}',
+    );
+  }
+
   Future<Inspection> create(String projectId) async {
     final response = await _api.post(
       '/api/mobile/v1/projects/$projectId/inspections',

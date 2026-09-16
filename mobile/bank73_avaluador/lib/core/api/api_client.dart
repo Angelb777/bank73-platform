@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../errors/api_exception.dart';
 import '../storage/secure_session_store.dart';
@@ -99,11 +100,37 @@ class ApiClient implements ApiTransport {
       throw const ApiException('La sesion ha caducado.', statusCode: 401);
     }
     try {
+      final bytes = await File(filePath).readAsBytes();
+      final isPng =
+          bytes.length >= 8 &&
+          bytes[0] == 137 &&
+          bytes[1] == 80 &&
+          bytes[2] == 78 &&
+          bytes[3] == 71 &&
+          bytes[4] == 13 &&
+          bytes[5] == 10 &&
+          bytes[6] == 26 &&
+          bytes[7] == 10;
+      final isJpeg =
+          bytes.length >= 3 &&
+          bytes[0] == 255 &&
+          bytes[1] == 216 &&
+          bytes[2] == 255;
+      if (!isPng && !isJpeg) {
+        throw const ApiException('Selecciona una fotografía JPEG o PNG.');
+      }
       final request = http.MultipartRequest('POST', ApiConfig.uri(path))
         ..headers['Accept'] = 'application/json'
         ..headers['Authorization'] = 'Bearer ${credentials.token}'
         ..fields.addAll(fields)
-        ..files.add(await http.MultipartFile.fromPath(field, filePath));
+        ..files.add(
+          http.MultipartFile.fromBytes(
+            field,
+            bytes,
+            filename: isPng ? 'evidencia.png' : 'evidencia.jpg',
+            contentType: MediaType('image', isPng ? 'png' : 'jpeg'),
+          ),
+        );
       final streamed = await _client
           .send(request)
           .timeout(const Duration(seconds: 45));

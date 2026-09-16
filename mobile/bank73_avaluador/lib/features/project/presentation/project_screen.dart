@@ -108,6 +108,27 @@ class _ProjectScreenState extends ConsumerState<ProjectScreen> {
                     const SizedBox(height: 8),
                     Text(project.description),
                   ],
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Progreso según promotor',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Text(formatPercent(project.promoterProgressPercent)),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(99),
+                    child: LinearProgressIndicator(
+                      value: project.promoterProgressPercent / 100,
+                      minHeight: 8,
+                      backgroundColor: Bank73Colors.border,
+                    ),
+                  ),
                   const SizedBox(height: 26),
                   Text(
                     'Trabajo de campo',

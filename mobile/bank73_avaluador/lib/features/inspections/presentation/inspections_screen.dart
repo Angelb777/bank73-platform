@@ -19,6 +19,7 @@ class InspectionsScreen extends ConsumerStatefulWidget {
 class _InspectionsScreenState extends ConsumerState<InspectionsScreen> {
   late Future<List<Inspection>> _future;
   bool _creating = false;
+  final _deleting = <String>{};
 
   @override
   void initState() {
@@ -54,6 +55,38 @@ class _InspectionsScreenState extends ConsumerState<InspectionsScreen> {
       if (mounted) await presentApiError(context, ref, error);
     } finally {
       if (mounted) setState(() => _creating = false);
+    }
+  }
+
+  Future<void> _deleteDraft(Inspection item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Eliminar borrador'),
+        content: const Text(
+          'Se eliminará esta visita de la lista, incluidos sus avances y fotografías. Esta acción no se puede deshacer desde la app.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _deleting.add(item.id));
+    try {
+      await ref.read(inspectionRepositoryProvider).deleteDraft(item);
+      if (mounted) await _refresh();
+    } catch (error) {
+      if (mounted) await presentApiError(context, ref, error);
+    } finally {
+      if (mounted) setState(() => _deleting.remove(item.id));
     }
   }
 
@@ -128,10 +161,22 @@ class _InspectionsScreenState extends ConsumerState<InspectionsScreen> {
                           : 'Modificada ${DateFormat('dd/MM/yyyy HH:mm').format(item.updatedAt!.toLocal())}',
                     ),
                   ),
-                  trailing: StatusPill(
-                    item.isFinalized ? 'Finalizado' : 'Borrador',
-                    success: item.isFinalized,
-                  ),
+                  trailing: item.isFinalized
+                      ? const StatusPill('Finalizado', success: true)
+                      : IconButton(
+                          tooltip: 'Eliminar borrador',
+                          onPressed: _deleting.contains(item.id)
+                              ? null
+                              : () => _deleteDraft(item),
+                          icon: _deleting.contains(item.id)
+                              ? const SizedBox.square(
+                                  dimension: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.delete_outline),
+                        ),
                 ),
               );
             },

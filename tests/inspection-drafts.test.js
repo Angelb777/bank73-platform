@@ -167,6 +167,7 @@ test('mobile API exposes the inspection lifecycle and evidence routes', () => {
     .filter(route => route.includes('/inspections'))
     .sort();
   assert.deepEqual(actual, [
+    'DELETE /inspections/:inspectionId',
     'DELETE /inspections/:inspectionId/evidence/:evidenceId',
     'GET /inspections/:inspectionId',
     'GET /inspections/:inspectionId/evidence',
@@ -607,4 +608,39 @@ test('revoked assignment blocks further draft edits and progress writes', async 
   );
   assert.equal(progress.statusCode, 404);
   assert.equal(unitQueried, false);
+});
+
+
+test('draft deletion is conditional on version and cannot delete finalized reports', async (t) => {
+  mockAuthorizedInspection(t);
+  const original = Inspection.findOneAndUpdate;
+  t.after(() => { Inspection.findOneAndUpdate = original; });
+  let filter;
+  Inspection.findOneAndUpdate = query => { filter = query; return { lean: async () => ({ deletedAt: new Date() }) }; };
+  const handler = routeHandler('delete', '/inspections/:inspectionId');
+  const req = evaluatorReq({ inspectionId: IDS.inspectionA });
+  req.query = { version: '0' };
+  const capture = responseCapture();
+  await handler(req, capture.res);
+  assert.equal(capture.statusCode, 200);
+  assert.equal(filter.status, 'draft');
+  assert.equal(filter.deletedAt, null);
+  assert.equal(filter.version, 0);
+  Inspection.findOneAndUpdate = () => ({ lean: async () => null });
+  const stale = responseCapture();
+  await handler(req, stale.res);
+  assert.equal(stale.statusCode, 409);
+  Inspection.findOne = () => ({ lean: async () => inspection({ status: 'finalized' }) });
+  const finalized = responseCapture();
+  await handler(req, finalized.res);
+  assert.equal(finalized.statusCode, 409);
+});
+
+test('promoter progress matches checklist progress including empty subtasks', () => {
+  const { promoterProgress } = mobileRouter._helpers;
+  assert.equal(promoterProgress([]), 0);
+  assert.equal(promoterProgress([
+    { subtasks: [{ completed: true }, { completed: false }, { completed: false }] },
+    { status: 'EN_PROCESO' }, { status: 'COMPLETADO' }, { status: 'PENDIENTE' }
+  ]), 46);
 });

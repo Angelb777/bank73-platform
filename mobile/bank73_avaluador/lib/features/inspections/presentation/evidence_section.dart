@@ -16,6 +16,7 @@ class EvidenceSection extends ConsumerStatefulWidget {
     this.unitId,
     this.commonAreaKey,
     this.editable = true,
+    this.embedded = false,
     this.title = 'Evidencia fotográfica',
   });
 
@@ -23,6 +24,7 @@ class EvidenceSection extends ConsumerStatefulWidget {
   final String? unitId;
   final String? commonAreaKey;
   final bool editable;
+  final bool embedded;
   final String title;
 
   @override
@@ -164,8 +166,8 @@ class _EvidenceSectionState extends ConsumerState<EvidenceSection> {
   }
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
+  Widget build(BuildContext context) {
+    final content = Padding(
       padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -236,8 +238,9 @@ class _EvidenceSectionState extends ConsumerState<EvidenceSection> {
           ),
         ],
       ),
-    ),
-  );
+    );
+    return widget.embedded ? content : Card(child: content);
+  }
 }
 
 class _EvidenceTile extends StatelessWidget {

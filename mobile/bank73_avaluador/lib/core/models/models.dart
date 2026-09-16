@@ -67,6 +67,7 @@ class MobileProject {
     required this.status,
     this.coverSource,
     this.description = '',
+    this.promoterProgressPercent = 0,
   });
   final String id;
   final String name;
@@ -75,6 +76,7 @@ class MobileProject {
   final String status;
   final String? coverSource;
   final String description;
+  final double promoterProgressPercent;
 
   factory MobileProject.fromJson(Map<String, dynamic> json) => MobileProject(
     id: (json['id'] ?? '').toString(),
@@ -84,6 +86,8 @@ class MobileProject {
     status: (json['status'] ?? '').toString(),
     coverSource: _map(json['coverImage'])['source']?.toString(),
     description: (json['description'] ?? '').toString(),
+    promoterProgressPercent: _number(json['promoterProgressPercent'])
+        .clamp(0, 100),
   );
 }
 

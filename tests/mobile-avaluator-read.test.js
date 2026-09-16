@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const mobileRouter = require('../routes/mobileAvaluator');
 const Project = require('../models/Project');
+const ProjectChecklist = require('../models/ProjectChecklist');
 const Unit = require('../models/Unit');
 const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment');
 const denyAvaluatorBackoffice = require('../middleware/avaluatorBackoffice');
@@ -173,6 +174,9 @@ test('revoked assignment leaves the portfolio empty', async (t) => {
 });
 
 test('project detail requires evaluator, bank tenant and project in the same active assignment', async (t) => {
+  const checklistFind = ProjectChecklist.find;
+  ProjectChecklist.find = () => ({ select: () => ({ lean: async () => [] }) });
+  t.after(() => { ProjectChecklist.find = checklistFind; });
   const handler = routeHandler('/projects/:projectId');
   const originalAssignmentFindOne = ProjectAvaluatorAssignment.findOne;
   const originalProjectFindOne = Project.findOne;

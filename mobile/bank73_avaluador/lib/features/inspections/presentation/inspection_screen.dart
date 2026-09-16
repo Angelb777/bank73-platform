@@ -301,74 +301,88 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
               ),
             ],
             const SizedBox(height: 22),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Unidades de la visita',
-                    style: Theme.of(context).textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                  ),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Unidades de la visita',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        Text(
+                          '${bundle.saved.length}/${bundle.units.length}',
+                          style: const TextStyle(color: Bank73Colors.muted),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    const Text(
+                      'Registra únicamente las unidades revisadas hoy. Las demás quedarán pendientes, no incompletas.',
+                      style: TextStyle(color: Bank73Colors.muted),
+                    ),
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(99),
+                      child: LinearProgressIndicator(
+                        value: completion,
+                        minHeight: 7,
+                        backgroundColor: Bank73Colors.border,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      onChanged: (value) => setState(() => _query = value),
+                      decoration: const InputDecoration(
+                        hintText: 'Buscar código, manzana, lote o modelo',
+                        prefixIcon: Icon(Icons.search_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (bundle.units.isEmpty)
+                      const Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(20),
+                          child: Text(
+                            'Este proyecto no tiene unidades disponibles.',
+                          ),
+                        ),
+                      )
+                    else if (visibleUnits.isEmpty)
+                      const Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(20),
+                          child: Text(
+                            'No hay unidades que coincidan con la búsqueda.',
+                          ),
+                        ),
+                      )
+                    else
+                      ...visibleUnits.map(
+                        (unit) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: UnitTile(
+                            unit: unit,
+                            progress: progressByUnit[unit.id],
+                            onTap: () async {
+                              await context.push(
+                                '/projects/${widget.projectId}/inspections/${widget.inspectionId}/units/${unit.id}',
+                              );
+                              if (mounted) _reload();
+                            },
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-                Text(
-                  '${bundle.saved.length}/${bundle.units.length}',
-                  style: const TextStyle(color: Bank73Colors.muted),
-                ),
-              ],
-            ),
-            const SizedBox(height: 5),
-            const Text(
-              'Registra únicamente las unidades revisadas hoy. Las demás quedarán pendientes, no incompletas.',
-              style: TextStyle(color: Bank73Colors.muted),
-            ),
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(99),
-              child: LinearProgressIndicator(
-                value: completion,
-                minHeight: 7,
-                backgroundColor: Bank73Colors.border,
               ),
             ),
-            const SizedBox(height: 14),
-            TextField(
-              onChanged: (value) => setState(() => _query = value),
-              decoration: const InputDecoration(
-                hintText: 'Buscar código, manzana, lote o modelo',
-                prefixIcon: Icon(Icons.search_rounded),
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (bundle.units.isEmpty)
-              const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Text('Este proyecto no tiene unidades disponibles.'),
-                ),
-              )
-            else if (visibleUnits.isEmpty)
-              const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Text('No hay unidades que coincidan con la búsqueda.'),
-                ),
-              )
-            else
-              ...visibleUnits.map(
-                (unit) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: UnitTile(
-                    unit: unit,
-                    progress: progressByUnit[unit.id],
-                    onTap: () async {
-                      await context.push(
-                        '/projects/${widget.projectId}/inspections/${widget.inspectionId}/units/${unit.id}',
-                      );
-                      if (mounted) _reload();
-                    },
-                  ),
-                ),
-              ),
             const SizedBox(height: 12),
             _InspectionStep(
               icon: bundle.inspection.isFinalized

@@ -180,57 +180,49 @@ class _ProjectProgressScreenState extends ConsumerState<ProjectProgressScreen> {
             ...inspection.commonAreas.map(
               (area) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: Column(
-                  children: [
-                    Card(
-                      child: ExpansionTile(
-                        initiallyExpanded: true,
-                        title: Text(
-                          area.name,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        subtitle: Text(
-                          '${formatPercent(_progress[area.key] ?? 0)} · peso ${formatPercent(area.weight)}',
-                        ),
-                        childrenPadding: const EdgeInsets.fromLTRB(
-                          18,
-                          0,
-                          18,
-                          18,
-                        ),
-                        children: [
-                          Slider(
-                            value: (_progress[area.key] ?? 0).clamp(0, 100),
-                            min: 0,
-                            max: 100,
-                            divisions: 100,
-                            onChanged: editable
-                                ? (value) => setState(
-                                    () => _progress[area.key] = value,
-                                  )
-                                : null,
-                          ),
-                          TextField(
-                            controller: _observations[area.key],
-                            readOnly: !editable,
-                            minLines: 2,
-                            maxLines: 5,
-                            decoration: const InputDecoration(
-                              labelText: 'Observaciones de esta zona',
-                              alignLabelWithHint: true,
-                            ),
-                          ),
-                        ],
+                child: Card(
+                  child: ExpansionTile(
+                    initiallyExpanded: true,
+                    title: Text(
+                      area.name,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      '${formatPercent(_progress[area.key] ?? 0)} · peso ${formatPercent(area.weight)}',
+                    ),
+                    childrenPadding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+                    children: [
+                      Slider(
+                        value: (_progress[area.key] ?? 0).clamp(0, 100),
+                        min: 0,
+                        max: 100,
+                        divisions: 100,
+                        onChanged: editable
+                            ? (value) =>
+                                  setState(() => _progress[area.key] = value)
+                            : null,
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    EvidenceSection(
-                      inspectionId: widget.inspectionId,
-                      commonAreaKey: area.key,
-                      editable: editable,
-                      title: 'Fotos · ${area.name}',
-                    ),
-                  ],
+                      TextField(
+                        controller: _observations[area.key],
+                        readOnly: !editable,
+                        minLines: 2,
+                        maxLines: 5,
+                        decoration: const InputDecoration(
+                          labelText: 'Observaciones de esta zona',
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      EvidenceSection(
+                        key: ValueKey(area.key),
+                        inspectionId: widget.inspectionId,
+                        commonAreaKey: area.key,
+                        editable: editable,
+                        embedded: true,
+                        title: 'Fotografías',
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

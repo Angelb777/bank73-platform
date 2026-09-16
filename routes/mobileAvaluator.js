@@ -6,6 +6,8 @@ const multer = require('multer');
 const PDFDocument = require('pdfkit');
 
 const Project = require('../models/Project');
+const ProjectChecklist = require('../models/ProjectChecklist');
+const { renderInspectionReport } = require('../services/inspectionReport');
 const Unit = require('../models/Unit');
 const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment');
 const Inspection = require('../models/Inspection');
@@ -110,6 +112,16 @@ function projectListDto(project) {
     projectType: String(project.projectType || '').trim(),
     status: String(project.status || '').trim()
   };
+}
+
+function promoterProgress(checklists) {
+  if (!checklists.length) return 0;
+  return Math.round(checklists.reduce((sum, item) => {
+    const subtasks = item.subtasks || [];
+    return sum + (subtasks.length
+      ? Math.round(subtasks.filter(sub => !!sub.completed).length / subtasks.length * 100)
+      : item.status === 'COMPLETADO' ? 100 : item.status === 'EN_PROCESO' ? 50 : 0);
+  }, 0) / checklists.length);
 }
 
 function projectDetailDto(project) {
@@ -339,6 +351,7 @@ async function authorizedInspectionFor(req, inspectionId) {
 
   const inspection = await Inspection.findOne({
     _id: inspectionId,
+    deletedAt: null,
     bankTenantKey: { $in: context.bankTenantKeys },
     avaluadorId: context.userId
   }).lean();
@@ -402,7 +415,11 @@ router.get('/projects/:projectId', async (req, res) => {
   try {
     const resolved = await assignedProjectFor(req, req.params.projectId);
     if (!resolved) return res.status(404).json({ error: 'Proyecto no encontrado.' });
-    res.json({ project: projectDetailDto(resolved.project) });
+    const checklists = await ProjectChecklist.find({
+      projectId: resolved.assignment.projectId,
+      $or: [{ tenantKey: resolved.assignment.projectTenantKey }, { tenantKey: { $exists: false } }]
+    }).select('status subtasks.completed').lean();
+    res.json({ project: { ...projectDetailDto(resolved.project), promoterProgressPercent: promoterProgress(checklists) } });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -499,13 +516,31 @@ router.get('/projects/:projectId/inspections', async (req, res) => {
       projectTenantKey: resolved.assignment.projectTenantKey,
       projectId: resolved.assignment.projectId,
       avaluadorId: resolved.assignment.avaluadorId,
-      assignmentId: resolved.assignment._id
+      assignmentId: resolved.assignment._id,
+      deletedAt: null
     }).sort({ inspectionDate: -1, createdAt: -1 }).lean();
 
     res.json({ inspections: inspections.map(inspectionDto) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+router.delete('/inspections/:inspectionId', async (req, res) => {
+  try {
+    const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
+    if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
+    if (resolved.inspection.status !== 'draft') return res.status(409).json({ error: 'Los informes finalizados no se pueden eliminar.' });
+    const version = Number(req.query.version);
+    if (!Number.isInteger(version) || version < 0) return res.status(400).json({ error: 'Version de borrador invalida.' });
+    const deleted = await Inspection.findOneAndUpdate({
+      _id: resolved.inspection._id,
+      avaluadorId: resolved.inspection.avaluadorId,
+      status: 'draft', deletedAt: null, version
+    }, { $set: { deletedAt: new Date() }, $inc: { version: 1 } }, { new: true }).lean();
+    if (!deleted) return res.status(409).json({ error: 'version_conflict' });
+    res.json({ deleted: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 router.get('/inspections/:inspectionId', async (req, res) => {
@@ -555,6 +590,7 @@ router.patch('/inspections/:inspectionId', async (req, res) => {
         avaluadorId: resolved.context.userId,
         assignmentId: resolved.assignment._id,
         status: 'draft',
+        deletedAt: null,
         version: expectedVersion
       },
       { $set: set, $inc: { version: 1 } },
@@ -617,6 +653,7 @@ router.put('/inspections/:inspectionId/project-progress', async (req, res) => {
         bankTenantKey: resolved.inspection.bankTenantKey,
         avaluadorId: resolved.context.userId,
         status: 'draft',
+        deletedAt: null,
         version: expectedVersion
       },
       {
@@ -945,6 +982,7 @@ router.post('/inspections/:inspectionId/finalize', async (req, res) => {
         bankTenantKey: resolved.inspection.bankTenantKey,
         avaluadorId: resolved.context.userId,
         status: 'draft',
+        deletedAt: null,
         version: expectedVersion
       },
       {
@@ -980,56 +1018,11 @@ router.get('/inspections/:inspectionId/report.pdf', async (req, res) => {
     if (!project) return res.status(404).json({ error: 'Proyecto no encontrado.' });
 
     const inspection = resolved.inspection;
-    const doc = new PDFDocument({ size: 'A4', margin: 48, info: { Title: `Informe ${inspection.reportNumber}` } });
+    const doc = new PDFDocument({ size: 'A4', margin: 48, bufferPages: true, info: { Title: `Informe ${inspection.reportNumber}` } });
     res.type('application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${inspection.reportNumber || 'informe-bank73'}.pdf"`);
     doc.pipe(res);
-    doc.fillColor('#0F1422').fontSize(22).text('BANK73', { continued: true });
-    doc.fillColor('#2563EB').text('  Informe de inspección');
-    doc.moveDown().fillColor('#172033').fontSize(16).text(String(project.name || 'Proyecto'));
-    doc.fontSize(10).fillColor('#647089').text(`Informe: ${inspection.reportNumber}`);
-    doc.text(`Fecha de visita: ${new Date(inspection.inspectionDate).toLocaleDateString('es-PA')}`);
-    doc.text(`Finalizado: ${new Date(inspection.finalizedAt).toLocaleString('es-PA')}`);
-    doc.moveDown().fillColor('#172033').fontSize(14).text('Resumen de avance');
-    doc.fontSize(11).text(`Avance general de la obra: ${Number(inspection.projectProgressPercent || 0).toFixed(1)} %`);
-    const unitAverage = units.length ? units.reduce((sum, item) => sum + Number(item.progressPercent || 0), 0) / units.length : 0;
-    doc.text(`Promedio de unidades inspeccionadas: ${unitAverage.toFixed(1)} % (${units.length} unidades)`);
-    doc.moveDown().fontSize(14).text('Zonas comunes e infraestructura');
-    (inspection.commonAreas || []).forEach(area => {
-      doc.fontSize(11).text(`${area.name}: ${Number(area.progressPercent || 0).toFixed(1)} %`);
-      if (area.observations) doc.fontSize(9).fillColor('#647089').text(String(area.observations)).fillColor('#172033');
-    });
-    if (inspection.generalObservations) {
-      doc.moveDown().fontSize(14).text('Observaciones generales');
-      doc.fontSize(10).text(String(inspection.generalObservations));
-    }
-    if (units.length) {
-      doc.moveDown().fontSize(14).text('Unidades inspeccionadas');
-      units.forEach(item => {
-        const ref = item.unitReferenceSnapshot || {};
-        doc.fontSize(10).text(`${ref.code || [ref.manzana, ref.lote].filter(Boolean).join('-') || 'Unidad'} — ${Number(item.progressPercent).toFixed(1)} %`);
-        if (item.observations) doc.fontSize(9).fillColor('#647089').text(String(item.observations)).fillColor('#172033');
-      });
-    }
-    if (evidence.length) {
-      doc.addPage().fontSize(16).text('Evidencia fotográfica');
-      for (const item of evidence) {
-        const absolutePath = path.resolve(__dirname, '..', item.path);
-        try {
-          await fs.promises.access(absolutePath, fs.constants.R_OK);
-          if (doc.y > 520) doc.addPage();
-          doc.moveDown().image(absolutePath, { fit: [490, 300], align: 'center' });
-          doc.fontSize(9).fillColor('#647089').text(item.caption || 'Evidencia de inspección', { align: 'center' }).fillColor('#172033');
-        } catch (_) {}
-      }
-    }
-    doc.addPage().fontSize(14).text('Firma del avaluador');
-    const signatureData = String(inspection.signature?.imageData || '').split(',')[1];
-    if (signatureData) {
-      try { doc.image(Buffer.from(signatureData, 'base64'), { fit: [250, 100] }); } catch (_) {}
-    }
-    doc.fontSize(11).text(String(inspection.signature?.signerName || ''));
-    doc.fontSize(9).fillColor('#647089').text(`Firmado el ${new Date(inspection.signature?.signedAt).toLocaleString('es-PA')}`);
+    await renderInspectionReport(doc, { project, inspection, units, evidence });
     doc.end();
   } catch (e) {
     if (!res.headersSent) res.status(500).json({ error: e.message });
@@ -1044,6 +1037,7 @@ module.exports._helpers = {
   assignedProjectFor,
   projectListDto,
   projectDetailDto,
+  promoterProgress,
   unitDto,
   inspectionDto,
   inspectionUnitDto,
