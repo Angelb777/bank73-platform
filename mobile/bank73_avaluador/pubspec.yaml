@@ -81,6 +81,8 @@ flutter:
           weight: 600
 
 flutter_launcher_icons:
+  # After regenerating, retain the Android adaptive icon centering adjustment:
+  # mipmap-anydpi-v26/ic_launcher.xml uses left/right 15%/17%, top/bottom 16%.
   android: true
   ios: true
   image_path: assets/branding/bank73-symbol.png
