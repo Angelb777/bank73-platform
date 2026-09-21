@@ -30,11 +30,13 @@ class _InspectionBundle {
     this.project,
     this.units,
     this.saved,
+    this.folders,
   );
   final Inspection inspection;
   final MobileProject project;
   final List<MobileUnit> units;
   final List<InspectionUnit> saved;
+  final List<CommercialFolderSummary> folders;
 }
 
 class _InspectionScreenState extends ConsumerState<InspectionScreen> {
@@ -68,6 +70,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
         ref
             .read(inspectionRepositoryProvider)
             .inspectedUnits(widget.inspectionId),
+        ref.read(projectRepositoryProvider).commercialFolders(widget.projectId),
       ]);
       if (mounted) {
         _inspection = inspection;
@@ -79,6 +82,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
         results[0] as MobileProject,
         results[1] as List<MobileUnit>,
         results[2] as List<InspectionUnit>,
+        results[3] as List<CommercialFolderSummary>,
       );
     } catch (error) {
       if (mounted) await presentApiError(context, ref, error);
@@ -174,6 +178,26 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
         final completion = bundle.units.isEmpty
             ? 0.0
             : (bundle.saved.length / bundle.units.length).clamp(0.0, 1.0);
+
+        // Agrupa visualmente por Torre/Etapa (carpeta comercial existente).
+        // No cambia qué unidades hay ni cómo se guarda su avance: solo el
+        // orden en que se muestran.
+        final foldersById = {
+          for (final folder in bundle.folders) folder.id: folder,
+        };
+        const unassignedKey = '';
+        final unitsByFolder = <String, List<MobileUnit>>{};
+        for (final unit in visibleUnits) {
+          final key = (unit.folderId != null && foldersById.containsKey(unit.folderId))
+              ? unit.folderId!
+              : unassignedKey;
+          unitsByFolder.putIfAbsent(key, () => []).add(unit);
+        }
+        final orderedFolderKeys = [
+          ...bundle.folders.map((folder) => folder.id).where(unitsByFolder.containsKey),
+          if (unitsByFolder.containsKey(unassignedKey)) unassignedKey,
+        ];
+        final hasNamedGroups = orderedFolderKeys.any((key) => key != unassignedKey);
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -372,7 +396,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                         ),
                       ),
                     )
-                  else
+                  else if (!hasNamedGroups)
                     ...visibleUnits.map(
                       (unit) => Padding(
                         padding: const EdgeInsets.only(bottom: 10),
@@ -387,6 +411,38 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                           },
                         ),
                       ),
+                    )
+                  else
+                    ...orderedFolderKeys.expand(
+                      (folderKey) => [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8, bottom: 6),
+                          child: Text(
+                            folderKey == unassignedKey
+                                ? 'Sin torre/etapa asignada'
+                                : foldersById[folderKey]!.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: Bank73Colors.strongBlue,
+                            ),
+                          ),
+                        ),
+                        ...unitsByFolder[folderKey]!.map(
+                          (unit) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: UnitTile(
+                              unit: unit,
+                              progress: progressByUnit[unit.id],
+                              onTap: () async {
+                                await context.push(
+                                  '/projects/${widget.projectId}/inspections/${widget.inspectionId}/units/${unit.id}',
+                                );
+                                if (mounted) _reload();
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                 ],
               ),

@@ -33,6 +33,9 @@ class VisitTransport extends FakeTransport {
         ),
       };
     }
+    if (path == '/api/mobile/v1/projects/project/commercial-folders') {
+      return {'folders': []};
+    }
     if (path == '/api/mobile/v1/inspections/visit/units') {
       return {
         'units': [
@@ -114,4 +117,77 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('units are grouped under their commercial folder (Torre/Etapa)', (
+    tester,
+  ) async {
+    final transport = _GroupedVisitTransport();
+    final router = GoRouter(
+      initialLocation: '/projects/project/inspections/visit',
+      routes: [
+        GoRoute(
+          path: '/projects/:projectId/inspections/:inspectionId',
+          builder: (_, _) => const InspectionScreen(
+            projectId: 'project',
+            inspectionId: 'visit',
+          ),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [apiTransportProvider.overrideWithValue(transport)],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final scrollable = find.byType(Scrollable).first;
+    final title = find.text('Unidades de la visita');
+    await tester.scrollUntilVisible(title, 250, scrollable: scrollable);
+    await tester.tap(title);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Torre 1'), findsOneWidget);
+    expect(find.text('Torre 2'), findsOneWidget);
+    expect(find.text('Sin torre/etapa asignada'), findsOneWidget);
+    expect(find.byType(UnitTile), findsNWidgets(3));
+  });
+}
+
+class _GroupedVisitTransport extends FakeTransport {
+  @override
+  Future<Map<String, dynamic>> get(String path) async {
+    if (path == '/api/mobile/v1/inspections/visit') {
+      return {
+        'inspection': {'id': 'visit', 'status': 'draft'},
+      };
+    }
+    if (path == '/api/mobile/v1/projects/project') {
+      return {
+        'project': {'id': 'project', 'name': 'Proyecto'},
+      };
+    }
+    if (path == '/api/mobile/v1/projects/project/units') {
+      return {
+        'units': [
+          {'id': 'u1', 'code': 'A1', 'folderId': 'f1'},
+          {'id': 'u2', 'code': 'A2', 'folderId': 'f2'},
+          {'id': 'u3', 'code': 'A3'},
+        ],
+      };
+    }
+    if (path == '/api/mobile/v1/projects/project/commercial-folders') {
+      return {
+        'folders': [
+          {'id': 'f1', 'name': 'Torre 1', 'order': 0},
+          {'id': 'f2', 'name': 'Torre 2', 'order': 1},
+        ],
+      };
+    }
+    if (path == '/api/mobile/v1/inspections/visit/units') {
+      return {'units': []};
+    }
+    throw StateError('Unexpected request: $path');
+  }
 }

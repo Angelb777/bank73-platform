@@ -121,6 +121,7 @@ class MobileUnit {
     required this.ubicacion,
     required this.surfaces,
     required this.status,
+    this.folderId,
   });
   final String id;
   final String code;
@@ -130,6 +131,7 @@ class MobileUnit {
   final String ubicacion;
   final UnitSurfaces surfaces;
   final String status;
+  final String? folderId;
 
   factory MobileUnit.fromJson(Map<String, dynamic> json) => MobileUnit(
     id: (json['id'] ?? '').toString(),
@@ -140,6 +142,7 @@ class MobileUnit {
     ubicacion: (json['ubicacion'] ?? '').toString(),
     surfaces: UnitSurfaces.fromJson(_map(json['surfaces'])),
     status: (json['status'] ?? '').toString(),
+    folderId: json['folderId']?.toString(),
   );
 
   bool matches(String query) {
@@ -152,6 +155,29 @@ class MobileUnit {
           modelo,
         ].any((value) => value.toLowerCase().contains(needle));
   }
+}
+
+/// Torre/Etapa: reutiliza tal cual las carpetas comerciales existentes
+/// (CommercialFolder), solo para agrupar/ordenar unidades en la app.
+class CommercialFolderSummary {
+  const CommercialFolderSummary({
+    required this.id,
+    required this.name,
+    required this.color,
+    required this.order,
+  });
+  final String id;
+  final String name;
+  final String color;
+  final int order;
+
+  factory CommercialFolderSummary.fromJson(Map<String, dynamic> json) =>
+      CommercialFolderSummary(
+        id: (json['id'] ?? '').toString(),
+        name: (json['name'] ?? '').toString(),
+        color: (json['color'] ?? '').toString(),
+        order: (json['order'] as num?)?.toInt() ?? 0,
+      );
 }
 
 class MethodologySection {

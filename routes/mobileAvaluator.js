@@ -9,6 +9,7 @@ const Project = require('../models/Project');
 const ProjectChecklist = require('../models/ProjectChecklist');
 const { renderInspectionReport } = require('../services/inspectionReport');
 const Unit = require('../models/Unit');
+const CommercialFolder = require('../models/CommercialFolder');
 const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment');
 const Inspection = require('../models/Inspection');
 const InspectionUnit = require('../models/InspectionUnit');
@@ -48,7 +49,8 @@ const UNIT_FIELDS = [
   'areaAbierta',
   'areaCerrada',
   'areaTotalConstruccion',
-  'estado'
+  'estado',
+  'folderId'
 ].join(' ');
 const DEFAULT_COMMON_AREAS = [
   { key: 'urbanizacion', name: 'Urbanización y viales', weight: 20, progressPercent: 0, observations: '' },
@@ -145,7 +147,20 @@ function unitDto(unit) {
       closedM2: Number(unit.areaCerrada || 0),
       totalConstructionM2: Number(unit.areaTotalConstruccion || 0)
     },
-    status: String(unit.estado || '').trim()
+    status: String(unit.estado || '').trim(),
+    folderId: unit.folderId ? String(unit.folderId) : null
+  };
+}
+
+// Datos minimos de la carpeta comercial (Torre/Etapa) para agrupar la lista
+// de unidades en la app. No es una entidad nueva: reutiliza CommercialFolder
+// tal cual la usa el modulo comercial.
+function folderDto(folder) {
+  return {
+    id: String(folder._id),
+    name: String(folder.name || '').trim(),
+    color: String(folder.color || '#0f172a').trim(),
+    order: Number(folder.order || 0)
   };
 }
 
@@ -438,6 +453,24 @@ router.get('/projects/:projectId/units', async (req, res) => {
     }).select(UNIT_FIELDS).sort({ manzana: 1, lote: 1 }).lean();
 
     res.json({ units: units.map(unitDto) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Datos minimos para agrupar la lista de unidades por Torre/Etapa en la app.
+// Puramente de lectura: no crea ni referencia ninguna entidad nueva.
+router.get('/projects/:projectId/commercial-folders', async (req, res) => {
+  try {
+    const resolved = await assignedProjectFor(req, req.params.projectId, '_id');
+    if (!resolved) return res.status(404).json({ error: 'Proyecto no encontrado.' });
+
+    const folders = await CommercialFolder.find({
+      tenantKey: resolved.assignment.projectTenantKey,
+      projectId: resolved.assignment.projectId
+    }).select('name color order').sort({ order: 1, createdAt: 1 }).lean();
+
+    res.json({ folders: folders.map(folderDto) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -1044,6 +1077,15 @@ router.get('/inspections/:inspectionId/report.pdf', async (req, res) => {
   }
 });
 
+// Cualquier ruta no reconocida dentro de /api/mobile/v1 debe responder 404
+// aqui mismo. Sin este catch-all, Express deja caer la request hacia el
+// resto de app.use('/api', ...) en server.js -incluido el guard generico
+// que bloquea al rol avaluador con un 403 de "backoffice"- en vez de un
+// 404 limpio, lo cual confunde a la app movil.
+router.use((req, res) => {
+  res.status(404).json({ error: 'Recurso no encontrado.' });
+});
+
 module.exports = router;
 module.exports._helpers = {
   activeAvaluatorContext,
@@ -1053,6 +1095,7 @@ module.exports._helpers = {
   projectDetailDto,
   promoterProgress,
   unitDto,
+  folderDto,
   inspectionDto,
   inspectionUnitDto,
   evidenceDto,

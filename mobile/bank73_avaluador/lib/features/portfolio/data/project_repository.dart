@@ -46,4 +46,20 @@ class ProjectRepository {
       Map<String, dynamic>.from(response['unit'] as Map),
     );
   }
+
+  /// Torres/Etapas del proyecto, solo para agrupar la lista de unidades.
+  Future<List<CommercialFolderSummary>> commercialFolders(
+    String projectId,
+  ) async {
+    final response = await _api.get(
+      '/api/mobile/v1/projects/$projectId/commercial-folders',
+    );
+    return (response['folders'] as List? ?? const [])
+        .map(
+          (item) => CommercialFolderSummary.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList();
+  }
 }
