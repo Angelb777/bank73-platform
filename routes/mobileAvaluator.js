@@ -1057,19 +1057,39 @@ router.get('/inspections/:inspectionId/report.pdf', async (req, res) => {
     if (resolved.inspection.status !== 'finalized') {
       return res.status(409).json({ error: 'Finaliza la inspeccion antes de generar el informe.' });
     }
-    const [project, units, evidence] = await Promise.all([
+    const [project, units, evidence, folders, previousInspection] = await Promise.all([
       Project.findOne({ _id: resolved.inspection.projectId, tenantKey: resolved.inspection.projectTenantKey }).lean(),
       InspectionUnit.find({ inspectionId: resolved.inspection._id }).sort({ createdAt: 1 }).lean(),
-      InspectionEvidence.find({ inspectionId: resolved.inspection._id }).sort({ createdAt: 1 }).lean()
+      InspectionEvidence.find({ inspectionId: resolved.inspection._id }).sort({ createdAt: 1 }).lean(),
+      CommercialFolder.find({
+        tenantKey: resolved.inspection.projectTenantKey,
+        projectId: resolved.inspection.projectId
+      }).select('name order').sort({ order: 1, createdAt: 1 }).lean(),
+      // Ultima inspeccion FINALIZADA anterior del mismo proyecto y banco (nunca
+      // solo por proyecto: puede haber avaluadores de varios bancos). Se usa
+      // solo para comparar anterior/actual en el informe, sin persistir nada.
+      Inspection.findOne({
+        bankTenantKey: resolved.inspection.bankTenantKey,
+        projectId: resolved.inspection.projectId,
+        status: 'finalized',
+        deletedAt: null,
+        _id: { $ne: resolved.inspection._id },
+        finalizedAt: { $lt: resolved.inspection.finalizedAt || new Date() }
+      }).sort({ finalizedAt: -1 }).lean()
     ]);
     if (!project) return res.status(404).json({ error: 'Proyecto no encontrado.' });
+
+    const unitDocs = units.length
+      ? await Unit.find({ _id: { $in: units.map(u => u.unitId) } }).select('folderId').lean()
+      : [];
+    const unitFolderById = new Map(unitDocs.map(u => [String(u._id), u.folderId ? String(u.folderId) : null]));
 
     const inspection = resolved.inspection;
     const doc = new PDFDocument({ size: 'A4', margin: 48, bufferPages: true, info: { Title: `Informe ${inspection.reportNumber}` } });
     res.type('application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${inspection.reportNumber || 'informe-bank73'}.pdf"`);
     doc.pipe(res);
-    await renderInspectionReport(doc, { project, inspection, units, evidence });
+    await renderInspectionReport(doc, { project, inspection, units, evidence, folders, unitFolderById, previousInspection });
     doc.end();
   } catch (e) {
     if (!res.headersSent) res.status(500).json({ error: e.message });
