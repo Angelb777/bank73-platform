@@ -265,7 +265,6 @@ test('cross-tenant project inspection snapshots the active template of the commi
     assignmentFindOne: ProjectAvaluatorAssignment.findOne,
     projectFindOne: Project.findOne,
     templateFindOne: AvaluationTemplate.findOne,
-    inspectionFindOne: Inspection.findOne,
     inspectionCreate: Inspection.create
   };
   let templateFilter;
@@ -274,7 +273,6 @@ test('cross-tenant project inspection snapshots the active template of the commi
     ProjectAvaluatorAssignment.findOne = originals.assignmentFindOne;
     Project.findOne = originals.projectFindOne;
     AvaluationTemplate.findOne = originals.templateFindOne;
-    Inspection.findOne = originals.inspectionFindOne;
     Inspection.create = originals.inspectionCreate;
   });
   ProjectAvaluatorAssignment.findOne = () => ({ lean: async () => assignment() });
@@ -283,7 +281,6 @@ test('cross-tenant project inspection snapshots the active template of the commi
     templateFilter = filter;
     return { lean: async () => template() };
   };
-  Inspection.findOne = () => ({ sort: () => ({ select: () => ({ lean: async () => null }) }) });
   Inspection.create = async value => {
     created = value;
     return structuredInspection(value);

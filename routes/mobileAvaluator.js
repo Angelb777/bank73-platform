@@ -14,8 +14,6 @@ const Inspection = require('../models/Inspection');
 const InspectionUnit = require('../models/InspectionUnit');
 const InspectionEvidence = require('../models/InspectionEvidence');
 const AvaluationTemplate = require('../models/AvaluationTemplate');
-const ProjectBudgetLine = require('../models/ProjectBudgetLine');
-const CommercialFolder = require('../models/CommercialFolder');
 const { requireRole } = require('../middleware/rbac');
 const { fileFilterFor, handleMulterUpload } = require('../utils/uploadSecurity');
 
@@ -151,46 +149,6 @@ function unitDto(unit) {
   };
 }
 
-function budgetLineProgressDto(entry) {
-  return {
-    budgetLineId: String(entry.budgetLineId),
-    commercialFolderId: String(entry.commercialFolderId),
-    code: String(entry.lineSnapshot?.code || ''),
-    name: String(entry.lineSnapshot?.name || ''),
-    category: String(entry.lineSnapshot?.category || ''),
-    commercialFolderName: String(entry.lineSnapshot?.commercialFolderName || ''),
-    physicalProgressPercent: Number(entry.physicalProgressPercent),
-    economicAmountPeriod: entry.economicAmountPeriod ?? null,
-    economicAmountReported: !!entry.economicAmountReported,
-    observations: String(entry.observations || ''),
-    updatedAt: entry.updatedAt
-  };
-}
-
-function financialSummarySnapshotDto(snapshot) {
-  if (!snapshot) return null;
-  return {
-    previousInspectionId: snapshot.previousInspectionId ? String(snapshot.previousInspectionId) : null,
-    previousInspectionDate: snapshot.previousInspectionDate || null,
-    generatedAt: snapshot.generatedAt,
-    budgetLines: (snapshot.budgetLines || []).map(entry => ({
-      budgetLineId: String(entry.budgetLineId),
-      commercialFolderId: String(entry.commercialFolderId),
-      code: String(entry.code || ''),
-      name: String(entry.name || ''),
-      category: String(entry.category || ''),
-      commercialFolderName: String(entry.commercialFolderName || ''),
-      physicalProgressPercent: {
-        previous: Number(entry.physicalProgressPercent?.previous || 0),
-        period: Number(entry.physicalProgressPercent?.period || 0),
-        accumulated: Number(entry.physicalProgressPercent?.accumulated || 0)
-      },
-      economicAmountPeriod: entry.economicAmountPeriod ?? null,
-      economicAmountReported: !!entry.economicAmountReported
-    }))
-  };
-}
-
 function inspectionDto(inspection) {
   return {
     id: String(inspection._id),
@@ -228,11 +186,6 @@ function inspectionDto(inspection) {
     finalizedAt: inspection.finalizedAt || null,
     reportNumber: String(inspection.reportNumber || ''),
     technicalRecommendation: inspection.technicalRecommendation || null,
-    previousInspectionId: inspection.previousInspectionId ? String(inspection.previousInspectionId) : null,
-    budgetLineProgress: Array.isArray(inspection.budgetLineProgress)
-      ? inspection.budgetLineProgress.map(budgetLineProgressDto)
-      : [],
-    financialSummarySnapshot: financialSummarySnapshotDto(inspection.financialSummarySnapshot),
     createdAt: inspection.createdAt,
     updatedAt: inspection.updatedAt
   };
@@ -367,80 +320,6 @@ function structuredProgress(methodology, submitted, previous = []) {
   ) / 100;
   const progressPercent = Math.min(100, Math.max(0, Math.round(weighted * 10000) / 10000));
   return { progressSections, progressPercent };
-}
-
-// Ancla la comparacion anterior/periodo/acumulado a la ultima inspeccion
-// FINALIZADA del mismo proyecto y del mismo banco (nunca solo por proyecto:
-// un proyecto puede ser inspeccionado por avaluadores de varios bancos
-// financiadores y sus historiales no deben mezclarse).
-async function resolvePreviousInspectionId({ bankTenantKey, projectId }) {
-  const previous = await Inspection.findOne({
-    bankTenantKey,
-    projectId,
-    status: 'finalized',
-    deletedAt: null
-  }).sort({ inspectionDate: -1, finalizedAt: -1 }).select('_id').lean();
-  return previous ? previous._id : null;
-}
-
-async function buildBudgetLinesView(inspection) {
-  const [folders, lines, previousInspection] = await Promise.all([
-    CommercialFolder.find({
-      tenantKey: inspection.projectTenantKey,
-      projectId: inspection.projectId
-    }).sort({ order: 1, createdAt: 1 }).lean(),
-    ProjectBudgetLine.find({
-      tenantKey: inspection.projectTenantKey,
-      projectId: inspection.projectId,
-      isActive: true
-    }).sort({ commercialFolderId: 1, order: 1, createdAt: 1 }).lean(),
-    inspection.previousInspectionId
-      ? Inspection.findById(inspection.previousInspectionId).select('budgetLineProgress inspectionDate').lean()
-      : null
-  ]);
-
-  const previousByLineId = new Map(
-    (previousInspection?.budgetLineProgress || []).map(entry => [String(entry.budgetLineId), entry])
-  );
-  const currentByLineId = new Map(
-    (inspection.budgetLineProgress || []).map(entry => [String(entry.budgetLineId), entry])
-  );
-
-  const linesByFolder = new Map();
-  for (const line of lines) {
-    const folderKey = String(line.commercialFolderId);
-    if (!linesByFolder.has(folderKey)) linesByFolder.set(folderKey, []);
-
-    const current = currentByLineId.get(String(line._id));
-    const previous = previousByLineId.get(String(line._id));
-
-    linesByFolder.get(folderKey).push({
-      id: String(line._id),
-      code: String(line.code || ''),
-      name: String(line.name || ''),
-      category: String(line.category || ''),
-      order: Number(line.order || 0),
-      current: current ? {
-        physicalProgressPercent: Number(current.physicalProgressPercent),
-        observations: String(current.observations || ''),
-        updatedAt: current.updatedAt
-      } : null,
-      previous: previous ? {
-        physicalProgressPercent: Number(previous.physicalProgressPercent),
-        inspectionDate: previousInspection.inspectionDate
-      } : null
-    });
-  }
-
-  return folders
-    .map(folder => ({
-      id: String(folder._id),
-      name: String(folder.name || ''),
-      color: String(folder.color || '#0f172a'),
-      order: Number(folder.order || 0),
-      lines: linesByFolder.get(String(folder._id)) || []
-    }))
-    .filter(folder => folder.lines.length > 0);
 }
 
 async function activeAssignmentFor(req, projectId) {
@@ -608,10 +487,6 @@ router.post('/projects/:projectId/inspections', async (req, res) => {
       bankTenantKey: resolved.assignment.bankTenantKey,
       status: 'active'
     }).lean();
-    const previousInspectionId = await resolvePreviousInspectionId({
-      bankTenantKey: resolved.assignment.bankTenantKey,
-      projectId: resolved.assignment.projectId
-    });
     const inspection = await Inspection.create({
       bankTenantKey: resolved.assignment.bankTenantKey,
       projectTenantKey: resolved.assignment.projectTenantKey,
@@ -623,7 +498,6 @@ router.post('/projects/:projectId/inspections', async (req, res) => {
       startedAt: new Date(),
       generalObservations,
       methodology: methodologySnapshot(template),
-      previousInspectionId,
       version: 0
     });
 
@@ -943,119 +817,6 @@ router.get('/inspections/:inspectionId/units/:unitId', async (req, res) => {
   }
 });
 
-router.get('/inspections/:inspectionId/budget-lines', async (req, res) => {
-  try {
-    const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
-    if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
-
-    const folders = await buildBudgetLinesView(resolved.inspection);
-    res.json({ folders });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-router.put('/inspections/:inspectionId/budget-lines/:budgetLineId', async (req, res) => {
-  try {
-    const extraFields = unexpectedFields(req.body, ['physicalProgressPercent', 'observations', 'version']);
-    if (extraFields.length) {
-      return res.status(400).json({ error: 'Campos no permitidos.', fields: extraFields });
-    }
-    if (!mongoose.Types.ObjectId.isValid(String(req.params.budgetLineId || ''))) {
-      return res.status(404).json({ error: 'Partida no encontrada.' });
-    }
-    const physicalProgressPercent = Number(req.body?.physicalProgressPercent);
-    if (!Number.isFinite(physicalProgressPercent) || physicalProgressPercent < 0 || physicalProgressPercent > 100) {
-      return res.status(400).json({ error: 'physicalProgressPercent debe estar entre 0 y 100.' });
-    }
-    const observations = String(req.body?.observations || '').trim();
-    if (observations.length > 2000) return res.status(400).json({ error: 'observations demasiado larga.' });
-    const expectedVersion = parseExpectedVersion(req.body?.version);
-    if (expectedVersion === null) return res.status(400).json({ error: 'version requerida.' });
-
-    const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
-    if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
-    if (resolved.inspection.status !== 'draft') {
-      return res.status(409).json({ error: 'La inspeccion no es editable.' });
-    }
-
-    const budgetLine = await ProjectBudgetLine.findOne({
-      _id: req.params.budgetLineId,
-      tenantKey: resolved.inspection.projectTenantKey,
-      projectId: resolved.inspection.projectId,
-      isActive: true
-    }).lean();
-    if (!budgetLine) return res.status(404).json({ error: 'Partida no encontrada.' });
-
-    const folder = await CommercialFolder.findOne({
-      _id: budgetLine.commercialFolderId,
-      tenantKey: resolved.inspection.projectTenantKey,
-      projectId: resolved.inspection.projectId
-    }).select('name').lean();
-    if (!folder) return res.status(404).json({ error: 'Torre/Etapa no encontrada.' });
-
-    const now = new Date();
-    const lineSnapshot = {
-      code: String(budgetLine.code || ''),
-      name: String(budgetLine.name || ''),
-      category: String(budgetLine.category || ''),
-      commercialFolderName: String(folder.name || '')
-    };
-
-    const hasExisting = (resolved.inspection.budgetLineProgress || [])
-      .some(entry => String(entry.budgetLineId) === String(budgetLine._id));
-
-    const baseFilter = {
-      _id: resolved.inspection._id,
-      bankTenantKey: resolved.inspection.bankTenantKey,
-      avaluadorId: resolved.context.userId,
-      status: 'draft',
-      deletedAt: null,
-      version: expectedVersion
-    };
-
-    let inspection;
-    if (hasExisting) {
-      inspection = await Inspection.findOneAndUpdate(
-        { ...baseFilter, 'budgetLineProgress.budgetLineId': budgetLine._id },
-        {
-          $set: {
-            'budgetLineProgress.$.physicalProgressPercent': physicalProgressPercent,
-            'budgetLineProgress.$.observations': observations,
-            'budgetLineProgress.$.lineSnapshot': lineSnapshot,
-            'budgetLineProgress.$.updatedAt': now
-          },
-          $inc: { version: 1 }
-        },
-        { new: true, runValidators: true }
-      ).lean();
-    } else {
-      inspection = await Inspection.findOneAndUpdate(
-        baseFilter,
-        {
-          $push: {
-            budgetLineProgress: {
-              budgetLineId: budgetLine._id,
-              commercialFolderId: budgetLine.commercialFolderId,
-              lineSnapshot,
-              physicalProgressPercent,
-              observations,
-              updatedAt: now
-            }
-          },
-          $inc: { version: 1 }
-        },
-        { new: true, runValidators: true }
-      ).lean();
-    }
-    if (!inspection) return res.status(409).json({ error: 'version_conflict' });
-
-    res.json({ inspection: inspectionDto(inspection) });
-  } catch (e) {
-    res.status(e?.name === 'ValidationError' ? 400 : 500).json({ error: e.message });
-  }
-});
-
 router.get('/inspections/:inspectionId/evidence', async (req, res) => {
   try {
     const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
@@ -1228,41 +989,6 @@ router.post('/inspections/:inspectionId/finalize', async (req, res) => {
     }
     const finalizedAt = new Date();
     const reportNumber = `B73-${finalizedAt.getUTCFullYear()}-${String(resolved.inspection._id).slice(-8).toUpperCase()}`;
-
-    let financialSummarySnapshot;
-    const budgetLineProgress = resolved.inspection.budgetLineProgress || [];
-    if (budgetLineProgress.length) {
-      const previousInspection = resolved.inspection.previousInspectionId
-        ? await Inspection.findById(resolved.inspection.previousInspectionId)
-            .select('budgetLineProgress inspectionDate').lean()
-        : null;
-      const previousByLineId = new Map(
-        (previousInspection?.budgetLineProgress || [])
-          .map(entry => [String(entry.budgetLineId), Number(entry.physicalProgressPercent) || 0])
-      );
-      financialSummarySnapshot = {
-        previousInspectionId: previousInspection?._id || null,
-        previousInspectionDate: previousInspection?.inspectionDate || null,
-        generatedAt: finalizedAt,
-        budgetLines: budgetLineProgress.map(entry => {
-          const previous = previousByLineId.get(String(entry.budgetLineId)) || 0;
-          const accumulated = Number(entry.physicalProgressPercent) || 0;
-          const period = Math.round((accumulated - previous) * 10000) / 10000;
-          return {
-            budgetLineId: entry.budgetLineId,
-            commercialFolderId: entry.commercialFolderId,
-            code: entry.lineSnapshot?.code || '',
-            name: entry.lineSnapshot?.name || '',
-            category: entry.lineSnapshot?.category || '',
-            commercialFolderName: entry.lineSnapshot?.commercialFolderName || '',
-            physicalProgressPercent: { previous, period, accumulated },
-            economicAmountPeriod: entry.economicAmountPeriod ?? null,
-            economicAmountReported: !!entry.economicAmountReported
-          };
-        })
-      };
-    }
-
     const inspection = await Inspection.findOneAndUpdate(
       {
         _id: resolved.inspection._id,
@@ -1278,8 +1004,7 @@ router.post('/inspections/:inspectionId/finalize', async (req, res) => {
           technicalRecommendation,
           signature: { signerName, imageData: signatureImage, signedAt: finalizedAt },
           finalizedAt,
-          reportNumber,
-          ...(financialSummarySnapshot ? { financialSummarySnapshot } : {})
+          reportNumber
         },
         $inc: { version: 1 }
       },
@@ -1335,10 +1060,6 @@ module.exports._helpers = {
   structuredProgress,
   authorizedInspectionFor,
   parseExpectedVersion,
-  resolvePreviousInspectionId,
-  buildBudgetLinesView,
-  budgetLineProgressDto,
-  financialSummarySnapshotDto,
   PROJECT_LIST_FIELDS,
   PROJECT_DETAIL_FIELDS,
   UNIT_FIELDS

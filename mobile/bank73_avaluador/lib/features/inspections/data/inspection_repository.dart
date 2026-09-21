@@ -247,41 +247,6 @@ class InspectionRepository {
     );
   }
 
-  Future<List<BudgetLineFolder>> budgetLines(String inspectionId) async {
-    final response = await _api.get(
-      '/api/mobile/v1/inspections/$inspectionId/budget-lines',
-    );
-    return (response['folders'] as List? ?? const [])
-        .map(
-          (item) =>
-              BudgetLineFolder.fromJson(Map<String, dynamic>.from(item as Map)),
-        )
-        .toList();
-  }
-
-  /// El avaluador solo envía avance físico y observaciones: el importe
-  /// económico del período lo carga banca/finanzas por separado cuando
-  /// exista, nunca desde la app móvil.
-  Future<Inspection> saveBudgetLineProgress({
-    required String inspectionId,
-    required String budgetLineId,
-    required int version,
-    required double physicalProgressPercent,
-    required String observations,
-  }) async {
-    final response = await _api.put(
-      '/api/mobile/v1/inspections/$inspectionId/budget-lines/$budgetLineId',
-      body: {
-        'version': version,
-        'physicalProgressPercent': physicalProgressPercent,
-        'observations': observations,
-      },
-    );
-    return Inspection.fromJson(
-      Map<String, dynamic>.from(response['inspection'] as Map),
-    );
-  }
-
   Future<InspectionUnit> saveLegacyProgress({
     required String inspectionId,
     required String unitId,

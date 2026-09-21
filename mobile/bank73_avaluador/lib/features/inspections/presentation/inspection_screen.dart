@@ -267,19 +267,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                 if (mounted) _reload();
               },
             ),
-            const SizedBox(height: 14),
-            _InspectionStep(
-              icon: Icons.apartment_outlined,
-              title: 'Torres, etapas y partidas de obra',
-              subtitle:
-                  '${bundle.inspection.budgetLineProgress.length} ${bundle.inspection.budgetLineProgress.length == 1 ? 'partida registrada' : 'partidas registradas'} en esta visita',
-              onTap: () async {
-                await context.push(
-                  '/projects/${widget.projectId}/inspections/${widget.inspectionId}/budget-lines',
-                );
-                if (mounted) _reload();
-              },
-            ),
             if (bundle.inspection.methodology != null) ...[
               const SizedBox(height: 14),
               Card(

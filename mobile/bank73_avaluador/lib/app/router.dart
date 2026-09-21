@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../features/auth/application/auth_controller.dart';
 import '../features/auth/presentation/login_screen.dart';
 import '../features/auth/presentation/splash_screen.dart';
-import '../features/inspections/presentation/budget_lines_screen.dart';
 import '../features/inspections/presentation/inspection_screen.dart';
 import '../features/inspections/presentation/inspection_report_screen.dart';
 import '../features/inspections/presentation/inspections_screen.dart';
@@ -84,12 +83,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'project-progress',
                     builder: (_, state) => ProjectProgressScreen(
-                      inspectionId: state.pathParameters['inspectionId']!,
-                    ),
-                  ),
-                  GoRoute(
-                    path: 'budget-lines',
-                    builder: (_, state) => BudgetLinesScreen(
                       inspectionId: state.pathParameters['inspectionId']!,
                     ),
                   ),

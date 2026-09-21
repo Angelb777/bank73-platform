@@ -32,71 +32,6 @@ const signatureSchema = new mongoose.Schema({
   signedAt: { type: Date, required: true }
 }, { _id: false });
 
-const budgetLineSnapshotSchema = new mongoose.Schema({
-  code: { type: String, trim: true, default: '' },
-  name: { type: String, trim: true, default: '' },
-  category: { type: String, trim: true, default: '' },
-  commercialFolderName: { type: String, trim: true, default: '' }
-}, { _id: false });
-
-const budgetLineProgressSchema = new mongoose.Schema({
-  budgetLineId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'ProjectBudgetLine',
-    required: true
-  },
-  commercialFolderId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'CommercialFolder',
-    required: true
-  },
-  lineSnapshot: { type: budgetLineSnapshotSchema, required: true },
-  physicalProgressPercent: { type: Number, required: true, min: 0, max: 100 },
-  // El monto económico del período lo carga banca/finanzas cuando exista;
-  // el avaluador solo captura avance físico. Por eso admite null.
-  economicAmountPeriod: { type: Number, default: null },
-  economicAmountReported: { type: Boolean, default: false },
-  observations: { type: String, trim: true, default: '', maxlength: 2000 },
-  updatedAt: { type: Date, default: Date.now }
-}, { _id: false });
-
-const budgetLineSummaryEntrySchema = new mongoose.Schema({
-  budgetLineId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'ProjectBudgetLine',
-    required: true
-  },
-  commercialFolderId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'CommercialFolder',
-    required: true
-  },
-  code: { type: String, trim: true, default: '' },
-  name: { type: String, trim: true, default: '' },
-  category: { type: String, trim: true, default: '' },
-  commercialFolderName: { type: String, trim: true, default: '' },
-  physicalProgressPercent: {
-    previous: { type: Number, required: true },
-    period: { type: Number, required: true },
-    accumulated: { type: Number, required: true }
-  },
-  economicAmountPeriod: { type: Number, default: null },
-  economicAmountReported: { type: Boolean, default: false }
-}, { _id: false });
-
-// Congelado una sola vez en finalize(): ni el histórico ni el PDF firmado
-// deben cambiar si luego se editan partidas o inspecciones nuevas.
-const financialSummarySnapshotSchema = new mongoose.Schema({
-  previousInspectionId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Inspection',
-    default: null
-  },
-  previousInspectionDate: { type: Date, default: null },
-  generatedAt: { type: Date, required: true },
-  budgetLines: { type: [budgetLineSummaryEntrySchema], default: [] }
-}, { _id: false });
-
 const inspectionSchema = new mongoose.Schema({
   bankTenantKey: {
     type: String,
@@ -188,20 +123,7 @@ const inspectionSchema = new mongoose.Schema({
   },
   signature: { type: signatureSchema, default: undefined },
   finalizedAt: { type: Date, default: null },
-  reportNumber: { type: String, trim: true, default: '' },
-
-  // Última inspección FINALIZADA del mismo proyecto y del mismo banco
-  // (nunca solo por proyecto: un proyecto puede tener avaluadores de
-  // varios bancos financiadores). Se resuelve al crear el draft y ancla
-  // el cálculo de anterior/periodo/acumulado.
-  previousInspectionId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Inspection',
-    default: null
-  },
-
-  budgetLineProgress: { type: [budgetLineProgressSchema], default: [] },
-  financialSummarySnapshot: { type: financialSummarySnapshotSchema, default: undefined }
+  reportNumber: { type: String, trim: true, default: '' }
 }, { timestamps: true, versionKey: false });
 
 inspectionSchema.index({
@@ -214,12 +136,6 @@ inspectionSchema.index({
   bankTenantKey: 1,
   assignmentId: 1,
   status: 1
-});
-inspectionSchema.index({
-  bankTenantKey: 1,
-  projectId: 1,
-  status: 1,
-  inspectionDate: -1
 });
 
 module.exports = mongoose.model('Inspection', inspectionSchema);
