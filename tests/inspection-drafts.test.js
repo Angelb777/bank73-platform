@@ -10,6 +10,8 @@ const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment
 const Inspection = require('../models/Inspection');
 const InspectionUnit = require('../models/InspectionUnit');
 const AvaluationTemplate = require('../models/AvaluationTemplate');
+const ProjectBudgetLine = require('../models/ProjectBudgetLine');
+const CommercialFolder = require('../models/CommercialFolder');
 
 const IDS = {
   evaluatorA: '64b000000000000000000001',
@@ -21,7 +23,9 @@ const IDS = {
   inspectionB: '64b000000000000000000021',
   unitA: '64b000000000000000000030',
   unitB: '64b000000000000000000031',
-  inspectionUnitA: '64b000000000000000000040'
+  inspectionUnitA: '64b000000000000000000040',
+  folderA: '64b000000000000000000050',
+  budgetLineA: '64b000000000000000000060'
 };
 
 function routeHandler(method, path) {
@@ -105,18 +109,23 @@ function inspectedUnit(overrides = {}) {
   };
 }
 
-function mockAssignedProject(t, assignmentValue = assignment()) {
+function mockAssignedProject(t, assignmentValue = assignment(), options = {}) {
   const originalAssignmentFindOne = ProjectAvaluatorAssignment.findOne;
   const originalProjectFindOne = Project.findOne;
   const originalTemplateFindOne = AvaluationTemplate.findOne;
+  const originalInspectionFindOne = Inspection.findOne;
   t.after(() => {
     ProjectAvaluatorAssignment.findOne = originalAssignmentFindOne;
     Project.findOne = originalProjectFindOne;
     AvaluationTemplate.findOne = originalTemplateFindOne;
+    Inspection.findOne = originalInspectionFindOne;
   });
   ProjectAvaluatorAssignment.findOne = () => ({ lean: async () => assignmentValue });
   Project.findOne = () => ({ select: () => ({ lean: async () => assignmentValue ? ({ _id: IDS.projectA }) : null }) });
   AvaluationTemplate.findOne = () => ({ lean: async () => null });
+  // Por defecto no hay inspeccion previa finalizada; los tests que necesiten
+  // ejercitar la resolucion de previousInspectionId sobreescriben esto.
+  Inspection.findOne = () => ({ sort: () => ({ select: () => ({ lean: async () => options.previousInspection ?? null }) }) });
 }
 
 function mockAuthorizedInspection(t, options = {}) {
@@ -170,6 +179,7 @@ test('mobile API exposes the inspection lifecycle and evidence routes', () => {
     'DELETE /inspections/:inspectionId',
     'DELETE /inspections/:inspectionId/evidence/:evidenceId',
     'GET /inspections/:inspectionId',
+    'GET /inspections/:inspectionId/budget-lines',
     'GET /inspections/:inspectionId/evidence',
     'GET /inspections/:inspectionId/evidence/:evidenceId/file',
     'GET /inspections/:inspectionId/report.pdf',
@@ -180,6 +190,7 @@ test('mobile API exposes the inspection lifecycle and evidence routes', () => {
     'POST /inspections/:inspectionId/evidence',
     'POST /inspections/:inspectionId/finalize',
     'POST /projects/:projectId/inspections',
+    'PUT /inspections/:inspectionId/budget-lines/:budgetLineId',
     'PUT /inspections/:inspectionId/project-progress',
     'PUT /inspections/:inspectionId/units/:unitId'
   ].sort());
@@ -210,6 +221,41 @@ test('creates draft inspection only from active assignment and server identity',
   assert.equal(String(payload.assignmentId), IDS.assignmentA);
   assert.equal(payload.status, 'draft');
   assert.equal(payload.version, 0);
+  assert.equal(payload.previousInspectionId, null);
+});
+
+test('previous inspection is resolved by bankTenantKey and projectId, not by project alone', async (t) => {
+  const previous = inspection({ _id: IDS.inspectionB, status: 'finalized', finalizedAt: new Date('2026-08-01') });
+  mockAssignedProject(t, assignment(), { previousInspection: previous });
+
+  const originalFindOne = Inspection.findOne;
+  let capturedFilter;
+  t.after(() => { Inspection.findOne = originalFindOne; });
+  Inspection.findOne = filter => {
+    capturedFilter = filter;
+    return { sort: () => ({ select: () => ({ lean: async () => previous }) }) };
+  };
+
+  const handler = routeHandler('post', '/projects/:projectId/inspections');
+  const originalCreate = Inspection.create;
+  let payload;
+  t.after(() => { Inspection.create = originalCreate; });
+  Inspection.create = async value => {
+    payload = value;
+    return inspection({ ...value, _id: IDS.inspectionA, createdAt: new Date(), updatedAt: new Date() });
+  };
+
+  const capture = responseCapture();
+  await handler(evaluatorReq({ projectId: IDS.projectA }), capture.res);
+
+  assert.equal(capture.statusCode, 201);
+  assert.deepEqual(capturedFilter, {
+    bankTenantKey: 'bank-a',
+    projectId: IDS.projectA,
+    status: 'finalized',
+    deletedAt: null
+  });
+  assert.equal(String(payload.previousInspectionId), IDS.inspectionB);
 });
 
 test('unassigned or revoked project returns 404 and creates no inspection', async (t) => {
@@ -678,4 +724,251 @@ test('finalization validates and stores technical recommendation with signed ins
     await handler(evaluatorReq({ inspectionId: IDS.inspectionA }, { ...body, technicalRecommendation }), capture.res);
     assert.equal(capture.statusCode, 400);
   }
+});
+
+function budgetLine(overrides = {}) {
+  return {
+    _id: IDS.budgetLineA,
+    commercialFolderId: IDS.folderA,
+    code: '11.1',
+    name: 'Estructura',
+    category: 'infraestructura',
+    order: 0,
+    isActive: true,
+    ...overrides
+  };
+}
+
+function folder(overrides = {}) {
+  return { _id: IDS.folderA, name: 'Torre 1', color: '#111111', order: 0, ...overrides };
+}
+
+test('budget-lines view merges the catalog with current and previous inspection progress', async (t) => {
+  mockAuthorizedInspection(t);
+  const originalFolderFind = CommercialFolder.find;
+  const originalLineFind = ProjectBudgetLine.find;
+  t.after(() => {
+    CommercialFolder.find = originalFolderFind;
+    ProjectBudgetLine.find = originalLineFind;
+  });
+  CommercialFolder.find = () => ({ sort: () => ({ lean: async () => [folder()] }) });
+  ProjectBudgetLine.find = () => ({ sort: () => ({ lean: async () => [budgetLine()] }) });
+
+  const capture = responseCapture();
+  await routeHandler('get', '/inspections/:inspectionId/budget-lines')(
+    evaluatorReq({ inspectionId: IDS.inspectionA }), capture.res
+  );
+
+  assert.equal(capture.statusCode, 200);
+  assert.equal(capture.payload.folders.length, 1);
+  assert.equal(capture.payload.folders[0].id, IDS.folderA);
+  assert.equal(capture.payload.folders[0].lines.length, 1);
+  assert.equal(capture.payload.folders[0].lines[0].id, IDS.budgetLineA);
+  assert.equal(capture.payload.folders[0].lines[0].current, null);
+  assert.equal(capture.payload.folders[0].lines[0].previous, null);
+});
+
+test('empty towers (no active budget lines) are left out of the budget-lines view', async (t) => {
+  mockAuthorizedInspection(t);
+  const originalFolderFind = CommercialFolder.find;
+  const originalLineFind = ProjectBudgetLine.find;
+  t.after(() => {
+    CommercialFolder.find = originalFolderFind;
+    ProjectBudgetLine.find = originalLineFind;
+  });
+  CommercialFolder.find = () => ({ sort: () => ({ lean: async () => [folder()] }) });
+  ProjectBudgetLine.find = () => ({ sort: () => ({ lean: async () => [] }) });
+
+  const capture = responseCapture();
+  await routeHandler('get', '/inspections/:inspectionId/budget-lines')(
+    evaluatorReq({ inspectionId: IDS.inspectionA }), capture.res
+  );
+  assert.equal(capture.statusCode, 200);
+  assert.deepEqual(capture.payload.folders, []);
+});
+
+test('registering physical progress for a new budget line pushes it into the inspection', async (t) => {
+  mockAuthorizedInspection(t);
+  const originalLineFindOne = ProjectBudgetLine.findOne;
+  const originalFolderFindOne = CommercialFolder.findOne;
+  const originalUpdate = Inspection.findOneAndUpdate;
+  t.after(() => {
+    ProjectBudgetLine.findOne = originalLineFindOne;
+    CommercialFolder.findOne = originalFolderFindOne;
+    Inspection.findOneAndUpdate = originalUpdate;
+  });
+  ProjectBudgetLine.findOne = () => ({ lean: async () => budgetLine() });
+  CommercialFolder.findOne = () => ({ select: () => ({ lean: async () => folder() }) });
+  let capturedFilter;
+  let capturedUpdate;
+  Inspection.findOneAndUpdate = (filter, update) => {
+    capturedFilter = filter;
+    capturedUpdate = update;
+    return {
+      lean: async () => inspection({
+        budgetLineProgress: [{
+          budgetLineId: IDS.budgetLineA,
+          commercialFolderId: IDS.folderA,
+          lineSnapshot: { code: '11.1', name: 'Estructura', category: 'infraestructura', commercialFolderName: 'Torre 1' },
+          physicalProgressPercent: 25,
+          observations: 'Armado de columnas',
+          updatedAt: new Date()
+        }],
+        version: 1
+      })
+    };
+  };
+
+  const capture = responseCapture();
+  await routeHandler('put', '/inspections/:inspectionId/budget-lines/:budgetLineId')(
+    evaluatorReq(
+      { inspectionId: IDS.inspectionA, budgetLineId: IDS.budgetLineA },
+      { physicalProgressPercent: 25, observations: 'Armado de columnas', version: 0 }
+    ), capture.res
+  );
+
+  assert.equal(capture.statusCode, 200);
+  assert.ok(capturedUpdate.$push);
+  assert.equal(capturedUpdate.$push.budgetLineProgress.physicalProgressPercent, 25);
+  assert.equal(capturedFilter.version, 0);
+  assert.equal(capture.payload.inspection.budgetLineProgress[0].physicalProgressPercent, 25);
+});
+
+test('registering physical progress for an existing budget line updates it in place', async (t) => {
+  mockAuthorizedInspection(t, {
+    inspectionValue: inspection({
+      budgetLineProgress: [{
+        budgetLineId: IDS.budgetLineA,
+        commercialFolderId: IDS.folderA,
+        lineSnapshot: { code: '11.1', name: 'Estructura', category: 'infraestructura', commercialFolderName: 'Torre 1' },
+        physicalProgressPercent: 10,
+        observations: '',
+        updatedAt: new Date()
+      }]
+    })
+  });
+  const originalLineFindOne = ProjectBudgetLine.findOne;
+  const originalFolderFindOne = CommercialFolder.findOne;
+  const originalUpdate = Inspection.findOneAndUpdate;
+  t.after(() => {
+    ProjectBudgetLine.findOne = originalLineFindOne;
+    CommercialFolder.findOne = originalFolderFindOne;
+    Inspection.findOneAndUpdate = originalUpdate;
+  });
+  ProjectBudgetLine.findOne = () => ({ lean: async () => budgetLine() });
+  CommercialFolder.findOne = () => ({ select: () => ({ lean: async () => folder() }) });
+  let capturedFilter;
+  let capturedUpdate;
+  Inspection.findOneAndUpdate = (filter, update) => {
+    capturedFilter = filter;
+    capturedUpdate = update;
+    return { lean: async () => inspection({ version: 1 }) };
+  };
+
+  const capture = responseCapture();
+  await routeHandler('put', '/inspections/:inspectionId/budget-lines/:budgetLineId')(
+    evaluatorReq(
+      { inspectionId: IDS.inspectionA, budgetLineId: IDS.budgetLineA },
+      { physicalProgressPercent: 55, observations: 'Losa vaciada', version: 0 }
+    ), capture.res
+  );
+
+  assert.equal(capture.statusCode, 200);
+  assert.equal(capturedFilter['budgetLineProgress.budgetLineId'], IDS.budgetLineA);
+  assert.equal(capturedUpdate.$set['budgetLineProgress.$.physicalProgressPercent'], 55);
+  assert.equal(capturedUpdate.$set['budgetLineProgress.$.observations'], 'Losa vaciada');
+});
+
+test('economicAmountPeriod sent by the client is rejected as an unexpected field', async () => {
+  const capture = responseCapture();
+  await routeHandler('put', '/inspections/:inspectionId/budget-lines/:budgetLineId')(
+    evaluatorReq(
+      { inspectionId: IDS.inspectionA, budgetLineId: IDS.budgetLineA },
+      { physicalProgressPercent: 25, economicAmountPeriod: 5000, version: 0 }
+    ), capture.res
+  );
+  assert.equal(capture.statusCode, 400);
+  assert.deepEqual(capture.payload.fields, ['economicAmountPeriod']);
+});
+
+test('finalize computes previous/period/accumulated per budget line and freezes it', async (t) => {
+  mockAuthorizedInspection(t, {
+    inspectionValue: inspection({
+      projectProgressPercent: 35,
+      previousInspectionId: IDS.inspectionB,
+      budgetLineProgress: [{
+        budgetLineId: IDS.budgetLineA,
+        commercialFolderId: IDS.folderA,
+        lineSnapshot: { code: '11.1', name: 'Estructura', category: 'infraestructura', commercialFolderName: 'Torre 1' },
+        physicalProgressPercent: 60,
+        observations: '',
+        economicAmountPeriod: null,
+        economicAmountReported: false
+      }]
+    })
+  });
+  const originalCount = InspectionUnit.countDocuments;
+  const originalFindById = Inspection.findById;
+  const originalUpdate = Inspection.findOneAndUpdate;
+  t.after(() => {
+    InspectionUnit.countDocuments = originalCount;
+    Inspection.findById = originalFindById;
+    Inspection.findOneAndUpdate = originalUpdate;
+  });
+  InspectionUnit.countDocuments = async () => 0;
+  Inspection.findById = () => ({
+    select: () => ({
+      lean: async () => ({
+        _id: IDS.inspectionB,
+        inspectionDate: new Date('2026-08-01'),
+        budgetLineProgress: [{ budgetLineId: IDS.budgetLineA, physicalProgressPercent: 40 }]
+      })
+    })
+  });
+  let stored;
+  Inspection.findOneAndUpdate = (filter, update) => {
+    stored = update.$set;
+    return { lean: async () => inspection({ ...stored, version: 1 }) };
+  };
+
+  const capture = responseCapture();
+  await routeHandler('post', '/inspections/:inspectionId/finalize')(
+    evaluatorReq(
+      { inspectionId: IDS.inspectionA },
+      { version: 0, signerName: 'Avaluador', signatureImage: 'data:image/png;base64,aA==' }
+    ), capture.res
+  );
+
+  assert.equal(capture.statusCode, 200);
+  assert.equal(String(stored.financialSummarySnapshot.previousInspectionId), IDS.inspectionB);
+  const line = stored.financialSummarySnapshot.budgetLines[0];
+  assert.equal(line.physicalProgressPercent.previous, 40);
+  assert.equal(line.physicalProgressPercent.period, 20);
+  assert.equal(line.physicalProgressPercent.accumulated, 60);
+});
+
+test('finalize without budget-line progress does not add a financial summary snapshot', async (t) => {
+  mockAuthorizedInspection(t, { inspectionValue: inspection({ projectProgressPercent: 35 }) });
+  const originalCount = InspectionUnit.countDocuments;
+  const originalUpdate = Inspection.findOneAndUpdate;
+  t.after(() => {
+    InspectionUnit.countDocuments = originalCount;
+    Inspection.findOneAndUpdate = originalUpdate;
+  });
+  InspectionUnit.countDocuments = async () => 0;
+  let stored;
+  Inspection.findOneAndUpdate = (filter, update) => {
+    stored = update.$set;
+    return { lean: async () => inspection({ ...stored, version: 1 }) };
+  };
+
+  const capture = responseCapture();
+  await routeHandler('post', '/inspections/:inspectionId/finalize')(
+    evaluatorReq(
+      { inspectionId: IDS.inspectionA },
+      { version: 0, signerName: 'Avaluador', signatureImage: 'data:image/png;base64,aA==' }
+    ), capture.res
+  );
+  assert.equal(capture.statusCode, 200);
+  assert.equal('financialSummarySnapshot' in stored, false);
 });

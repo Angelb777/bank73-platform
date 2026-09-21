@@ -31,6 +31,7 @@ const processRoutes = require('./routes/process');
 
 const unitsRoutes = require('./routes/units');
 const commercialFolderRoutes = require('./routes/commercialFolders');
+const projectBudgetLineRoutes = require('./routes/projectBudgetLines');
 const unitDocFolderRoutes = require('./routes/unitDocFolders');
 const exportRoutes = require('./routes/export');
 const ventasRoutes = require('./routes/ventas');
@@ -271,6 +272,7 @@ app.use('/api', ...guard, processRoutes);
 // Comercial
 app.use('/api/units', ...guard, bankReadOnly, unitsRoutes);
 app.use('/api/commercial-folders', ...guard, bankReadOnly, commercialFolderRoutes);
+app.use('/api/project-budget-lines', ...guard, bankReadOnly, projectBudgetLineRoutes);
 
 // ✅ NUEVO: subcarpetas documentales por unidad
 app.use('/api/unit-doc-folders', ...guard, bankReadOnly, unitDocFolderRoutes);

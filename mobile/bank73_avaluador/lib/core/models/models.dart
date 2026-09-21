@@ -237,6 +237,23 @@ enum TechnicalVerdict {
   );
 }
 
+/// Avance físico por partida ya guardado en esta inspección (resumen ligero;
+/// el detalle enriquecido con lo anterior/previo vive en BudgetLineItem).
+class BudgetLineProgressEntry {
+  const BudgetLineProgressEntry({
+    required this.budgetLineId,
+    required this.physicalProgressPercent,
+  });
+  final String budgetLineId;
+  final double physicalProgressPercent;
+
+  factory BudgetLineProgressEntry.fromJson(Map<String, dynamic> json) =>
+      BudgetLineProgressEntry(
+        budgetLineId: (json['budgetLineId'] ?? '').toString(),
+        physicalProgressPercent: _number(json['physicalProgressPercent']),
+      );
+}
+
 class Inspection {
   const Inspection({
     required this.id,
@@ -255,6 +272,7 @@ class Inspection {
     this.methodology,
     this.technicalVerdict = TechnicalVerdict.notAssessed,
     this.recommendationNotes = '',
+    this.budgetLineProgress = const [],
   });
   final String id;
   final String projectId;
@@ -272,6 +290,7 @@ class Inspection {
   final InspectionMethodology? methodology;
   final TechnicalVerdict technicalVerdict;
   final String recommendationNotes;
+  final List<BudgetLineProgressEntry> budgetLineProgress;
 
   factory Inspection.fromJson(Map<String, dynamic> json) => Inspection(
     id: (json['id'] ?? '').toString(),
@@ -297,6 +316,9 @@ class Inspection {
     methodology: json['methodology'] == null
         ? null
         : InspectionMethodology.fromJson(_map(json['methodology'])),
+    budgetLineProgress: (json['budgetLineProgress'] as List? ?? const [])
+        .map((item) => BudgetLineProgressEntry.fromJson(_map(item)))
+        .toList(),
   );
 
   bool get isFinalized => status == 'finalized';
@@ -396,4 +418,105 @@ class InspectionUnit {
               .map((item) => InspectionProgressSection.fromJson(_map(item)))
               .toList(),
   );
+}
+
+/// Avance físico ya guardado en esta inspección para una partida (torre/etapa).
+class BudgetLineCurrentProgress {
+  const BudgetLineCurrentProgress({
+    required this.physicalProgressPercent,
+    required this.observations,
+    required this.updatedAt,
+  });
+  final double physicalProgressPercent;
+  final String observations;
+  final DateTime? updatedAt;
+
+  factory BudgetLineCurrentProgress.fromJson(Map<String, dynamic> json) =>
+      BudgetLineCurrentProgress(
+        physicalProgressPercent: _number(json['physicalProgressPercent']),
+        observations: (json['observations'] ?? '').toString(),
+        updatedAt: _date(json['updatedAt']),
+      );
+}
+
+/// Avance físico registrado en la última inspección finalizada del mismo
+/// proyecto y banco, usado como punto de partida (no editable).
+class BudgetLinePreviousProgress {
+  const BudgetLinePreviousProgress({
+    required this.physicalProgressPercent,
+    required this.inspectionDate,
+  });
+  final double physicalProgressPercent;
+  final DateTime? inspectionDate;
+
+  factory BudgetLinePreviousProgress.fromJson(Map<String, dynamic> json) =>
+      BudgetLinePreviousProgress(
+        physicalProgressPercent: _number(json['physicalProgressPercent']),
+        inspectionDate: _date(json['inspectionDate']),
+      );
+}
+
+/// Una partida de obra del catálogo (ProjectBudgetLine), dato maestro que
+/// mantiene banca/promotor. El avaluador solo reporta avance sobre ella.
+class BudgetLineItem {
+  const BudgetLineItem({
+    required this.id,
+    required this.code,
+    required this.name,
+    required this.category,
+    required this.order,
+    this.current,
+    this.previous,
+  });
+  final String id;
+  final String code;
+  final String name;
+  final String category;
+  final int order;
+  final BudgetLineCurrentProgress? current;
+  final BudgetLinePreviousProgress? previous;
+
+  factory BudgetLineItem.fromJson(Map<String, dynamic> json) => BudgetLineItem(
+    id: (json['id'] ?? '').toString(),
+    code: (json['code'] ?? '').toString(),
+    name: (json['name'] ?? '').toString(),
+    category: (json['category'] ?? '').toString(),
+    order: (json['order'] as num?)?.toInt() ?? 0,
+    current: json['current'] == null
+        ? null
+        : BudgetLineCurrentProgress.fromJson(_map(json['current'])),
+    previous: json['previous'] == null
+        ? null
+        : BudgetLinePreviousProgress.fromJson(_map(json['previous'])),
+  );
+
+  String get label => code.isEmpty ? name : '$code · $name';
+}
+
+/// Una Torre/Etapa: reutiliza directamente CommercialFolder del módulo
+/// comercial, no una entidad nueva.
+class BudgetLineFolder {
+  const BudgetLineFolder({
+    required this.id,
+    required this.name,
+    required this.color,
+    required this.order,
+    required this.lines,
+  });
+  final String id;
+  final String name;
+  final String color;
+  final int order;
+  final List<BudgetLineItem> lines;
+
+  factory BudgetLineFolder.fromJson(Map<String, dynamic> json) =>
+      BudgetLineFolder(
+        id: (json['id'] ?? '').toString(),
+        name: (json['name'] ?? '').toString(),
+        color: (json['color'] ?? '').toString(),
+        order: (json['order'] as num?)?.toInt() ?? 0,
+        lines: (json['lines'] as List? ?? const [])
+            .map((item) => BudgetLineItem.fromJson(_map(item)))
+            .toList(),
+      );
 }
