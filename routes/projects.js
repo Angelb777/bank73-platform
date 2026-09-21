@@ -4832,11 +4832,21 @@ if (isSoldLikeStatus(st)) U.sold++;
     function drawKpiSection(doc, title, items, opts = {}) {
       const margin = doc.page.margins.left;
       const contentW = doc.page.width - margin * 2;
-      const sectionY = doc.y;
       const columns = opts.columns || 3;
       const rows = Math.ceil(items.length / columns);
       const gridH = rows * 74 - 10;
       const sectionH = 34 + gridH + 14;
+      const contentBottom = doc.page.height - doc.page.margins.bottom - 26;
+      let sectionY = doc.y;
+
+      // Las tarjetas usan coordenadas absolutas. Si la seccion no cabe completa,
+      // PDFKit paginaria cada texto desbordado por separado y generaria paginas
+      // casi vacias. Mantenemos el bloque unido en una pagina nueva.
+      if (sectionY + sectionH > contentBottom) {
+        doc.addPage();
+        if (opts.meta) header(doc, opts.meta);
+        sectionY = doc.y;
+      }
 
       doc.save();
       roundRect(doc, margin, sectionY, contentW, sectionH, 10).fill('#F8FAFC').stroke('#DDE7F2');
@@ -5234,7 +5244,11 @@ if (isSoldLikeStatus(st)) U.sold++;
         { label: 'Documentos / fotos', value: fmtNum(totals.documents), sub: `${fmtNum(totals.photos)} fotos` },
         { label: 'Tareas completas', value: fmtNum(totals.milestones) },
         { label: 'Desembolsos', value: fmtMoneyShort(totals.disbursedAmount) }
-      ], { columns: 3, tone: 'green' });
+      ], {
+        columns: 3,
+        tone: 'green',
+        meta: { projectName: summary.projectName, updatedAt: summary.updatedAt }
+      });
       drawDataTable(doc, {
         columns: ['Tipo de avance', 'Cantidad'],
         rows: (activity.counts || []).length
@@ -5296,9 +5310,10 @@ if (isSoldLikeStatus(st)) U.sold++;
     sectionTitle(doc, 'Resumen ejecutivo de KPIs');
 
     const executiveKpis = buildExecutiveKpis({ project, summary, datasets });
-    drawKpiSection(doc, 'Finanzas', executiveKpis.top, { columns: 3, tone: 'blue' });
-    drawKpiSection(doc, 'Operación', executiveKpis.operational, { columns: 4, tone: 'green' });
-    drawKpiSection(doc, 'Comercial', executiveKpis.commercial, { columns: 4, tone: 'purple' });
+    const executiveMeta = { projectName: summary.projectName, updatedAt: summary.updatedAt };
+    drawKpiSection(doc, 'Finanzas', executiveKpis.top, { columns: 3, tone: 'blue', meta: executiveMeta });
+    drawKpiSection(doc, 'Operación', executiveKpis.operational, { columns: 4, tone: 'green', meta: executiveMeta });
+    drawKpiSection(doc, 'Comercial', executiveKpis.commercial, { columns: 4, tone: 'purple', meta: executiveMeta });
 
     doc.addPage();
     header(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt });
