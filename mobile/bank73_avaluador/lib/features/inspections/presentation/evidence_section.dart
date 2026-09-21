@@ -15,6 +15,9 @@ class EvidenceSection extends ConsumerStatefulWidget {
     required this.inspectionId,
     this.unitId,
     this.commonAreaKey,
+    this.workFrontKey,
+    this.incidentId,
+    this.category = 'general',
     this.editable = true,
     this.embedded = false,
     this.title = 'Evidencia fotográfica',
@@ -23,6 +26,9 @@ class EvidenceSection extends ConsumerStatefulWidget {
   final String inspectionId;
   final String? unitId;
   final String? commonAreaKey;
+  final String? workFrontKey;
+  final String? incidentId;
+  final String category;
   final bool editable;
   final bool embedded;
   final String title;
@@ -47,12 +53,13 @@ class _EvidenceSectionState extends ConsumerState<EvidenceSection> {
         widget.inspectionId,
         unitId: widget.unitId,
         commonAreaKey: widget.commonAreaKey,
+        workFrontKey: widget.workFrontKey,
+        incidentId: widget.incidentId,
       );
 
   void _reload() => setState(() => _future = _load());
 
   Future<void> _pick(ImageSource source) async {
-    Navigator.pop(context);
     final image = await ImagePicker().pickImage(
       source: source,
       imageQuality: 82,
@@ -70,9 +77,23 @@ class _EvidenceSectionState extends ConsumerState<EvidenceSection> {
             filePath: image.path,
             unitId: widget.unitId,
             commonAreaKey: widget.commonAreaKey,
+            workFrontKey: widget.workFrontKey,
+            incidentId: widget.incidentId,
+            category: widget.category,
             caption: caption,
           );
-      if (mounted) _reload();
+      if (mounted) {
+        _reload();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Fotografía guardada.'),
+            action: SnackBarAction(
+              label: 'Otra foto',
+              onPressed: () => _pick(ImageSource.camera),
+            ),
+          ),
+        );
+      }
     } catch (error) {
       if (mounted) await presentApiError(context, ref, error);
     } finally {
@@ -107,7 +128,7 @@ class _EvidenceSectionState extends ConsumerState<EvidenceSection> {
         ],
       ),
     );
-    controller.dispose();
+    Future<void>.delayed(kThemeAnimationDuration, controller.dispose);
     return result;
   }
 
@@ -123,12 +144,18 @@ class _EvidenceSectionState extends ConsumerState<EvidenceSection> {
             ListTile(
               leading: const Icon(Icons.photo_camera_outlined),
               title: const Text('Tomar fotografía'),
-              onTap: () => _pick(ImageSource.camera),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _pick(ImageSource.camera);
+              },
             ),
             ListTile(
               leading: const Icon(Icons.photo_library_outlined),
               title: const Text('Elegir de la galería'),
-              onTap: () => _pick(ImageSource.gallery),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _pick(ImageSource.gallery);
+              },
             ),
           ],
         ),

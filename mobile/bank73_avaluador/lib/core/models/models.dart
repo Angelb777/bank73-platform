@@ -91,6 +91,59 @@ class MobileProject {
   );
 }
 
+/// Contexto preparado por backend para el briefing y el futuro informe.
+/// Conserva solo el resumen que la UI necesita ahora; el payload completo
+/// permanece disponible en [raw] para incorporar Recorrido/Incidencias sin
+/// volver a definir calculos financieros en Flutter.
+class InspectionPack {
+  const InspectionPack({
+    required this.project,
+    required this.sequence,
+    required this.previousPhysicalProgressPercent,
+    required this.administrativeProgressPercent,
+    required this.financialProgressPercent,
+    required this.activeFronts,
+    required this.hasPreviousInspection,
+    required this.raw,
+  });
+
+  final MobileProject project;
+  final int sequence;
+  final double previousPhysicalProgressPercent;
+  final double administrativeProgressPercent;
+  final double financialProgressPercent;
+  final List<Map<String, dynamic>> activeFronts;
+  final bool hasPreviousInspection;
+  final Map<String, dynamic> raw;
+
+  factory InspectionPack.fromJson(Map<String, dynamic> json) {
+    final metrics = _map(json['metrics']);
+    final physical = _map(metrics['physicalProgress']);
+    final administrative = _map(metrics['administrativeProgress']);
+    final financial = _map(metrics['financialProgress']);
+    final projectJson = _map(json['project']);
+    return InspectionPack(
+      project: MobileProject.fromJson({
+        'id': projectJson['id'],
+        'name': projectJson['name'],
+        'location': projectJson['location'],
+        'projectType': projectJson['type'],
+        'status': projectJson['status'],
+        'description': projectJson['description'],
+      }),
+      sequence: (json['sequence'] as num?)?.toInt() ?? 1,
+      previousPhysicalProgressPercent: _number(physical['previousPercent']),
+      administrativeProgressPercent: _number(administrative['percent']),
+      financialProgressPercent: _number(financial['percent']),
+      activeFronts: (json['activeFronts'] as List? ?? const [])
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList(),
+      hasPreviousInspection: json['previousInspection'] != null,
+      raw: json,
+    );
+  }
+}
+
 class UnitSurfaces {
   const UnitSurfaces({
     required this.m2,
@@ -231,12 +284,16 @@ class InspectionCommonArea {
     required this.weight,
     required this.progressPercent,
     required this.observations,
+    this.previousProgressPercent,
+    this.previousProgressKnown = false,
   });
   final String key;
   final String name;
   final double weight;
   final double progressPercent;
   final String observations;
+  final double? previousProgressPercent;
+  final bool previousProgressKnown;
 
   factory InspectionCommonArea.fromJson(Map<String, dynamic> json) =>
       InspectionCommonArea(
@@ -245,6 +302,10 @@ class InspectionCommonArea {
         weight: _number(json['weight']),
         progressPercent: _number(json['progressPercent']),
         observations: (json['observations'] ?? '').toString(),
+        previousProgressPercent: json['previousProgressPercent'] == null
+            ? null
+            : _number(json['previousProgressPercent']),
+        previousProgressKnown: json['previousProgressKnown'] == true,
       );
 }
 
@@ -261,6 +322,211 @@ enum TechnicalVerdict {
     (entry) => entry.code == value,
     orElse: () => notAssessed,
   );
+}
+
+class InspectionWorkFront {
+  const InspectionWorkFront({
+    required this.key,
+    required this.sourceType,
+    required this.sourceId,
+    required this.name,
+    required this.status,
+    required this.previousProgressPercent,
+    required this.currentProgressPercent,
+    required this.observations,
+    this.plannedProgressPercent,
+    this.visitedAt,
+    this.previousProgressKnown = false,
+  });
+  final String key;
+  final String sourceType;
+  final String sourceId;
+  final String name;
+  final String status;
+  final double previousProgressPercent;
+  final double? plannedProgressPercent;
+  final double currentProgressPercent;
+  final String observations;
+  final DateTime? visitedAt;
+  final bool previousProgressKnown;
+  double? get periodIncrementPercent => previousProgressKnown
+      ? currentProgressPercent - previousProgressPercent
+      : null;
+
+  factory InspectionWorkFront.fromJson(Map<String, dynamic> json) =>
+      InspectionWorkFront(
+        key: (json['key'] ?? '').toString(),
+        sourceType: (json['sourceType'] ?? 'custom').toString(),
+        sourceId: (json['sourceId'] ?? '').toString(),
+        name: (json['name'] ?? '').toString(),
+        status: (json['status'] ?? 'not_visited').toString(),
+        previousProgressPercent: _number(json['previousProgressPercent']),
+        plannedProgressPercent: json['plannedProgressPercent'] == null
+            ? null
+            : _number(json['plannedProgressPercent']),
+        currentProgressPercent: _number(json['currentProgressPercent']),
+        observations: (json['observations'] ?? '').toString(),
+        visitedAt: _date(json['visitedAt']),
+        previousProgressKnown: json['previousProgressKnown'] == true,
+      );
+
+  Map<String, dynamic> toJson() => {
+    'key': key,
+    'sourceType': sourceType,
+    'sourceId': sourceId,
+    'name': name,
+    'status': status,
+    'previousProgressPercent': previousProgressPercent,
+    'previousProgressKnown': previousProgressKnown,
+    'plannedProgressPercent': plannedProgressPercent,
+    'currentProgressPercent': currentProgressPercent,
+    'observations': observations,
+    'visitedAt': visitedAt?.toUtc().toIso8601String(),
+  };
+
+  InspectionWorkFront copyWith({
+    String? status,
+    double? currentProgressPercent,
+    String? observations,
+    DateTime? visitedAt,
+  }) => InspectionWorkFront(
+    key: key,
+    sourceType: sourceType,
+    sourceId: sourceId,
+    name: name,
+    status: status ?? this.status,
+    previousProgressPercent: previousProgressPercent,
+    plannedProgressPercent: plannedProgressPercent,
+    currentProgressPercent:
+        currentProgressPercent ?? this.currentProgressPercent,
+    observations: observations ?? this.observations,
+    visitedAt: visitedAt ?? this.visitedAt,
+    previousProgressKnown: previousProgressKnown,
+  );
+}
+
+class InspectionQuickAssessment {
+  const InspectionQuickAssessment({
+    this.status = 'not_assessed',
+    this.checks = const [],
+    this.observations = '',
+  });
+  final String status;
+  final List<String> checks;
+  final String observations;
+
+  factory InspectionQuickAssessment.fromJson(Map<String, dynamic> json) =>
+      InspectionQuickAssessment(
+        status: (json['status'] ?? 'not_assessed').toString(),
+        checks: (json['checks'] as List? ?? const [])
+            .map((value) => value.toString())
+            .toList(),
+        observations: (json['observations'] ?? '').toString(),
+      );
+
+  Map<String, dynamic> toJson() => {
+    'status': status,
+    'checks': checks,
+    'observations': observations,
+  };
+}
+
+class InspectionIncident {
+  const InspectionIncident({
+    this.id = '',
+    required this.type,
+    required this.severity,
+    required this.status,
+    required this.title,
+    this.description = '',
+    this.location = '',
+    this.workFrontKey = '',
+    this.impactSchedule = false,
+    this.impactCost = false,
+    this.impactQuality = false,
+    this.actionRequired = '',
+    this.carriedFromIncidentId,
+    this.observedAt,
+  });
+  final String id;
+  final String type;
+  final String severity;
+  final String status;
+  final String title;
+  final String description;
+  final String location;
+  final String workFrontKey;
+  final bool impactSchedule;
+  final bool impactCost;
+  final bool impactQuality;
+  final String actionRequired;
+  final String? carriedFromIncidentId;
+  final DateTime? observedAt;
+
+  factory InspectionIncident.fromJson(Map<String, dynamic> json) =>
+      InspectionIncident(
+        id: (json['id'] ?? '').toString(),
+        type: (json['type'] ?? 'other').toString(),
+        severity: (json['severity'] ?? 'medium').toString(),
+        status: (json['status'] ?? 'open').toString(),
+        title: (json['title'] ?? '').toString(),
+        description: (json['description'] ?? '').toString(),
+        location: (json['location'] ?? '').toString(),
+        workFrontKey: (json['workFrontKey'] ?? '').toString(),
+        impactSchedule: json['impactSchedule'] == true,
+        impactCost: json['impactCost'] == true,
+        impactQuality: json['impactQuality'] == true,
+        actionRequired: (json['actionRequired'] ?? '').toString(),
+        carriedFromIncidentId: json['carriedFromIncidentId']?.toString(),
+        observedAt: _date(json['observedAt']),
+      );
+
+  Map<String, dynamic> toJson() => {
+    if (id.isNotEmpty) 'id': id,
+    'type': type,
+    'severity': severity,
+    'status': status,
+    'title': title,
+    'description': description,
+    'location': location,
+    'workFrontKey': workFrontKey,
+    'impactSchedule': impactSchedule,
+    'impactCost': impactCost,
+    'impactQuality': impactQuality,
+    'actionRequired': actionRequired,
+    'carriedFromIncidentId': carriedFromIncidentId,
+    'observedAt': observedAt?.toUtc().toIso8601String(),
+  };
+}
+
+class InspectionScheduleAssessment {
+  const InspectionScheduleAssessment({
+    this.status = 'not_assessed',
+    this.plannedProgressPercent,
+    this.forecastCompletionDate,
+    this.notes = '',
+  });
+  final String status;
+  final double? plannedProgressPercent;
+  final DateTime? forecastCompletionDate;
+  final String notes;
+
+  factory InspectionScheduleAssessment.fromJson(Map<String, dynamic> json) =>
+      InspectionScheduleAssessment(
+        status: (json['status'] ?? 'not_assessed').toString(),
+        plannedProgressPercent: json['plannedProgressPercent'] == null
+            ? null
+            : _number(json['plannedProgressPercent']),
+        forecastCompletionDate: _date(json['forecastCompletionDate']),
+        notes: (json['notes'] ?? '').toString(),
+      );
+
+  Map<String, dynamic> toJson() => {
+    'status': status,
+    'plannedProgressPercent': plannedProgressPercent,
+    'forecastCompletionDate': forecastCompletionDate?.toUtc().toIso8601String(),
+    'notes': notes,
+  };
 }
 
 class Inspection {
@@ -281,6 +547,14 @@ class Inspection {
     this.methodology,
     this.technicalVerdict = TechnicalVerdict.notAssessed,
     this.recommendationNotes = '',
+    this.technicalConclusion = '',
+    this.workFronts = const [],
+    this.incidents = const [],
+    this.qualityObservations = '',
+    this.environmentalObservations = '',
+    this.qualityAssessment,
+    this.environmentalAssessment,
+    this.scheduleAssessment,
   });
   final String id;
   final String projectId;
@@ -298,6 +572,14 @@ class Inspection {
   final InspectionMethodology? methodology;
   final TechnicalVerdict technicalVerdict;
   final String recommendationNotes;
+  final String technicalConclusion;
+  final List<InspectionWorkFront> workFronts;
+  final List<InspectionIncident> incidents;
+  final String qualityObservations;
+  final String environmentalObservations;
+  final InspectionQuickAssessment? qualityAssessment;
+  final InspectionQuickAssessment? environmentalAssessment;
+  final InspectionScheduleAssessment? scheduleAssessment;
 
   factory Inspection.fromJson(Map<String, dynamic> json) => Inspection(
     id: (json['id'] ?? '').toString(),
@@ -318,8 +600,34 @@ class Inspection {
     technicalVerdict: TechnicalVerdict.fromCode(
       _map(json['technicalRecommendation'])['verdict'],
     ),
-    recommendationNotes: (_map(json['technicalRecommendation'])['notes'] ?? '')
+    recommendationNotes:
+        (_map(json['technicalRecommendation'])['conditions'] ??
+                _map(json['technicalRecommendation'])['notes'] ??
+                '')
+            .toString(),
+    technicalConclusion: (json['technicalConclusion'] ?? '').toString(),
+    workFronts: (json['workFronts'] as List? ?? const [])
+        .map((item) => InspectionWorkFront.fromJson(_map(item)))
+        .toList(),
+    incidents: (json['incidents'] as List? ?? const [])
+        .map((item) => InspectionIncident.fromJson(_map(item)))
+        .toList(),
+    qualityObservations: (json['qualityObservations'] ?? '').toString(),
+    environmentalObservations: (json['environmentalObservations'] ?? '')
         .toString(),
+    qualityAssessment: json['qualityAssessment'] == null
+        ? null
+        : InspectionQuickAssessment.fromJson(_map(json['qualityAssessment'])),
+    environmentalAssessment: json['environmentalAssessment'] == null
+        ? null
+        : InspectionQuickAssessment.fromJson(
+            _map(json['environmentalAssessment']),
+          ),
+    scheduleAssessment: json['scheduleAssessment'] == null
+        ? null
+        : InspectionScheduleAssessment.fromJson(
+            _map(json['scheduleAssessment']),
+          ),
     methodology: json['methodology'] == null
         ? null
         : InspectionMethodology.fromJson(_map(json['methodology'])),
@@ -338,6 +646,9 @@ class InspectionEvidence {
     required this.caption,
     required this.filePath,
     required this.createdAt,
+    this.workFrontKey = '',
+    this.incidentId,
+    this.category = 'general',
   });
   final String id;
   final String inspectionId;
@@ -347,6 +658,9 @@ class InspectionEvidence {
   final String caption;
   final String filePath;
   final DateTime? createdAt;
+  final String workFrontKey;
+  final String? incidentId;
+  final String category;
 
   factory InspectionEvidence.fromJson(Map<String, dynamic> json) =>
       InspectionEvidence(
@@ -358,6 +672,9 @@ class InspectionEvidence {
         caption: (json['caption'] ?? '').toString(),
         filePath: (json['filePath'] ?? '').toString(),
         createdAt: _date(json['createdAt']),
+        workFrontKey: (json['workFrontKey'] ?? '').toString(),
+        incidentId: json['incidentId']?.toString(),
+        category: (json['category'] ?? 'general').toString(),
       );
 }
 

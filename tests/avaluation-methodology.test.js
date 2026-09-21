@@ -12,6 +12,7 @@ const Unit = require('../models/Unit');
 const Inspection = require('../models/Inspection');
 const InspectionUnit = require('../models/InspectionUnit');
 const AuditLog = require('../models/AuditLog');
+const inspectionReportContext = require('../services/inspectionReportContext');
 
 const IDS = {
   bankUser: '64c000000000000000000001',
@@ -265,7 +266,8 @@ test('cross-tenant project inspection snapshots the active template of the commi
     assignmentFindOne: ProjectAvaluatorAssignment.findOne,
     projectFindOne: Project.findOne,
     templateFindOne: AvaluationTemplate.findOne,
-    inspectionCreate: Inspection.create
+    inspectionCreate: Inspection.create,
+    buildBaseSnapshot: inspectionReportContext.buildBaseSnapshot
   };
   let templateFilter;
   let created;
@@ -274,6 +276,7 @@ test('cross-tenant project inspection snapshots the active template of the commi
     Project.findOne = originals.projectFindOne;
     AvaluationTemplate.findOne = originals.templateFindOne;
     Inspection.create = originals.inspectionCreate;
+    inspectionReportContext.buildBaseSnapshot = originals.buildBaseSnapshot;
   });
   ProjectAvaluatorAssignment.findOne = () => ({ lean: async () => assignment() });
   Project.findOne = () => ({ select: () => ({ lean: async () => ({ _id: IDS.project }) }) });
@@ -285,6 +288,10 @@ test('cross-tenant project inspection snapshots the active template of the commi
     created = value;
     return structuredInspection(value);
   };
+  inspectionReportContext.buildBaseSnapshot = async () => ({
+    schemaVersion: 1,
+    history: { sequence: 1, previousInspectionId: null }
+  });
 
   const injected = responseCapture();
   await routeHandler(mobileRouter, 'post', '/projects/:projectId/inspections')(

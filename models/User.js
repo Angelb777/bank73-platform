@@ -61,6 +61,16 @@ const AvaluatorBankMembershipSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const ProfessionalProfileSchema = new mongoose.Schema(
+  {
+    title: { type: String, trim: true, default: '' },
+    licenseNumber: { type: String, trim: true, default: '' },
+    company: { type: String, trim: true, default: '' },
+    phone: { type: String, trim: true, default: '' }
+  },
+  { _id: false }
+);
+
 const PromoterProfileSchema = new mongoose.Schema(
   {
     companyName: { type: String, trim: true, default: '' },
@@ -225,6 +235,7 @@ const userSchema = new mongoose.Schema(
     // Estado del avaluador en cada banco. Evita que un banco pueda bloquear
     // accidentalmente el trabajo que el mismo profesional realiza para otro.
     avaluatorBankMemberships: { type: [AvaluatorBankMembershipSchema], default: undefined },
+    professionalProfile: { type: ProfessionalProfileSchema, default: undefined },
 
     // Perfil opcional para usuarios promotores. No bloquea registro ni uso.
     promoterProfile: { type: PromoterProfileSchema, default: undefined },

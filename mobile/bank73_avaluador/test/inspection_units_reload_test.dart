@@ -96,6 +96,8 @@ void main() {
       expect(tester.takeException(), isNull);
       final unit = find.text('Unidad 0');
       await tester.scrollUntilVisible(unit, 200, scrollable: scrollable);
+      await tester.ensureVisible(unit);
+      await tester.pumpAndSettle();
       await tester.tap(unit);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Guardar y volver'));

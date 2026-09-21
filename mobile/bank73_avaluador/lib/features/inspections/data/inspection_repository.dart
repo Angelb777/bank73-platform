@@ -13,6 +13,24 @@ class InspectionRepository {
   InspectionRepository(this._api);
   final ApiTransport _api;
 
+  Future<InspectionPack> projectInspectionPack(String projectId) async {
+    final response = await _api.get(
+      '/api/mobile/v1/projects/$projectId/inspection-pack',
+    );
+    return InspectionPack.fromJson(
+      Map<String, dynamic>.from(response['inspectionPack'] as Map),
+    );
+  }
+
+  Future<InspectionPack> inspectionPack(String inspectionId) async {
+    final response = await _api.get(
+      '/api/mobile/v1/inspections/$inspectionId/inspection-pack',
+    );
+    return InspectionPack.fromJson(
+      Map<String, dynamic>.from(response['inspectionPack'] as Map),
+    );
+  }
+
   Future<List<Inspection>> inspections(String projectId) async {
     final response = await _api.get(
       '/api/mobile/v1/projects/$projectId/inspections',
@@ -97,11 +115,16 @@ class InspectionRepository {
     String inspectionId, {
     String? unitId,
     String? commonAreaKey,
+    String? workFrontKey,
+    String? incidentId,
   }) async {
     final query = <String, String>{
       if (unitId != null && unitId.isNotEmpty) 'unitId': unitId,
       if (commonAreaKey != null && commonAreaKey.isNotEmpty)
         'commonAreaKey': commonAreaKey,
+      if (workFrontKey != null && workFrontKey.isNotEmpty)
+        'workFrontKey': workFrontKey,
+      if (incidentId != null && incidentId.isNotEmpty) 'incidentId': incidentId,
     };
     final suffix = query.isEmpty ? '' : '?${Uri(queryParameters: query).query}';
     final response = await _api.get(
@@ -121,6 +144,9 @@ class InspectionRepository {
     required String filePath,
     String? unitId,
     String? commonAreaKey,
+    String? workFrontKey,
+    String? incidentId,
+    String category = 'general',
     String caption = '',
   }) async {
     final response = await _api.postMultipart(
@@ -131,6 +157,11 @@ class InspectionRepository {
         if (unitId != null && unitId.isNotEmpty) 'unitId': unitId,
         if (commonAreaKey != null && commonAreaKey.isNotEmpty)
           'commonAreaKey': commonAreaKey,
+        if (workFrontKey != null && workFrontKey.isNotEmpty)
+          'workFrontKey': workFrontKey,
+        if (incidentId != null && incidentId.isNotEmpty)
+          'incidentId': incidentId,
+        'category': category,
         if (caption.isNotEmpty) 'caption': caption,
       },
     );
@@ -154,7 +185,9 @@ class InspectionRepository {
     required String signerName,
     required String signatureImage,
     TechnicalVerdict technicalVerdict = TechnicalVerdict.notAssessed,
-    String recommendationNotes = '',
+    String technicalConclusion = '',
+    String recommendationConditions = '',
+    String? recommendationNotes,
   }) async {
     final response = await _api.post(
       '/api/mobile/v1/inspections/$inspectionId/finalize',
@@ -162,9 +195,12 @@ class InspectionRepository {
         'version': version,
         'signerName': signerName,
         'signatureImage': signatureImage,
+        'technicalConclusion': technicalConclusion,
         'technicalRecommendation': {
           'verdict': technicalVerdict.code,
-          'notes': recommendationNotes,
+          'conditions': recommendationConditions.isNotEmpty
+              ? recommendationConditions
+              : (recommendationNotes ?? ''),
         },
       },
     );
@@ -175,6 +211,54 @@ class InspectionRepository {
 
   Future<List<int>> reportBytes(String inspectionId) =>
       _api.getBytes('/api/mobile/v1/inspections/$inspectionId/report.pdf');
+
+  Future<List<int>> reportPreviewBytes(String inspectionId) => _api.getBytes(
+    '/api/mobile/v1/inspections/$inspectionId/report-preview.pdf',
+  );
+
+  Future<Inspection> saveVisit({
+    required String inspectionId,
+    required int version,
+    List<InspectionWorkFront>? workFronts,
+    List<InspectionIncident>? incidents,
+    String? qualityObservations,
+    String? environmentalObservations,
+    InspectionQuickAssessment? qualityAssessment,
+    InspectionQuickAssessment? environmentalAssessment,
+    InspectionScheduleAssessment? scheduleAssessment,
+    String? technicalConclusion,
+    TechnicalVerdict? technicalVerdict,
+    String? recommendationConditions,
+    String? recommendationNotes,
+  }) async {
+    final response = await _api.put(
+      '/api/mobile/v1/inspections/$inspectionId/visit',
+      body: {
+        'version': version,
+        if (workFronts != null)
+          'workFronts': workFronts.map((item) => item.toJson()).toList(),
+        if (incidents != null)
+          'incidents': incidents.map((item) => item.toJson()).toList(),
+        'qualityObservations': ?qualityObservations,
+        'environmentalObservations': ?environmentalObservations,
+        if (qualityAssessment != null)
+          'qualityAssessment': qualityAssessment.toJson(),
+        if (environmentalAssessment != null)
+          'environmentalAssessment': environmentalAssessment.toJson(),
+        if (scheduleAssessment != null)
+          'scheduleAssessment': scheduleAssessment.toJson(),
+        'technicalConclusion': ?technicalConclusion,
+        if (technicalVerdict != null)
+          'technicalRecommendation': {
+            'verdict': technicalVerdict.code,
+            'conditions': recommendationConditions ?? recommendationNotes ?? '',
+          },
+      },
+    );
+    return Inspection.fromJson(
+      Map<String, dynamic>.from(response['inspection'] as Map),
+    );
+  }
 
   Future<List<InspectionUnit>> inspectedUnits(String inspectionId) async {
     final response = await _api.get(

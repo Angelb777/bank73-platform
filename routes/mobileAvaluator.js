@@ -15,6 +15,7 @@ const Inspection = require('../models/Inspection');
 const InspectionUnit = require('../models/InspectionUnit');
 const InspectionEvidence = require('../models/InspectionEvidence');
 const AvaluationTemplate = require('../models/AvaluationTemplate');
+const inspectionReportContext = require('../services/inspectionReportContext');
 const { requireRole } = require('../middleware/rbac');
 const { fileFilterFor, handleMulterUpload } = require('../utils/uploadSecurity');
 
@@ -172,12 +173,46 @@ function inspectionDto(inspection) {
     inspectionDate: inspection.inspectionDate,
     startedAt: inspection.startedAt,
     generalObservations: String(inspection.generalObservations || ''),
+    workFronts: (inspection.workFronts || []).map(front => ({
+      key: String(front.key || ''),
+      sourceType: String(front.sourceType || 'custom'),
+      sourceId: String(front.sourceId || ''),
+      name: String(front.name || ''),
+      status: String(front.status || 'not_visited'),
+      previousProgressPercent: front.previousProgressPercent == null ? null : Number(front.previousProgressPercent),
+      previousProgressKnown: front.previousProgressKnown === true || (front.previousProgressKnown == null && front.previousProgressPercent != null),
+      plannedProgressPercent: front.plannedProgressPercent == null ? null : Number(front.plannedProgressPercent),
+      currentProgressPercent: Number(front.currentProgressPercent || 0),
+      periodIncrementPercent: front.previousProgressPercent == null ? null : Math.round((Number(front.currentProgressPercent || 0) - Number(front.previousProgressPercent)) * 10000) / 10000,
+      observations: String(front.observations || ''),
+      visitedAt: front.visitedAt || null
+    })),
+    incidents: (inspection.incidents || []).map(item => ({
+      id: String(item._id || ''), type: String(item.type || 'other'), severity: String(item.severity || 'medium'),
+      status: String(item.status || 'open'), title: String(item.title || ''), description: String(item.description || ''),
+      location: String(item.location || ''), workFrontKey: String(item.workFrontKey || ''),
+      impactSchedule: !!item.impactSchedule, impactCost: !!item.impactCost, impactQuality: !!item.impactQuality,
+      actionRequired: String(item.actionRequired || ''), carriedFromIncidentId: item.carriedFromIncidentId ? String(item.carriedFromIncidentId) : null,
+      observedAt: item.observedAt || null
+    })),
+    qualityObservations: String(inspection.qualityObservations || ''),
+    environmentalObservations: String(inspection.environmentalObservations || ''),
+    qualityAssessment: inspection.qualityAssessment || null,
+    environmentalAssessment: inspection.environmentalAssessment || null,
+    scheduleAssessment: inspection.scheduleAssessment ? {
+      status: String(inspection.scheduleAssessment.status || 'not_assessed'),
+      plannedProgressPercent: inspection.scheduleAssessment.plannedProgressPercent == null ? null : Number(inspection.scheduleAssessment.plannedProgressPercent),
+      forecastCompletionDate: inspection.scheduleAssessment.forecastCompletionDate || null,
+      notes: String(inspection.scheduleAssessment.notes || '')
+    } : null,
     projectProgressPercent: Number(inspection.projectProgressPercent || 0),
     commonAreas: commonAreasForInspection(inspection).map(area => ({
       key: String(area.key || ''),
       name: String(area.name || ''),
       weight: Number(area.weight || 0),
       progressPercent: Number(area.progressPercent || 0),
+      previousProgressPercent: area.previousProgressPercent == null ? null : Number(area.previousProgressPercent),
+      previousProgressKnown: area.previousProgressKnown === true || (area.previousProgressKnown == null && area.previousProgressPercent != null),
       observations: String(area.observations || '')
     })),
     methodology: inspection.methodology ? {
@@ -200,7 +235,10 @@ function inspectionDto(inspection) {
     } : null,
     finalizedAt: inspection.finalizedAt || null,
     reportNumber: String(inspection.reportNumber || ''),
+    sequence: Number(inspection.sequence || 1),
+    previousInspectionId: inspection.previousInspectionId ? String(inspection.previousInspectionId) : null,
     technicalRecommendation: inspection.technicalRecommendation || null,
+    technicalConclusion: String(inspection.technicalConclusion || ''),
     createdAt: inspection.createdAt,
     updatedAt: inspection.updatedAt
   };
@@ -213,6 +251,9 @@ function evidenceDto(item) {
     projectId: String(item.projectId),
     unitId: item.unitId ? String(item.unitId) : null,
     commonAreaKey: String(item.commonAreaKey || ''),
+    workFrontKey: String(item.workFrontKey || ''),
+    incidentId: item.incidentId ? String(item.incidentId) : null,
+    category: String(item.category || 'general'),
     caption: String(item.caption || ''),
     mimetype: String(item.mimetype || ''),
     size: Number(item.size || 0),
@@ -499,6 +540,25 @@ router.get('/projects/:projectId/units/:unitId', async (req, res) => {
   }
 });
 
+// Paquete de contexto preparado por backend. Puede consultarse antes de crear
+// el borrador para mostrar el briefing de la visita sin duplicar calculos en Flutter.
+router.get('/projects/:projectId/inspection-pack', async (req, res) => {
+  try {
+    const resolved = await assignedProjectFor(req, req.params.projectId, '_id');
+    if (!resolved) return res.status(404).json({ error: 'Proyecto no encontrado.' });
+    const scope = {
+      bankTenantKey: resolved.assignment.bankTenantKey,
+      projectTenantKey: resolved.assignment.projectTenantKey,
+      projectId: resolved.assignment.projectId
+    };
+    const context = await inspectionReportContext.buildInspectionReportContext({ scope, inspection: null, preferFrozen: false });
+    if (!context) return res.status(404).json({ error: 'Proyecto no encontrado.' });
+    res.json({ inspectionPack: inspectionReportContext.inspectionPackDto(context) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post('/projects/:projectId/inspections', async (req, res) => {
   try {
     const extraFields = unexpectedFields(req.body, ['inspectionDate', 'generalObservations']);
@@ -516,10 +576,18 @@ router.post('/projects/:projectId/inspections', async (req, res) => {
       return res.status(400).json({ error: 'generalObservations demasiado larga.' });
     }
 
-    const template = await AvaluationTemplate.findOne({
+    const scope = {
       bankTenantKey: resolved.assignment.bankTenantKey,
-      status: 'active'
-    }).lean();
+      projectTenantKey: resolved.assignment.projectTenantKey,
+      projectId: resolved.assignment.projectId
+    };
+    const startedAt = new Date();
+    const [template, startSnapshot] = await Promise.all([
+      AvaluationTemplate.findOne({ bankTenantKey: resolved.assignment.bankTenantKey, status: 'active' }).lean(),
+      inspectionReportContext.buildBaseSnapshot({ scope, inspectionDate: startedAt })
+    ]);
+    if (!startSnapshot) return res.status(404).json({ error: 'Proyecto no encontrado.' });
+    const previousAreasByKey = new Map((startSnapshot.history?.previousCommonAreas || []).map(area => [String(area.key), area]));
     const inspection = await Inspection.create({
       bankTenantKey: resolved.assignment.bankTenantKey,
       projectTenantKey: resolved.assignment.projectTenantKey,
@@ -528,15 +596,72 @@ router.post('/projects/:projectId/inspections', async (req, res) => {
       assignmentId: resolved.assignment._id,
       status: 'draft',
       inspectionDate: inspectionDate || new Date(),
-      startedAt: new Date(),
+      startedAt,
       generalObservations,
       methodology: methodologySnapshot(template),
+      commonAreas: DEFAULT_COMMON_AREAS.map(area => {
+        const previousArea = previousAreasByKey.get(area.key);
+        const previousProgressPercent = previousArea?.progressPercent == null ? null : Number(previousArea.progressPercent);
+        return {
+          ...area,
+          progressPercent: previousProgressPercent ?? 0,
+          previousProgressPercent,
+          previousProgressKnown: previousProgressPercent !== null
+        };
+      }),
+      workFronts: (startSnapshot.planning?.workFronts || []).map(front => ({
+        key: String(front.key),
+        sourceType: String(front.sourceType || 'custom'),
+        sourceId: String(front.sourceId || ''),
+        name: String(front.name || ''),
+        status: 'not_visited',
+        previousProgressPercent: front.previousKnown ? Number(front.previousPercent) : null,
+        previousProgressKnown: front.previousKnown === true,
+        plannedProgressPercent: front.plannedPercent == null ? null : Number(front.plannedPercent),
+        currentProgressPercent: front.previousKnown ? Number(front.previousPercent) : 0,
+        observations: ''
+      })),
+      incidents: (startSnapshot.pendingIssues || []).map(issue => ({
+        type: String(issue.type || 'other'),
+        severity: String(issue.severity || 'medium'),
+        status: issue.status === 'resolved' ? 'resolved' : 'monitoring',
+        title: String(issue.title || 'Incidencia anterior pendiente'),
+        description: String(issue.description || ''),
+        location: String(issue.location || ''),
+        workFrontKey: String(issue.workFrontKey || ''),
+        impactSchedule: !!issue.impactSchedule,
+        impactCost: !!issue.impactCost,
+        impactQuality: !!issue.impactQuality,
+        actionRequired: String(issue.actionRequired || ''),
+        carriedFromIncidentId: mongoose.Types.ObjectId.isValid(String(issue._id || issue.id || '')) ? (issue._id || issue.id) : null,
+        observedAt: issue.observedAt || startedAt
+      })),
+      sequence: startSnapshot.history.sequence,
+      previousInspectionId: startSnapshot.history.previousInspectionId || null,
+      snapshotSchemaVersion: startSnapshot.schemaVersion,
+      startSnapshot,
       version: 0
     });
 
     res.status(201).json({ inspection: inspectionDto(inspection) });
   } catch (e) {
     res.status(e?.name === 'ValidationError' ? 400 : 500).json({ error: e.message });
+  }
+});
+
+router.get('/inspections/:inspectionId/inspection-pack', async (req, res) => {
+  try {
+    const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
+    if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
+    const scope = {
+      bankTenantKey: resolved.inspection.bankTenantKey,
+      projectTenantKey: resolved.inspection.projectTenantKey,
+      projectId: resolved.inspection.projectId
+    };
+    const context = await inspectionReportContext.buildInspectionReportContext({ scope, inspection: resolved.inspection });
+    res.json({ inspectionPack: inspectionReportContext.inspectionPackDto(context) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -677,6 +802,8 @@ router.put('/inspections/:inspectionId/project-progress', async (req, res) => {
         name: String(current.name),
         weight: Number(current.weight),
         progressPercent,
+        previousProgressPercent: current.previousProgressPercent == null ? null : Number(current.previousProgressPercent),
+        previousProgressKnown: current.previousProgressKnown === true || (current.previousProgressKnown == null && current.previousProgressPercent != null),
         observations
       };
     });
@@ -696,6 +823,113 @@ router.put('/inspections/:inspectionId/project-progress', async (req, res) => {
       },
       { new: true, runValidators: true }
     ).lean();
+    if (!inspection) return res.status(409).json({ error: 'version_conflict' });
+    res.json({ inspection: inspectionDto(inspection) });
+  } catch (e) {
+    res.status(e?.status || (e?.name === 'ValidationError' ? 400 : 500)).json({ error: e.message });
+  }
+});
+
+router.put('/inspections/:inspectionId/visit', async (req, res) => {
+  try {
+    const allowed = ['version', 'workFronts', 'incidents', 'qualityObservations', 'environmentalObservations', 'qualityAssessment', 'environmentalAssessment', 'scheduleAssessment', 'technicalConclusion', 'technicalRecommendation'];
+    const extraFields = unexpectedFields(req.body, allowed);
+    if (extraFields.length) return res.status(400).json({ error: 'Campos no permitidos.', fields: extraFields });
+    const expectedVersion = parseExpectedVersion(req.body?.version);
+    if (expectedVersion === null) return res.status(400).json({ error: 'version requerida.' });
+    const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
+    if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
+    if (resolved.inspection.status !== 'draft') return res.status(409).json({ error: 'La inspeccion no es editable.' });
+
+    const set = {};
+    if (req.body.workFronts !== undefined) {
+      if (!Array.isArray(req.body.workFronts) || req.body.workFronts.length > 250) return res.status(400).json({ error: 'workFronts invalido.' });
+      const keys = new Set();
+      const storedFronts = new Map((resolved.inspection.workFronts || []).map(front => [String(front.key), front]));
+      set.workFronts = req.body.workFronts.map(raw => {
+        const key = String(raw?.key || '').trim();
+        const name = String(raw?.name || '').trim();
+        const sourceType = String(raw?.sourceType || 'custom');
+        const status = String(raw?.status || 'not_visited');
+        const stored = storedFronts.get(key);
+        const previousKnown = stored
+          ? (stored.previousProgressKnown === true || (stored.previousProgressKnown == null && stored.previousProgressPercent != null))
+          : (raw?.previousProgressKnown !== false && raw?.previousProgressPercent != null);
+        const previous = previousKnown ? Number(stored?.previousProgressPercent ?? raw.previousProgressPercent) : null;
+        const current = Number(raw?.currentProgressPercent || 0);
+        const planned = raw?.plannedProgressPercent === null || raw?.plannedProgressPercent === undefined ? null : Number(raw.plannedProgressPercent);
+        const observations = String(raw?.observations || '').trim();
+        if (!key || keys.has(key) || !name || !['phase', 'folder', 'common_area', 'unit', 'custom'].includes(sourceType) || !['not_visited', 'no_change', 'in_progress', 'paused', 'completed', 'not_applicable'].includes(status)) throw Object.assign(new Error('Frente de obra invalido.'), { status: 400 });
+        if (!Number.isFinite(current) || current < 0 || current > 100 || (previous !== null && (!Number.isFinite(previous) || previous < 0 || previous > 100)) || (planned !== null && (!Number.isFinite(planned) || planned < 0 || planned > 100))) throw Object.assign(new Error('El avance de cada frente debe estar entre 0 y 100.'), { status: 400 });
+        if (observations.length > 5000) throw Object.assign(new Error('Observaciones de frente demasiado largas.'), { status: 400 });
+        keys.add(key);
+        return { key, sourceType, sourceId: String(raw?.sourceId || '').trim(), name, status, previousProgressPercent: previous, previousProgressKnown: previousKnown, plannedProgressPercent: planned, currentProgressPercent: current, observations, visitedAt: status === 'not_visited' ? null : (parseDate(raw?.visitedAt) || new Date()) };
+      });
+    }
+    if (req.body.incidents !== undefined) {
+      if (!Array.isArray(req.body.incidents) || req.body.incidents.length > 200) return res.status(400).json({ error: 'incidents invalido.' });
+      set.incidents = req.body.incidents.map(raw => {
+        const type = String(raw?.type || 'other');
+        const severity = String(raw?.severity || 'medium');
+        const status = String(raw?.status || 'open');
+        const title = String(raw?.title || '').trim();
+        const description = String(raw?.description || '').trim();
+        const actionRequired = String(raw?.actionRequired || '').trim();
+        if (!['change', 'delay', 'defect', 'quality', 'environment', 'risk', 'other'].includes(type) || !['low', 'medium', 'high', 'critical'].includes(severity) || !['open', 'monitoring', 'resolved'].includes(status) || !title) throw Object.assign(new Error('Incidencia invalida.'), { status: 400 });
+        if (title.length > 250 || description.length > 5000 || actionRequired.length > 3000) throw Object.assign(new Error('Incidencia demasiado larga.'), { status: 400 });
+        return { ...(mongoose.Types.ObjectId.isValid(String(raw?.id || raw?._id || '')) ? { _id: raw.id || raw._id } : {}), type, severity, status, title, description, location: String(raw?.location || '').trim().slice(0, 500), workFrontKey: String(raw?.workFrontKey || '').trim(), impactSchedule: !!raw?.impactSchedule, impactCost: !!raw?.impactCost, impactQuality: !!raw?.impactQuality, actionRequired, carriedFromIncidentId: mongoose.Types.ObjectId.isValid(String(raw?.carriedFromIncidentId || '')) ? raw.carriedFromIncidentId : null, observedAt: parseDate(raw?.observedAt) || new Date() };
+      });
+    }
+    for (const [field, limit] of [['qualityObservations', 10000], ['environmentalObservations', 10000]]) {
+      if (req.body[field] !== undefined) {
+        const value = String(req.body[field] || '').trim();
+        if (value.length > limit) return res.status(400).json({ error: `${field} demasiado larga.` });
+        set[field] = value;
+      }
+    }
+    for (const field of ['qualityAssessment', 'environmentalAssessment']) {
+      if (req.body[field] === undefined) continue;
+      const raw = req.body[field] || {};
+      if (unexpectedFields(raw, ['status', 'checks', 'observations']).length) return res.status(400).json({ error: `${field} invalido.` });
+      const status = String(raw.status || 'not_assessed');
+      const checks = Array.isArray(raw.checks) ? [...new Set(raw.checks.map(value => String(value || '').trim()).filter(Boolean))] : [];
+      const observations = String(raw.observations || '').trim();
+      if (!['not_assessed', 'conforming', 'observations_required', 'non_conforming'].includes(status) || checks.length > 20 || checks.some(value => value.length > 80) || observations.length > 10000) return res.status(400).json({ error: `${field} invalido.` });
+      set[field] = { status, checks, observations };
+      set[field === 'qualityAssessment' ? 'qualityObservations' : 'environmentalObservations'] = observations;
+    }
+    if (req.body.scheduleAssessment !== undefined) {
+      const raw = req.body.scheduleAssessment || {};
+      if (unexpectedFields(raw, ['status', 'plannedProgressPercent', 'forecastCompletionDate', 'notes']).length) return res.status(400).json({ error: 'scheduleAssessment invalido.' });
+      const status = String(raw.status || 'not_assessed');
+      const planned = raw.plannedProgressPercent === null || raw.plannedProgressPercent === undefined ? null : Number(raw.plannedProgressPercent);
+      const forecast = raw.forecastCompletionDate ? parseDate(raw.forecastCompletionDate) : null;
+      const notes = String(raw.notes || '').trim();
+      if (!['on_track', 'at_risk', 'delayed', 'not_assessed'].includes(status) || (planned !== null && (!Number.isFinite(planned) || planned < 0 || planned > 100)) || (raw.forecastCompletionDate && !forecast) || notes.length > 5000) return res.status(400).json({ error: 'scheduleAssessment invalido.' });
+      set.scheduleAssessment = { status, plannedProgressPercent: planned, forecastCompletionDate: forecast, notes };
+    }
+    if (req.body.technicalRecommendation !== undefined) {
+      const raw = req.body.technicalRecommendation || {};
+      const verdict = String(raw.verdict || 'not_assessed');
+      const conditions = String(raw.conditions ?? raw.notes ?? '').trim();
+      if (!['favorable', 'conditional', 'unfavorable', 'not_assessed'].includes(verdict) || conditions.length > 5000) return res.status(400).json({ error: 'technicalRecommendation invalida.' });
+      set.technicalRecommendation = { verdict, conditions, notes: conditions };
+    }
+    if (req.body.technicalConclusion !== undefined) {
+      const conclusion = String(req.body.technicalConclusion || '').trim();
+      if (conclusion.length > 10000) return res.status(400).json({ error: 'technicalConclusion demasiado larga.' });
+      set.technicalConclusion = conclusion;
+    }
+    if (!Object.keys(set).length) return res.status(400).json({ error: 'No hay datos de visita.' });
+
+    const inspection = await Inspection.findOneAndUpdate({
+      _id: resolved.inspection._id,
+      bankTenantKey: resolved.inspection.bankTenantKey,
+      projectTenantKey: resolved.inspection.projectTenantKey,
+      projectId: resolved.inspection.projectId,
+      avaluadorId: resolved.context.userId,
+      status: 'draft', deletedAt: null, version: expectedVersion
+    }, { $set: set, $inc: { version: 1 } }, { new: true, runValidators: true }).lean();
     if (!inspection) return res.status(409).json({ error: 'version_conflict' });
     res.json({ inspection: inspectionDto(inspection) });
   } catch (e) {
@@ -867,6 +1101,11 @@ router.get('/inspections/:inspectionId/evidence', async (req, res) => {
       query.unitId = req.query.unitId;
     }
     if (req.query.commonAreaKey) query.commonAreaKey = String(req.query.commonAreaKey).trim();
+    if (req.query.workFrontKey) query.workFrontKey = String(req.query.workFrontKey).trim();
+    if (req.query.incidentId) {
+      if (!mongoose.Types.ObjectId.isValid(String(req.query.incidentId))) return res.status(400).json({ error: 'incidentId invalido.' });
+      query.incidentId = req.query.incidentId;
+    }
     const evidence = await InspectionEvidence.find(query).sort({ createdAt: 1 }).lean();
     res.json({ evidence: evidence.map(evidenceDto) });
   } catch (e) {
@@ -886,8 +1125,11 @@ router.post('/inspections/:inspectionId/evidence', evidenceUpload, async (req, r
 
     const unitId = String(req.body?.unitId || '').trim();
     const commonAreaKey = String(req.body?.commonAreaKey || '').trim();
-    if (unitId && commonAreaKey) {
-      return res.status(400).json({ error: 'La evidencia debe pertenecer a una unidad o a una zona, no a ambas.' });
+    const workFrontKey = String(req.body?.workFrontKey || '').trim();
+    const incidentId = String(req.body?.incidentId || '').trim();
+    const category = String(req.body?.category || (incidentId ? 'incident' : 'progress')).trim();
+    if ([unitId, commonAreaKey, workFrontKey].filter(Boolean).length > 1) {
+      return res.status(400).json({ error: 'La evidencia debe pertenecer a una sola unidad, zona o frente.' });
     }
     if (unitId) {
       if (!mongoose.Types.ObjectId.isValid(unitId)) return res.status(400).json({ error: 'unitId invalido.' });
@@ -902,6 +1144,9 @@ router.post('/inspections/:inspectionId/evidence', evidenceUpload, async (req, r
     if (commonAreaKey && !commonAreasForInspection(resolved.inspection).some(area => String(area.key) === commonAreaKey)) {
       return res.status(400).json({ error: 'Zona comun invalida.' });
     }
+    if (workFrontKey && !(resolved.inspection.workFronts || []).some(front => String(front.key) === workFrontKey)) return res.status(400).json({ error: 'Frente de obra invalido.' });
+    if (incidentId && (!mongoose.Types.ObjectId.isValid(incidentId) || !(resolved.inspection.incidents || []).some(item => String(item._id) === incidentId))) return res.status(400).json({ error: 'Incidencia invalida.' });
+    if (!['progress', 'incident', 'quality', 'environment', 'comparison', 'general'].includes(category)) return res.status(400).json({ error: 'Categoria invalida.' });
     const caption = String(req.body?.caption || '').trim();
     if (caption.length > 1000) return res.status(400).json({ error: 'caption demasiado largo.' });
 
@@ -917,6 +1162,9 @@ router.post('/inspections/:inspectionId/evidence', evidenceUpload, async (req, r
       projectId: resolved.inspection.projectId,
       unitId: unitId || null,
       commonAreaKey,
+      workFrontKey,
+      incidentId: incidentId || null,
+      category,
       caption,
       originalname: req.file.originalname,
       filename,
@@ -988,7 +1236,7 @@ router.delete('/inspections/:inspectionId/evidence/:evidenceId', async (req, res
 
 router.post('/inspections/:inspectionId/finalize', async (req, res) => {
   try {
-    const extraFields = unexpectedFields(req.body, ['version', 'signerName', 'signatureImage', 'technicalRecommendation']);
+    const extraFields = unexpectedFields(req.body, ['version', 'signerName', 'signatureImage', 'technicalConclusion', 'technicalRecommendation']);
     if (extraFields.length) return res.status(400).json({ error: 'Campos no permitidos.', fields: extraFields });
     const expectedVersion = parseExpectedVersion(req.body?.version);
     if (expectedVersion === null) return res.status(400).json({ error: 'version requerida.' });
@@ -1000,16 +1248,22 @@ router.post('/inspections/:inspectionId/finalize', async (req, res) => {
     }
 
     const rawRecommendation = req.body?.technicalRecommendation;
-    if (rawRecommendation !== undefined && (!rawRecommendation || typeof rawRecommendation !== 'object' || Array.isArray(rawRecommendation) || unexpectedFields(rawRecommendation, ['verdict', 'notes']).length)) {
+    if (rawRecommendation !== undefined && (!rawRecommendation || typeof rawRecommendation !== 'object' || Array.isArray(rawRecommendation) || unexpectedFields(rawRecommendation, ['verdict', 'notes', 'conditions']).length)) {
       return res.status(400).json({ error: 'Recomendacion tecnica invalida.' });
     }
     const verdict = rawRecommendation?.verdict ?? 'not_assessed';
-    const notes = rawRecommendation?.notes ?? '';
-    if (!['favorable', 'conditional', 'unfavorable', 'not_assessed'].includes(verdict) || typeof notes !== 'string' || notes.trim().length > 5000) {
+    const conditions = rawRecommendation?.conditions ?? rawRecommendation?.notes ?? '';
+    // Legacy clients only sent `notes`; keep them valid while new clients send
+    // an independent conclusion and recommendation conditions.
+    const technicalConclusion = String(req.body?.technicalConclusion ?? rawRecommendation?.notes ?? 'Sin conclusión adicional.').trim();
+    if (!['favorable', 'conditional', 'unfavorable', 'not_assessed'].includes(verdict) || typeof conditions !== 'string' || conditions.trim().length > 5000 || technicalConclusion.length > 10000) {
       return res.status(400).json({ error: 'Recomendacion tecnica invalida.' });
     }
-    if (verdict !== 'not_assessed' && !notes.trim()) return res.status(400).json({ error: 'Justifica la recomendacion tecnica e indica las condiciones, si las hay.' });
-    const technicalRecommendation = { verdict, notes: notes.trim() };
+    const legacyRecommendation = rawRecommendation && Object.prototype.hasOwnProperty.call(rawRecommendation, 'notes') && !Object.prototype.hasOwnProperty.call(rawRecommendation, 'conditions');
+    if ((legacyRecommendation && verdict !== 'not_assessed' && !conditions.trim()) || (verdict === 'conditional' && !conditions.trim())) return res.status(400).json({ error: 'Indica las condiciones de la recomendacion.' });
+    const technicalRecommendation = rawRecommendation && Object.prototype.hasOwnProperty.call(rawRecommendation, 'conditions')
+      ? { verdict, conditions: conditions.trim(), notes: conditions.trim() }
+      : { verdict, notes: conditions.trim() };
 
     const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
     if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
@@ -1022,6 +1276,25 @@ router.post('/inspections/:inspectionId/finalize', async (req, res) => {
     }
     const finalizedAt = new Date();
     const reportNumber = `B73-${finalizedAt.getUTCFullYear()}-${String(resolved.inspection._id).slice(-8).toUpperCase()}`;
+    const signature = { signerName, imageData: signatureImage, signedAt: finalizedAt };
+    const finalInspectionState = {
+      ...resolved.inspection,
+      status: 'finalized',
+      technicalConclusion,
+      technicalRecommendation,
+      signature,
+      finalizedAt,
+      reportNumber
+    };
+    const reportSnapshot = await inspectionReportContext.buildInspectionReportContext({
+      scope: {
+        bankTenantKey: resolved.inspection.bankTenantKey,
+        projectTenantKey: resolved.inspection.projectTenantKey,
+        projectId: resolved.inspection.projectId
+      },
+      inspection: finalInspectionState,
+      preferFrozen: false
+    });
     const inspection = await Inspection.findOneAndUpdate(
       {
         _id: resolved.inspection._id,
@@ -1034,10 +1307,12 @@ router.post('/inspections/:inspectionId/finalize', async (req, res) => {
       {
         $set: {
           status: 'finalized',
+          technicalConclusion,
           technicalRecommendation,
-          signature: { signerName, imageData: signatureImage, signedAt: finalizedAt },
+          signature,
           finalizedAt,
-          reportNumber
+          reportNumber,
+          reportSnapshot
         },
         $inc: { version: 1 }
       },
@@ -1050,52 +1325,40 @@ router.post('/inspections/:inspectionId/finalize', async (req, res) => {
   }
 });
 
-router.get('/inspections/:inspectionId/report.pdf', async (req, res) => {
+async function sendInspectionReport(req, res, { allowDraft = false } = {}) {
   try {
     const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
     if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
-    if (resolved.inspection.status !== 'finalized') {
+    if (!allowDraft && resolved.inspection.status !== 'finalized') {
       return res.status(409).json({ error: 'Finaliza la inspeccion antes de generar el informe.' });
     }
-    const [project, units, evidence, folders, previousInspection] = await Promise.all([
-      Project.findOne({ _id: resolved.inspection.projectId, tenantKey: resolved.inspection.projectTenantKey }).lean(),
-      InspectionUnit.find({ inspectionId: resolved.inspection._id }).sort({ createdAt: 1 }).lean(),
-      InspectionEvidence.find({ inspectionId: resolved.inspection._id }).sort({ createdAt: 1 }).lean(),
-      CommercialFolder.find({
-        tenantKey: resolved.inspection.projectTenantKey,
-        projectId: resolved.inspection.projectId
-      }).select('name order').sort({ order: 1, createdAt: 1 }).lean(),
-      // Ultima inspeccion FINALIZADA anterior del mismo proyecto y banco (nunca
-      // solo por proyecto: puede haber avaluadores de varios bancos). Se usa
-      // solo para comparar anterior/actual en el informe, sin persistir nada.
-      Inspection.findOne({
-        bankTenantKey: resolved.inspection.bankTenantKey,
-        projectId: resolved.inspection.projectId,
-        status: 'finalized',
-        deletedAt: null,
-        _id: { $ne: resolved.inspection._id },
-        finalizedAt: { $lt: resolved.inspection.finalizedAt || new Date() }
-      }).sort({ finalizedAt: -1 }).lean()
-    ]);
-    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado.' });
-
-    const unitDocs = units.length
-      ? await Unit.find({ _id: { $in: units.map(u => u.unitId) } }).select('folderId').lean()
-      : [];
-    const unitFolderById = new Map(unitDocs.map(u => [String(u._id), u.folderId ? String(u.folderId) : null]));
-
+    /* The report always consumes the common context. For finalized inspections
+       the service returns the frozen reportSnapshot; previews use live data. */
     const inspection = resolved.inspection;
+    const context = await inspectionReportContext.buildInspectionReportContext({
+      scope: {
+        bankTenantKey: inspection.bankTenantKey,
+        projectTenantKey: inspection.projectTenantKey,
+        projectId: inspection.projectId
+      },
+      inspection,
+      preferFrozen: !allowDraft
+    });
+    if (!context) return res.status(404).json({ error: 'Proyecto no encontrado.' });
     const doc = new PDFDocument({ size: 'A4', margin: 48, bufferPages: true, info: { Title: `Informe ${inspection.reportNumber}` } });
     res.type('application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${inspection.reportNumber || 'informe-bank73'}.pdf"`);
     doc.pipe(res);
-    await renderInspectionReport(doc, { project, inspection, units, evidence, folders, unitFolderById, previousInspection });
+    await renderInspectionReport(doc, { context });
     doc.end();
   } catch (e) {
     if (!res.headersSent) res.status(500).json({ error: e.message });
     else res.end();
   }
-});
+}
+
+router.get('/inspections/:inspectionId/report-preview.pdf', (req, res) => sendInspectionReport(req, res, { allowDraft: true }));
+router.get('/inspections/:inspectionId/report.pdf', (req, res) => sendInspectionReport(req, res));
 
 // Cualquier ruta no reconocida dentro de /api/mobile/v1 debe responder 404
 // aqui mismo. Sin este catch-all, Express deja caer la request hacia el

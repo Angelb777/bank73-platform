@@ -17,6 +17,14 @@ const inspectionEvidenceSchema = new mongoose.Schema({
   },
   unitId: { type: mongoose.Schema.Types.ObjectId, ref: 'Unit', default: null, index: true },
   commonAreaKey: { type: String, trim: true, default: '', index: true },
+  workFrontKey: { type: String, trim: true, default: '', index: true },
+  incidentId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
+  category: {
+    type: String,
+    enum: ['progress', 'incident', 'quality', 'environment', 'comparison', 'general'],
+    default: 'general',
+    index: true
+  },
   caption: { type: String, trim: true, default: '', maxlength: 1000 },
   originalname: { type: String, trim: true, required: true },
   filename: { type: String, trim: true, required: true },
@@ -28,5 +36,7 @@ const inspectionEvidenceSchema = new mongoose.Schema({
 
 inspectionEvidenceSchema.index({ inspectionId: 1, unitId: 1, createdAt: 1 });
 inspectionEvidenceSchema.index({ inspectionId: 1, commonAreaKey: 1, createdAt: 1 });
+inspectionEvidenceSchema.index({ inspectionId: 1, workFrontKey: 1, createdAt: 1 });
+inspectionEvidenceSchema.index({ inspectionId: 1, incidentId: 1, createdAt: 1 });
 
 module.exports = mongoose.model('InspectionEvidence', inspectionEvidenceSchema);

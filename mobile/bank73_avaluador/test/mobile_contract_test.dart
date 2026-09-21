@@ -286,6 +286,47 @@ void main() {
     expect(transport.body?.containsKey('progressSections'), isFalse);
   });
 
+  test(
+    'inspection-pack consumes backend metrics without recalculating them',
+    () async {
+      final transport = FakeTransport()
+        ..response = {
+          'inspectionPack': {
+            'project': {
+              'id': 'project-1',
+              'name': 'Proyecto A',
+              'location': {'city': 'PanamÃ¡'},
+              'type': 'Residencial',
+              'status': 'EN_CURSO',
+            },
+            'sequence': 4,
+            'previousInspection': {'id': 'inspection-3'},
+            'metrics': {
+              'physicalProgress': {'previousPercent': 42},
+              'administrativeProgress': {'percent': 75},
+              'financialProgress': {'percent': 31.5},
+            },
+            'activeFronts': [
+              {'id': 'phase-1', 'name': 'Torre A'},
+            ],
+          },
+        };
+
+      final pack = await InspectionRepository(transport)
+          .projectInspectionPack('project-1');
+      expect(
+        transport.path,
+        '/api/mobile/v1/projects/project-1/inspection-pack',
+      );
+      expect(pack.sequence, 4);
+      expect(pack.previousPhysicalProgressPercent, 42);
+      expect(pack.administrativeProgressPercent, 75);
+      expect(pack.financialProgressPercent, 31.5);
+      expect(pack.activeFronts.single['name'], 'Torre A');
+      expect(pack.hasPreviousInspection, isTrue);
+    },
+  );
+
   test('new inspection can start from the previous unit progress', () async {
     final transport = HistoryTransport();
     final previous = await InspectionRepository(transport)

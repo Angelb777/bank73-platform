@@ -43,6 +43,62 @@ class _InspectionsScreenState extends ConsumerState<InspectionsScreen> {
   Future<void> _create() async {
     setState(() => _creating = true);
     try {
+      final pack = await ref
+          .read(inspectionRepositoryProvider)
+          .projectInspectionPack(widget.projectId);
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('Iniciar inspección ${pack.sequence}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  pack.project.name,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                if (pack.project.location.display.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    pack.project.location.display,
+                    style: const TextStyle(color: Bank73Colors.muted),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                const Text(
+                  'Bank73 preparará automáticamente proyecto, participantes, financiación, permisos, programa y documentación. Durante la visita solo tendrás que registrar lo observado.',
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  pack.hasPreviousInspection
+                      ? 'Último avance certificado: ${formatPercent(pack.previousPhysicalProgressPercent)}'
+                      : 'Esta será la primera inspección certificada.',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                if (pack.activeFronts.isNotEmpty)
+                  Text(
+                    '${pack.activeFronts.length} frente(s) activos según el programa.',
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              icon: const Icon(Icons.route_outlined),
+              label: const Text('Iniciar recorrido'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
       final inspection = await ref
           .read(inspectionRepositoryProvider)
           .create(widget.projectId);

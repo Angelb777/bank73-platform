@@ -10,6 +10,7 @@ const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment
 const Inspection = require('../models/Inspection');
 const InspectionUnit = require('../models/InspectionUnit');
 const AvaluationTemplate = require('../models/AvaluationTemplate');
+const inspectionReportContext = require('../services/inspectionReportContext');
 
 const IDS = {
   evaluatorA: '64b000000000000000000001',
@@ -109,14 +110,20 @@ function mockAssignedProject(t, assignmentValue = assignment()) {
   const originalAssignmentFindOne = ProjectAvaluatorAssignment.findOne;
   const originalProjectFindOne = Project.findOne;
   const originalTemplateFindOne = AvaluationTemplate.findOne;
+  const originalBuildBaseSnapshot = inspectionReportContext.buildBaseSnapshot;
   t.after(() => {
     ProjectAvaluatorAssignment.findOne = originalAssignmentFindOne;
     Project.findOne = originalProjectFindOne;
     AvaluationTemplate.findOne = originalTemplateFindOne;
+    inspectionReportContext.buildBaseSnapshot = originalBuildBaseSnapshot;
   });
   ProjectAvaluatorAssignment.findOne = () => ({ lean: async () => assignmentValue });
   Project.findOne = () => ({ select: () => ({ lean: async () => assignmentValue ? ({ _id: IDS.projectA }) : null }) });
   AvaluationTemplate.findOne = () => ({ lean: async () => null });
+  inspectionReportContext.buildBaseSnapshot = async () => ({
+    schemaVersion: 1,
+    history: { sequence: 1, previousInspectionId: null }
+  });
 }
 
 function mockAuthorizedInspection(t, options = {}) {
@@ -125,14 +132,23 @@ function mockAuthorizedInspection(t, options = {}) {
   const originalInspectionFindOne = Inspection.findOne;
   const originalAssignmentFindOne = ProjectAvaluatorAssignment.findOne;
   const originalProjectFindOne = Project.findOne;
+  const originalBuildContext = inspectionReportContext.buildInspectionReportContext;
   t.after(() => {
     Inspection.findOne = originalInspectionFindOne;
     ProjectAvaluatorAssignment.findOne = originalAssignmentFindOne;
     Project.findOne = originalProjectFindOne;
+    inspectionReportContext.buildInspectionReportContext = originalBuildContext;
   });
   Inspection.findOne = () => ({ lean: async () => inspectionValue });
   ProjectAvaluatorAssignment.findOne = () => ({ lean: async () => assignmentValue });
   Project.findOne = () => ({ select: () => ({ lean: async () => assignmentValue ? ({ _id: IDS.projectA }) : null }) });
+  inspectionReportContext.buildInspectionReportContext = async ({ inspection: value }) => ({
+    schemaVersion: 1,
+    inspection: value,
+    history: { sequence: 1, previousPhysicalProgressPercent: 0 },
+    metrics: { physicalProgress: {} },
+    inventory: { folders: [], units: [] }
+  });
 }
 
 test('inspection schemas keep history outside Unit and define required unique indexes', async () => {
@@ -172,6 +188,8 @@ test('mobile API exposes the inspection lifecycle and evidence routes', () => {
     'GET /inspections/:inspectionId',
     'GET /inspections/:inspectionId/evidence',
     'GET /inspections/:inspectionId/evidence/:evidenceId/file',
+    'GET /inspections/:inspectionId/inspection-pack',
+    'GET /inspections/:inspectionId/report-preview.pdf',
     'GET /inspections/:inspectionId/report.pdf',
     'GET /inspections/:inspectionId/units',
     'GET /inspections/:inspectionId/units/:unitId',
@@ -181,7 +199,8 @@ test('mobile API exposes the inspection lifecycle and evidence routes', () => {
     'POST /inspections/:inspectionId/finalize',
     'POST /projects/:projectId/inspections',
     'PUT /inspections/:inspectionId/project-progress',
-    'PUT /inspections/:inspectionId/units/:unitId'
+    'PUT /inspections/:inspectionId/units/:unitId',
+    'PUT /inspections/:inspectionId/visit'
   ].sort());
 });
 
@@ -210,6 +229,29 @@ test('creates draft inspection only from active assignment and server identity',
   assert.equal(String(payload.assignmentId), IDS.assignmentA);
   assert.equal(payload.status, 'draft');
   assert.equal(payload.version, 0);
+  assert.equal(payload.sequence, 1);
+  assert.equal(payload.previousInspectionId, null);
+  assert.equal(payload.snapshotSchemaVersion, 1);
+  assert.ok(payload.startSnapshot);
+});
+
+test('project inspection-pack rejects an evaluator without an active assignment', async (t) => {
+  mockAssignedProject(t, null);
+  const capture = responseCapture();
+  await routeHandler('get', '/projects/:projectId/inspection-pack')(
+    evaluatorReq({ projectId: IDS.projectB }), capture.res
+  );
+  assert.equal(capture.statusCode, 404);
+});
+
+test('inspection-pack uses the same bank, evaluator and active-assignment authorization', async (t) => {
+  mockAuthorizedInspection(t);
+  const capture = responseCapture();
+  await routeHandler('get', '/inspections/:inspectionId/inspection-pack')(
+    evaluatorReq({ inspectionId: IDS.inspectionA }), capture.res
+  );
+  assert.equal(capture.statusCode, 200);
+  assert.equal(capture.payload.inspectionPack.schemaVersion, 1);
 });
 
 test('unassigned or revoked project returns 404 and creates no inspection', async (t) => {
@@ -373,6 +415,45 @@ test('project progress is stored separately from unit progress', async (t) => {
   assert.equal(stored.commonAreas.length, 5);
   assert.equal(stored.commonAreas[0].name, 'Urbanización y viales');
   assert.equal(capture.payload.inspection.projectProgressPercent, 32);
+});
+
+test('visit workspace stores fronts, incidents and distinct schedule/quality observations', async (t) => {
+  mockAuthorizedInspection(t);
+  const originalUpdate = Inspection.findOneAndUpdate;
+  let stored;
+  t.after(() => { Inspection.findOneAndUpdate = originalUpdate; });
+  Inspection.findOneAndUpdate = (filter, update) => {
+    assert.equal(filter.bankTenantKey, 'bank-a');
+    assert.equal(filter.avaluadorId, IDS.evaluatorA);
+    assert.equal(filter.version, 0);
+    stored = update.$set;
+    return { lean: async () => inspection({ ...stored, version: 1 }) };
+  };
+  const capture = responseCapture();
+  await routeHandler('put', '/inspections/:inspectionId/visit')(
+    evaluatorReq({ inspectionId: IDS.inspectionA }, {
+      version: 0,
+      workFronts: [{ key: 'phase:1', sourceType: 'phase', sourceId: '1', name: 'Torre 1', status: 'in_progress', previousProgressPercent: 25, plannedProgressPercent: 40, currentProgressPercent: 35, observations: 'Estructura' }],
+      incidents: [{ type: 'delay', severity: 'high', status: 'open', title: 'Suministro pendiente', impactSchedule: true }],
+      qualityObservations: 'Hormigón conforme.',
+      environmentalObservations: 'Residuos segregados.',
+      qualityAssessment: { status: 'conforming', checks: ['structure', 'materials'], observations: 'Hormigón conforme.' },
+      environmentalAssessment: { status: 'observations_required', checks: ['waste', 'dust'], observations: 'Residuos segregados.' },
+      scheduleAssessment: { status: 'at_risk', plannedProgressPercent: 40, notes: 'Cinco puntos por debajo.' },
+      technicalConclusion: 'La obra mantiene un avance verificable.',
+      technicalRecommendation: { verdict: 'conditional', conditions: 'Corregir retraso.' }
+    }),
+    capture.res
+  );
+  assert.equal(capture.statusCode, 200);
+  assert.equal(stored.workFronts[0].currentProgressPercent, 35);
+  assert.equal(stored.incidents[0].impactSchedule, true);
+  assert.equal(stored.scheduleAssessment.status, 'at_risk');
+  assert.deepEqual(stored.qualityAssessment.checks, ['structure', 'materials']);
+  assert.equal(stored.environmentalAssessment.status, 'observations_required');
+  assert.equal(stored.technicalConclusion, 'La obra mantiene un avance verificable.');
+  assert.equal(stored.technicalRecommendation.verdict, 'conditional');
+  assert.equal(capture.payload.inspection.workFronts[0].periodIncrementPercent, 10);
 });
 
 test('finalizing stores signature and makes the inspection immutable', async (t) => {

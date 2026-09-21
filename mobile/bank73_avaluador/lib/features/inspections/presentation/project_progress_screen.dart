@@ -188,7 +188,7 @@ class _ProjectProgressScreenState extends ConsumerState<ProjectProgressScreen> {
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     subtitle: Text(
-                      '${formatPercent(_progress[area.key] ?? 0)} · peso ${formatPercent(area.weight)}',
+                      '${area.previousProgressKnown ? '${formatPercent(area.previousProgressPercent ?? 0)} anterior · ' : 'Sin referencia anterior · '}${formatPercent(_progress[area.key] ?? 0)} actual · peso ${formatPercent(area.weight)}',
                     ),
                     childrenPadding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
                     children: [

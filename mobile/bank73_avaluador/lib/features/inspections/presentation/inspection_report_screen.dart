@@ -38,9 +38,11 @@ class _InspectionReportScreenState
   final _signatureKey = GlobalKey();
   final _points = <Offset?>[];
   final _signer = TextEditingController();
-  final _recommendationNotes = TextEditingController();
+  final _technicalConclusion = TextEditingController();
+  final _recommendationConditions = TextEditingController();
   TechnicalVerdict _technicalVerdict = TechnicalVerdict.notAssessed;
   bool _finalizing = false;
+  bool _previewing = false;
   int? _signaturePointer;
 
   void _endSignature(int pointer) {
@@ -61,7 +63,8 @@ class _InspectionReportScreenState
   @override
   void dispose() {
     _signer.dispose();
-    _recommendationNotes.dispose();
+    _technicalConclusion.dispose();
+    _recommendationConditions.dispose();
     super.dispose();
   }
 
@@ -72,8 +75,14 @@ class _InspectionReportScreenState
       repository.inspectedUnits(widget.inspectionId),
       repository.evidence(widget.inspectionId),
     ]);
+    final inspection = results[0] as Inspection;
+    if (mounted && _technicalConclusion.text.isEmpty) {
+      _technicalVerdict = inspection.technicalVerdict;
+      _technicalConclusion.text = inspection.technicalConclusion;
+      _recommendationConditions.text = inspection.recommendationNotes;
+    }
     return _ReportBundle(
-      results[0] as Inspection,
+      inspection,
       results[1] as List<InspectionUnit>,
       results[2] as List<InspectionEvidence>,
     );
@@ -99,13 +108,19 @@ class _InspectionReportScreenState
       );
       return;
     }
-    if (_technicalVerdict != TechnicalVerdict.notAssessed &&
-        _recommendationNotes.text.trim().isEmpty) {
+    if (_technicalConclusion.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Justifica la recomendación técnica e indica las condiciones, si las hay.',
-          ),
+          content: Text('Escribe la conclusión técnica de la visita.'),
+        ),
+      );
+      return;
+    }
+    if (_technicalVerdict == TechnicalVerdict.conditional &&
+        _recommendationConditions.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Indica las condiciones de la recomendación.'),
         ),
       );
       return;
@@ -148,13 +163,43 @@ class _InspectionReportScreenState
             signerName: _signer.text.trim(),
             signatureImage: signature,
             technicalVerdict: _technicalVerdict,
-            recommendationNotes: _recommendationNotes.text.trim(),
+            technicalConclusion: _technicalConclusion.text.trim(),
+            recommendationConditions: _recommendationConditions.text.trim(),
           );
       if (mounted) _reload();
     } catch (error) {
       if (mounted) await presentApiError(context, ref, error);
     } finally {
       if (mounted) setState(() => _finalizing = false);
+    }
+  }
+
+  Future<void> _preview(Inspection inspection) async {
+    setState(() => _previewing = true);
+    try {
+      final updated = await ref
+          .read(inspectionRepositoryProvider)
+          .saveVisit(
+            inspectionId: inspection.id,
+            version: inspection.version,
+            technicalConclusion: _technicalConclusion.text.trim(),
+            technicalVerdict: _technicalVerdict,
+            recommendationConditions: _recommendationConditions.text.trim(),
+          );
+      if (!mounted) return;
+      await Printing.layoutPdf(
+        name: 'borrador-informe-bank73.pdf',
+        onLayout: (_) async => Uint8List.fromList(
+          await ref
+              .read(inspectionRepositoryProvider)
+              .reportPreviewBytes(updated.id),
+        ),
+      );
+      if (mounted) _reload();
+    } catch (error) {
+      if (mounted) await presentApiError(context, ref, error);
+    } finally {
+      if (mounted) setState(() => _previewing = false);
     }
   }
 
@@ -277,6 +322,25 @@ class _InspectionReportScreenState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
+                      'Conclusión técnica',
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _technicalConclusion,
+                      readOnly: _finalizing,
+                      minLines: 3,
+                      maxLines: 7,
+                      maxLength: 10000,
+                      decoration: const InputDecoration(
+                        labelText: 'Resultado técnico de la visita',
+                        hintText: 'Resume avance, estado de la obra y hallazgos principales.',
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
                       'Recomendación técnica del avaluador',
                       style: Theme.of(context).textTheme.titleMedium
                           ?.copyWith(fontWeight: FontWeight.w600),
@@ -310,7 +374,7 @@ class _InspectionReportScreenState
                     ),
                     const SizedBox(height: 14),
                     TextField(
-                      controller: _recommendationNotes,
+                      controller: _recommendationConditions,
                       readOnly: _finalizing,
                       minLines: 3,
                       maxLines: 6,
@@ -318,13 +382,25 @@ class _InspectionReportScreenState
                       decoration: InputDecoration(
                         labelText:
                             _technicalVerdict == TechnicalVerdict.notAssessed
-                            ? 'Comentarios (opcional)'
-                            : 'Justificación y condiciones',
+                            ? 'Comentario de la recomendación (opcional)'
+                            : _technicalVerdict == TechnicalVerdict.conditional
+                            ? 'Condiciones de la recomendación'
+                            : 'Justificación de la recomendación (opcional)',
                         alignLabelWithHint: true,
                       ),
                     ),
                   ],
                 ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: _previewing ? null : () => _preview(bundle.inspection),
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              label: Text(
+                _previewing
+                    ? 'Preparando informe…'
+                    : 'Guardar conclusión y ver PDF completo',
               ),
             ),
             const SizedBox(height: 14),
