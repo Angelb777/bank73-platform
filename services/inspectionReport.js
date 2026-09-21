@@ -74,7 +74,7 @@ async function renderInspectionReport(doc, {
   const progress = (label, value, previousValue) => {
     ensure(48);
     if (previousValue !== undefined && previousValue !== null) {
-      text(`${label}: ${percent(previousValue)} (anterior) → ${percent(value)} (actual) · ${delta(previousValue, value)}`);
+      text(`${label}: ${percent(previousValue)} (anterior) -> ${percent(value)} (actual) · ${delta(previousValue, value)}`);
     } else {
       text(`${label}: ${percent(value)}`);
     }
