@@ -32,14 +32,12 @@ class _InspectionBundle {
     this.units,
     this.saved,
     this.folders,
-    this.pack,
   );
   final Inspection inspection;
   final MobileProject project;
   final List<MobileUnit> units;
   final List<InspectionUnit> saved;
   final List<CommercialFolderSummary> folders;
-  final InspectionPack? pack;
 }
 
 class _InspectionScreenState extends ConsumerState<InspectionScreen> {
@@ -85,15 +83,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
             .inspectedUnits(widget.inspectionId),
         ref.read(projectRepositoryProvider).commercialFolders(widget.projectId),
       ]);
-      InspectionPack? pack;
-      try {
-        pack = await ref
-            .read(inspectionRepositoryProvider)
-            .inspectionPack(widget.inspectionId);
-      } catch (_) {
-        // The visit remains usable with the compact inspection payload when
-        // connected to an older compatible backend.
-      }
       if (mounted) {
         _inspection = inspection;
         _date = inspection.inspectionDate?.toLocal() ?? DateTime.now();
@@ -105,7 +94,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
         results[1] as List<MobileUnit>,
         results[2] as List<InspectionUnit>,
         results[3] as List<CommercialFolderSummary>,
-        pack,
       );
     } catch (error) {
       if (mounted) await presentApiError(context, ref, error);
@@ -219,107 +207,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
     }
   }
 
-  Future<void> _editFront(Inspection inspection, int index) async {
-    final original = inspection.workFronts[index];
-    var progress = original.currentProgressPercent;
-    var status = original.status == 'not_visited'
-        ? 'in_progress'
-        : original.status;
-    final notes = TextEditingController(text: original.observations);
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(original.name),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${original.previousProgressKnown ? '${formatPercent(original.previousProgressPercent)} anterior' : 'Sin referencia anterior'}  →  ${formatPercent(progress)} actual',
-                ),
-                Slider(
-                  value: progress.clamp(0, 100),
-                  max: 100,
-                  divisions: 100,
-                  label: '${progress.round()} %',
-                  onChanged: (value) => setDialogState(() => progress = value),
-                ),
-                DropdownButtonFormField<String>(
-                  initialValue: status,
-                  decoration: const InputDecoration(labelText: 'Estado'),
-                  items:
-                      const {
-                            'in_progress': 'En progreso',
-                            'no_change': 'Sin cambios',
-                            'paused': 'Detenido',
-                            'completed': 'Completado',
-                            'not_applicable': 'No aplica',
-                          }.entries
-                          .map(
-                            (entry) => DropdownMenuItem(
-                              value: entry.key,
-                              child: Text(entry.value),
-                            ),
-                          )
-                          .toList(),
-                  onChanged: (value) => setDialogState(() {
-                    status = value ?? status;
-                    if (status == 'no_change' &&
-                        original.previousProgressKnown) {
-                      progress = original.previousProgressPercent;
-                    }
-                  }),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: notes,
-                  minLines: 2,
-                  maxLines: 5,
-                  decoration: const InputDecoration(
-                    labelText: 'Observación de la agrupación',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Guardar'),
-            ),
-          ],
-        ),
-      ),
-    );
-    final observation = notes.text.trim();
-    _disposeAfterDialog([notes]);
-    if (saved != true) return;
-    final fronts = [...inspection.workFronts];
-    fronts[index] = original.copyWith(
-      status: status,
-      currentProgressPercent: progress,
-      observations: observation,
-      visitedAt: DateTime.now(),
-    );
-    await _saveVisit(workFronts: fronts);
-  }
-
-  Future<void> _markNoChange(Inspection inspection, int index) async {
-    if (!inspection.workFronts[index].previousProgressKnown) return;
-    final fronts = [...inspection.workFronts];
-    fronts[index] = fronts[index].copyWith(
-      status: 'no_change',
-      currentProgressPercent: fronts[index].previousProgressPercent,
-      visitedAt: DateTime.now(),
-    );
-    await _saveVisit(workFronts: fronts);
-  }
-
   Future<void> _editIncident(
     Inspection inspection, {
     int? index,
@@ -348,11 +235,37 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text(index == null ? 'Nueva incidencia' : 'Editar incidencia'),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 20,
+          ),
+          contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+          actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+          constraints: const BoxConstraints(maxWidth: 720),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          title: Row(
+            children: [
+              const CircleAvatar(child: Icon(Icons.report_problem_outlined)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  index == null ? 'Nueva incidencia' : 'Editar incidencia',
+                ),
+              ),
+            ],
+          ),
           content: SingleChildScrollView(
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
+                const Text(
+                  'Describe lo observado y dónde requiere seguimiento.',
+                  style: TextStyle(color: Bank73Colors.muted),
+                ),
+                const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   initialValue: type,
                   decoration: const InputDecoration(labelText: 'Tipo'),
@@ -399,25 +312,25 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                 const SizedBox(height: 10),
                 if (!scopeLocked)
                   DropdownButtonFormField<String?>(
-                  initialValue: frontKey.isEmpty ? null : frontKey,
-                  decoration: const InputDecoration(
-                    labelText: 'Agrupación relacionada',
+                    initialValue: frontKey.isEmpty ? null : frontKey,
+                    decoration: const InputDecoration(
+                      labelText: 'Agrupación relacionada',
+                    ),
+                    items: inspection.workFronts
+                        .where((front) => front.sourceType == 'folder')
+                        .map(
+                          (front) => DropdownMenuItem<String?>(
+                            value: front.key,
+                            child: Text(front.name),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) => setDialogState(() {
+                      frontKey = value ?? '';
+                      scopeType = frontKey.isEmpty ? 'project' : 'folder';
+                      scopeId = frontKey.replaceFirst('folder:', '');
+                    }),
                   ),
-                  items: inspection.workFronts
-                      .where((front) => front.sourceType == 'folder')
-                      .map(
-                        (front) => DropdownMenuItem<String?>(
-                          value: front.key,
-                          child: Text(front.name),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) => setDialogState(() {
-                    frontKey = value ?? '';
-                    scopeType = frontKey.isEmpty ? 'project' : 'folder';
-                    scopeId = frontKey.replaceFirst('folder:', '');
-                  }),
-                ),
                 const SizedBox(height: 10),
                 Row(
                   children: [
@@ -506,9 +419,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
               onPressed: () => Navigator.pop(dialogContext, false),
               child: const Text('Cancelar'),
             ),
-            FilledButton(
+            FilledButton.icon(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Guardar'),
+              icon: const Icon(Icons.check_rounded),
+              label: const Text('Guardar incidencia'),
             ),
           ],
         ),
@@ -709,91 +623,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
       );
   }
 
-  Future<void> _editSchedule(Inspection inspection) async {
-    final original = inspection.scheduleAssessment;
-    var status = original?.status ?? 'not_assessed';
-    final planned = TextEditingController(
-      text: original?.plannedProgressPercent?.toStringAsFixed(1) ?? '',
-    );
-    final notes = TextEditingController(text: original?.notes ?? '');
-    final accepted = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Avance respecto al programa'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<String>(
-                  initialValue: status,
-                  decoration: const InputDecoration(labelText: 'Situación'),
-                  items:
-                      const {
-                            'on_track': 'En plazo',
-                            'at_risk': 'En riesgo',
-                            'delayed': 'Retrasado',
-                            'not_assessed': 'Sin evaluar',
-                          }.entries
-                          .map(
-                            (e) => DropdownMenuItem(
-                              value: e.key,
-                              child: Text(e.value),
-                            ),
-                          )
-                          .toList(),
-                  onChanged: (value) =>
-                      setDialogState(() => status = value ?? status),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: planned,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'Avance previsto a la fecha (%)',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: notes,
-                  minLines: 3,
-                  maxLines: 6,
-                  decoration: const InputDecoration(
-                    labelText: 'Explicación o previsión',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Guardar'),
-            ),
-          ],
-        ),
-      ),
-    );
-    final plannedValue = double.tryParse(planned.text.replaceAll(',', '.'));
-    final noteText = notes.text.trim();
-    _disposeAfterDialog([planned, notes]);
-    if (accepted == true)
-      await _saveVisit(
-        scheduleAssessment: InspectionScheduleAssessment(
-          status: status,
-          plannedProgressPercent: plannedValue,
-          forecastCompletionDate: original?.forecastCompletionDate,
-          notes: noteText,
-        ),
-      );
-  }
-
   Widget _incidentsView(_InspectionBundle bundle) {
     final inspection = _inspection ?? bundle.inspection;
     final visibleIncidents = inspection.incidents
@@ -834,20 +663,21 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
         DropdownButtonFormField<String>(
           initialValue: _incidentFilter,
           decoration: const InputDecoration(labelText: 'Filtrar incidencias'),
-          items: const {
-            'all': 'Todas',
-            'project': 'Globales del proyecto',
-            'folder': 'Etapa / Torre / Bloque',
-            'unit': 'Unidades',
-            'common_area': 'Zonas comunes',
-          }.entries
-              .map(
-                (entry) => DropdownMenuItem(
-                  value: entry.key,
-                  child: Text(entry.value),
-                ),
-              )
-              .toList(),
+          items:
+              const {
+                    'all': 'Todas',
+                    'project': 'Globales del proyecto',
+                    'folder': 'Etapa / Torre / Bloque',
+                    'unit': 'Unidades',
+                    'common_area': 'Zonas comunes',
+                  }.entries
+                  .map(
+                    (entry) => DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    ),
+                  )
+                  .toList(),
           onChanged: (value) =>
               setState(() => _incidentFilter = value ?? 'all'),
         ),
@@ -897,13 +727,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                   ),
                 if (item.scopeType == 'project')
                   EvidenceSection(
-                  inspectionId: inspection.id,
-                  incidentId: item.id.isEmpty ? null : item.id,
-                  category: 'incident',
-                  editable: !inspection.isFinalized,
-                  embedded: true,
-                  title: 'Fotografías de la incidencia',
-                ),
+                    inspectionId: inspection.id,
+                    incidentId: item.id.isEmpty ? null : item.id,
+                    category: 'incident',
+                    editable: !inspection.isFinalized,
+                    embedded: true,
+                    title: 'Fotografías de la incidencia',
+                  ),
               ],
             ),
           );
@@ -941,21 +771,19 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
     required Inspection inspection,
     required List<MobileUnit> visibleUnits,
     required Map<String, double> progressByUnit,
-    required Map<String, List<MobileUnit>> unitsByFolder,
+    required Map<String, List<MobileUnit>> visibleUnitsByFolder,
+    required Map<String, List<MobileUnit>> allUnitsByFolder,
     required List<String> orderedFolderKeys,
     required bool hasPhysicalGrouping,
   }) {
-    final foldersById = {
-      for (final folder in routeFolders) folder.id: folder,
-    };
+    final foldersById = {for (final folder in routeFolders) folder.id: folder};
     final header = Row(
       children: [
         Expanded(
           child: Text(
             'Recorrido de inspección',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+            style: Theme.of(context).textTheme.titleLarge
+                ?.copyWith(fontWeight: FontWeight.w700),
           ),
         ),
         Text(
@@ -1003,24 +831,31 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
       ...orderedFolderKeys.map((folderKey) {
         final folder = foldersById[folderKey];
         if (folder == null) return const SizedBox.shrink();
-        final groupUnits = unitsByFolder[folderKey] ?? const <MobileUnit>[];
+        final groupUnits =
+            visibleUnitsByFolder[folderKey] ?? const <MobileUnit>[];
+        final allGroupUnits =
+            allUnitsByFolder[folderKey] ?? const <MobileUnit>[];
+        final automaticProgress = allGroupUnits.isEmpty
+            ? 0.0
+            : allGroupUnits.fold<double>(
+                    0,
+                    (sum, unit) => sum + (progressByUnit[unit.id] ?? 0),
+                  ) /
+                  allGroupUnits.length;
         final frontIndex = inspection.workFronts.indexWhere(
           (front) =>
               front.sourceType == 'folder' && front.sourceId == folderKey,
         );
         final front = frontIndex < 0 ? null : inspection.workFronts[frontIndex];
+        final frontKey = front?.key ?? 'folder:$folderKey';
         return Card(
           child: ExpansionTile(
-            key: PageStorageKey(
-              'inspection-group-${inspection.id}-$folderKey',
-            ),
+            key: PageStorageKey('inspection-group-${inspection.id}-$folderKey'),
             initiallyExpanded: false,
             maintainState: true,
             title: Text(folder.name),
             subtitle: Text(
-              front == null
-                  ? '${groupUnits.length} unidades'
-                  : '${groupUnits.length} unidades · ${formatPercent(front.currentProgressPercent)} de avance',
+              '${allGroupUnits.length} unidades · ${formatPercent(automaticProgress)} de avance medio',
             ),
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             children: [
@@ -1029,66 +864,46 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                   alignment: Alignment.centerLeft,
                   child: Text(front.observations),
                 ),
-              if (!inspection.isFinalized && front != null)
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: _saving || !front.previousProgressKnown
-                          ? null
-                          : () => _markNoChange(inspection, frontIndex),
-                      icon: const Icon(Icons.horizontal_rule),
-                      label: const Text('Sin cambios'),
-                    ),
-                    FilledButton.tonalIcon(
-                      onPressed: _saving
-                          ? null
-                          : () => _editFront(inspection, frontIndex),
-                      icon: const Icon(Icons.trending_up),
-                      label: const Text('Registrar avance'),
-                    ),
-                    FilledButton.tonalIcon(
-                      onPressed: _saving
-                          ? null
-                          : () => _editIncident(
-                              inspection,
-                              initialScopeType: 'folder',
-                              initialScopeId: folderKey,
-                              initialWorkFrontKey: front.key,
-                            ),
-                      icon: const Icon(Icons.report_problem_outlined),
-                      label: const Text('Añadir incidencia'),
-                    ),
-                  ],
+              if (!inspection.isFinalized)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: FilledButton.tonalIcon(
+                    onPressed: _saving
+                        ? null
+                        : () => _editIncident(
+                            inspection,
+                            initialScopeType: 'folder',
+                            initialScopeId: folderKey,
+                            initialWorkFrontKey: frontKey,
+                          ),
+                    icon: const Icon(Icons.report_problem_outlined),
+                    label: const Text('Añadir incidencia'),
+                  ),
                 ),
-              if (front != null) ...[
-                ...inspection.incidents
-                    .where(
-                      (item) =>
-                          item.scopeType == 'folder' &&
-                          item.scopeId == folderKey,
-                    )
-                    .map(
-                      (item) => EvidenceSection(
-                        inspectionId: inspection.id,
-                        incidentId: item.id.isEmpty ? null : item.id,
-                        workFrontKey: front.key,
-                        category: 'incident',
-                        editable: !inspection.isFinalized,
-                        embedded: true,
-                        title: 'Incidencia: ${item.title}',
-                      ),
+              ...inspection.incidents
+                  .where(
+                    (item) =>
+                        item.scopeType == 'folder' && item.scopeId == folderKey,
+                  )
+                  .map(
+                    (item) => EvidenceSection(
+                      inspectionId: inspection.id,
+                      incidentId: item.id.isEmpty ? null : item.id,
+                      workFrontKey: frontKey,
+                      category: 'incident',
+                      editable: !inspection.isFinalized,
+                      embedded: true,
+                      title: 'Incidencia: ${item.title}',
                     ),
-                EvidenceSection(
-                  inspectionId: inspection.id,
-                  workFrontKey: front.key,
-                  category: 'progress',
-                  editable: !inspection.isFinalized,
-                  embedded: true,
-                  title: 'Fotografías de la agrupación',
-                ),
-              ],
+                  ),
+              EvidenceSection(
+                inspectionId: inspection.id,
+                workFrontKey: frontKey,
+                category: 'progress',
+                editable: !inspection.isFinalized,
+                embedded: true,
+                title: 'Fotografías de la agrupación',
+              ),
               const Divider(height: 28),
               ...groupUnits.map(
                 (unit) => Padding(
@@ -1112,124 +927,67 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
     ];
   }
 
-  String _scheduleLabel(String? status) =>
-      const {
-        'on_track': 'en plazo',
-        'at_risk': 'en riesgo',
-        'delayed': 'retrasado',
-        'not_assessed': 'sin evaluar',
-      }[status] ??
-      'sin evaluar';
-
   Widget _reviewView(_InspectionBundle bundle) {
     final inspection = _inspection ?? bundle.inspection;
-    final previous = bundle.pack?.previousPhysicalProgressPercent ?? 0;
-    final period = inspection.projectProgressPercent - previous;
-    final physicalFronts = inspection.workFronts
-        .where((front) => front.sourceType == 'folder')
-        .toList();
-    final visited = physicalFronts
-        .where((front) => front.status != 'not_visited')
-        .length;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text(
-          'Revisión de la visita',
-          style: Theme.of(context).textTheme.titleLarge
-              ?.copyWith(fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(child: _VisitMetric('Anterior', formatPercent(previous))),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _VisitMetric(
-                'Periodo',
-                '${period >= 0 ? '+' : ''}${period.toStringAsFixed(1)} pts',
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _VisitMetric(
-                'Acumulado',
-                formatPercent(inspection.projectProgressPercent),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
         Card(
           child: Padding(
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Comprobación rápida',
-                  style: Theme.of(context).textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  '$visited/${physicalFronts.length} agrupaciones revisadas',
-                ),
-                Text(
-                  '${inspection.incidents.where((item) => item.status != 'resolved').length} incidencias abiertas o en seguimiento',
-                ),
-                Text(
-                  'Programa: ${_scheduleLabel(inspection.scheduleAssessment?.status)}',
-                ),
-                if (inspection.scheduleAssessment?.plannedProgressPercent !=
-                    null)
-                  Text(
-                    'Previsto ${formatPercent(inspection.scheduleAssessment!.plannedProgressPercent!)} · real ${formatPercent(inspection.projectProgressPercent)} · desviación ${(inspection.projectProgressPercent - inspection.scheduleAssessment!.plannedProgressPercent!) >= 0 ? '+' : ''}${(inspection.projectProgressPercent - inspection.scheduleAssessment!.plannedProgressPercent!).toStringAsFixed(1)} pts',
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: Bank73Colors.blue.withValues(alpha: .1),
+                  child: Icon(
+                    inspection.isFinalized
+                        ? Icons.verified_outlined
+                        : Icons.description_outlined,
+                    color: Bank73Colors.blue,
+                    size: 30,
                   ),
-                if ((inspection.scheduleAssessment?.notes ?? '').isNotEmpty)
-                  Text(inspection.scheduleAssessment!.notes),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Informe de la inspección',
+                  style: Theme.of(context).textTheme.headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  inspection.isFinalized
+                      ? 'Informe firmado y disponible para consulta.'
+                      : 'Listo para revisar y firmar.',
+                  style: const TextStyle(color: Bank73Colors.muted),
+                ),
+                const SizedBox(height: 22),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () async {
+                      await context.push(
+                        '/projects/${widget.projectId}/inspections/${widget.inspectionId}/report',
+                      );
+                      if (mounted) _reload();
+                    },
+                    icon: Icon(
+                      inspection.isFinalized
+                          ? Icons.visibility_outlined
+                          : Icons.draw_outlined,
+                    ),
+                    label: Text(
+                      inspection.isFinalized
+                          ? 'Ver informe firmado'
+                          : 'Abrir informe y firmar',
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
         ),
-        if (!inspection.isFinalized) ...[
-          const SizedBox(height: 12),
-          _InspectionStep(
-            icon: Icons.calendar_month_outlined,
-            title: 'Comparar con el programa',
-            subtitle:
-                inspection.scheduleAssessment?.plannedProgressPercent == null
-                ? 'Indicar avance previsto y situación del plazo'
-                : '${formatPercent(inspection.scheduleAssessment!.plannedProgressPercent!)} previsto · ${formatPercent(inspection.projectProgressPercent)} real · ${_scheduleLabel(inspection.scheduleAssessment!.status)}',
-            onTap: () => _editSchedule(inspection),
-          ),
-        ],
-        const SizedBox(height: 12),
-        EvidenceSection(
-          inspectionId: inspection.id,
-          editable: !inspection.isFinalized,
-          title: 'Fotografías generales',
-        ),
-        const SizedBox(height: 12),
-        _InspectionStep(
-          icon: inspection.isFinalized
-              ? Icons.verified_outlined
-              : Icons.description_outlined,
-          title: inspection.isFinalized
-              ? 'Ver informe firmado'
-              : 'Ver informe, concluir y firmar',
-          subtitle: inspection.isFinalized
-              ? inspection.reportNumber
-              : 'Previsualiza el PDF completo antes de cerrar la inspección.',
-          emphasized: true,
-          onTap: () async {
-            await context.push(
-              '/projects/${widget.projectId}/inspections/${widget.inspectionId}/report',
-            );
-            if (mounted) _reload();
-          },
-        ),
-        const SizedBox(height: 24),
       ],
     );
   }
@@ -1260,8 +1018,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
         final rawUnassignedFolder = bundle.folders
             .where((folder) => folder.isUnassigned)
             .firstOrNull;
-        final configuredUnassignedName =
-            bundle.project.commercialUnassignedName.trim();
+        final configuredUnassignedName = bundle.project.commercialUnassignedName
+            .trim();
         final configuredUnassignedFolder = rawUnassignedFolder == null
             ? null
             : CommercialFolderSummary(
@@ -1276,13 +1034,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                 isUnassigned: true,
                 unitCount: rawUnassignedFolder.unitCount,
               );
-        final needsUnassignedGroup = visibleUnits.any(
+        final needsUnassignedGroup = bundle.units.any(
           (unit) =>
               unit.folderId == null ||
               !bundle.folders.any((folder) => folder.id == unit.folderId),
         );
-        final fallbackUnassignedFolder = needsUnassignedGroup &&
-                configuredUnassignedFolder == null
+        final fallbackUnassignedFolder =
+            needsUnassignedGroup && configuredUnassignedFolder == null
             ? CommercialFolderSummary(
                 id: 'unassigned',
                 name: configuredUnassignedName.isNotEmpty
@@ -1304,22 +1062,29 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
         final unassignedFolder =
             configuredUnassignedFolder ?? fallbackUnassignedFolder;
         final unassignedKey = unassignedFolder?.id ?? '';
-        final unitsByFolder = <String, List<MobileUnit>>{};
+        final allUnitsByFolder = <String, List<MobileUnit>>{};
+        for (final unit in bundle.units) {
+          final key =
+              (unit.folderId != null && foldersById.containsKey(unit.folderId))
+              ? unit.folderId!
+              : unassignedKey;
+          allUnitsByFolder.putIfAbsent(key, () => []).add(unit);
+        }
+        final visibleUnitsByFolder = <String, List<MobileUnit>>{};
         for (final unit in visibleUnits) {
           final key =
               (unit.folderId != null && foldersById.containsKey(unit.folderId))
               ? unit.folderId!
               : unassignedKey;
-          unitsByFolder.putIfAbsent(key, () => []).add(unit);
+          visibleUnitsByFolder.putIfAbsent(key, () => []).add(unit);
         }
         final orderedFolderKeys = [
           ...routeFolders
               .map((folder) => folder.id)
-              .where(unitsByFolder.containsKey),
+              .where(allUnitsByFolder.containsKey),
         ];
-        final hasPhysicalGrouping = routeFolders.any(
-              (folder) => !folder.isUnassigned,
-            ) ||
+        final hasPhysicalGrouping =
+            routeFolders.any((folder) => !folder.isUnassigned) ||
             (unassignedFolder != null &&
                 unassignedFolder.name.trim().toLowerCase() != 'sin carpeta');
         if (_area == 1) return _incidentsView(bundle);
@@ -1328,68 +1093,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            if (bundle.pack != null) ...[
-              Card(
-                color: Bank73Colors.blue.withValues(alpha: .06),
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Contexto preparado por Bank73',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Inspección ${bundle.pack!.sequence} · ${bundle.pack!.hasPreviousInspection ? 'comparada con la última inspección certificada' : 'primera inspección certificable'}',
-                        style: const TextStyle(color: Bank73Colors.muted),
-                      ),
-                      const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _VisitMetric(
-                              'Anterior',
-                              formatPercent(
-                                bundle.pack!.previousPhysicalProgressPercent,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _VisitMetric(
-                              'Gestión',
-                              formatPercent(
-                                bundle.pack!.administrativeProgressPercent,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _VisitMetric(
-                              'Financiero',
-                              formatPercent(
-                                bundle.pack!.financialProgressPercent,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (bundle.pack!.activeFronts.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        Text(
-                          '${bundle.pack!.activeFronts.length} agrupaciones físicas en el recorrido.',
-                          style: const TextStyle(color: Bank73Colors.muted),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-            ],
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(18),
@@ -1475,7 +1178,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                 inspection: currentInspection,
                 visibleUnits: visibleUnits,
                 progressByUnit: progressByUnit,
-                unitsByFolder: unitsByFolder,
+                visibleUnitsByFolder: visibleUnitsByFolder,
+                allUnitsByFolder: allUnitsByFolder,
                 orderedFolderKeys: orderedFolderKeys,
                 hasPhysicalGrouping: hasPhysicalGrouping,
               ),
@@ -1563,82 +1267,38 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
   );
 }
 
-class _VisitMetric extends StatelessWidget {
-  const _VisitMetric(this.label, this.value);
-  final String label;
-  final String value;
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(10),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: Bank73Colors.border),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(color: Bank73Colors.muted, fontSize: 12),
-        ),
-        const SizedBox(height: 3),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
-      ],
-    ),
-  );
-}
-
 class _InspectionStep extends StatelessWidget {
   const _InspectionStep({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
-    this.emphasized = false,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
-  final bool emphasized;
 
   @override
   Widget build(BuildContext context) => Card(
-    color: emphasized ? Bank73Colors.navy : Colors.white,
+    color: Colors.white,
     child: ListTile(
       onTap: onTap,
       contentPadding: const EdgeInsets.all(16),
       leading: CircleAvatar(
-        backgroundColor: emphasized
-            ? Colors.white.withValues(alpha: .12)
-            : Bank73Colors.blue.withValues(alpha: .14),
-        child: Icon(
-          icon,
-          color: emphasized ? Colors.white : Bank73Colors.strongBlue,
-        ),
+        backgroundColor: Bank73Colors.blue.withValues(alpha: .14),
+        child: Icon(icon, color: Bank73Colors.strongBlue),
       ),
       title: Text(
         title,
-        style: TextStyle(
-          fontWeight: FontWeight.w600,
-          color: emphasized ? Colors.white : Bank73Colors.ink,
-        ),
+        style: TextStyle(fontWeight: FontWeight.w600, color: Bank73Colors.ink),
       ),
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 5),
-        child: Text(
-          subtitle,
-          style: TextStyle(
-            color: emphasized ? Colors.white70 : Bank73Colors.muted,
-          ),
-        ),
+        child: Text(subtitle, style: TextStyle(color: Bank73Colors.muted)),
       ),
-      trailing: Icon(
-        Icons.chevron_right,
-        color: emphasized ? Colors.white : null,
-      ),
+      trailing: const Icon(Icons.chevron_right),
     ),
   );
 }

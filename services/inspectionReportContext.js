@@ -354,15 +354,48 @@ async function buildInspectionReportContext({ scope, inspection, preferFrozen = 
       observation: String(area.observations || '')
     };
   });
+  const inventoryUnits = context.inventory?.units || [];
+  const currentUnitProgressById = new Map(
+    units.map(item => [id(item.unitId), number(item.progressPercent)])
+  );
+  const previousUnitProgressById = new Map(
+    (context.history?.previousUnits || []).map(item => [id(item.unitId), number(item.progressPercent)])
+  );
+  const folderAverage = (front, progressByUnitId) => {
+    if (String(front.sourceType || '') !== 'folder') return null;
+    const sourceId = String(front.sourceId || '');
+    const folderUnits = inventoryUnits.filter(unit => (
+      sourceId === 'unassigned'
+        ? !String(unit.folderId || '')
+        : String(unit.folderId || '') === sourceId
+    ));
+    if (!folderUnits.length) return null;
+    const total = folderUnits.reduce(
+      (sum, unit) => sum + (progressByUnitId.get(String(unit.id || '')) || 0),
+      0
+    );
+    return Math.round((total / folderUnits.length) * 10000) / 10000;
+  };
   const savedFrontsByKey = new Map((inspection?.workFronts || []).map(front => [String(front.key), front]));
   const plannedFrontKeys = new Set((context.planning?.workFronts || []).map(front => String(front.key)));
   context.workFronts = [
     ...(context.planning?.workFronts || []).map(front => {
       const saved = savedFrontsByKey.get(String(front.key));
       const explicitUnknown = saved?.previousProgressKnown === false;
-      const previousPercent = explicitUnknown ? null : optionalNumber(saved?.previousProgressPercent ?? front.previousPercent);
-      const currentPercent = number(saved?.currentProgressPercent ?? previousPercent ?? 0);
-      return { ...front, previousPercent, previousKnown: previousPercent !== null, plannedPercent: saved?.plannedProgressPercent ?? front.plannedPercent ?? null, currentPercent, periodIncrementPercent: previousPercent === null ? null : Math.round((currentPercent - previousPercent) * 10000) / 10000, status: String(saved?.status || 'not_visited'), observation: String(saved?.observations || '') };
+      const automaticCurrentPercent = folderAverage(front, currentUnitProgressById);
+      const automaticPreviousPercent = context.history?.previousInspectionId
+        ? folderAverage(front, previousUnitProgressById)
+        : null;
+      const previousPercent = automaticPreviousPercent ?? (explicitUnknown ? null : optionalNumber(saved?.previousProgressPercent ?? front.previousPercent));
+      const currentPercent = automaticCurrentPercent ?? number(saved?.currentProgressPercent ?? previousPercent ?? 0);
+      const status = automaticCurrentPercent === null
+        ? String(saved?.status || 'not_visited')
+        : currentPercent >= 100
+          ? 'completed'
+          : currentPercent > 0
+            ? 'in_progress'
+            : 'not_visited';
+      return { ...front, previousPercent, previousKnown: previousPercent !== null, plannedPercent: saved?.plannedProgressPercent ?? front.plannedPercent ?? null, currentPercent, periodIncrementPercent: previousPercent === null ? null : Math.round((currentPercent - previousPercent) * 10000) / 10000, status, observation: String(saved?.observations || '') };
     }),
     ...(inspection?.workFronts || []).filter(front => !plannedFrontKeys.has(String(front.key))).map(front => ({
       key: String(front.key), sourceType: String(front.sourceType || 'custom'), sourceId: String(front.sourceId || ''), name: String(front.name || ''), active: true,

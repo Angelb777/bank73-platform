@@ -130,6 +130,53 @@ test('draft context calculates prior, period and accumulated physical progress i
   assert.equal(context.photos[0].filePath, `/api/mobile/v1/inspections/${IDS.current}/evidence/photo-1/file`);
 });
 
+test('physical folder progress is the automatic average of all its units', async (t) => {
+  const originalUnits = InspectionUnit.find;
+  const originalEvidence = InspectionEvidence.find;
+  t.after(() => { InspectionUnit.find = originalUnits; InspectionEvidence.find = originalEvidence; });
+  InspectionUnit.find = () => ({ sort: () => ({ lean: async () => [
+    { unitId: 'unit-1', progressPercent: 20 },
+    { unitId: 'unit-2', progressPercent: 30 },
+    { unitId: 'unit-3', progressPercent: 10 }
+  ] }) });
+  InspectionEvidence.find = () => ({ sort: () => ({ lean: async () => [] }) });
+
+  const snapshot = baseSnapshot();
+  snapshot.planning.workFronts = [{
+    key: 'folder:stage-1',
+    sourceType: 'folder',
+    sourceId: 'stage-1',
+    name: 'Etapa 1'
+  }];
+  snapshot.inventory.units = [
+    { id: 'unit-1', folderId: 'stage-1' },
+    { id: 'unit-2', folderId: 'stage-1' },
+    { id: 'unit-3', folderId: 'stage-1' },
+    { id: 'unit-4', folderId: 'stage-1' }
+  ];
+  snapshot.history.previousUnits = [];
+
+  const context = await buildInspectionReportContext({
+    scope,
+    inspection: {
+      _id: IDS.current,
+      status: 'draft',
+      projectProgressPercent: 15,
+      startSnapshot: snapshot,
+      workFronts: [{
+        key: 'folder:stage-1',
+        sourceType: 'folder',
+        sourceId: 'stage-1',
+        currentProgressPercent: 90
+      }]
+    }
+  });
+
+  const stage = context.workFronts.find(item => item.key === 'folder:stage-1');
+  assert.equal(stage.currentPercent, 15);
+  assert.equal(stage.status, 'in_progress');
+});
+
 test('finalized context returns the frozen report snapshot unchanged', async (t) => {
   const originalUnits = InspectionUnit.find;
   let queried = false;
