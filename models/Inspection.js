@@ -55,6 +55,8 @@ const incidentSchema = new mongoose.Schema({
   title: { type: String, required: true, trim: true, maxlength: 250 },
   description: { type: String, trim: true, default: '', maxlength: 5000 },
   location: { type: String, trim: true, default: '', maxlength: 500 },
+  scopeType: { type: String, enum: ['project', 'folder', 'unit', 'common_area'], default: 'project' },
+  scopeId: { type: String, trim: true, default: '', maxlength: 200 },
   workFrontKey: { type: String, trim: true, default: '' },
   impactSchedule: { type: Boolean, default: false },
   impactCost: { type: Boolean, default: false },

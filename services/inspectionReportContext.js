@@ -16,7 +16,7 @@ const InspectionEvidence = require('../models/InspectionEvidence');
 const { buildFinanceControlSummary } = require('./financeReportContext');
 const { buildPeriodActivity } = require('./reportActivity');
 
-const CONTEXT_SCHEMA_VERSION = 2;
+const CONTEXT_SCHEMA_VERSION = 3;
 
 function plain(value) {
   if (value === null || value === undefined) return value;
@@ -171,6 +171,7 @@ async function buildBaseSnapshot({ scope, inspectionDate = new Date(), excludeIn
 
   const phaseSource = finance?.phases?.length ? finance.phases : (project.financePhases || []);
   const phases = phaseSource.map(phase => phaseDto(phase, new Date(inspectionDate)));
+  const unassignedUnits = units.filter(unit => !unit.folderId);
   const permitItems = permitRecords.flatMap(record => (record.items || []).map(item => ({
     id: id(item._id), code: String(item.code || ''), title: String(item.title || ''), institution: String(item.institution || ''),
     type: String(item.type || ''), status: String(item.status || ''), dueDate: item.dueDate || null,
@@ -227,19 +228,19 @@ async function buildBaseSnapshot({ scope, inspectionDate = new Date(), excludeIn
     },
     planning: {
       phases,
-      activeFronts: phases.filter(phase => phase.active),
+      activePhases: phases.filter(phase => phase.active),
       workFronts: [
-        ...phases.map(phase => {
-          const key = `phase:${phase.id}`;
+        ...(unassignedUnits.length ? (() => {
+          const key = 'folder:unassigned';
           const prior = previousFrontByKey.get(key);
           const previousPercent = optionalNumber(prior?.currentProgressPercent);
-          return { key, sourceType: 'phase', sourceId: phase.id, name: phase.name, active: phase.active, plannedStartDate: phase.startDate, plannedEndDate: phase.endDate, previousPercent, previousKnown: previousPercent !== null, plannedPercent: prior?.plannedProgressPercent ?? null };
-        }),
+          return [{ key, sourceType: 'folder', sourceId: 'unassigned', name: String(project.commercialUnassignedName || 'Sin carpeta'), active: true, isUnassigned: true, unitCount: unassignedUnits.length, plannedStartDate: null, plannedEndDate: null, previousPercent, previousKnown: previousPercent !== null, plannedPercent: prior?.plannedProgressPercent ?? null }];
+        })() : []),
         ...folders.map(folder => {
           const key = `folder:${id(folder._id)}`;
           const prior = previousFrontByKey.get(key);
           const previousPercent = optionalNumber(prior?.currentProgressPercent);
-          return { key, sourceType: 'folder', sourceId: id(folder._id), name: folder.name, active: true, plannedStartDate: null, plannedEndDate: null, previousPercent, previousKnown: previousPercent !== null, plannedPercent: prior?.plannedProgressPercent ?? null };
+          return { key, sourceType: 'folder', sourceId: id(folder._id), name: folder.name, active: true, isUnassigned: false, unitCount: units.filter(unit => id(unit.folderId) === id(folder._id)).length, plannedStartDate: null, plannedEndDate: null, previousPercent, previousKnown: previousPercent !== null, plannedPercent: prior?.plannedProgressPercent ?? null };
         })
       ]
     },
@@ -251,7 +252,10 @@ async function buildBaseSnapshot({ scope, inspectionDate = new Date(), excludeIn
     },
     inventory: {
       models: project.housingModels || [],
-      folders: folders.map(folder => ({ _id: id(folder._id), id: id(folder._id), name: folder.name, color: folder.color, order: number(folder.order) })),
+      folders: [
+        ...(unassignedUnits.length ? [{ _id: null, id: 'unassigned', name: String(project.commercialUnassignedName || 'Sin carpeta'), color: String(project.commercialUnassignedColor || '#0f172a'), order: -1, isUnassigned: true }] : []),
+        ...folders.map(folder => ({ _id: id(folder._id), id: id(folder._id), name: folder.name, color: folder.color, order: number(folder.order), isUnassigned: false }))
+      ],
       units: units.map(unit => ({ id: id(unit._id), code: unit.code || '', manzana: unit.manzana || '', lote: unit.lote || '', model: unit.modelo || '', status: unit.estado || '', folderId: id(unit.folderId) }))
     },
     history: {
@@ -426,7 +430,7 @@ function inspectionPackDto(context) {
       plannedDisbursements: context.finance?.plannedDisbursements || [],
       actualDisbursements: context.finance?.actualDisbursements || []
     },
-    activeFronts: context.planning?.activeFronts || [],
+    activeFronts: (context.planning?.workFronts || []).filter(front => front.active !== false),
     workFronts: context.workFronts || context.planning?.workFronts || [],
     program: context.planning?.phases || [],
     compliance: context.compliance,

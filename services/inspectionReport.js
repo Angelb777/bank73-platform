@@ -249,15 +249,41 @@ async function renderInspectionReport(doc, input = {}) {
   heading('Avance anterior, periodo y acumulado');
   progress('Avance general', physical.previousPercent, physical.currentPercent, visit.scheduleAssessment?.plannedProgressPercent);
   const fronts = ctx.workFronts || [];
-  const principalFronts = fronts.filter(front => front.sourceType !== 'common_area');
+  const hierarchicalReport = Number(ctx.schemaVersion || 1) >= 3;
+  const physicalFronts = hierarchicalReport ? fronts.filter(front => front.sourceType === 'folder') : [];
+  const principalFronts = fronts.filter(front => front.sourceType !== 'common_area' && (!hierarchicalReport || front.sourceType !== 'folder'));
+  const inventoryUnitById = new Map((ctx.inventory?.units || []).map(item => [String(item.id || item._id || ''), item]));
+  for (const front of physicalFronts) {
+    subheading(front.name);
+    progress('Avance de la agrupacion', front.previousPercent, front.currentPercent, front.plannedPercent);
+    if (front.observation) paragraph(front.observation);
+    const groupedUnits = (ctx.unitProgressComparisons || []).filter(item => {
+      const unit = inventoryUnitById.get(String(item.unitId));
+      return String(front.sourceId) === 'unassigned' ? !unit?.folderId : String(unit?.folderId || '') === String(front.sourceId);
+    });
+    if (groupedUnits.length) table(['Unidad', 'Modelo', 'Anterior', 'Periodo', 'Acumulado'], groupedUnits.map(item => [item.reference?.code || [item.reference?.manzana, item.reference?.lote].filter(Boolean).join('-'), item.reference?.modelo, pct(item.previousPercent), delta(item.periodIncrementPercent), pct(item.currentPercent)]), [1.3, 1.3, .9, .9, .9]);
+  }
   if (principalFronts.length) table(['Frente', 'Estado', 'Anterior', 'Periodo', 'Actual', 'Previsto', 'Observación'], principalFronts.map(front => [front.name, label(front.status), pct(front.previousPercent), delta(front.periodIncrementPercent), pct(front.currentPercent), pct(front.plannedPercent), front.observation]), [1.5, .8, .7, .7, .7, .7, 2]);
   const areaRows = fronts.filter(front => front.sourceType === 'common_area');
   if (areaRows.length) { subheading('Zonas comunes'); table(['Zona', 'Anterior', 'Periodo', 'Actual', 'Observación'], areaRows.map(area => [area.name, pct(area.previousPercent), delta(area.periodIncrementPercent), pct(area.currentPercent), area.observation]), [1.5, .7, .7, .7, 2.5]); }
-  const unitRows = ctx.unitProgressComparisons || [];
+  const unitRows = physicalFronts.length ? [] : (ctx.unitProgressComparisons || []);
   if (unitRows.length) { subheading('Unidades inspeccionadas'); table(['Unidad', 'Modelo', 'Anterior', 'Periodo', 'Acumulado'], unitRows.map(item => [item.reference?.code || [item.reference?.manzana, item.reference?.lote].filter(Boolean).join('-'), item.reference?.modelo, pct(item.previousPercent), delta(item.periodIncrementPercent), pct(item.currentPercent)]), [1.3, 1.3, .9, .9, .9]); }
 
   heading('Cambios, incidencias y riesgos');
-  const incidents = visit.incidents || [];
+  const incidentFolderNames = new Map((ctx.inventory?.folders || []).map(item => [String(item.id || item._id || ''), item.name]));
+  const incidentUnitNames = new Map((ctx.inventory?.units || []).map(item => [String(item.id || item._id || ''), item.code || [item.manzana, item.lote].filter(Boolean).join('-')]));
+  const incidentAreaNames = new Map((inspection.commonAreas || []).map(item => [String(item.key), item.name]));
+  const incidentLocation = item => {
+    if (item.scopeType === 'unit') return `Unidad: ${incidentUnitNames.get(String(item.scopeId)) || item.location || item.scopeId}`;
+    if (item.scopeType === 'folder') return `Agrupacion: ${incidentFolderNames.get(String(item.scopeId)) || item.location || item.scopeId}`;
+    if (item.scopeType === 'common_area') return `Zona comun: ${incidentAreaNames.get(String(item.scopeId)) || item.location || item.scopeId}`;
+    if (item.workFrontKey) return `Frente historico: ${item.location || item.workFrontKey}`;
+    return item.location || 'Global del proyecto';
+  };
+  const incidents = (visit.incidents || []).map(item => ({
+    ...item,
+    title: `${incidentLocation(item)}\n${item.title}`
+  }));
   if (incidents.length) table(['Tipo', 'Severidad', 'Estado', 'Hallazgo', 'Impacto / acción'], incidents.map(item => [label(item.type), label(item.severity), label(item.status), `${item.title}${item.description ? `\n${item.description}` : ''}`, [item.impactSchedule && 'Plazo', item.impactCost && 'Coste', item.impactQuality && 'Calidad', item.actionRequired].filter(Boolean).join(' · ')]), [.8, .7, .7, 2.4, 1.6]);
   else paragraph('No se registraron incidencias durante la visita.', { muted: true });
   const activity = ctx.activitySincePreviousInspection || {};

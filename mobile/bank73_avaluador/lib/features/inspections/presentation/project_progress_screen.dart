@@ -8,6 +8,7 @@ import '../../../core/models/models.dart';
 import '../../../core/widgets/app_widgets.dart';
 import '../data/inspection_repository.dart';
 import 'evidence_section.dart';
+import 'incident_editor.dart';
 
 class ProjectProgressScreen extends ConsumerStatefulWidget {
   const ProjectProgressScreen({super.key, required this.inspectionId});
@@ -114,6 +115,32 @@ class _ProjectProgressScreenState extends ConsumerState<ProjectProgressScreen> {
     }
   }
 
+  Future<void> _addAreaIncident(
+    Inspection inspection,
+    InspectionCommonArea area,
+  ) async {
+    final incident = await showContextIncidentEditor(
+      context,
+      scopeType: 'common_area',
+      scopeId: area.key,
+      scopeLabel: area.name,
+    );
+    if (incident == null) return;
+    setState(() => _saving = true);
+    try {
+      await ref.read(inspectionRepositoryProvider).saveVisit(
+            inspectionId: widget.inspectionId,
+            version: _inspection?.version ?? inspection.version,
+            incidents: [...inspection.incidents, incident],
+          );
+      _reload();
+    } catch (error) {
+      if (mounted) await presentApiError(context, ref, error);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: const Bank73AppBar(title: 'Avance general'),
@@ -213,6 +240,31 @@ class _ProjectProgressScreenState extends ConsumerState<ProjectProgressScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
+                      ...inspection.incidents
+                          .where(
+                            (item) =>
+                                item.scopeType == 'common_area' &&
+                                item.scopeId == area.key,
+                          )
+                          .map(
+                            (item) => EvidenceSection(
+                              inspectionId: widget.inspectionId,
+                              incidentId: item.id.isEmpty ? null : item.id,
+                              commonAreaKey: area.key,
+                              category: 'incident',
+                              editable: editable,
+                              embedded: true,
+                              title: 'Incidencia: ${item.title}',
+                            ),
+                          ),
+                      if (editable)
+                        OutlinedButton.icon(
+                          onPressed: _saving
+                              ? null
+                              : () => _addAreaIncident(inspection, area),
+                          icon: const Icon(Icons.report_problem_outlined),
+                          label: const Text('Añadir incidencia de esta zona'),
+                        ),
                       EvidenceSection(
                         key: ValueKey(area.key),
                         inspectionId: widget.inspectionId,

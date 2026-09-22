@@ -68,6 +68,8 @@ class MobileProject {
     this.coverSource,
     this.description = '',
     this.promoterProgressPercent = 0,
+    this.commercialUnassignedName = 'Sin carpeta',
+    this.commercialUnassignedColor = '#0f172a',
   });
   final String id;
   final String name;
@@ -77,6 +79,8 @@ class MobileProject {
   final String? coverSource;
   final String description;
   final double promoterProgressPercent;
+  final String commercialUnassignedName;
+  final String commercialUnassignedColor;
 
   factory MobileProject.fromJson(Map<String, dynamic> json) => MobileProject(
     id: (json['id'] ?? '').toString(),
@@ -88,6 +92,10 @@ class MobileProject {
     description: (json['description'] ?? '').toString(),
     promoterProgressPercent: _number(json['promoterProgressPercent'])
         .clamp(0, 100),
+    commercialUnassignedName: (json['commercialUnassignedName'] ?? 'Sin carpeta')
+        .toString(),
+    commercialUnassignedColor:
+        (json['commercialUnassignedColor'] ?? '#0f172a').toString(),
   );
 }
 
@@ -218,11 +226,15 @@ class CommercialFolderSummary {
     required this.name,
     required this.color,
     required this.order,
+    this.isUnassigned = false,
+    this.unitCount = 0,
   });
   final String id;
   final String name;
   final String color;
   final int order;
+  final bool isUnassigned;
+  final int unitCount;
 
   factory CommercialFolderSummary.fromJson(Map<String, dynamic> json) =>
       CommercialFolderSummary(
@@ -230,6 +242,8 @@ class CommercialFolderSummary {
         name: (json['name'] ?? '').toString(),
         color: (json['color'] ?? '').toString(),
         order: (json['order'] as num?)?.toInt() ?? 0,
+        isUnassigned: json['isUnassigned'] == true,
+        unitCount: (json['unitCount'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -440,6 +454,8 @@ class InspectionIncident {
     required this.title,
     this.description = '',
     this.location = '',
+    this.scopeType = 'project',
+    this.scopeId = '',
     this.workFrontKey = '',
     this.impactSchedule = false,
     this.impactCost = false,
@@ -455,6 +471,8 @@ class InspectionIncident {
   final String title;
   final String description;
   final String location;
+  final String scopeType;
+  final String scopeId;
   final String workFrontKey;
   final bool impactSchedule;
   final bool impactCost;
@@ -472,6 +490,18 @@ class InspectionIncident {
         title: (json['title'] ?? '').toString(),
         description: (json['description'] ?? '').toString(),
         location: (json['location'] ?? '').toString(),
+        scopeType: (json['scopeType'] ??
+                ((json['workFrontKey'] ?? '').toString().startsWith('folder:')
+                    ? 'folder'
+                    : 'project'))
+            .toString(),
+        scopeId: (json['scopeId'] ??
+                ((json['workFrontKey'] ?? '').toString().startsWith('folder:')
+                    ? (json['workFrontKey'] ?? '')
+                          .toString()
+                          .replaceFirst('folder:', '')
+                    : ''))
+            .toString(),
         workFrontKey: (json['workFrontKey'] ?? '').toString(),
         impactSchedule: json['impactSchedule'] == true,
         impactCost: json['impactCost'] == true,
@@ -489,6 +519,8 @@ class InspectionIncident {
     'title': title,
     'description': description,
     'location': location,
+    'scopeType': scopeType,
+    'scopeId': scopeId,
     'workFrontKey': workFrontKey,
     'impactSchedule': impactSchedule,
     'impactCost': impactCost,

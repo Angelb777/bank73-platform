@@ -80,7 +80,7 @@ class _InspectionsScreenState extends ConsumerState<InspectionsScreen> {
                 ),
                 if (pack.activeFronts.isNotEmpty)
                   Text(
-                    '${pack.activeFronts.length} frente(s) activos según el programa.',
+                    '${pack.activeFronts.length} agrupaciones físicas en el recorrido.',
                   ),
               ],
             ),

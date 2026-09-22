@@ -176,6 +176,8 @@ void main() {
       'name': 'Residencial Norte',
       'location': {'city': 'Panamá', 'province': 'Panamá'},
       'coverImage': {'source': '/uploads/cover.jpg'},
+      'commercialUnassignedName': 'Etapa 1',
+      'commercialUnassignedColor': '#853838',
       'financialConditions': {'secret': true},
     });
     final unit = MobileUnit.fromJson({
@@ -190,6 +192,7 @@ void main() {
 
     expect(project.name, 'Residencial Norte');
     expect(project.coverSource, '/uploads/cover.jpg');
+    expect(project.commercialUnassignedName, 'Etapa 1');
     expect(unit.surfaces.m2, 125.5);
     expect(unit.matches('casa'), isTrue);
     expect(unit.matches('otro'), isFalse);

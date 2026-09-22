@@ -36,7 +36,9 @@ const PROJECT_LIST_FIELDS = [
   'coordinates',
   'projectType',
   'coverImage',
-  'status'
+  'status',
+  'commercialUnassignedName',
+  'commercialUnassignedColor'
 ].join(' ');
 
 const PROJECT_DETAIL_FIELDS = `${PROJECT_LIST_FIELDS} description`;
@@ -113,7 +115,9 @@ function projectListDto(project) {
     coverImage: coverImageDto(project.coverImage),
     location: locationDto(project),
     projectType: String(project.projectType || '').trim(),
-    status: String(project.status || '').trim()
+    status: String(project.status || '').trim(),
+    commercialUnassignedName: String(project.commercialUnassignedName || 'Sin carpeta').trim(),
+    commercialUnassignedColor: String(project.commercialUnassignedColor || '#0f172a').trim()
   };
 }
 
@@ -161,8 +165,16 @@ function folderDto(folder) {
     id: String(folder._id),
     name: String(folder.name || '').trim(),
     color: String(folder.color || '#0f172a').trim(),
-    order: Number(folder.order || 0)
+    order: Number(folder.order || 0),
+    isUnassigned: false
   };
+}
+
+function incidentScope(item) {
+  const workFrontKey = String(item?.workFrontKey || '');
+  const scopeType = String(item?.scopeType || (workFrontKey.startsWith('folder:') ? 'folder' : 'project'));
+  const scopeId = String(item?.scopeId || (scopeType === 'folder' ? workFrontKey.replace(/^folder:/, '') : ''));
+  return { scopeType, scopeId };
 }
 
 function inspectionDto(inspection) {
@@ -190,7 +202,7 @@ function inspectionDto(inspection) {
     incidents: (inspection.incidents || []).map(item => ({
       id: String(item._id || ''), type: String(item.type || 'other'), severity: String(item.severity || 'medium'),
       status: String(item.status || 'open'), title: String(item.title || ''), description: String(item.description || ''),
-      location: String(item.location || ''), workFrontKey: String(item.workFrontKey || ''),
+      location: String(item.location || ''), ...incidentScope(item), workFrontKey: String(item.workFrontKey || ''),
       impactSchedule: !!item.impactSchedule, impactCost: !!item.impactCost, impactQuality: !!item.impactQuality,
       actionRequired: String(item.actionRequired || ''), carriedFromIncidentId: item.carriedFromIncidentId ? String(item.carriedFromIncidentId) : null,
       observedAt: item.observedAt || null
@@ -433,6 +445,49 @@ async function authorizedInspectionFor(req, inspectionId) {
   return { context, assignment, inspection, project };
 }
 
+async function reconcileDraftPhysicalFronts(resolved) {
+  const inspection = resolved?.inspection;
+  if (!inspection || inspection.status !== 'draft') return resolved;
+  const hasFinancialFronts = (inspection.workFronts || []).some(front => front.sourceType === 'phase');
+  const hasUnassignedSnapshot = (inspection.startSnapshot?.inventory?.units || []).some(unit => !unit.folderId);
+  const hasUnassignedFront = (inspection.workFronts || []).some(front => String(front.key) === 'folder:unassigned');
+  if (!hasFinancialFronts && (!hasUnassignedSnapshot || hasUnassignedFront)) return resolved;
+
+  const scope = {
+    bankTenantKey: inspection.bankTenantKey,
+    projectTenantKey: inspection.projectTenantKey,
+    projectId: inspection.projectId
+  };
+  const base = await inspectionReportContext.buildBaseSnapshot({
+    scope,
+    inspectionDate: inspection.startedAt || inspection.inspectionDate,
+    excludeInspectionId: inspection._id
+  });
+  if (!base) return resolved;
+  const storedByKey = new Map((inspection.workFronts || []).map(front => [String(front.key), front]));
+  const workFronts = (base.planning?.workFronts || []).map(front => {
+    const stored = storedByKey.get(String(front.key));
+    if (stored) return stored;
+    return {
+      key: String(front.key), sourceType: 'folder', sourceId: String(front.sourceId || ''), name: String(front.name || ''),
+      status: 'not_visited', previousProgressPercent: front.previousKnown ? Number(front.previousPercent) : null,
+      previousProgressKnown: front.previousKnown === true, plannedProgressPercent: null,
+      currentProgressPercent: front.previousKnown ? Number(front.previousPercent) : 0, observations: ''
+    };
+  });
+  const updatedSnapshot = { ...inspection.startSnapshot };
+  updatedSnapshot.schemaVersion = base.schemaVersion;
+  updatedSnapshot.planning = { ...(updatedSnapshot.planning || {}), workFronts };
+  updatedSnapshot.inventory = base.inventory;
+  const updated = await Inspection.findOneAndUpdate(
+    { _id: inspection._id, status: 'draft', version: inspection.version },
+    { $set: { workFronts, startSnapshot: updatedSnapshot, snapshotSchemaVersion: base.schemaVersion }, $inc: { version: 1 } },
+    { new: true, runValidators: true }
+  ).lean();
+  if (updated) resolved.inspection = updated;
+  return resolved;
+}
+
 router.use(requireRole('avaluador'));
 
 router.get('/projects', async (req, res) => {
@@ -503,7 +558,7 @@ router.get('/projects/:projectId/units', async (req, res) => {
 // Puramente de lectura: no crea ni referencia ninguna entidad nueva.
 router.get('/projects/:projectId/commercial-folders', async (req, res) => {
   try {
-    const resolved = await assignedProjectFor(req, req.params.projectId, '_id');
+    const resolved = await assignedProjectFor(req, req.params.projectId, '_id commercialUnassignedName commercialUnassignedColor');
     if (!resolved) return res.status(404).json({ error: 'Proyecto no encontrado.' });
 
     const folders = await CommercialFolder.find({
@@ -511,7 +566,22 @@ router.get('/projects/:projectId/commercial-folders', async (req, res) => {
       projectId: resolved.assignment.projectId
     }).select('name color order').sort({ order: 1, createdAt: 1 }).lean();
 
-    res.json({ folders: folders.map(folderDto) });
+    const unassignedCount = await Unit.countDocuments({
+      tenantKey: resolved.assignment.projectTenantKey,
+      projectId: resolved.assignment.projectId,
+      deletedAt: null,
+      $or: [{ folderId: null }, { folderId: { $exists: false } }]
+    });
+    const physicalFolders = folders.map(folderDto);
+    if (unassignedCount) physicalFolders.unshift({
+      id: 'unassigned',
+      name: String(resolved.project.commercialUnassignedName || 'Sin carpeta').trim(),
+      color: String(resolved.project.commercialUnassignedColor || '#0f172a').trim(),
+      order: -1,
+      isUnassigned: true,
+      unitCount: unassignedCount
+    });
+    res.json({ folders: physicalFolders });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -628,6 +698,7 @@ router.post('/projects/:projectId/inspections', async (req, res) => {
         title: String(issue.title || 'Incidencia anterior pendiente'),
         description: String(issue.description || ''),
         location: String(issue.location || ''),
+        ...incidentScope(issue),
         workFrontKey: String(issue.workFrontKey || ''),
         impactSchedule: !!issue.impactSchedule,
         impactCost: !!issue.impactCost,
@@ -651,8 +722,9 @@ router.post('/projects/:projectId/inspections', async (req, res) => {
 
 router.get('/inspections/:inspectionId/inspection-pack', async (req, res) => {
   try {
-    const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
+    let resolved = await authorizedInspectionFor(req, req.params.inspectionId);
     if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
+    resolved = await reconcileDraftPhysicalFronts(resolved);
     const scope = {
       bankTenantKey: resolved.inspection.bankTenantKey,
       projectTenantKey: resolved.inspection.projectTenantKey,
@@ -704,8 +776,9 @@ router.delete('/inspections/:inspectionId', async (req, res) => {
 
 router.get('/inspections/:inspectionId', async (req, res) => {
   try {
-    const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
+    let resolved = await authorizedInspectionFor(req, req.params.inspectionId);
     if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
+    resolved = await reconcileDraftPhysicalFronts(resolved);
     res.json({ inspection: inspectionDto(resolved.inspection) });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -868,6 +941,20 @@ router.put('/inspections/:inspectionId/visit', async (req, res) => {
     }
     if (req.body.incidents !== undefined) {
       if (!Array.isArray(req.body.incidents) || req.body.incidents.length > 200) return res.status(400).json({ error: 'incidents invalido.' });
+      const unitScopeIds = [...new Set(req.body.incidents
+        .filter(item => String(item?.scopeType || '') === 'unit')
+        .map(item => String(item?.scopeId || '')))];
+      if (unitScopeIds.some(value => !mongoose.Types.ObjectId.isValid(value))) return res.status(400).json({ error: 'Unidad de incidencia invalida.' });
+      const validIncidentUnits = new Set(unitScopeIds.length ? (await Unit.find({
+        _id: { $in: unitScopeIds },
+        tenantKey: resolved.inspection.projectTenantKey,
+        projectId: resolved.inspection.projectId,
+        deletedAt: null
+      }).select('_id').lean()).map(item => String(item._id)) : []);
+      const validAreaKeys = new Set((resolved.inspection.commonAreas || []).map(item => String(item.key)));
+      const validFolderIds = new Set((resolved.inspection.workFronts || [])
+        .filter(item => item.sourceType === 'folder')
+        .map(item => String(item.sourceId)));
       set.incidents = req.body.incidents.map(raw => {
         const type = String(raw?.type || 'other');
         const severity = String(raw?.severity || 'medium');
@@ -877,7 +964,16 @@ router.put('/inspections/:inspectionId/visit', async (req, res) => {
         const actionRequired = String(raw?.actionRequired || '').trim();
         if (!['change', 'delay', 'defect', 'quality', 'environment', 'risk', 'other'].includes(type) || !['low', 'medium', 'high', 'critical'].includes(severity) || !['open', 'monitoring', 'resolved'].includes(status) || !title) throw Object.assign(new Error('Incidencia invalida.'), { status: 400 });
         if (title.length > 250 || description.length > 5000 || actionRequired.length > 3000) throw Object.assign(new Error('Incidencia demasiado larga.'), { status: 400 });
-        return { ...(mongoose.Types.ObjectId.isValid(String(raw?.id || raw?._id || '')) ? { _id: raw.id || raw._id } : {}), type, severity, status, title, description, location: String(raw?.location || '').trim().slice(0, 500), workFrontKey: String(raw?.workFrontKey || '').trim(), impactSchedule: !!raw?.impactSchedule, impactCost: !!raw?.impactCost, impactQuality: !!raw?.impactQuality, actionRequired, carriedFromIncidentId: mongoose.Types.ObjectId.isValid(String(raw?.carriedFromIncidentId || '')) ? raw.carriedFromIncidentId : null, observedAt: parseDate(raw?.observedAt) || new Date() };
+        const rawWorkFrontKey = String(raw?.workFrontKey || '');
+        const scopeType = String(raw?.scopeType || (rawWorkFrontKey.startsWith('folder:') ? 'folder' : 'project'));
+        const scopeId = String(raw?.scopeId || '').trim();
+        if (!['project', 'folder', 'unit', 'common_area'].includes(scopeType)) throw Object.assign(new Error('Ambito de incidencia invalido.'), { status: 400 });
+        if (scopeType !== 'project' && !scopeId) throw Object.assign(new Error('La incidencia requiere una ubicacion estructurada.'), { status: 400 });
+        if (scopeType === 'unit' && !validIncidentUnits.has(scopeId)) throw Object.assign(new Error('Unidad de incidencia invalida.'), { status: 400 });
+        if (scopeType === 'common_area' && !validAreaKeys.has(scopeId)) throw Object.assign(new Error('Zona comun de incidencia invalida.'), { status: 400 });
+        if (scopeType === 'folder' && !validFolderIds.has(scopeId)) throw Object.assign(new Error('Agrupacion de incidencia invalida.'), { status: 400 });
+        const workFrontKey = String(raw?.workFrontKey || (scopeType === 'folder' ? `folder:${scopeId}` : '')).trim();
+        return { ...(mongoose.Types.ObjectId.isValid(String(raw?.id || raw?._id || '')) ? { _id: raw.id || raw._id } : {}), type, severity, status, title, description, location: String(raw?.location || '').trim().slice(0, 500), scopeType, scopeId: scopeType === 'project' ? '' : scopeId, workFrontKey, impactSchedule: !!raw?.impactSchedule, impactCost: !!raw?.impactCost, impactQuality: !!raw?.impactQuality, actionRequired, carriedFromIncidentId: mongoose.Types.ObjectId.isValid(String(raw?.carriedFromIncidentId || '')) ? raw.carriedFromIncidentId : null, observedAt: parseDate(raw?.observedAt) || new Date() };
       });
     }
     for (const [field, limit] of [['qualityObservations', 10000], ['environmentalObservations', 10000]]) {

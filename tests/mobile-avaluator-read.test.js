@@ -146,7 +146,9 @@ test('portfolio queries only active assignments for authenticated evaluator and 
       coordinates: { lat: 8.9, lng: -79.5 }
     },
     projectType: 'Residencial horizontal',
-    status: 'EN_CURSO'
+    status: 'EN_CURSO',
+    commercialUnassignedName: 'Sin carpeta',
+    commercialUnassignedColor: '#0f172a'
   });
   assert.equal('financialConditions' in capture.payload.projects[0], false);
 });

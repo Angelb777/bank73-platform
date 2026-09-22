@@ -9,6 +9,7 @@ import '../../../core/widgets/app_widgets.dart';
 import '../../portfolio/data/project_repository.dart';
 import '../data/inspection_repository.dart';
 import 'evidence_section.dart';
+import 'incident_editor.dart';
 
 class UnitProgressScreen extends ConsumerStatefulWidget {
   const UnitProgressScreen({
@@ -167,6 +168,32 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
       } else if (mounted) {
         await presentApiError(context, ref, error);
       }
+    } catch (error) {
+      if (mounted) await presentApiError(context, ref, error);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _addIncident(_ProgressBundle bundle) async {
+    final label = bundle.unit.code.isNotEmpty
+        ? bundle.unit.code
+        : 'Unidad ${bundle.unit.lote}';
+    final incident = await showContextIncidentEditor(
+      context,
+      scopeType: 'unit',
+      scopeId: widget.unitId,
+      scopeLabel: label,
+    );
+    if (incident == null) return;
+    setState(() => _saving = true);
+    try {
+      await ref.read(inspectionRepositoryProvider).saveVisit(
+            inspectionId: widget.inspectionId,
+            version: bundle.inspection.version,
+            incidents: [...bundle.inspection.incidents, incident],
+          );
+      _reload();
     } catch (error) {
       if (mounted) await presentApiError(context, ref, error);
     } finally {
@@ -357,8 +384,41 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
               unitId: widget.unitId,
               editable: !bundle.inspection.isFinalized,
             ),
+            const SizedBox(height: 14),
+            ...bundle.inspection.incidents
+                .where(
+                  (item) =>
+                      item.scopeType == 'unit' && item.scopeId == widget.unitId,
+                )
+                .map(
+                  (item) => Card(
+                    child: ExpansionTile(
+                      title: Text(item.title),
+                      subtitle: Text('${item.severity} · ${item.status}'),
+                      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      children: [
+                        if (item.description.isNotEmpty) Text(item.description),
+                        EvidenceSection(
+                          inspectionId: widget.inspectionId,
+                          incidentId: item.id.isEmpty ? null : item.id,
+                          unitId: widget.unitId,
+                          category: 'incident',
+                          editable: !bundle.inspection.isFinalized,
+                          embedded: true,
+                          title: 'Fotografías de la incidencia',
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
             if (!bundle.inspection.isFinalized) ...[
               const SizedBox(height: 18),
+              OutlinedButton.icon(
+                onPressed: _saving ? null : () => _addIncident(bundle),
+                icon: const Icon(Icons.report_problem_outlined),
+                label: const Text('Añadir incidencia de esta unidad'),
+              ),
+              const SizedBox(height: 10),
               FilledButton.icon(
                 onPressed: _saving ? null : () => _save(bundle),
                 icon: const Icon(Icons.save_outlined),

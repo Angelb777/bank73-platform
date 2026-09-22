@@ -49,6 +49,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
   Inspection? _inspection;
   bool _saving = false;
   String _query = '';
+  String _incidentFilter = 'all';
   int _area = 0;
 
   void _disposeAfterDialog(List<TextEditingController> controllers) {
@@ -276,7 +277,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                   minLines: 2,
                   maxLines: 5,
                   decoration: const InputDecoration(
-                    labelText: 'Observación del frente',
+                    labelText: 'Observación de la agrupación',
                   ),
                 ),
               ],
@@ -319,12 +320,21 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
     await _saveVisit(workFronts: fronts);
   }
 
-  Future<void> _editIncident(Inspection inspection, [int? index]) async {
+  Future<void> _editIncident(
+    Inspection inspection, {
+    int? index,
+    String initialScopeType = 'project',
+    String initialScopeId = '',
+    String initialWorkFrontKey = '',
+  }) async {
     final existing = index == null ? null : inspection.incidents[index];
     var type = existing?.type ?? 'other';
     var severity = existing?.severity ?? 'medium';
     var status = existing?.status ?? 'open';
-    var frontKey = existing?.workFrontKey ?? '';
+    var frontKey = existing?.workFrontKey ?? initialWorkFrontKey;
+    var scopeType = existing?.scopeType ?? initialScopeType;
+    var scopeId = existing?.scopeId ?? initialScopeId;
+    final scopeLocked = initialScopeType != 'project';
     var impactSchedule = existing?.impactSchedule ?? false;
     var impactCost = existing?.impactCost ?? false;
     var impactQuality = existing?.impactQuality ?? false;
@@ -387,12 +397,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                   decoration: const InputDecoration(labelText: 'Ubicación'),
                 ),
                 const SizedBox(height: 10),
-                DropdownButtonFormField<String?>(
+                if (!scopeLocked)
+                  DropdownButtonFormField<String?>(
                   initialValue: frontKey.isEmpty ? null : frontKey,
                   decoration: const InputDecoration(
-                    labelText: 'Frente relacionado',
+                    labelText: 'Agrupación relacionada',
                   ),
                   items: inspection.workFronts
+                      .where((front) => front.sourceType == 'folder')
                       .map(
                         (front) => DropdownMenuItem<String?>(
                           value: front.key,
@@ -400,8 +412,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                         ),
                       )
                       .toList(),
-                  onChanged: (value) =>
-                      setDialogState(() => frontKey = value ?? ''),
+                  onChanged: (value) => setDialogState(() {
+                    frontKey = value ?? '';
+                    scopeType = frontKey.isEmpty ? 'project' : 'folder';
+                    scopeId = frontKey.replaceFirst('folder:', '');
+                  }),
                 ),
                 const SizedBox(height: 10),
                 Row(
@@ -507,6 +522,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
       title: title.text.trim(),
       description: description.text.trim(),
       location: location.text.trim(),
+      scopeType: scopeType,
+      scopeId: scopeId,
       workFrontKey: frontKey,
       impactSchedule: impactSchedule,
       impactCost: impactCost,
@@ -779,6 +796,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
 
   Widget _incidentsView(_InspectionBundle bundle) {
     final inspection = _inspection ?? bundle.inspection;
+    final visibleIncidents = inspection.incidents
+        .where(
+          (item) =>
+              _incidentFilter == 'all' || item.scopeType == _incidentFilter,
+        )
+        .toList();
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -808,15 +831,36 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
           style: TextStyle(color: Bank73Colors.muted),
         ),
         const SizedBox(height: 14),
-        if (inspection.incidents.isEmpty)
+        DropdownButtonFormField<String>(
+          initialValue: _incidentFilter,
+          decoration: const InputDecoration(labelText: 'Filtrar incidencias'),
+          items: const {
+            'all': 'Todas',
+            'project': 'Globales del proyecto',
+            'folder': 'Etapa / Torre / Bloque',
+            'unit': 'Unidades',
+            'common_area': 'Zonas comunes',
+          }.entries
+              .map(
+                (entry) => DropdownMenuItem(
+                  value: entry.key,
+                  child: Text(entry.value),
+                ),
+              )
+              .toList(),
+          onChanged: (value) =>
+              setState(() => _incidentFilter = value ?? 'all'),
+        ),
+        const SizedBox(height: 14),
+        if (visibleIncidents.isEmpty)
           const Card(
             child: Padding(
               padding: EdgeInsets.all(20),
               child: Text('No hay incidencias registradas.'),
             ),
           ),
-        ...inspection.incidents.asMap().entries.map((entry) {
-          final item = entry.value;
+        ...visibleIncidents.map((item) {
+          final originalIndex = inspection.incidents.indexOf(item);
           return Card(
             child: ExpansionTile(
               leading: Icon(
@@ -833,7 +877,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                   ? null
                   : IconButton(
                       icon: const Icon(Icons.edit_outlined),
-                      onPressed: () => _editIncident(inspection, entry.key),
+                      onPressed: () =>
+                          _editIncident(inspection, index: originalIndex),
                     ),
               childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               children: [
@@ -850,10 +895,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                       child: Text('Seguimiento: ${item.actionRequired}'),
                     ),
                   ),
-                EvidenceSection(
+                if (item.scopeType == 'project')
+                  EvidenceSection(
                   inspectionId: inspection.id,
                   incidentId: item.id.isEmpty ? null : item.id,
-                  workFrontKey: item.workFrontKey,
                   category: 'incident',
                   editable: !inspection.isFinalized,
                   embedded: true,
@@ -890,6 +935,183 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
       }[status] ??
       'sin evaluar';
 
+  List<Widget> _physicalRouteWidgets({
+    required _InspectionBundle bundle,
+    required List<CommercialFolderSummary> routeFolders,
+    required Inspection inspection,
+    required List<MobileUnit> visibleUnits,
+    required Map<String, double> progressByUnit,
+    required Map<String, List<MobileUnit>> unitsByFolder,
+    required List<String> orderedFolderKeys,
+    required bool hasPhysicalGrouping,
+  }) {
+    final foldersById = {
+      for (final folder in routeFolders) folder.id: folder,
+    };
+    final header = Row(
+      children: [
+        Expanded(
+          child: Text(
+            'Recorrido de inspección',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        Text(
+          '${bundle.saved.length}/${bundle.units.length} unidades revisadas',
+          style: const TextStyle(color: Bank73Colors.muted),
+        ),
+      ],
+    );
+    final search = TextField(
+      key: PageStorageKey('visit-units-search-${widget.inspectionId}'),
+      onChanged: (value) => setState(() => _query = value),
+      decoration: const InputDecoration(
+        hintText: 'Buscar unidad dentro del recorrido',
+        prefixIcon: Icon(Icons.search_rounded),
+      ),
+    );
+    if (!hasPhysicalGrouping) {
+      return [
+        header,
+        const SizedBox(height: 8),
+        search,
+        const SizedBox(height: 10),
+        ...visibleUnits.map(
+          (unit) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: UnitTile(
+              unit: unit,
+              progress: progressByUnit[unit.id],
+              onTap: () async {
+                await context.push(
+                  '/projects/${widget.projectId}/inspections/${widget.inspectionId}/units/${unit.id}',
+                );
+                if (mounted) _reload();
+              },
+            ),
+          ),
+        ),
+      ];
+    }
+    return [
+      header,
+      const SizedBox(height: 8),
+      search,
+      const SizedBox(height: 10),
+      ...orderedFolderKeys.map((folderKey) {
+        final folder = foldersById[folderKey];
+        if (folder == null) return const SizedBox.shrink();
+        final groupUnits = unitsByFolder[folderKey] ?? const <MobileUnit>[];
+        final frontIndex = inspection.workFronts.indexWhere(
+          (front) =>
+              front.sourceType == 'folder' && front.sourceId == folderKey,
+        );
+        final front = frontIndex < 0 ? null : inspection.workFronts[frontIndex];
+        return Card(
+          child: ExpansionTile(
+            key: PageStorageKey(
+              'inspection-group-${inspection.id}-$folderKey',
+            ),
+            initiallyExpanded: false,
+            maintainState: true,
+            title: Text(folder.name),
+            subtitle: Text(
+              front == null
+                  ? '${groupUnits.length} unidades'
+                  : '${groupUnits.length} unidades · ${formatPercent(front.currentProgressPercent)} de avance',
+            ),
+            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            children: [
+              if (front != null && front.observations.isNotEmpty)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(front.observations),
+                ),
+              if (!inspection.isFinalized && front != null)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _saving || !front.previousProgressKnown
+                          ? null
+                          : () => _markNoChange(inspection, frontIndex),
+                      icon: const Icon(Icons.horizontal_rule),
+                      label: const Text('Sin cambios'),
+                    ),
+                    FilledButton.tonalIcon(
+                      onPressed: _saving
+                          ? null
+                          : () => _editFront(inspection, frontIndex),
+                      icon: const Icon(Icons.trending_up),
+                      label: const Text('Registrar avance'),
+                    ),
+                    FilledButton.tonalIcon(
+                      onPressed: _saving
+                          ? null
+                          : () => _editIncident(
+                              inspection,
+                              initialScopeType: 'folder',
+                              initialScopeId: folderKey,
+                              initialWorkFrontKey: front.key,
+                            ),
+                      icon: const Icon(Icons.report_problem_outlined),
+                      label: const Text('Añadir incidencia'),
+                    ),
+                  ],
+                ),
+              if (front != null) ...[
+                ...inspection.incidents
+                    .where(
+                      (item) =>
+                          item.scopeType == 'folder' &&
+                          item.scopeId == folderKey,
+                    )
+                    .map(
+                      (item) => EvidenceSection(
+                        inspectionId: inspection.id,
+                        incidentId: item.id.isEmpty ? null : item.id,
+                        workFrontKey: front.key,
+                        category: 'incident',
+                        editable: !inspection.isFinalized,
+                        embedded: true,
+                        title: 'Incidencia: ${item.title}',
+                      ),
+                    ),
+                EvidenceSection(
+                  inspectionId: inspection.id,
+                  workFrontKey: front.key,
+                  category: 'progress',
+                  editable: !inspection.isFinalized,
+                  embedded: true,
+                  title: 'Fotografías de la agrupación',
+                ),
+              ],
+              const Divider(height: 28),
+              ...groupUnits.map(
+                (unit) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: UnitTile(
+                    unit: unit,
+                    progress: progressByUnit[unit.id],
+                    onTap: () async {
+                      await context.push(
+                        '/projects/${widget.projectId}/inspections/${widget.inspectionId}/units/${unit.id}',
+                      );
+                      if (mounted) _reload();
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
+    ];
+  }
+
   String _scheduleLabel(String? status) =>
       const {
         'on_track': 'en plazo',
@@ -903,7 +1125,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
     final inspection = _inspection ?? bundle.inspection;
     final previous = bundle.pack?.previousPhysicalProgressPercent ?? 0;
     final period = inspection.projectProgressPercent - previous;
-    final visited = inspection.workFronts
+    final physicalFronts = inspection.workFronts
+        .where((front) => front.sourceType == 'folder')
+        .toList();
+    final visited = physicalFronts
         .where((front) => front.status != 'not_visited')
         .length;
     return ListView(
@@ -948,7 +1173,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  '$visited/${inspection.workFronts.length} frentes revisados',
+                  '$visited/${physicalFronts.length} agrupaciones revisadas',
                 ),
                 Text(
                   '${inspection.incidents.where((item) => item.status != 'resolved').length} incidencias abiertas o en seguimiento',
@@ -1029,17 +1254,56 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
         final visibleUnits = bundle.units
             .where((unit) => unit.matches(_query))
             .toList();
-        final completion = bundle.units.isEmpty
-            ? 0.0
-            : (bundle.saved.length / bundle.units.length).clamp(0.0, 1.0);
-
         // Agrupa visualmente por Torre/Etapa (carpeta comercial existente).
         // No cambia qué unidades hay ni cómo se guarda su avance: solo el
         // orden en que se muestran.
+        final rawUnassignedFolder = bundle.folders
+            .where((folder) => folder.isUnassigned)
+            .firstOrNull;
+        final configuredUnassignedName =
+            bundle.project.commercialUnassignedName.trim();
+        final configuredUnassignedFolder = rawUnassignedFolder == null
+            ? null
+            : CommercialFolderSummary(
+                id: rawUnassignedFolder.id,
+                name: configuredUnassignedName.isNotEmpty
+                    ? configuredUnassignedName
+                    : rawUnassignedFolder.name,
+                color: bundle.project.commercialUnassignedColor.isNotEmpty
+                    ? bundle.project.commercialUnassignedColor
+                    : rawUnassignedFolder.color,
+                order: rawUnassignedFolder.order,
+                isUnassigned: true,
+                unitCount: rawUnassignedFolder.unitCount,
+              );
+        final needsUnassignedGroup = visibleUnits.any(
+          (unit) =>
+              unit.folderId == null ||
+              !bundle.folders.any((folder) => folder.id == unit.folderId),
+        );
+        final fallbackUnassignedFolder = needsUnassignedGroup &&
+                configuredUnassignedFolder == null
+            ? CommercialFolderSummary(
+                id: 'unassigned',
+                name: configuredUnassignedName.isNotEmpty
+                    ? configuredUnassignedName
+                    : 'Unidades sin agrupación',
+                color: bundle.project.commercialUnassignedColor,
+                order: -1,
+                isUnassigned: true,
+              )
+            : null;
+        final routeFolders = [
+          ?configuredUnassignedFolder,
+          ?fallbackUnassignedFolder,
+          ...bundle.folders.where((folder) => !folder.isUnassigned),
+        ];
         final foldersById = {
-          for (final folder in bundle.folders) folder.id: folder,
+          for (final folder in routeFolders) folder.id: folder,
         };
-        const unassignedKey = '';
+        final unassignedFolder =
+            configuredUnassignedFolder ?? fallbackUnassignedFolder;
+        final unassignedKey = unassignedFolder?.id ?? '';
         final unitsByFolder = <String, List<MobileUnit>>{};
         for (final unit in visibleUnits) {
           final key =
@@ -1049,14 +1313,15 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
           unitsByFolder.putIfAbsent(key, () => []).add(unit);
         }
         final orderedFolderKeys = [
-          ...bundle.folders
+          ...routeFolders
               .map((folder) => folder.id)
               .where(unitsByFolder.containsKey),
-          if (unitsByFolder.containsKey(unassignedKey)) unassignedKey,
         ];
-        final hasNamedGroups = orderedFolderKeys.any(
-          (key) => key != unassignedKey,
-        );
+        final hasPhysicalGrouping = routeFolders.any(
+              (folder) => !folder.isUnassigned,
+            ) ||
+            (unassignedFolder != null &&
+                unassignedFolder.name.trim().toLowerCase() != 'sin carpeta');
         if (_area == 1) return _incidentsView(bundle);
         if (_area == 2) return _reviewView(bundle);
         final currentInspection = _inspection ?? bundle.inspection;
@@ -1115,7 +1380,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                       if (bundle.pack!.activeFronts.isNotEmpty) ...[
                         const SizedBox(height: 12),
                         Text(
-                          '${bundle.pack!.activeFronts.length} frente(s) activos según el programa.',
+                          '${bundle.pack!.activeFronts.length} agrupaciones físicas en el recorrido.',
                           style: const TextStyle(color: Bank73Colors.muted),
                         ),
                       ],
@@ -1202,88 +1467,18 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                 ),
               ),
             ),
-            if (currentInspection.workFronts.isNotEmpty) ...[
+            if (bundle.units.isNotEmpty) ...[
               const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Frentes de obra',
-                      style: Theme.of(context).textTheme.titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  Text(
-                    '${currentInspection.workFronts.where((front) => front.status != 'not_visited').length}/${currentInspection.workFronts.length}',
-                    style: const TextStyle(color: Bank73Colors.muted),
-                  ),
-                ],
+              ..._physicalRouteWidgets(
+                bundle: bundle,
+                routeFolders: routeFolders,
+                inspection: currentInspection,
+                visibleUnits: visibleUnits,
+                progressByUnit: progressByUnit,
+                unitsByFolder: unitsByFolder,
+                orderedFolderKeys: orderedFolderKeys,
+                hasPhysicalGrouping: hasPhysicalGrouping,
               ),
-              const SizedBox(height: 8),
-              ...currentInspection.workFronts.asMap().entries.map((entry) {
-                final front = entry.value;
-                return Card(
-                  child: ExpansionTile(
-                    leading: CircleAvatar(
-                      child: Text('${front.currentProgressPercent.round()}'),
-                    ),
-                    title: Text(front.name),
-                    subtitle: Text(
-                      '${front.previousProgressKnown ? '${formatPercent(front.previousProgressPercent)} anterior' : 'Sin referencia anterior'} · ${formatPercent(front.currentProgressPercent)} actual${front.plannedProgressPercent == null ? '' : ' · ${formatPercent(front.plannedProgressPercent!)} previsto'}',
-                    ),
-                    trailing: StatusPill(
-                      front.status == 'not_visited'
-                          ? 'Pendiente'
-                          : front.status == 'no_change'
-                          ? 'Sin cambios'
-                          : 'Revisado',
-                      success: front.status != 'not_visited',
-                    ),
-                    childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    children: [
-                      if (front.observations.isNotEmpty)
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(front.observations),
-                        ),
-                      if (!currentInspection.isFinalized)
-                        Wrap(
-                          spacing: 8,
-                          children: [
-                            OutlinedButton.icon(
-                              onPressed: _saving || !front.previousProgressKnown
-                                  ? null
-                                  : () => _markNoChange(
-                                      currentInspection,
-                                      entry.key,
-                                    ),
-                              icon: const Icon(Icons.horizontal_rule),
-                              label: const Text('Sin cambios'),
-                            ),
-                            FilledButton.tonalIcon(
-                              onPressed: _saving
-                                  ? null
-                                  : () => _editFront(
-                                      currentInspection,
-                                      entry.key,
-                                    ),
-                              icon: const Icon(Icons.trending_up),
-                              label: const Text('Registrar avance'),
-                            ),
-                          ],
-                        ),
-                      EvidenceSection(
-                        inspectionId: currentInspection.id,
-                        workFrontKey: front.key,
-                        category: 'progress',
-                        editable: !currentInspection.isFinalized,
-                        embedded: true,
-                        title: 'Fotos del frente',
-                      ),
-                    ],
-                  ),
-                );
-              }),
             ],
             const SizedBox(height: 14),
             _InspectionStep(
@@ -1339,121 +1534,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                 ),
               ),
             ],
-            const SizedBox(height: 22),
-            Card(
-              child: ExpansionTile(
-                key: PageStorageKey('visit-units-${widget.inspectionId}'),
-                initiallyExpanded: false,
-                maintainState: true,
-                tilePadding: const EdgeInsets.all(18),
-                childrenPadding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-                title: Text(
-                  'Unidades de la visita',
-                  style: Theme.of(context).textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(
-                  '${bundle.saved.length}/${bundle.units.length} unidades revisadas',
-                  style: const TextStyle(color: Bank73Colors.muted),
-                ),
-                children: [
-                  const SizedBox(height: 5),
-                  const Text(
-                    'Registra únicamente las unidades revisadas hoy. Las demás quedarán pendientes, no incompletas.',
-                    style: TextStyle(color: Bank73Colors.muted),
-                  ),
-                  const SizedBox(height: 12),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(99),
-                    child: LinearProgressIndicator(
-                      value: completion,
-                      minHeight: 7,
-                      backgroundColor: Bank73Colors.border,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    // Keep the search scroll offset separate from the tile's
-                    // persisted expanded/collapsed boolean in PageStorage.
-                    key: PageStorageKey(
-                      'visit-units-search-${widget.inspectionId}',
-                    ),
-                    onChanged: (value) => setState(() => _query = value),
-                    decoration: const InputDecoration(
-                      hintText: 'Buscar código, manzana, lote o modelo',
-                      prefixIcon: Icon(Icons.search_rounded),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (bundle.units.isEmpty)
-                    const Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: Text(
-                          'Este proyecto no tiene unidades disponibles.',
-                        ),
-                      ),
-                    )
-                  else if (visibleUnits.isEmpty)
-                    const Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: Text(
-                          'No hay unidades que coincidan con la búsqueda.',
-                        ),
-                      ),
-                    )
-                  else if (!hasNamedGroups)
-                    ...visibleUnits.map(
-                      (unit) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: UnitTile(
-                          unit: unit,
-                          progress: progressByUnit[unit.id],
-                          onTap: () async {
-                            await context.push(
-                              '/projects/${widget.projectId}/inspections/${widget.inspectionId}/units/${unit.id}',
-                            );
-                            if (mounted) _reload();
-                          },
-                        ),
-                      ),
-                    )
-                  else
-                    ...orderedFolderKeys.expand(
-                      (folderKey) => [
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8, bottom: 6),
-                          child: Text(
-                            folderKey == unassignedKey
-                                ? 'Sin torre/etapa asignada'
-                                : foldersById[folderKey]!.name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: Bank73Colors.strongBlue,
-                            ),
-                          ),
-                        ),
-                        ...unitsByFolder[folderKey]!.map(
-                          (unit) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: UnitTile(
-                              unit: unit,
-                              progress: progressByUnit[unit.id],
-                              onTap: () async {
-                                await context.push(
-                                  '/projects/${widget.projectId}/inspections/${widget.inspectionId}/units/${unit.id}',
-                                );
-                                if (mounted) _reload();
-                              },
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                ],
-              ),
-            ),
             const SizedBox(height: 24),
           ],
         );
