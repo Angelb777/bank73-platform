@@ -89,11 +89,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       final scrollable = find.byType(Scrollable).first;
-      final title = find.text('Unidades de la visita');
-      await tester.scrollUntilVisible(title, 250, scrollable: scrollable);
-      await tester.tap(title);
-      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
+      expect(find.text('0/52 unidades revisadas'), findsOneWidget);
       final unit = find.text('Unidad 0');
       await tester.scrollUntilVisible(unit, 200, scrollable: scrollable);
       await tester.ensureVisible(unit);
@@ -105,17 +102,10 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(transport.loads, 2);
       expect(find.byType(ErrorWidget), findsNothing);
-      expect(find.byType(UnitTile), findsNWidgets(52));
-      expect(find.text('1/52 unidades revisadas'), findsOneWidget);
       expect(tester.widget<UnitTile>(find.byType(UnitTile).first).progress, 60);
-      await tester.ensureVisible(title);
-      await tester.pumpAndSettle();
-      await tester.tap(title);
-      await tester.pumpAndSettle();
-      expect(find.text('Unidad 0'), findsNothing);
-      await tester.tap(title);
-      await tester.pumpAndSettle();
-      expect(find.byType(UnitTile), findsNWidgets(52));
+      // The route uses a lazy ListView: only visible tiles are mounted, while
+      // the summary remains the source of truth for the full 52-unit count.
+      expect(find.byType(UnitTile), findsWidgets);
       expect(tester.takeException(), isNull);
     },
   );
@@ -123,6 +113,8 @@ void main() {
   testWidgets('units are grouped under their commercial folder (Torre/Etapa)', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(900, 1800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final transport = _GroupedVisitTransport();
     final router = GoRouter(
       initialLocation: '/projects/project/inspections/visit',
@@ -145,14 +137,15 @@ void main() {
     );
     await tester.pumpAndSettle();
     final scrollable = find.byType(Scrollable).first;
-    final title = find.text('Unidades de la visita');
-    await tester.scrollUntilVisible(title, 250, scrollable: scrollable);
-    await tester.tap(title);
-    await tester.pumpAndSettle();
-
     expect(find.text('Torre 1'), findsOneWidget);
     expect(find.text('Torre 2'), findsOneWidget);
     expect(find.text('Sin torre/etapa asignada'), findsOneWidget);
+    for (final name in ['Torre 1', 'Torre 2', 'Sin torre/etapa asignada']) {
+      final group = find.text(name);
+      await tester.scrollUntilVisible(group, 200, scrollable: scrollable);
+      await tester.tap(group);
+      await tester.pumpAndSettle();
+    }
     expect(find.byType(UnitTile), findsNWidgets(3));
   });
 }
@@ -167,7 +160,11 @@ class _GroupedVisitTransport extends FakeTransport {
     }
     if (path == '/api/mobile/v1/projects/project') {
       return {
-        'project': {'id': 'project', 'name': 'Proyecto'},
+        'project': {
+          'id': 'project',
+          'name': 'Proyecto',
+          'commercialUnassignedName': 'Sin torre/etapa asignada',
+        },
       };
     }
     if (path == '/api/mobile/v1/projects/project/units') {

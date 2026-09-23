@@ -76,6 +76,26 @@ const quickAssessmentSchema = new mongoose.Schema({
   observations: { type: String, trim: true, default: '', maxlength: 10000 }
 }, { _id: false });
 
+const reportDetailsSchema = new mongoose.Schema({
+  projectDescription: { type: String, trim: true, default: null, maxlength: 10000 },
+  plans: {
+    status: { type: String, enum: ['yes', 'no', 'not_verifiable'], default: 'not_verifiable' },
+    observations: { type: String, trim: true, default: '', maxlength: 5000 }
+  },
+  workChanges: {
+    hasChanges: { type: Boolean, default: null },
+    description: { type: String, trim: true, default: '', maxlength: 5000 },
+    budgetImpact: { type: String, trim: true, default: '', maxlength: 3000 },
+    scheduleImpact: { type: String, trim: true, default: '', maxlength: 3000 },
+    observations: { type: String, trim: true, default: '', maxlength: 5000 }
+  },
+  budgetAdjustments: {
+    hasAdjustments: { type: Boolean, default: null },
+    explanation: { type: String, trim: true, default: '', maxlength: 5000 }
+  },
+  contractsObservations: { type: String, trim: true, default: '', maxlength: 5000 }
+}, { _id: false });
+
 const inspectionSchema = new mongoose.Schema({
   bankTenantKey: {
     type: String,
@@ -149,6 +169,7 @@ const inspectionSchema = new mongoose.Schema({
   environmentalObservations: { type: String, trim: true, default: '', maxlength: 10000 },
   qualityAssessment: { type: quickAssessmentSchema, default: undefined },
   environmentalAssessment: { type: quickAssessmentSchema, default: undefined },
+  reportDetails: { type: reportDetailsSchema, default: undefined },
   scheduleAssessment: {
     status: { type: String, enum: ['on_track', 'at_risk', 'delayed', 'not_assessed'], default: 'not_assessed' },
     plannedProgressPercent: { type: Number, min: 0, max: 100, default: null },

@@ -16,7 +16,14 @@ const InspectionEvidence = require('../models/InspectionEvidence');
 const { buildFinanceControlSummary } = require('./financeReportContext');
 const { buildPeriodActivity } = require('./reportActivity');
 
-const CONTEXT_SCHEMA_VERSION = 3;
+const CONTEXT_SCHEMA_VERSION = 4;
+
+const FINANCING_REQUIREMENT_NUMBERS = new Set([20, 21, 22, 27, 28, 29]);
+const PLAN_REQUIREMENT_NUMBERS = new Set([4, 16]);
+const ENVIRONMENT_REQUIREMENT_NUMBERS = new Set([10, 19]);
+const CONTRACT_REQUIREMENT_NUMBER = 23;
+const POLICY_REQUIREMENT_NUMBER = 24;
+const BOND_REQUIREMENT_NUMBERS = new Set([25, 26]);
 
 function plain(value) {
   if (value === null || value === undefined) return value;
@@ -77,6 +84,7 @@ function inspectionSummary(inspection) {
     environmentalObservations: String(inspection.environmentalObservations || ''),
     qualityAssessment: plain(inspection.qualityAssessment || null),
     environmentalAssessment: plain(inspection.environmentalAssessment || null),
+    reportDetails: plain(inspection.reportDetails || null),
     scheduleAssessment: plain(inspection.scheduleAssessment || null),
     technicalConclusion: String(inspection.technicalConclusion || ''),
     technicalRecommendation: plain(inspection.technicalRecommendation || null)
@@ -171,6 +179,50 @@ async function buildBaseSnapshot({ scope, inspectionDate = new Date(), excludeIn
 
   const phaseSource = finance?.phases?.length ? finance.phases : (project.financePhases || []);
   const phases = phaseSource.map(phase => phaseDto(phase, new Date(inspectionDate)));
+  const requirements = phaseSource.flatMap(phase => (phase.requirements || []).map(requirement => ({
+    ...plain(requirement),
+    phaseId: id(phase._id),
+    phaseName: phase.name,
+    number: number(requirement.number)
+  })));
+  const requirementDocuments = requirement => documents
+    .filter(document => id(document.requirementId) === id(requirement._id))
+    .map(documentDto);
+  const summarizedRequirement = requirement => ({
+    id: id(requirement._id),
+    number: number(requirement.number),
+    phaseId: requirement.phaseId,
+    phaseName: String(requirement.phaseName || ''),
+    title: String(requirement.title || ''),
+    status: String(requirement.status || ''),
+    information: String(requirement.information || requirement.manualInformation || ''),
+    observations: String(requirement.observations || ''),
+    structuredData: plain(requirement.structuredData || null),
+    documents: requirementDocuments(requirement)
+  });
+  const financingRequirements = requirements
+    .filter(item => FINANCING_REQUIREMENT_NUMBERS.has(number(item.number)))
+    .map(summarizedRequirement);
+  const planRequirements = requirements
+    .filter(item => PLAN_REQUIREMENT_NUMBERS.has(number(item.number)))
+    .map(summarizedRequirement);
+  const environmentalRequirements = requirements
+    .filter(item => ENVIRONMENT_REQUIREMENT_NUMBERS.has(number(item.number)))
+    .map(summarizedRequirement);
+  const constructionContracts = requirements
+    .filter(item => number(item.number) === CONTRACT_REQUIREMENT_NUMBER)
+    .map(summarizedRequirement);
+  const bonds = requirements
+    .filter(item => BOND_REQUIREMENT_NUMBERS.has(number(item.number)))
+    .map(summarizedRequirement);
+  const policyRequirements = requirements
+    .filter(item => number(item.number) === POLICY_REQUIREMENT_NUMBER)
+    .map(summarizedRequirement);
+  const programStartDates = phases.map(phase => phase.startDate).filter(Boolean).map(value => new Date(value)).filter(value => Number.isFinite(value.getTime()));
+  const programEndDates = phases.map(phase => phase.endDate).filter(Boolean).map(value => new Date(value)).filter(value => Number.isFinite(value.getTime()));
+  const programStart = programStartDates.length ? new Date(Math.min(...programStartDates.map(value => value.getTime()))) : null;
+  const programEnd = programEndDates.length ? new Date(Math.max(...programEndDates.map(value => value.getTime()))) : null;
+  const programDurationDays = programStart && programEnd ? Math.max(0, Math.round((programEnd - programStart) / 86400000)) : null;
   const unassignedUnits = units.filter(unit => !unit.folderId);
   const permitItems = permitRecords.flatMap(record => (record.items || []).map(item => ({
     id: id(item._id), code: String(item.code || ''), title: String(item.title || ''), institution: String(item.institution || ''),
@@ -229,6 +281,12 @@ async function buildBaseSnapshot({ scope, inspectionDate = new Date(), excludeIn
     planning: {
       phases,
       activePhases: phases.filter(phase => phase.active),
+      summary: {
+        startDate: programStart,
+        endDate: programEnd,
+        durationDays: programDurationDays,
+        durationMonths: programDurationDays === null ? null : Math.round(programDurationDays / 30.4375 * 10) / 10
+      },
       workFronts: [
         ...(unassignedUnits.length ? (() => {
           const key = 'folder:unassigned';
@@ -246,7 +304,13 @@ async function buildBaseSnapshot({ scope, inspectionDate = new Date(), excludeIn
     },
     compliance: {
       permits: permitItems,
-      requirements: phaseSource.flatMap(phase => (phase.requirements || []).map(requirement => ({ ...plain(requirement), phaseId: id(phase._id), phaseName: phase.name }))),
+      requirements,
+      financingConditions: financingRequirements,
+      planRequirements,
+      environmentalRequirements,
+      constructionContracts,
+      bonds,
+      policyRequirements,
       documents: documents.map(documentDto),
       policies: project.technicalData?.insurancePolicies || []
     },
@@ -268,6 +332,11 @@ async function buildBaseSnapshot({ scope, inspectionDate = new Date(), excludeIn
       previousUnits: previousUnits.map(plain),
       previousFinancialSummary: plain(previousInspection?.reportSnapshot?.finance?.summary || null),
       previousPhotos: previousEvidence.map(item => ({ id: id(item._id), unitId: id(item.unitId), commonAreaKey: item.commonAreaKey || '', caption: item.caption || '', createdAt: item.createdAt, filePath: `/api/mobile/v1/inspections/${item.inspectionId}/evidence/${item._id}/file` }))
+    },
+    reportDefaults: {
+      projectDescription: previousInspection?.reportSnapshot?.visit?.reportDetails?.projectDescription
+        ?? previousInspection?.reportDetails?.projectDescription
+        ?? String(project.description || '')
     },
     activitySincePreviousInspection: activity,
     metrics: {
@@ -314,6 +383,10 @@ async function buildInspectionReportContext({ scope, inspection, preferFrozen = 
     qualityAssessment: plain(inspection?.qualityAssessment || null),
     environmentalAssessment: plain(inspection?.environmentalAssessment || null),
     scheduleAssessment: plain(inspection?.scheduleAssessment || null),
+    reportDetails: {
+      ...plain(inspection?.reportDetails || {}),
+      projectDescription: inspection?.reportDetails?.projectDescription ?? base.reportDefaults?.projectDescription ?? base.project?.description ?? ''
+    },
     conclusion: String(inspection?.technicalConclusion || ''),
     recommendation: plain(inspection?.technicalRecommendation || null)
   };
@@ -466,6 +539,7 @@ function inspectionPackDto(context) {
     activeFronts: (context.planning?.workFronts || []).filter(front => front.active !== false),
     workFronts: context.workFronts || context.planning?.workFronts || [],
     program: context.planning?.phases || [],
+    programSummary: context.planning?.summary || {},
     compliance: context.compliance,
     pendingIssues: context.pendingIssues || [],
     changesSincePreviousInspection: context.activitySincePreviousInspection,

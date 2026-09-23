@@ -216,6 +216,12 @@ class InspectionRepository {
     '/api/mobile/v1/inspections/$inspectionId/report-preview.pdf',
   );
 
+  Future<List<int>> reportWordBytes(String inspectionId) =>
+      _api.getBytes('/api/mobile/v1/inspections/$inspectionId/report.docx');
+
+  Future<List<int>> reportWordPreviewBytes(String inspectionId) => _api
+      .getBytes('/api/mobile/v1/inspections/$inspectionId/report-preview.docx');
+
   Future<Inspection> saveVisit({
     required String inspectionId,
     required int version,
@@ -226,6 +232,7 @@ class InspectionRepository {
     InspectionQuickAssessment? qualityAssessment,
     InspectionQuickAssessment? environmentalAssessment,
     InspectionScheduleAssessment? scheduleAssessment,
+    InspectionReportDetails? reportDetails,
     String? technicalConclusion,
     TechnicalVerdict? technicalVerdict,
     String? recommendationConditions,
@@ -247,6 +254,7 @@ class InspectionRepository {
           'environmentalAssessment': environmentalAssessment.toJson(),
         if (scheduleAssessment != null)
           'scheduleAssessment': scheduleAssessment.toJson(),
+        if (reportDetails != null) 'reportDetails': reportDetails.toJson(),
         'technicalConclusion': ?technicalConclusion,
         if (technicalVerdict != null)
           'technicalRecommendation': {

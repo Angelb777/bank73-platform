@@ -4,7 +4,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { PassThrough } = require('stream');
 const PDFDocument = require('pdfkit');
+const PizZip = require('pizzip');
 const { renderInspectionReport } = require('../services/inspectionReport');
+const { buildInspectionReportDocx } = require('../services/inspectionReportDocx');
 
 test('professional report renders every main section from one InspectionReportContext', async () => {
   const context = {
@@ -34,4 +36,35 @@ test('professional report renders every main section from one InspectionReportCo
   const result = Buffer.concat(chunks);
   assert.equal(result.subarray(0, 4).toString(), '%PDF');
   assert.ok(result.length > 4000);
+});
+
+test('editable Word report is generated from the same inspection context', () => {
+  const context = {
+    schemaVersion: 4,
+    project: { name: 'Residencial Prueba', description: 'Descripción Bank73', currency: 'USD', location: {}, legal: {}, technical: {} },
+    participants: { bank: { name: 'Banco Prueba' }, promoter: { name: 'Promotor Prueba' } },
+    inspection: { sequence: 2, reportNumber: 'B73-2026-0002', inspectionDate: new Date() },
+    metrics: { physicalProgress: { previousPercent: 30, currentPercent: 45, periodIncrementPercent: 15 }, financialProgress: { percent: 40 } },
+    finance: { summary: {}, loanLines: [], unitAmortizations: [] },
+    planning: { phases: [], summary: {} },
+    compliance: { permits: [], requirements: [], financingConditions: [], planRequirements: [], constructionContracts: [], policies: [], bonds: [], environmentalRequirements: [] },
+    inventory: { models: [], folders: [], units: [] },
+    workFronts: [], photos: [],
+    visit: { reportDetails: { projectDescription: 'Descripción certificada', plans: { status: 'yes' }, workChanges: { hasChanges: false }, budgetAdjustments: { hasAdjustments: false } }, incidents: [], conclusion: 'Continuar.', recommendation: { verdict: 'favorable' } },
+    signature: {
+      signerName: 'Perito',
+      signedAt: new Date(),
+      imageData: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEAQH/1f52YQAAAABJRU5ErkJggg=='
+    }
+  };
+  const result = buildInspectionReportDocx(context);
+  assert.equal(result.subarray(0, 2).toString(), 'PK');
+  const zip = new PizZip(result);
+  const documentXml = zip.file('word/document.xml').asText();
+  assert.match(documentXml, /Descripción certificada/);
+  assert.match(documentXml, /Certificamos que este informe/);
+  assert.ok(zip.file('word/media/signature.png'));
+  assert.match(zip.file('word/_rels/document.xml.rels').asText(), /rIdSignature/);
+  assert.match(documentXml, /No hay fotografías disponibles/);
+  assert.ok(result.length > 5000);
 });

@@ -92,10 +92,10 @@ class MobileProject {
     description: (json['description'] ?? '').toString(),
     promoterProgressPercent: _number(json['promoterProgressPercent'])
         .clamp(0, 100),
-    commercialUnassignedName: (json['commercialUnassignedName'] ?? 'Sin carpeta')
+    commercialUnassignedName:
+        (json['commercialUnassignedName'] ?? 'Sin carpeta').toString(),
+    commercialUnassignedColor: (json['commercialUnassignedColor'] ?? '#0f172a')
         .toString(),
-    commercialUnassignedColor:
-        (json['commercialUnassignedColor'] ?? '#0f172a').toString(),
   );
 }
 
@@ -481,35 +481,39 @@ class InspectionIncident {
   final String? carriedFromIncidentId;
   final DateTime? observedAt;
 
-  factory InspectionIncident.fromJson(Map<String, dynamic> json) =>
-      InspectionIncident(
-        id: (json['id'] ?? '').toString(),
-        type: (json['type'] ?? 'other').toString(),
-        severity: (json['severity'] ?? 'medium').toString(),
-        status: (json['status'] ?? 'open').toString(),
-        title: (json['title'] ?? '').toString(),
-        description: (json['description'] ?? '').toString(),
-        location: (json['location'] ?? '').toString(),
-        scopeType: (json['scopeType'] ??
+  factory InspectionIncident.fromJson(
+    Map<String, dynamic> json,
+  ) => InspectionIncident(
+    id: (json['id'] ?? '').toString(),
+    type: (json['type'] ?? 'other').toString(),
+    severity: (json['severity'] ?? 'medium').toString(),
+    status: (json['status'] ?? 'open').toString(),
+    title: (json['title'] ?? '').toString(),
+    description: (json['description'] ?? '').toString(),
+    location: (json['location'] ?? '').toString(),
+    scopeType:
+        (json['scopeType'] ??
                 ((json['workFrontKey'] ?? '').toString().startsWith('folder:')
                     ? 'folder'
                     : 'project'))
             .toString(),
-        scopeId: (json['scopeId'] ??
+    scopeId:
+        (json['scopeId'] ??
                 ((json['workFrontKey'] ?? '').toString().startsWith('folder:')
-                    ? (json['workFrontKey'] ?? '')
-                          .toString()
-                          .replaceFirst('folder:', '')
+                    ? (json['workFrontKey'] ?? '').toString().replaceFirst(
+                        'folder:',
+                        '',
+                      )
                     : ''))
             .toString(),
-        workFrontKey: (json['workFrontKey'] ?? '').toString(),
-        impactSchedule: json['impactSchedule'] == true,
-        impactCost: json['impactCost'] == true,
-        impactQuality: json['impactQuality'] == true,
-        actionRequired: (json['actionRequired'] ?? '').toString(),
-        carriedFromIncidentId: json['carriedFromIncidentId']?.toString(),
-        observedAt: _date(json['observedAt']),
-      );
+    workFrontKey: (json['workFrontKey'] ?? '').toString(),
+    impactSchedule: json['impactSchedule'] == true,
+    impactCost: json['impactCost'] == true,
+    impactQuality: json['impactQuality'] == true,
+    actionRequired: (json['actionRequired'] ?? '').toString(),
+    carriedFromIncidentId: json['carriedFromIncidentId']?.toString(),
+    observedAt: _date(json['observedAt']),
+  );
 
   Map<String, dynamic> toJson() => {
     if (id.isNotEmpty) 'id': id,
@@ -561,6 +565,74 @@ class InspectionScheduleAssessment {
   };
 }
 
+class InspectionReportDetails {
+  const InspectionReportDetails({
+    this.projectDescription,
+    this.plansStatus = 'not_verifiable',
+    this.plansObservations = '',
+    this.hasWorkChanges,
+    this.workChangesDescription = '',
+    this.workChangesBudgetImpact = '',
+    this.workChangesScheduleImpact = '',
+    this.workChangesObservations = '',
+    this.hasBudgetAdjustments,
+    this.budgetAdjustmentsExplanation = '',
+    this.contractsObservations = '',
+  });
+
+  final String? projectDescription;
+  final String plansStatus;
+  final String plansObservations;
+  final bool? hasWorkChanges;
+  final String workChangesDescription;
+  final String workChangesBudgetImpact;
+  final String workChangesScheduleImpact;
+  final String workChangesObservations;
+  final bool? hasBudgetAdjustments;
+  final String budgetAdjustmentsExplanation;
+  final String contractsObservations;
+
+  factory InspectionReportDetails.fromJson(Map<String, dynamic> json) {
+    final plans = _map(json['plans']);
+    final workChanges = _map(json['workChanges']);
+    final budgetAdjustments = _map(json['budgetAdjustments']);
+    return InspectionReportDetails(
+      projectDescription: json.containsKey('projectDescription')
+          ? json['projectDescription']?.toString()
+          : null,
+      plansStatus: (plans['status'] ?? 'not_verifiable').toString(),
+      plansObservations: (plans['observations'] ?? '').toString(),
+      hasWorkChanges: workChanges['hasChanges'] as bool?,
+      workChangesDescription: (workChanges['description'] ?? '').toString(),
+      workChangesBudgetImpact: (workChanges['budgetImpact'] ?? '').toString(),
+      workChangesScheduleImpact: (workChanges['scheduleImpact'] ?? '')
+          .toString(),
+      workChangesObservations: (workChanges['observations'] ?? '').toString(),
+      hasBudgetAdjustments: budgetAdjustments['hasAdjustments'] as bool?,
+      budgetAdjustmentsExplanation: (budgetAdjustments['explanation'] ?? '')
+          .toString(),
+      contractsObservations: (json['contractsObservations'] ?? '').toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'projectDescription': projectDescription,
+    'plans': {'status': plansStatus, 'observations': plansObservations},
+    'workChanges': {
+      'hasChanges': hasWorkChanges,
+      'description': workChangesDescription,
+      'budgetImpact': workChangesBudgetImpact,
+      'scheduleImpact': workChangesScheduleImpact,
+      'observations': workChangesObservations,
+    },
+    'budgetAdjustments': {
+      'hasAdjustments': hasBudgetAdjustments,
+      'explanation': budgetAdjustmentsExplanation,
+    },
+    'contractsObservations': contractsObservations,
+  };
+}
+
 class Inspection {
   const Inspection({
     required this.id,
@@ -587,6 +659,7 @@ class Inspection {
     this.qualityAssessment,
     this.environmentalAssessment,
     this.scheduleAssessment,
+    this.reportDetails,
   });
   final String id;
   final String projectId;
@@ -612,6 +685,7 @@ class Inspection {
   final InspectionQuickAssessment? qualityAssessment;
   final InspectionQuickAssessment? environmentalAssessment;
   final InspectionScheduleAssessment? scheduleAssessment;
+  final InspectionReportDetails? reportDetails;
 
   factory Inspection.fromJson(Map<String, dynamic> json) => Inspection(
     id: (json['id'] ?? '').toString(),
@@ -660,6 +734,9 @@ class Inspection {
         : InspectionScheduleAssessment.fromJson(
             _map(json['scheduleAssessment']),
           ),
+    reportDetails: json['reportDetails'] == null
+        ? null
+        : InspectionReportDetails.fromJson(_map(json['reportDetails'])),
     methodology: json['methodology'] == null
         ? null
         : InspectionMethodology.fromJson(_map(json['methodology'])),

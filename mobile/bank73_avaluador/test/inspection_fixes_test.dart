@@ -18,11 +18,25 @@ import 'mobile_contract_test.dart' show FakeTransport, MemorySessionStore;
 
 class ReportTransport extends FakeTransport {
   @override
-  Future<Map<String, dynamic>> get(String path) async => {
-    'inspection': {'id': 'visit', 'status': 'draft'},
-    'units': <dynamic>[],
-    'evidence': <dynamic>[],
-  };
+  Future<Map<String, dynamic>> get(String path) async {
+    if (path.endsWith('/inspection-pack')) {
+      return {
+        'inspectionPack': {
+          'project': {'id': 'project', 'name': 'Proyecto'},
+          'metrics': <String, dynamic>{},
+          'activeFronts': <dynamic>[],
+          'current': {
+            'visit': <String, dynamic>{},
+          },
+        },
+      };
+    }
+    return {
+      'inspection': {'id': 'visit', 'status': 'draft'},
+      'units': <dynamic>[],
+      'evidence': <dynamic>[],
+    };
+  }
 }
 
 void main() {

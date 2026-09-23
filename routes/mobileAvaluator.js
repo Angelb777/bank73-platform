@@ -8,6 +8,7 @@ const PDFDocument = require('pdfkit');
 const Project = require('../models/Project');
 const ProjectChecklist = require('../models/ProjectChecklist');
 const { renderInspectionReport } = require('../services/inspectionReport');
+const { buildInspectionReportDocx } = require('../services/inspectionReportDocx');
 const Unit = require('../models/Unit');
 const CommercialFolder = require('../models/CommercialFolder');
 const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment');
@@ -177,6 +178,46 @@ function incidentScope(item) {
   return { scopeType, scopeId };
 }
 
+function sanitizeReportDetails(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw Object.assign(new Error('Datos adicionales del informe invalidos.'), { status: 400 });
+  if (unexpectedFields(raw, ['projectDescription', 'plans', 'workChanges', 'budgetAdjustments', 'contractsObservations']).length) throw Object.assign(new Error('Datos adicionales del informe invalidos.'), { status: 400 });
+  const plans = raw.plans || {};
+  const workChanges = raw.workChanges || {};
+  const budgetAdjustments = raw.budgetAdjustments || {};
+  if (unexpectedFields(plans, ['status', 'observations']).length || unexpectedFields(workChanges, ['hasChanges', 'description', 'budgetImpact', 'scheduleImpact', 'observations']).length || unexpectedFields(budgetAdjustments, ['hasAdjustments', 'explanation']).length) throw Object.assign(new Error('Datos adicionales del informe invalidos.'), { status: 400 });
+  const projectDescription = raw.projectDescription === null || raw.projectDescription === undefined ? null : String(raw.projectDescription).trim();
+  const planStatus = String(plans.status || 'not_verifiable');
+  const planObservations = String(plans.observations || '').trim();
+  const contractsObservations = String(raw.contractsObservations || '').trim();
+  const changesDescription = String(workChanges.description || '').trim();
+  const budgetImpact = String(workChanges.budgetImpact || '').trim();
+  const scheduleImpact = String(workChanges.scheduleImpact || '').trim();
+  const changesObservations = String(workChanges.observations || '').trim();
+  const adjustmentExplanation = String(budgetAdjustments.explanation || '').trim();
+  if (!['yes', 'no', 'not_verifiable'].includes(planStatus)) throw Object.assign(new Error('Valoracion de planos invalida.'), { status: 400 });
+  if (workChanges.hasChanges !== null && workChanges.hasChanges !== undefined && typeof workChanges.hasChanges !== 'boolean') throw Object.assign(new Error('Valoracion de cambios invalida.'), { status: 400 });
+  if (budgetAdjustments.hasAdjustments !== null && budgetAdjustments.hasAdjustments !== undefined && typeof budgetAdjustments.hasAdjustments !== 'boolean') throw Object.assign(new Error('Valoracion de presupuesto invalida.'), { status: 400 });
+  if ((projectDescription?.length || 0) > 10000 || planObservations.length > 5000 || contractsObservations.length > 5000 || changesDescription.length > 5000 || budgetImpact.length > 3000 || scheduleImpact.length > 3000 || changesObservations.length > 5000 || adjustmentExplanation.length > 5000) throw Object.assign(new Error('Texto adicional del informe demasiado largo.'), { status: 400 });
+  if (workChanges.hasChanges === true && !changesDescription) throw Object.assign(new Error('Describe los cambios realizados en la obra.'), { status: 400 });
+  if (budgetAdjustments.hasAdjustments === true && !adjustmentExplanation) throw Object.assign(new Error('Explica el ajuste realizado en el presupuesto.'), { status: 400 });
+  return {
+    projectDescription,
+    plans: { status: planStatus, observations: planObservations },
+    workChanges: {
+      hasChanges: workChanges.hasChanges ?? null,
+      description: changesDescription,
+      budgetImpact,
+      scheduleImpact,
+      observations: changesObservations
+    },
+    budgetAdjustments: {
+      hasAdjustments: budgetAdjustments.hasAdjustments ?? null,
+      explanation: adjustmentExplanation
+    },
+    contractsObservations
+  };
+}
+
 function inspectionDto(inspection) {
   return {
     id: String(inspection._id),
@@ -211,6 +252,7 @@ function inspectionDto(inspection) {
     environmentalObservations: String(inspection.environmentalObservations || ''),
     qualityAssessment: inspection.qualityAssessment || null,
     environmentalAssessment: inspection.environmentalAssessment || null,
+    reportDetails: inspection.reportDetails || null,
     scheduleAssessment: inspection.scheduleAssessment ? {
       status: String(inspection.scheduleAssessment.status || 'not_assessed'),
       plannedProgressPercent: inspection.scheduleAssessment.plannedProgressPercent == null ? null : Number(inspection.scheduleAssessment.plannedProgressPercent),
@@ -905,7 +947,7 @@ router.put('/inspections/:inspectionId/project-progress', async (req, res) => {
 
 router.put('/inspections/:inspectionId/visit', async (req, res) => {
   try {
-    const allowed = ['version', 'workFronts', 'incidents', 'qualityObservations', 'environmentalObservations', 'qualityAssessment', 'environmentalAssessment', 'scheduleAssessment', 'technicalConclusion', 'technicalRecommendation'];
+    const allowed = ['version', 'workFronts', 'incidents', 'qualityObservations', 'environmentalObservations', 'qualityAssessment', 'environmentalAssessment', 'scheduleAssessment', 'reportDetails', 'technicalConclusion', 'technicalRecommendation'];
     const extraFields = unexpectedFields(req.body, allowed);
     if (extraFields.length) return res.status(400).json({ error: 'Campos no permitidos.', fields: extraFields });
     const expectedVersion = parseExpectedVersion(req.body?.version);
@@ -994,6 +1036,7 @@ router.put('/inspections/:inspectionId/visit', async (req, res) => {
       set[field] = { status, checks, observations };
       set[field === 'qualityAssessment' ? 'qualityObservations' : 'environmentalObservations'] = observations;
     }
+    if (req.body.reportDetails !== undefined) set.reportDetails = sanitizeReportDetails(req.body.reportDetails);
     if (req.body.scheduleAssessment !== undefined) {
       const raw = req.body.scheduleAssessment || {};
       if (unexpectedFields(raw, ['status', 'plannedProgressPercent', 'forecastCompletionDate', 'notes']).length) return res.status(400).json({ error: 'scheduleAssessment invalido.' });
@@ -1455,6 +1498,36 @@ async function sendInspectionReport(req, res, { allowDraft = false } = {}) {
 
 router.get('/inspections/:inspectionId/report-preview.pdf', (req, res) => sendInspectionReport(req, res, { allowDraft: true }));
 router.get('/inspections/:inspectionId/report.pdf', (req, res) => sendInspectionReport(req, res));
+
+async function sendInspectionReportDocx(req, res, { allowDraft = false } = {}) {
+  try {
+    const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
+    if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
+    if (!allowDraft && resolved.inspection.status !== 'finalized') return res.status(409).json({ error: 'Finaliza la inspeccion antes de generar el informe.' });
+    const inspection = resolved.inspection;
+    const context = await inspectionReportContext.buildInspectionReportContext({
+      scope: {
+        bankTenantKey: inspection.bankTenantKey,
+        projectTenantKey: inspection.projectTenantKey,
+        projectId: inspection.projectId
+      },
+      inspection,
+      preferFrozen: !allowDraft
+    });
+    if (!context) return res.status(404).json({ error: 'Proyecto no encontrado.' });
+    const result = buildInspectionReportDocx(context);
+    const filename = `${inspection.reportNumber || 'informe-bank73'}.docx`;
+    res.type('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(result);
+  } catch (e) {
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+    else res.end();
+  }
+}
+
+router.get('/inspections/:inspectionId/report-preview.docx', (req, res) => sendInspectionReportDocx(req, res, { allowDraft: true }));
+router.get('/inspections/:inspectionId/report.docx', (req, res) => sendInspectionReportDocx(req, res));
 
 // Cualquier ruta no reconocida dentro de /api/mobile/v1 debe responder 404
 // aqui mismo. Sin este catch-all, Express deja caer la request hacia el

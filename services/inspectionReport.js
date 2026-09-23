@@ -18,11 +18,14 @@ const LABELS = {
   change: 'Cambio', delay: 'Retraso', defect: 'Defecto', quality: 'Calidad', environment: 'Medioambiente', risk: 'Riesgo', other: 'Otra',
   on_track: 'En plazo', at_risk: 'En riesgo', delayed: 'Retrasado', not_assessed: 'Sin evaluar',
   conforming: 'Conforme', observations_required: 'Con observaciones', non_conforming: 'No conforme',
+  yes: 'Sí', no: 'No', not_verifiable: 'No verificable', CUMPLIDO: 'Cumplido', PENDIENTE: 'Pendiente',
   structure: 'Estructura', materials: 'Materiales', workmanship: 'Ejecución', finishes: 'Acabados', waste: 'Residuos', dust: 'Polvo', drainage: 'Drenaje', erosion: 'Erosión',
   progress: 'Avance de obra', incident: 'Incidencia', comparison: 'Comparación', general: 'Evidencia general'
 };
 const label = value => LABELS[value] || dash(value);
 const delta = value => value === null || value === undefined ? '—' : `${num(value) >= 0 ? '+' : ''}${num(value).toFixed(1)} pts`;
+const yesNoUnknown = value => value === true ? 'Sí' : value === false ? 'No' : 'No verificable';
+const CERTIFICATION_TEXT = 'Certificamos que este informe es el producto de la inspección de la obra en la fecha indicada, y su elaboración ha sido de manera objetiva de acuerdo al avance de la obra y a la documentación suministrada por el Promotor y verificada por nosotros. Asimismo, certificamos que nuestra escogencia como inspectores y la aceptación de nuestros honorarios no han influido de ninguna manera en la elaboración de este informe, y por lo tanto todos los datos suministrados son correctos y veraces según nuestro más leal saber y entender.';
 
 function legacyContext({ project = {}, inspection = {}, units = [], evidence = [], folders = [], previousInspection = null }) {
   return {
@@ -46,6 +49,7 @@ async function renderInspectionReport(doc, input = {}) {
   const visit = ctx.visit || {};
   const finance = ctx.finance || {};
   const compliance = ctx.compliance || {};
+  const reportDetails = visit.reportDetails || {};
   const currency = project.currency || 'PAB';
   const width = doc.page.width - MARGIN * 2;
   const logoWhite = path.join(__dirname, '..', 'assets', 'Bank73logoblanco.png');
@@ -179,18 +183,18 @@ async function renderInspectionReport(doc, input = {}) {
 
   heading('Datos generales y participantes');
   keyValues([
-    ['Proyecto', project.name], ['Descripción', project.description], ['Tipo', project.type], ['Estado Bank73', project.status],
+    ['Proyecto', project.name], ['Descripción', reportDetails.projectDescription ?? project.description], ['Tipo', project.type], ['Estado Bank73', project.status],
     ['Ubicación', [project.location?.label, project.location?.address, project.location?.city, project.location?.province].filter(Boolean).join(', ')],
     ['Promotor', ctx.participants?.promoter?.name || project.legal?.promoterLegalName], ['Banco', ctx.participants?.bank?.name], ['Banco interino', project.legal?.interimBank], ['Fideicomiso', project.legal?.trustName],
-    ['Número de fases', project.technical?.phasesCount], ['Unidades previstas', project.technical?.totalUnits]
+    ['Agrupaciones físicas', (ctx.inventory?.folders || []).length], ['Unidades del proyecto', (ctx.inventory?.units || []).length]
   ]);
   const board = project.legal?.boardMembers || [];
   if (board.length) table(['Profesional / dignatario', 'Cargo', 'Identificación'], board.map(item => [item.name, item.position, item.cedula]), [2, 1.2, 1.2]);
   const technicalTeam = ctx.participants?.technicalTeam || [];
   if (technicalTeam.length) table(['Equipo técnico', 'Título', 'Idoneidad', 'Empresa'], technicalTeam.map(item => [item.name, item.professional?.title, item.professional?.licenseNumber, item.professional?.company]), [1.5, 1.2, 1, 1.5]);
-  if (project.description || project.technical?.notes) {
-    subheading('Memoria descriptiva disponible en Bank73');
-    paragraph([project.description, project.technical?.notes].filter(Boolean).join('\n\n'));
+  if (reportDetails.projectDescription || project.technical?.notes) {
+    subheading('Descripción general de la obra');
+    paragraph([reportDetails.projectDescription, project.technical?.notes].filter(Boolean).join('\n\n'));
   }
 
   heading('Modelos de vivienda y unidades');
@@ -214,11 +218,26 @@ async function renderInspectionReport(doc, input = {}) {
     ['Desembolsado', fmtMoney(summary.totalDisbursed, currency)], ['Amortizado', fmtMoney(summary.totalAmortized, currency)], ['Saldo', fmtMoney(summary.currentDebtBalance, currency)]
   ]);
   keyValues([['Condiciones de desembolso', finance.financialConditions?.disbursementConditions], ['Condiciones de amortización', finance.financialConditions?.amortizationConditions], ['Garantías', finance.financialConditions?.guarantees], ['Seguro requerido', finance.financialConditions?.insurance], ['Plazo', finance.financialConditions?.term]]);
+  const financingConditions = compliance.financingConditions || [];
+  if (financingConditions.length) {
+    subheading('Condiciones de financiamiento registradas como requisitos');
+    table(['Fase', 'Condición', 'Estado', 'Resumen'], financingConditions.map(item => [item.phaseName, item.title, label(item.status), item.information || item.observations]), [1, 2.5, .8, 2.2]);
+  }
+  keyValues([
+    ['Ajustes desde la última inspección', yesNoUnknown(reportDetails.budgetAdjustments?.hasAdjustments)],
+    ['Explicación del ajuste', reportDetails.budgetAdjustments?.explanation]
+  ]);
 
   heading('Programa de obra y fases');
   const phases = ctx.planning?.phases || [];
   if (phases.length) table(['Fase', 'Inicio previsto', 'Fin previsto', 'Inicio real', 'Fin real', 'Estado'], phases.map(item => [item.name, fmtDate(item.startDate), fmtDate(item.endDate), fmtDate(item.actualStartDate), fmtDate(item.actualEndDate), item.isCompleted ? 'Completada' : item.active ? 'Activa' : 'Programada']), [1.8, 1, 1, 1, 1, 1]);
   else paragraph('No existe un programa de fases estructurado.', { muted: true });
+  const programSummary = ctx.planning?.summary || {};
+  if (programSummary.startDate || programSummary.endDate) keyValues([
+    ['Inicio general del programa', fmtDate(programSummary.startDate)],
+    ['Finalización prevista', fmtDate(programSummary.endDate)],
+    ['Duración estimada', programSummary.durationMonths == null ? null : `${num(programSummary.durationMonths).toFixed(1)} meses (${num(programSummary.durationDays).toFixed(0)} días)`]
+  ]);
   const schedule = ctx.metrics?.scheduleProgress || {};
   if (schedule.plannedPercent != null || schedule.actualPercent != null) {
     table(['Avance previsto', 'Avance real', 'Desviación'], [[pct(schedule.plannedPercent), pct(schedule.actualPercent), delta(schedule.variancePercent)]], [1, 1, 1]);
@@ -231,19 +250,50 @@ async function renderInspectionReport(doc, input = {}) {
   else paragraph('No hay permisos estructurados asociados al proyecto.', { muted: true });
   const requirements = compliance.requirements || [];
   if (requirements.length) {
-    const pending = requirements.filter(item => !['completed', 'approved', 'COMPLETADO'].includes(String(item.status || '')));
+    const detailedNumbers = new Set([4, 10, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]);
+    const pending = requirements.filter(item => !detailedNumbers.has(num(item.number)) && !['completed', 'approved', 'COMPLETADO', 'CUMPLIDO'].includes(String(item.status || '')));
     subheading('Requisitos relevantes');
-    paragraph(`${requirements.length - pending.length} completados · ${pending.length} pendientes o en curso.`, { muted: true, size: 8 });
+    paragraph(`${requirements.length} requisitos disponibles en Bank73 · ${pending.length} pendiente(s) adicional(es).`, { muted: true, size: 8 });
     if (pending.length) table(['Fase', 'Requisito pendiente', 'Estado'], pending.map(item => [item.phaseName, item.title, label(item.status)]), [1, 3.3, .9]);
   }
+  subheading('Planos aprobados');
+  keyValues([['Confirmación del avaluador', label(reportDetails.plans?.status)], ['Observaciones', reportDetails.plans?.observations]]);
+  const planRequirements = compliance.planRequirements || [];
+  if (planRequirements.length) table(['Fase', 'Referencia en Bank73', 'Estado', 'Información'], planRequirements.map(item => [item.phaseName, item.title, label(item.status), item.information || item.observations]), [1, 2.2, .8, 2.2]);
   const policies = compliance.policies || [];
-  if (policies.length) { subheading('Pólizas y seguros'); table(['Tipo', 'Aseguradora', 'Póliza', 'Monto', 'Vencimiento', 'Endoso'], policies.map(item => [item.type, item.insurer, item.policyNumber, fmtMoney(item.insuredAmount, currency), fmtDate(item.expiryDate), item.endorsedToBank ? 'Sí' : 'No']), [.7, 1.2, 1, 1.1, 1, .6]); }
+  const policyStatus = item => {
+    const now = new Date(inspection.inspectionDate || ctx.generatedAt || Date.now());
+    const start = item.startDate ? new Date(item.startDate) : null;
+    const end = item.expiryDate ? new Date(item.expiryDate) : null;
+    if (end && end < now) return 'Vencida';
+    if (start && start > now) return 'No iniciada';
+    return start || end ? 'Vigente' : 'No verificable';
+  };
+  if (policies.length) {
+    subheading('Pólizas y seguros');
+    table(['Tipo', 'Asegurado', 'Acreedor', 'Aseguradora', 'Documento / número', 'Monto', 'Vigencia', 'Estado'], policies.map(item => [item.type, item.insured || item.insuredName, item.bank, item.insurer, [item.documentName, item.policyNumber].filter(Boolean).join(' / '), fmtMoney(item.insuredAmount, currency), [fmtDate(item.startDate), fmtDate(item.expiryDate)].join(' - '), policyStatus(item)]), [.55, .8, .8, .9, 1.2, .8, 1.1, .75]);
+  }
+  const bonds = compliance.bonds || [];
+  if (bonds.length) {
+    subheading('Fianzas');
+    table(['Tipo', 'Fase', 'Emisor / acreedor', 'Documento / número', 'Monto', 'Vigencia', 'Estado'], bonds.map(item => {
+      const data = item.structuredData || {};
+      return [item.title, item.phaseName, data.issuer, data.bondNumber, fmtMoney(data.actualAmount || data.requiredAmount, currency), [fmtDate(data.startDate), fmtDate(data.expiryDate)].join(' - '), data.validityStatus || label(item.status)];
+    }), [1.6, .8, 1, 1, 1, 1.1, .8]);
+  }
   const documents = compliance.documents || [];
-  const contracts = documents.filter(item => /contrato|promesa|cesi[oó]n/i.test(`${item.title} ${item.category}`));
   const plans = documents.filter(item => /plano|anteproyecto|cronograma|presupuesto/i.test(`${item.title} ${item.category}`));
-  if (contracts.length) { subheading('Contratos y documentos contractuales'); table(['Documento', 'Categoría', 'Estado', 'Fecha'], contracts.map(item => [item.title, [item.category, item.folder].filter(Boolean).join(' / '), label(item.status), fmtDate(item.createdAt)]), [3, 1.3, .8, 1]); }
+  const constructionContracts = compliance.constructionContracts || [];
+  if (constructionContracts.length) {
+    subheading('Contratos de obra / construcción');
+    table(['Fase', 'Contrato identificado', 'Estado', 'Información'], constructionContracts.map(item => [item.phaseName, item.title, label(item.status), item.information || item.observations]), [1, 2, .8, 2.3]);
+    const contractDocuments = constructionContracts.flatMap(item => item.documents || []);
+    if (contractDocuments.length) table(['Documento de obra', 'Categoría', 'Estado', 'Fecha'], contractDocuments.map(item => [item.title, [item.category, item.folder].filter(Boolean).join(' / '), label(item.status), fmtDate(item.createdAt)]), [3, 1.3, .8, 1]);
+  } else paragraph('No hay contratos de obra identificados como requisito de construcción.', { muted: true });
+  if (reportDetails.contractsObservations) keyValues([['Observaciones sobre contratos', reportDetails.contractsObservations]]);
   if (plans.length) { subheading('Planos, estudios y presupuesto'); table(['Documento', 'Categoría', 'Estado', 'Fecha'], plans.map(item => [item.title, [item.category, item.folder].filter(Boolean).join(' / '), label(item.status), fmtDate(item.createdAt)]), [3, 1.3, .8, 1]); }
-  const otherRelevant = documents.filter(item => !contracts.includes(item) && !plans.includes(item) && (item.category || item.folder || item.expiryDate));
+  const constructionDocumentIds = new Set(constructionContracts.flatMap(item => item.documents || []).map(item => String(item.id)));
+  const otherRelevant = documents.filter(item => !constructionDocumentIds.has(String(item.id)) && !plans.includes(item) && (item.category || item.folder || item.expiryDate));
   if (otherRelevant.length) { subheading('Otra documentación vigente'); table(['Documento', 'Categoría / carpeta', 'Estado', 'Vencimiento'], otherRelevant.map(item => [item.title, [item.category, item.folder, item.subfolder].filter(Boolean).join(' / '), label(item.status), fmtDate(item.expiryDate)]), [2.7, 1.6, .8, 1]); }
 
   heading('Avance anterior, periodo y acumulado');
@@ -270,6 +320,15 @@ async function renderInspectionReport(doc, input = {}) {
   if (unitRows.length) { subheading('Unidades inspeccionadas'); table(['Unidad', 'Modelo', 'Anterior', 'Periodo', 'Acumulado'], unitRows.map(item => [item.reference?.code || [item.reference?.manzana, item.reference?.lote].filter(Boolean).join('-'), item.reference?.modelo, pct(item.previousPercent), delta(item.periodIncrementPercent), pct(item.currentPercent)]), [1.3, 1.3, .9, .9, .9]); }
 
   heading('Cambios, incidencias y riesgos');
+  const workChanges = reportDetails.workChanges || {};
+  subheading('Cambios respecto a planos, alcance o proyecto aprobado');
+  keyValues([
+    ['¿Se realizaron cambios?', yesNoUnknown(workChanges.hasChanges)],
+    ['Descripción', workChanges.description],
+    ['Posible impacto en presupuesto', workChanges.budgetImpact],
+    ['Posible impacto en plazo', workChanges.scheduleImpact],
+    ['Observaciones', workChanges.observations]
+  ]);
   const incidentFolderNames = new Map((ctx.inventory?.folders || []).map(item => [String(item.id || item._id || ''), item.name]));
   const incidentUnitNames = new Map((ctx.inventory?.units || []).map(item => [String(item.id || item._id || ''), item.code || [item.manzana, item.lote].filter(Boolean).join('-')]));
   const incidentAreaNames = new Map((inspection.commonAreas || []).map(item => [String(item.key), item.name]));
@@ -297,13 +356,20 @@ async function renderInspectionReport(doc, input = {}) {
   const qualityAssessment = visit.qualityAssessment || {};
   const environmentalAssessment = visit.environmentalAssessment || {};
   subheading('Calidad');
-  keyValues([['Resultado', label(qualityAssessment.status)], ['Elementos revisados', (qualityAssessment.checks || []).map(label).join(', ')]]);
+  const qualityLabel = qualityAssessment.status === 'not_assessed' ? 'No verificable' : label(qualityAssessment.status);
+  keyValues([['Valoración rápida', qualityLabel], ['Elementos revisados', (qualityAssessment.checks || []).map(label).join(', ')]]);
   paragraph(qualityAssessment.observations || visit.qualityObservations || 'No se registraron observaciones específicas de calidad.', { muted: !(qualityAssessment.observations || visit.qualityObservations) });
-  subheading('Medioambiente');
-  keyValues([['Resultado', label(environmentalAssessment.status)], ['Aspectos revisados', (environmentalAssessment.checks || []).map(label).join(', ')]]);
+  subheading('Mitigación de riesgo ambiental');
+  const environmentalLabel = environmentalAssessment.status === 'conforming' ? 'Cumple' : environmentalAssessment.status === 'non_conforming' ? 'No cumple' : 'No verificable';
+  keyValues([['Confirmación del avaluador', environmentalLabel], ['Aspectos revisados', (environmentalAssessment.checks || []).map(label).join(', ')]]);
+  const environmentalRequirements = compliance.environmentalRequirements || [];
+  if (environmentalRequirements.length) table(['Fase', 'Requisito ambiental', 'Estado', 'Información'], environmentalRequirements.map(item => [item.phaseName, item.title, label(item.status), item.information || item.observations]), [1, 2.4, .8, 2]);
   paragraph(environmentalAssessment.observations || visit.environmentalObservations || 'No se registraron observaciones ambientales específicas.', { muted: !(environmentalAssessment.observations || visit.environmentalObservations) });
 
   heading('Conclusión, recomendación y firma');
+  subheading('Certificación del inspector');
+  paragraph(CERTIFICATION_TEXT);
+  subheading('Conclusión');
   paragraph(visit.conclusion || 'Sin conclusión adicional.', { muted: !visit.conclusion });
   const verdicts = { favorable: 'Favorable al desembolso', conditional: 'Favorable con condiciones', unfavorable: 'Desfavorable al desembolso', not_assessed: 'Sin pronunciamiento' };
   keyValues([['Recomendación técnica', verdicts[visit.recommendation?.verdict] || verdicts.not_assessed], ['Condiciones', visit.recommendation?.conditions ?? visit.recommendation?.notes]]);

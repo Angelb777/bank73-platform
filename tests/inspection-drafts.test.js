@@ -189,7 +189,9 @@ test('mobile API exposes the inspection lifecycle and evidence routes', () => {
     'GET /inspections/:inspectionId/evidence',
     'GET /inspections/:inspectionId/evidence/:evidenceId/file',
     'GET /inspections/:inspectionId/inspection-pack',
+    'GET /inspections/:inspectionId/report-preview.docx',
     'GET /inspections/:inspectionId/report-preview.pdf',
+    'GET /inspections/:inspectionId/report.docx',
     'GET /inspections/:inspectionId/report.pdf',
     'GET /inspections/:inspectionId/units',
     'GET /inspections/:inspectionId/units/:unitId',
@@ -439,6 +441,13 @@ test('visit workspace stores fronts, incidents and distinct schedule/quality obs
       environmentalObservations: 'Residuos segregados.',
       qualityAssessment: { status: 'conforming', checks: ['structure', 'materials'], observations: 'Hormigón conforme.' },
       environmentalAssessment: { status: 'observations_required', checks: ['waste', 'dust'], observations: 'Residuos segregados.' },
+      reportDetails: {
+        projectDescription: 'Descripción certificada de la obra.',
+        plans: { status: 'yes', observations: 'Planos sellados.' },
+        workChanges: { hasChanges: false },
+        budgetAdjustments: { hasAdjustments: true, explanation: 'Ajuste de acabados.' },
+        contractsObservations: 'El promotor construye directamente.'
+      },
       scheduleAssessment: { status: 'at_risk', plannedProgressPercent: 40, notes: 'Cinco puntos por debajo.' },
       technicalConclusion: 'La obra mantiene un avance verificable.',
       technicalRecommendation: { verdict: 'conditional', conditions: 'Corregir retraso.' }
@@ -451,6 +460,8 @@ test('visit workspace stores fronts, incidents and distinct schedule/quality obs
   assert.equal(stored.scheduleAssessment.status, 'at_risk');
   assert.deepEqual(stored.qualityAssessment.checks, ['structure', 'materials']);
   assert.equal(stored.environmentalAssessment.status, 'observations_required');
+  assert.equal(stored.reportDetails.plans.status, 'yes');
+  assert.equal(stored.reportDetails.budgetAdjustments.explanation, 'Ajuste de acabados.');
   assert.equal(stored.technicalConclusion, 'La obra mantiene un avance verificable.');
   assert.equal(stored.technicalRecommendation.verdict, 'conditional');
   assert.equal(capture.payload.inspection.workFronts[0].periodIncrementPercent, 10);
