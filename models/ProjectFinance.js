@@ -116,11 +116,15 @@ const DisbursementSchema = new Schema({
 }, { _id: true });
 
 const LoanLineItemSchema = new Schema({
+  entryType: { type: String, enum: ['legacy', 'disbursement', 'manual_amortization'], default: 'legacy' },
+  paymentStatus: { type: String, enum: ['legacy', 'pending', 'paid'], default: 'legacy' },
+  movementDate: { type: Date, default: null },
   disbursementDate: { type: Date, default: null },
   loanNumber: { type: String, default: '' },
   disbursementAmount: { type: Number, default: 0 },
   maturityDate: { type: Date, default: null },
   amortizedAmount: { type: Number, default: 0 },
+  inspectionId: { type: Schema.Types.ObjectId, ref: 'Inspection', default: null, index: true },
   notes: { type: String, default: '' },
 }, { _id: true, timestamps: true });
 
@@ -128,6 +132,7 @@ const LoanLineSchema = new Schema({
   phaseId: { type: Schema.Types.ObjectId, default: null, index: true },
   phaseName: { type: String, default: '' },
   name: { type: String, default: 'Linea 1' },
+  approvedAmount: { type: Number, default: 0 },
   financierTenantKey: { type: String, trim: true, default: '' },
   financierName: { type: String, trim: true, default: '' },
   financierType: { type: String, trim: true, default: 'bank' },

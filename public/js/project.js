@@ -5339,6 +5339,7 @@ let FINANCE_LOAN_LINE_COLLAPSED = new Set();
 let FINANCE_ALL_LOAN_LINES = [];
 let FINANCE_SELECTED_PHASE_ID = '';
 let FINANCE_SELECTED_PHASE_NAME = '';
+let FINANCE_AVALUATION_CONTEXT = { hasAssignedAvaluator: false, reports: [] };
 let FINANCE_MODAL_HOME = null;
 let FINANCE_MODAL_NEXT = null;
 
@@ -5404,6 +5405,7 @@ function financeSeedLoanLinesFromApprovedPhaseLines(phase = {}) {
         phaseId,
         phaseName,
         name: line.name || `Linea ${idx + 1}`,
+        approvedAmount: numOr0(line.approvedAmount),
         notes: details,
         entries: [{
           _id: `approved-entry-${phaseId || phaseName || 'phase'}-${idx}`,
@@ -5430,7 +5432,7 @@ function financeLoanLineHasMeaningfulData(line = {}, idx = 0) {
     numOr0(entry?.amortizedAmount) ||
     String(entry?.notes || '').trim()
   );
-  return hasCustomName || String(line.notes || '').trim() || hasEntries || numOr0(line.disbursementAmount) || numOr0(line.amortizedAmount);
+  return hasCustomName || String(line.notes || '').trim() || numOr0(line.approvedAmount) || hasEntries || numOr0(line.disbursementAmount) || numOr0(line.amortizedAmount);
 }
 
 function financeLoanLinesWithApprovedSeeds(savedLines = [], phase = {}) {
@@ -5470,7 +5472,11 @@ function financePhaseFunding(ph = {}) {
   const lines = financeLinesForPhase(ph._id);
   const actual = lines.reduce((acc, line) => {
     const entries = Array.isArray(line.entries) && line.entries.length ? line.entries : [line];
-    const disbursed = entries.reduce((sum, entry) => sum + numOr0(entry.disbursementAmount), 0);
+    const disbursed = entries.reduce((sum, entry) => (
+      sum + (entry.entryType === 'disbursement' && entry.paymentStatus === 'pending'
+        ? 0
+        : numOr0(entry.disbursementAmount))
+    ), 0);
     const manual = entries.reduce((sum, entry) => sum + numOr0(entry.amortizedAmount), 0);
     const amortized = manual + numOr0(line.allocatedAmortized);
     acc.disbursed += disbursed;
@@ -5492,6 +5498,37 @@ function financePhaseFunding(ph = {}) {
     ...actual,
     pendingRecommendedDisbursement: Math.max(0, recommendedBank - actual.disbursed),
   };
+}
+
+function financeSourceKind(name = '') {
+  const value = String(name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  if (/banco|financiacion bancaria|prestamo/.test(value)) return 'bank';
+  if (/promotor|aporte propio|capital propio/.test(value)) return 'promoter';
+  if (/preventa|venta anticipada/.test(value)) return 'presales';
+  return 'other';
+}
+
+function financeSourceBuckets(items = []) {
+  const result = { bank: 0, promoter: 0, presales: 0, hasBank: false, hasPromoter: false, hasPresales: false, other: [] };
+  (items || []).forEach(item => {
+    const kind = financeSourceKind(item?.name);
+    if (kind === 'other') result.other.push({ name: item?.name || 'Otra fuente', amount: numOr0(item?.amount) });
+    else {
+      result[kind] += numOr0(item?.amount);
+      if (kind === 'bank') result.hasBank = true;
+      if (kind === 'promoter') result.hasPromoter = true;
+      if (kind === 'presales') result.hasPresales = true;
+    }
+  });
+  return result;
+}
+
+function financePhaseApprovedBank(ph = {}) {
+  const plannedSources = financeSourceBuckets(ph.planSources || []);
+  if (plannedSources.hasBank) return plannedSources.bank;
+  const conditions = numOr0(ph?.financialConditions?.bankFinancedAmount);
+  const lines = (ph.financingLines || []).reduce((sum, line) => sum + numOr0(line?.approvedAmount), 0);
+  return conditions || lines || financePhaseFunding(ph).recommendedBank;
 }
 
 function renderFinanceCoherence(phases = FINANCE?.phases || []) {
@@ -5839,13 +5876,15 @@ function financeLineStatus(line) {
   const statuses = entries.map(financeEntryStatus).map(s => s.key);
   if (statuses.includes('overdue')) return { key: 'overdue', label: 'Vencido' };
   if (statuses.includes('upcoming')) return { key: 'upcoming', label: 'Proximo a vencer' };
+  if (statuses.includes('pending-payment')) return { key: 'pending', label: 'Pendiente de pago' };
   if (statuses.includes('missing')) return { key: 'missing', label: 'Sin vencimiento' };
-  const balance = entries.reduce((acc, entry) => acc + Math.max(0, numOr0(entry?.disbursementAmount) - numOr0(entry?.amortizedAmount)), 0);
+  const balance = entries.reduce((acc, entry) => acc + Math.max(0, entry?.entryType === 'disbursement' && entry?.paymentStatus === 'pending' ? 0 : numOr0(entry?.disbursementAmount) - numOr0(entry?.amortizedAmount)), 0);
   if (balance <= 0) return { key: 'amortized', label: 'Amortizado' };
   return { key: 'ok', label: 'OK' };
 }
 
 function financeEntryStatus(line) {
+  if (line?.entryType === 'disbursement' && line?.paymentStatus === 'pending') return { key: 'pending-payment', label: 'Pendiente de pago' };
   const balance = Math.max(0, numOr0(line?.disbursementAmount) - numOr0(line?.amortizedAmount));
   if (balance <= 0) return { key: 'amortized', label: 'Amortizado' };
   if (!line?.maturityDate) return { key: 'missing', label: 'Sin vencimiento' };
@@ -5865,22 +5904,27 @@ function collectFinanceLoanLines() {
     phaseId: card.dataset.phaseId || FINANCE_SELECTED_PHASE_ID || null,
     phaseName: card.dataset.phaseName || FINANCE_SELECTED_PHASE_NAME || '',
     name: card.querySelector('[data-line-field="name"]')?.value || `Linea ${idx + 1}`,
-    financierName: card.querySelector('[data-line-field="financierName"]')?.value || '',
-    financierTenantKey: card.querySelector('[data-line-field="financierTenantKey"]')?.value || '',
-    financierType: card.querySelector('[data-line-field="financierType"]')?.value || 'bank',
-    concept: card.querySelector('[data-line-field="concept"]')?.value || '',
+    financierName: card.dataset.financierName || '',
+    financierTenantKey: card.dataset.financierTenantKey || '',
+    financierType: card.dataset.financierType || 'bank',
+    concept: card.dataset.concept || '',
+    approvedAmount: numOr0(card.querySelector('[data-line-field="approvedAmount"]')?.value),
     notes: card.querySelector('[data-line-field="notes"]')?.value || '',
     entries: Array.from(card.querySelectorAll('[data-entry-row]')).map(row => ({
       _id: isMongoIdLike(row.dataset.entryId) ? row.dataset.entryId : undefined,
+      entryType: row.dataset.entryType || 'legacy',
+      paymentStatus: row.querySelector('[data-field="paymentStatus"]')?.value || 'legacy',
+      movementDate: row.querySelector('[data-field="movementDate"]')?.value || null,
       disbursementDate: row.querySelector('[data-field="disbursementDate"]')?.value || null,
       loanNumber: row.querySelector('[data-field="loanNumber"]')?.value || '',
       disbursementAmount: numOr0(row.querySelector('[data-field="disbursementAmount"]')?.value),
       maturityDate: row.querySelector('[data-field="maturityDate"]')?.value || null,
       amortizedAmount: numOr0(row.querySelector('[data-field="amortizedAmount"]')?.value),
+      inspectionId: row.querySelector('[data-field="inspectionId"]')?.value || null,
       notes: row.querySelector('[data-field="notes"]')?.value || '',
     })).filter(entry =>
-      entry.disbursementDate || entry.loanNumber || entry.disbursementAmount ||
-      entry.maturityDate || entry.amortizedAmount || entry.notes
+      entry.disbursementDate || entry.movementDate || entry.loanNumber || entry.disbursementAmount ||
+      entry.maturityDate || entry.amortizedAmount || entry.inspectionId || entry.notes
     ),
   }));
 }
@@ -5966,7 +6010,7 @@ function computeFinanceControlTotals() {
 
 function financeLoanLineTotals(line = {}) {
   const entries = Array.isArray(line.entries) && line.entries.length ? line.entries : [line];
-  const disbursed = entries.reduce((a, entry) => a + numOr0(entry.disbursementAmount), 0);
+  const disbursed = entries.reduce((a, entry) => a + (entry.entryType === 'disbursement' && entry.paymentStatus === 'pending' ? 0 : numOr0(entry.disbursementAmount)), 0);
   const amortized = entries.reduce((a, entry) => a + numOr0(entry.amortizedAmount), 0);
   const allocated = financeAllocatedToLine(line);
   const recovered = amortized + allocated;
@@ -6137,7 +6181,7 @@ function financeIdTimeValue(id) {
 
 function financeMovementSortValue(row) {
   const dateValue = row.type === 'manual'
-    ? financeSortDateValue(row.entry?.disbursementDate)
+    ? financeSortDateValue(row.entry?.movementDate || row.entry?.disbursementDate)
     : financeSortDateValue(row.sale?.checkDate);
   if (dateValue !== Number.MAX_SAFE_INTEGER) return dateValue;
   const idValue = row.type === 'manual'
@@ -6225,6 +6269,24 @@ function renderFinanceLoanLinesChart(lines = collectFinanceLoanLines()) {
   renderLoanLinesBarChart(el, lines || []);
 }
 
+function financeInspectionReport(reportId) {
+  return (FINANCE_AVALUATION_CONTEXT.reports || []).find(item => String(item.id) === String(reportId || '')) || null;
+}
+
+function financeInspectionOptions(selectedId = '', usedIds = new Set()) {
+  const selected = String(selectedId || '');
+  const available = (FINANCE_AVALUATION_CONTEXT.reports || []).filter(report =>
+    String(report.id) === selected || !usedIds.has(String(report.id))
+  );
+  const emptyLabel = FINANCE_AVALUATION_CONTEXT.hasAssignedAvaluator
+    ? (available.length ? 'Selecciona un informe' : 'No hay informes disponibles')
+    : 'No requerido';
+  return `<option value="">${emptyLabel}</option>${available.map(report => {
+    const date = financeDateInput(report.inspectionDate || report.finalizedAt);
+    return `<option value="${escapeHtml(report.id)}" ${String(report.id) === selected ? 'selected' : ''}>${escapeHtml(report.reportNumber || 'Informe')} · ${escapeHtml(date || 'Sin fecha')} · ${numOr0(report.projectProgressPercent).toFixed(1)}%</option>`;
+  }).join('')}`;
+}
+
 function renderFinancePhaseLineCharts(phases = [], containerId = 'financePhaseLineCharts', chartPrefix = 'financePhaseLineChart', options = {}) {
   const wrap = document.getElementById(containerId);
   if (!wrap) return;
@@ -6297,7 +6359,7 @@ function renderFinanceLoanLines(lines = []) {
   if (!body) return;
   const safeLines = (lines || []).map((line, idx) => ({
     ...line,
-    entries: Array.isArray(line.entries) && line.entries.length ? line.entries : [{
+    entries: Array.isArray(line.entries) ? line.entries : [{
       _id: line._id ? `legacy-${line._id}` : `new-entry-${Date.now()}-${idx}`,
       disbursementDate: line.disbursementDate || '',
       loanNumber: line.loanNumber || '',
@@ -6307,11 +6369,17 @@ function renderFinanceLoanLines(lines = []) {
       notes: line.notes || '',
     }]
   }));
+  const usedReportIds = new Set(safeLines.flatMap(line => (line.entries || []).map(entry => String(entry.inspectionId || '')).filter(Boolean)));
   body.innerHTML = safeLines.map((line, idx) => {
     const totals = financeLoanLineTotals(line);
     const recoveredPct = financePct(totals.recovered, totals.disbursed);
     const balancePct = financePct(totals.balance, totals.disbursed);
-    const status = totals.balance <= 0 ? { key: 'amortized', label: 'Amortizado' } : financeLineStatus(line);
+    const lineStatus = financeLineStatus(line);
+    const status = !(line.entries || []).length
+      ? { key: 'neutral', label: 'Sin movimientos' }
+      : lineStatus.key === 'pending'
+        ? lineStatus
+        : totals.balance <= 0 ? { key: 'amortized', label: 'Amortizado' } : lineStatus;
     const salesAllocations = financeSalesAllocationsForLine(line);
     const combinedRows = [
       ...line.entries.map((entry, entryIdx) => ({ type: 'manual', entry, entryIdx, sourceOrder: entryIdx })),
@@ -6328,11 +6396,11 @@ function renderFinanceLoanLines(lines = []) {
     const isCollapsed = FINANCE_LOAN_LINE_COLLAPSED.has(rowKey)
       || (rowsCount > 5 && !FINANCE_LOAN_LINE_EXPANDED.has(rowKey));
     return `
-      <article class="finance-loan-line-card" data-line-card data-id="${escapeHtml(rowId)}" data-phase-id="${escapeHtml(line.phaseId || FINANCE_SELECTED_PHASE_ID || '')}" data-phase-name="${escapeHtml(line.phaseName || FINANCE_SELECTED_PHASE_NAME || '')}">
+      <article class="finance-loan-line-card" data-line-card data-id="${escapeHtml(rowId)}" data-phase-id="${escapeHtml(line.phaseId || FINANCE_SELECTED_PHASE_ID || '')}" data-phase-name="${escapeHtml(line.phaseName || FINANCE_SELECTED_PHASE_NAME || '')}" data-financier-name="${escapeHtml(line.financierName || '')}" data-financier-tenant-key="${escapeHtml(line.financierTenantKey || '')}" data-financier-type="${escapeHtml(line.financierType || 'bank')}" data-concept="${escapeHtml(line.concept || '')}">
         <div class="finance-loan-line-head">
           <label>
-            <span>Nombre de línea</span>
-            <input data-line-field="name" value="${escapeHtml(line.name || `Linea ${idx + 1}`)}">
+            <span>Nombre de la línea</span>
+            <input data-line-field="name" value="${escapeHtml(line.name || `Linea ${idx + 1}`)}" placeholder="Infraestructura">
           </label>
           <div class="finance-loan-line-metrics">
             <span>Desembolsado <b>${financeMoney(totals.disbursed)}</b></span>
@@ -6347,29 +6415,29 @@ function renderFinanceLoanLines(lines = []) {
           </div>
           <div class="finance-inline-actions">
             <button class="btn btn-ghost btn-xs" type="button" data-finance-toggle-entries data-count="${rowsCount}" aria-expanded="${isCollapsed ? 'false' : 'true'}">${isCollapsed ? 'Mostrar' : 'Ocultar'} partidas (${rowsCount})</button>
-            <button class="btn btn-xs" type="button" data-finance-add-entry>+ Partida</button>
+            <button class="btn btn-xs" type="button" data-finance-add-entry="disbursement">+ Desembolso</button>
+            <button class="btn btn-ghost btn-xs" type="button" data-finance-add-entry="manual_amortization">+ Amortización manual</button>
             <button class="btn btn-xs" type="button" data-finance-save-line>Guardar</button>
             <button class="btn btn-danger btn-xs" type="button" data-finance-remove-line>Eliminar</button>
           </div>
         </div>
         <div class="finance-loan-line-notes">
-          <input data-line-field="financierName" value="${escapeHtml(line.financierName || '')}" placeholder="Banco o entidad financiadora">
-          <input data-line-field="financierTenantKey" value="${escapeHtml(line.financierTenantKey || '')}" placeholder="Tenant de la entidad (opcional)">
-          <select data-line-field="financierType"><option value="bank" ${line.financierType !== 'other' ? 'selected' : ''}>Banco</option><option value="other" ${line.financierType === 'other' ? 'selected' : ''}>Otra entidad</option></select>
-          <input data-line-field="concept" value="${escapeHtml(line.concept || '')}" placeholder="Concepto financiado">
-          <input data-line-field="notes" value="${escapeHtml(line.notes || '')}" placeholder="Notas de la línea">
+          <label><span>Aprobado para esta línea</span><input data-line-field="approvedAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(line.approvedAmount)}" placeholder="0.00"></label>
+          <label><span>Notas de la línea</span><input data-line-field="notes" value="${escapeHtml(line.notes || '')}" placeholder="Observaciones opcionales"></label>
         </div>
         <div class="finance-table-wrap ${isCollapsed ? 'is-collapsed' : ''}" data-finance-entries-wrap>
           <table class="finance-loan-table">
             <thead>
               <tr>
-                <th>Fecha desembolso</th>
+                <th>Tipo</th>
+                <th>Fecha</th>
                 <th>No. préstamo</th>
-                <th>Monto desembolso</th>
-                <th>Fecha vencimiento</th>
-                <th>Monto amortizado</th>
+                <th>Desembolso</th>
+                <th>Vencimiento</th>
+                <th>Amortización manual</th>
+                <th>Informe de avalúo</th>
+                <th>Pago</th>
                 <th>Saldo</th>
-                <th>Estado</th>
                 <th>Notas</th>
                 <th></th>
               </tr>
@@ -6380,13 +6448,15 @@ function renderFinanceLoanLines(lines = []) {
                   const sale = row.sale;
                   return `
                     <tr class="finance-sale-entry-row">
+                      <td><span class="finance-status is-ok">Venta</span></td>
                       <td><input value="${escapeHtml(financeDateInput(sale.checkDate) || '-')}" disabled></td>
                       <td><input value="${escapeHtml(sale.checkNumber ? `Cheque ${sale.checkNumber}` : sale.lot || 'Venta')}" disabled></td>
                       <td><input value="${formatPanamaNumber(0)}" disabled></td>
                       <td><input value="-" disabled></td>
                       <td><input value="${formatPanamaNumber(sale.amount)}" disabled></td>
+                      <td><span class="small muted">—</span></td>
+                      <td><span class="finance-status is-ok">Automática</span></td>
                       <td class="finance-balance">-</td>
-                      <td><span class="finance-status is-ok">Venta</span></td>
                       <td><input value="${escapeHtml(`${sale.lot || 'Unidad'} · ${sale.clientName || 'Cliente'}`)}" disabled></td>
                       <td><span class="small muted">Desde unidad</span></td>
                     </tr>
@@ -6394,17 +6464,24 @@ function renderFinanceLoanLines(lines = []) {
                 }
                 const entry = row.entry;
                 const entryIdx = row.entryIdx;
-                const entryBalance = Math.max(0, numOr0(entry.disbursementAmount) - numOr0(entry.amortizedAmount));
+                const entryType = ['disbursement', 'manual_amortization'].includes(entry.entryType) ? entry.entryType : 'legacy';
+                const isDisbursement = entryType === 'disbursement';
+                const isManualAmortization = entryType === 'manual_amortization';
+                const paidAmount = isDisbursement && entry.paymentStatus === 'pending' ? 0 : numOr0(entry.disbursementAmount);
+                const entryBalance = Math.max(0, paidAmount - numOr0(entry.amortizedAmount));
                 const entryStatus = financeEntryStatus(entry);
+                const report = financeInspectionReport(entry.inspectionId);
                 return `
-                  <tr data-entry-row data-entry-id="${escapeHtml(entry._id || `new-entry-${Date.now()}-${entryIdx}`)}">
-                    <td><input data-field="disbursementDate" type="date" value="${financeDateInput(entry.disbursementDate)}"></td>
-                    <td><input data-field="loanNumber" value="${escapeHtml(entry.loanNumber || '')}"></td>
-                    <td><input data-field="disbursementAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.disbursementAmount)}"></td>
-                    <td><input data-field="maturityDate" type="date" value="${financeDateInput(entry.maturityDate)}"></td>
-                    <td><input data-field="amortizedAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.amortizedAmount)}"></td>
+                  <tr data-entry-row data-entry-id="${escapeHtml(entry._id || `new-entry-${Date.now()}-${entryIdx}`)}" data-entry-type="${entryType}">
+                    <td><span class="finance-entry-kind is-${entryType}">${isDisbursement ? 'Desembolso' : isManualAmortization ? 'Amortización' : 'Histórica'}</span></td>
+                    <td><input data-field="${isManualAmortization ? 'movementDate' : 'disbursementDate'}" type="date" value="${financeDateInput(isManualAmortization ? entry.movementDate : entry.disbursementDate)}"></td>
+                    <td><input data-field="loanNumber" value="${escapeHtml(entry.loanNumber || '')}" ${isManualAmortization ? 'disabled' : ''}></td>
+                    <td><input data-field="disbursementAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.disbursementAmount)}" ${isManualAmortization ? 'disabled' : ''}></td>
+                    <td><input data-field="maturityDate" type="date" value="${financeDateInput(entry.maturityDate)}" ${isManualAmortization ? 'disabled' : ''}></td>
+                    <td><input data-field="amortizedAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.amortizedAmount)}" ${isDisbursement ? 'disabled' : ''}></td>
+                    <td>${isDisbursement ? `<select data-field="inspectionId" ${(entry.inspectionId && isMongoIdLike(entry._id)) || (FINANCE_AVALUATION_CONTEXT.hasAssignedAvaluator && !(FINANCE_AVALUATION_CONTEXT.reports || []).length) ? 'disabled' : ''}>${financeInspectionOptions(entry.inspectionId, usedReportIds)}</select>${report ? `<button class="finance-report-link" type="button" data-open-inspection="${escapeHtml(report.id)}">Ver PDF</button>` : ''}` : '<span class="small muted">—</span>'}</td>
+                    <td>${isDisbursement ? `<select data-field="paymentStatus"><option value="pending" ${entry.paymentStatus === 'pending' ? 'selected' : ''}>Pendiente</option><option value="paid" ${entry.paymentStatus !== 'pending' ? 'selected' : ''}>Pagado</option></select>` : `<span class="finance-status is-${entryStatus.key}">${isManualAmortization ? 'Manual' : entryStatus.label}</span>`}</td>
                     <td class="finance-balance">${financeMoney(entryBalance)}</td>
-                    <td><span class="finance-status is-${entryStatus.key}">${entryStatus.label}</span></td>
                     <td><input data-field="notes" value="${escapeHtml(entry.notes || '')}"></td>
                     <td><button class="btn btn-danger btn-xs" type="button" data-finance-remove-entry>Quitar</button></td>
                   </tr>
@@ -6415,9 +6492,8 @@ function renderFinanceLoanLines(lines = []) {
         </div>
       </article>
     `;
-  }).join('') || `<div class="small muted">Sin lineas registradas.</div>`;
-  document.getElementById('financeLoanLinesSummary').textContent =
-    `${safeLines.length} linea(s) - saldo ${financeMoney(safeLines.reduce((a, l) => a + financeLoanLineTotals(l).balance, 0))}`;
+  }).join('') || `<div class="small muted">Sin líneas registradas.</div>`;
+  document.getElementById('financeLoanLinesSummary').textContent = `${safeLines.length} ${safeLines.length === 1 ? 'línea' : 'líneas'} · saldo ${financeMoney(safeLines.reduce((a, l) => a + financeLoanLineTotals(l).balance, 0))}`;
   renderFinanceLoanGlobalSummary(safeLines);
   renderFinanceLoanLinesChart(safeLines);
   renderFinanceControlKpis();
@@ -6626,11 +6702,13 @@ async function saveFinanceLoanLines(btn = null) {
     setFinanceButtonState(btn, 'Guardado', true);
     if (btn) await waitFinanceFeedback();
     await loadFinance();
+    const updatedPhase = (FINANCE?.phases || []).find(item => String(item._id) === String(FINANCE_SELECTED_PHASE_ID));
+    if (updatedPhase && !document.getElementById('financePhaseLinesModal')?.hidden) await openFinancePhaseLines(updatedPhase);
     await markProjectDataChanged();
   } catch (e) {
     setFinanceButtonState(btn, originalLabel, false);
     console.error('[Finance] error guardando lineas', e);
-    alert('No se pudieron guardar las lineas de prestamo');
+    alert(e.message || 'No se pudieron guardar las líneas bancarias');
   } finally {
     FINANCE_LOAN_LINES_SAVE_IN_PROGRESS = false;
   }
@@ -6688,23 +6766,14 @@ function getPhaseStatus(ph, { deviationPct = 0.10 } = {}) {
   const planSources = sumItems(ph?.planSources);
   const realSources = sumItems(ph?.sources);
 
-  const disbExpected = Number(ph?.disbExpected || 0);
-  const disbActual = Number(ph?.disbActual || 0);
-  const disbRequested = !!ph?.disbRequested;
-
-  // 1) Requiere desembolso
-  if (disbRequested && disbExpected > 0 && disbActual + 1e-9 < disbExpected) {
-    return { key: 'NEEDS_DISB', label: 'Se requiere desembolso', tone: 'warn' };
-  }
-
-  // 2) Desviación (plan vs real) — simple y entendible
+  // 1) Desviación (plan vs real) — simple y entendible
   // Si no hay plan (0), no marcamos desviación por % (para no dar falsos rojos)
   if (planUses > 0) {
     const pct = Math.abs(realUses - planUses) / planUses;
     if (pct > deviationPct) return { key: 'DEVIATION', label: 'Desviación', tone: 'error' };
   }
 
-  // 3) Control básico de consistencia (usos > fuentes) — típico de banca
+  // 2) Control básico de consistencia (usos > fuentes) — típico de banca
   if (realUses > realSources + 1e-9) {
     return { key: 'DEVIATION', label: 'Desviación', tone: 'error' };
   }
@@ -6829,7 +6898,7 @@ function bindFinanceOnce() {
 
   document.addEventListener('focusout', (ev) => {
     const input = ev.target.closest?.(
-      '.amount, [data-field="disbursementAmount"], [data-field="amortizedAmount"], [data-field="allocationAmount"], [data-field="checkAmount"], [data-field="promoterAmount"], #finLoanApproved, #finLoanDisbursed, #finBudgetApproved'
+      '.amount, [data-field="disbursementAmount"], [data-field="amortizedAmount"], [data-field="allocationAmount"], [data-field="checkAmount"], [data-field="promoterAmount"], [data-line-field="approvedAmount"], [data-budget-amount], [data-fixed-source], #finLoanApproved, #finLoanDisbursed, #finBudgetApproved'
     );
     if (input) formatFinanceMoneyInput(input);
   });
@@ -6857,18 +6926,11 @@ function bindFinanceOnce() {
     lines.push({
       _id: `new-${Date.now()}`,
       name: `Linea ${lines.length + 1}`,
+      approvedAmount: 0,
       notes: '',
       phaseId: FINANCE_SELECTED_PHASE_ID || null,
       phaseName: FINANCE_SELECTED_PHASE_NAME || '',
-      entries: [{
-        _id: `new-entry-${Date.now()}`,
-        disbursementDate: '',
-        loanNumber: '',
-        disbursementAmount: 0,
-        maturityDate: '',
-        amortizedAmount: 0,
-        notes: '',
-      }],
+      entries: [],
     });
     renderFinanceLoanLines(lines);
   });
@@ -6915,6 +6977,17 @@ function bindFinanceOnce() {
 
     const addEntryBtn = ev.target.closest('[data-finance-add-entry]');
     if (addEntryBtn) {
+      const entryType = addEntryBtn.dataset.financeAddEntry || 'disbursement';
+      if (entryType === 'disbursement' && FINANCE_AVALUATION_CONTEXT.hasAssignedAvaluator) {
+        const used = new Set(collectFinanceLoanLines().flatMap(line => (line.entries || []).map(entry => String(entry.inspectionId || '')).filter(Boolean)));
+        const hasAvailableReport = (FINANCE_AVALUATION_CONTEXT.reports || []).some(report => !used.has(String(report.id)));
+        if (!hasAvailableReport) {
+          alert((FINANCE_AVALUATION_CONTEXT.reports || []).length
+            ? 'Todos los informes finalizados ya están vinculados a un desembolso.'
+            : 'No puedes crear un desembolso hasta que el avaluador finalice un informe.');
+          return;
+        }
+      }
       const card = addEntryBtn.closest('.finance-loan-line-card');
       const lines = collectFinanceLoanLines();
       const target = lines.find(line => String(line._id || '') === String(card?.dataset.id || ''));
@@ -6924,15 +6997,32 @@ function bindFinanceOnce() {
         line.entries = line.entries || [];
         line.entries.push({
           _id: `new-entry-${Date.now()}`,
+          entryType,
+          paymentStatus: entryType === 'disbursement' ? 'pending' : 'legacy',
+          movementDate: '',
           disbursementDate: '',
           loanNumber: '',
           disbursementAmount: 0,
           maturityDate: '',
           amortizedAmount: 0,
+          inspectionId: '',
           notes: '',
         });
       }
       renderFinanceLoanLines(lines);
+      return;
+    }
+
+    const reportBtn = ev.target.closest('[data-open-inspection]');
+    if (reportBtn) {
+      const report = financeInspectionReport(reportBtn.dataset.openInspection);
+      if (!report?.reportPath) return;
+      try {
+        await openSecureFile(report.reportPath, `${report.reportNumber || 'informe-avaluo'}.pdf`, 'view');
+      } catch (error) {
+        console.error(error);
+        alert('No se pudo abrir el informe de avalúo.');
+      }
       return;
     }
 
@@ -7433,7 +7523,140 @@ function renderFinanceTimeCharts(phases = [], opts = {}) {
   }
 }
 
-function openFinancePhaseLines(phase) {
+function financePhaseBudgetRows(items = [], scope = '') {
+  return (items || []).map(item => `
+    <div class="finance-phase-budget-row" data-phase-budget-row="${escapeHtml(scope)}">
+      <input class="input" data-budget-name value="${escapeHtml(item?.name || '')}" placeholder="Concepto">
+      <input class="input" data-budget-amount type="text" inputmode="decimal" value="${formatPanamaNumber(item?.amount)}">
+      <button class="btn btn-danger btn-xs" type="button" data-remove-budget-row>Quitar</button>
+    </div>`).join('');
+}
+
+function renderFinancePhaseOverview(phase, visibleLines = null) {
+  const host = document.getElementById('financePhaseOverview');
+  if (!host) return;
+  const planSources = financeSourceBuckets(phase?.planSources || []);
+  const realSources = financeSourceBuckets(phase?.sources || []);
+  const phaseLines = Array.isArray(visibleLines) ? visibleLines : financeLinesForPhase(phase?._id);
+  const approvedForLines = phaseLines.reduce((sum, line) => sum + numOr0(line?.approvedAmount), 0);
+  const approvedBank = financePhaseApprovedBank(phase);
+  const unassigned = approvedBank - approvedForLines;
+  host.innerHTML = `
+    <div class="finance-phase-overview-head">
+      <div><h3>Presupuesto y ejecución de la fase</h3><p>La fuente Banco define cuánto está aprobado para desembolsar.</p></div>
+      <button class="btn btn-xs" type="button" data-save-phase-overview>Guardar fase</button>
+    </div>
+    <div class="finance-phase-core-fields">
+      <label><span>Nombre</span><input class="input" data-phase-overview="name" value="${escapeHtml(phase?.name || '')}"></label>
+      <label><span>Inicio estimado</span><input class="input" type="date" data-phase-overview="startDate" value="${financeDateInput(phase?.startDate)}"></label>
+      <label><span>Fin estimado</span><input class="input" type="date" data-phase-overview="endDate" value="${financeDateInput(phase?.endDate)}"></label>
+      <label><span>Inicio real</span><input class="input" type="date" data-phase-overview="actualStartDate" value="${financeDateInput(phase?.actualStartDate)}"></label>
+      <label><span>Fin real</span><input class="input" type="date" data-phase-overview="actualEndDate" value="${financeDateInput(phase?.actualEndDate)}"></label>
+    </div>
+    <div class="finance-phase-budget-grid">
+      <details open>
+        <summary>Estimación</summary>
+        <h4>Usos previstos</h4>
+        <div data-budget-list="planUses">${financePhaseBudgetRows(phase?.planUses, 'planUses')}</div>
+        <button class="btn btn-ghost btn-xs" type="button" data-add-budget-row="planUses">+ Uso</button>
+        <h4>Fuentes previstas</h4>
+        <div class="finance-fixed-sources">
+          <label><span>Banco</span><input class="input" data-fixed-source="plan-bank" type="text" inputmode="decimal" value="${formatPanamaNumber(planSources.hasBank ? planSources.bank : approvedBank)}"></label>
+          <label><span>Promotor</span><input class="input" data-fixed-source="plan-promoter" type="text" inputmode="decimal" value="${formatPanamaNumber(planSources.promoter)}"></label>
+          <label><span>Preventas</span><input class="input" data-fixed-source="plan-presales" type="text" inputmode="decimal" value="${formatPanamaNumber(planSources.presales)}"></label>
+        </div>
+        <div data-budget-list="planOther">${financePhaseBudgetRows(planSources.other, 'planOther')}</div>
+        <button class="btn btn-ghost btn-xs" type="button" data-add-budget-row="planOther">+ Otra fuente</button>
+      </details>
+      <details>
+        <summary>Ejecución real</summary>
+        <h4>Usos reales</h4>
+        <div data-budget-list="realUses">${financePhaseBudgetRows(phase?.uses, 'realUses')}</div>
+        <button class="btn btn-ghost btn-xs" type="button" data-add-budget-row="realUses">+ Uso real</button>
+        <h4>Fuentes reales</h4>
+        <div class="finance-fixed-sources">
+          <label><span>Banco</span><input class="input" data-fixed-source="real-bank" type="text" inputmode="decimal" value="${formatPanamaNumber(realSources.bank)}"></label>
+          <label><span>Promotor</span><input class="input" data-fixed-source="real-promoter" type="text" inputmode="decimal" value="${formatPanamaNumber(realSources.promoter)}"></label>
+          <label><span>Preventas</span><input class="input" data-fixed-source="real-presales" type="text" inputmode="decimal" value="${formatPanamaNumber(realSources.presales)}"></label>
+        </div>
+        <div data-budget-list="realOther">${financePhaseBudgetRows(realSources.other, 'realOther')}</div>
+        <button class="btn btn-ghost btn-xs" type="button" data-add-budget-row="realOther">+ Otra fuente</button>
+      </details>
+    </div>
+    <div class="finance-line-allocation ${unassigned < -0.01 ? 'is-danger' : ''}">
+      <span>Aprobado por el banco <b>${financeMoney(approvedBank)}</b></span>
+      <span>Asignado a líneas <b>${financeMoney(approvedForLines)}</b></span>
+      <span>${unassigned >= 0 ? 'Pendiente de asignar' : 'Exceso asignado'} <b>${financeMoney(Math.abs(unassigned))}</b></span>
+    </div>`;
+
+  host.onclick = async event => {
+    const remove = event.target.closest('[data-remove-budget-row]');
+    if (remove) return remove.closest('[data-phase-budget-row]')?.remove();
+    const add = event.target.closest('[data-add-budget-row]');
+    if (add) {
+      const list = host.querySelector(`[data-budget-list="${add.dataset.addBudgetRow}"]`);
+      list?.insertAdjacentHTML('beforeend', financePhaseBudgetRows([{ name: '', amount: 0 }], add.dataset.addBudgetRow));
+      return;
+    }
+    const save = event.target.closest('[data-save-phase-overview]');
+    if (!save) return;
+    const collectRows = key => Array.from(host.querySelectorAll(`[data-phase-budget-row="${key}"]`)).map(row => ({
+      name: row.querySelector('[data-budget-name]')?.value.trim() || '',
+      amount: numOr0(row.querySelector('[data-budget-amount]')?.value)
+    })).filter(item => item.name || item.amount);
+    const sourceValue = key => numOr0(host.querySelector(`[data-fixed-source="${key}"]`)?.value);
+    const planBank = sourceValue('plan-bank');
+    const planPromoter = sourceValue('plan-promoter');
+    const planPresales = sourceValue('plan-presales');
+    const realBank = sourceValue('real-bank');
+    const realPromoter = sourceValue('real-promoter');
+    const realPresales = sourceValue('real-presales');
+    const planUses = collectRows('planUses');
+    const payload = {
+      name: host.querySelector('[data-phase-overview="name"]')?.value.trim() || 'Fase',
+      startDate: host.querySelector('[data-phase-overview="startDate"]')?.value,
+      endDate: host.querySelector('[data-phase-overview="endDate"]')?.value,
+      actualStartDate: host.querySelector('[data-phase-overview="actualStartDate"]')?.value || null,
+      actualEndDate: host.querySelector('[data-phase-overview="actualEndDate"]')?.value || null,
+      planUses,
+      planSources: [
+        { name: 'Banco', amount: planBank },
+        { name: 'Promotor', amount: planPromoter },
+        { name: 'Preventas', amount: planPresales },
+        ...collectRows('planOther')
+      ],
+      uses: collectRows('realUses'),
+      sources: [
+        { name: 'Banco', amount: realBank },
+        { name: 'Promotor', amount: realPromoter },
+        { name: 'Preventas', amount: realPresales },
+        ...collectRows('realOther')
+      ],
+      financialConditions: {
+        ...(phase?.financialConditions || {}),
+        phaseTotal: sumItems(planUses),
+        bankFinancedAmount: planBank,
+        promoterContribution: planPromoter
+      }
+    };
+    if (!payload.startDate || !payload.endDate) return alert('Las fechas estimadas de inicio y fin son obligatorias.');
+    save.disabled = true;
+    try {
+      await API.put(`/api/projects/${id}/finance/phases/${phase._id}`, payload);
+      await loadFinance();
+      const updated = (FINANCE?.phases || []).find(item => String(item._id) === String(phase._id));
+      if (updated) await openFinancePhaseLines(updated);
+      await markProjectDataChanged();
+    } catch (error) {
+      console.error(error);
+      alert(error.message || 'No se pudo guardar la fase.');
+    } finally {
+      save.disabled = false;
+    }
+  };
+}
+
+async function openFinancePhaseLines(phase) {
   FINANCE_SELECTED_PHASE_ID = String(phase?._id || '');
   FINANCE_SELECTED_PHASE_NAME = phase?.name || '';
   const modal = mountFinancePhaseModal();
@@ -7442,22 +7665,35 @@ function openFinancePhaseLines(phase) {
   modal.style.zoom = '';
   const expand = document.getElementById('financePhaseFullscreenBtn');
   if (expand) { expand.textContent = '⛶'; expand.title = 'Pantalla completa'; }
-  document.getElementById('financePhaseModalTitle').textContent = `Líneas — ${FINANCE_SELECTED_PHASE_NAME}`;
+  document.getElementById('financePhaseModalTitle').textContent = `Gestionar fase — ${FINANCE_SELECTED_PHASE_NAME}`;
+  modal.hidden = false;
+  document.body.classList.add('finance-modal-open');
+  try {
+    FINANCE_AVALUATION_CONTEXT = await API.get(`/api/projects/${id}/finance/avaluation-context`);
+  } catch (error) {
+    console.error('[Finance] informes de avalúo', error);
+    FINANCE_AVALUATION_CONTEXT = { hasAssignedAvaluator: true, reports: [], loadError: true };
+  }
   const savedLines = financeLinesForPhase(FINANCE_SELECTED_PHASE_ID);
   const lines = financeLoanLinesWithApprovedSeeds(savedLines, phase);
   const funding = financePhaseFunding(phase);
   const fundingSummary = document.getElementById('financePhaseFundingSummary');
+  const approvedBank = financePhaseApprovedBank(phase);
   if (fundingSummary) fundingSummary.innerHTML = [
-    ['Banco recomendado', funding.recommendedBank],
-    ['Desembolsado', funding.disbursed],
-    ['Amortizado', funding.amortized],
-    ['Saldo por devolver', funding.debt],
-    ['Pendiente por desembolsar', funding.pendingRecommendedDisbursement],
+    ['Aprobado para desembolso', approvedBank],
+    ['Total desembolsado', funding.disbursed],
+    ['Pendiente por desembolsar', Math.max(0, approvedBank - funding.disbursed)],
+    ['Total amortizado', funding.amortized],
+    ['Saldo por pagar', funding.debt],
   ].map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${financeMoney(value)}</strong></div>`).join('');
+  renderFinancePhaseOverview(phase, lines);
   renderFinanceLoanLines(lines);
   renderFinanceUnitAmortizations();
-  modal.hidden = false;
-  document.body.classList.add('finance-modal-open');
+  const canEditPhase = ['admin', 'bank', 'financiero', 'gerencia', 'socios'].includes(myRole);
+  if (!canEditPhase) {
+    modal.querySelectorAll('input, select, textarea').forEach(control => { control.disabled = true; });
+    modal.querySelectorAll('[data-save-phase-overview], #financeAddLoanLineBtn, [data-finance-add-entry], [data-finance-save-line], [data-finance-remove-line], [data-finance-remove-entry], [data-remove-budget-row], [data-add-budget-row]').forEach(control => { control.hidden = true; });
+  }
   setTimeout(() => window.Chart?.getChart?.(document.getElementById('financeLoanLinesChart'))?.resize(), 30);
 }
 
@@ -7503,9 +7739,7 @@ function renderUnifiedFinancePhases(phases = []) {
       ? { label: 'Finalizada', tone: 'ok' }
       : !hasReal
         ? { label: 'Estimación', tone: 'neutral' }
-      : ph.disbRequested && actual < expected
-        ? { label: 'Bloqueado', tone: 'danger' }
-        : getPhaseStatus(ph).key === 'OK' ? { label: 'OK', tone: 'ok' } : { label: 'Desviación', tone: 'error' };
+      : getPhaseStatus(ph).key === 'OK' ? { label: 'OK', tone: 'ok' } : { label: 'Desviación', tone: 'error' };
     const planEnd = ph.endDate ? new Date(ph.endDate) : null;
     const realEnd = ph.actualEndDate || ph.completedAt ? new Date(ph.actualEndDate || ph.completedAt) : null;
     const compareDate = realEnd || new Date();
@@ -7523,8 +7757,7 @@ function renderUnifiedFinancePhases(phases = []) {
             <div class="fin-phase-badges"><span class="fin-tag ${status.tone}">${status.label}</span></div>
           </div>
           <div class="fin-phase-actions">
-            <button class="fin-btn fin-btn-edit" data-phase-edit-plan>Editar plan</button>
-            <button class="fin-btn fin-btn-edit" data-phase-edit-real>${hasReal ? 'Editar real' : 'Iniciar real'}</button>
+            <button class="fin-btn fin-btn-edit" data-phase-manage>Gestionar fase</button>
             <button class="fin-btn fin-btn-del" data-phase-delete>Eliminar</button>
           </div>
         </div>
@@ -7552,7 +7785,6 @@ function renderUnifiedFinancePhases(phases = []) {
         <div class="finance-phase-ratio">Ejecución real vs plan: <b>${execution.toFixed(1)}%</b> · Calendario: <b>${timingText}</b></div>
         <div class="finance-phase-progress"><div style="width:${Math.min(100, Math.max(0, execution))}%"></div></div>
         <div class="finance-unified-actions">
-          <button class="btn" data-phase-lines>Líneas de la fase</button>
           <button class="btn ${isCompleted ? 'btn-ghost' : 'btn-success'}" data-phase-complete>${isCompleted ? 'Reabrir fase' : 'Marcar finalizada'}</button>
         </div>
         </div>
@@ -7561,8 +7793,7 @@ function renderUnifiedFinancePhases(phases = []) {
 
   wrap.querySelectorAll('[data-unified-phase]').forEach(card => {
     const phase = phases.find(item => String(item._id) === String(card.dataset.unifiedPhase));
-    card.querySelector('[data-phase-edit-plan]')?.addEventListener('click', () => openPhaseEditor(phase, 'plan'));
-    card.querySelector('[data-phase-edit-real]')?.addEventListener('click', () => openPhaseEditor(phase, 'real'));
+    card.querySelector('[data-phase-manage]')?.addEventListener('click', () => openFinancePhaseLines(phase));
     card.querySelector('[data-phase-delete]')?.addEventListener('click', async () => {
       if (!phase?._id || !confirm(`¿Eliminar ${phase.name || 'esta fase'}?`)) return;
       try {
@@ -7575,7 +7806,6 @@ function renderUnifiedFinancePhases(phases = []) {
       }
     });
     card.querySelector('[data-phase-complete]')?.addEventListener('click', () => toggleFinancePhaseCompletion(phase));
-    card.querySelector('[data-phase-lines]')?.addEventListener('click', () => openFinancePhaseLines(phase));
   });
 }
 
@@ -7614,20 +7844,13 @@ function renderPhases(phases = []) {
     card.dataset.variant = variant; // plan | real
 
     const st = getPhaseStatus(ph);
-    const phaseHasReal = !!ph?.actualStartDate || !!ph?.actualEndDate || sumItems(ph?.uses) > 0 || sumItems(ph?.sources) > 0 || numOr0(ph?.disbActual) > 0;
-    const editLabel = variant === 'plan' ? 'Editar plan' : (phaseHasReal ? 'Editar real' : 'Iniciar real');
-
-    // Badge: para REAL, si está solicitado, lo marcamos claro
-    const disbReq = !!ph?.disbRequested;
-    const disbBadge = disbReq
-      ? `<span class="fin-tag danger">Desembolso solicitado</span>`
-      : '';
+    const editLabel = 'Gestionar fase';
 
     // Tono status solo lo muestro en REAL (para no ensuciar PLAN)
     const statusBadge = (variant === 'real')
       ? (ph?.isCompleted
           ? `<span class="fin-tag ok">Finalizada</span>`
-          : phaseHasReal ? `<span class="fin-tag ${st.tone}">${st.label}</span>` : `<span class="fin-tag neutral">Pendiente de iniciar</span>`)
+          : (!!ph?.actualStartDate || !!ph?.actualEndDate || sumItems(ph?.uses) > 0 || sumItems(ph?.sources) > 0 || numOr0(ph?.disbActual) > 0) ? `<span class="fin-tag ${st.tone}">${st.label}</span>` : `<span class="fin-tag neutral">Pendiente de iniciar</span>`)
       : `<span class="fin-tag neutral">Estimación</span>`;
 
     card.innerHTML = `
@@ -7637,12 +7860,11 @@ function renderPhases(phases = []) {
           <div class="fin-phase-dates">${dateFmt(ph?.startDate)} → ${dateFmt(ph?.endDate)}</div>
           <div class="fin-phase-badges">
             ${statusBadge}
-            ${variant === 'real' ? disbBadge : ''}
           </div>
         </div>
 
         <div class="fin-phase-actions">
-          ${canEditFinanceStructure ? `<button class="fin-btn fin-btn-edit" data-act="edit">${editLabel}</button>` : ''}
+          <button class="fin-btn fin-btn-edit" data-act="edit">${canEditFinanceStructure ? editLabel : 'Ver fase'}</button>
           ${canEditFinanceStructure ? '<button class="fin-btn fin-btn-del" data-act="del">Eliminar</button>' : ''}
         </div>
       </div>
@@ -7660,14 +7882,15 @@ function renderPhases(phases = []) {
     const realUsesTotal = sumItems(ph?.uses);
     const realSrcsTotal = sumItems(ph?.sources);
 
-    const disbExpected = Number(ph?.disbExpected || 0);
-    const disbActual   = Number(ph?.disbActual || 0);
     const planUsesShare = financePct(planUsesTotal, allPlanUses);
     const planSourcesShare = financePct(planSrcsTotal, allPlanSources);
     const realUsesExecution = financePct(realUsesTotal, planUsesTotal);
     const realSourcesExecution = financePct(realSrcsTotal, planSrcsTotal);
-    const disbursementExecution = financePct(disbActual, disbExpected);
     const funding = financePhaseFunding(ph);
+    const plannedSources = financeSourceBuckets(ph?.planSources || []);
+    const approvedBank = financePhaseApprovedBank(ph);
+    const disbActual = funding.disbursed;
+    const disbursementExecution = financePct(disbActual, approvedBank);
 
     // -------------------------
     // CARD PLAN (estimación)
@@ -7689,23 +7912,20 @@ function renderPhases(phases = []) {
         Cobertura fuentes / usos: <b>${financePct(planSrcsTotal, planUsesTotal)}</b>
       </div>
       <div class="finance-phase-funding is-plan">
-        <div class="finance-phase-funding-title">Distribución recomendada por las condiciones</div>
-        <div><span>Banco (${funding.bankPct.toFixed(1)}%)</span><b>${financeMoney(funding.recommendedBank)}</b></div>
-        <div><span>Promotor (${funding.promoterPct.toFixed(1)}%)</span><b>${financeMoney(funding.recommendedPromoter)}</b></div>
-      </div>
-      <div class="small muted" style="margin-top:8px;">
-        Recomendación informativa: no modifica tus fuentes guardadas.
+        <div class="finance-phase-funding-title">Distribución prevista de las fuentes</div>
+        <div><span>Banco</span><b>${financeMoney(approvedBank)}</b></div>
+        <div><span>Promotor</span><b>${financeMoney(plannedSources.promoter)}</b></div>
+        <div><span>Preventas</span><b>${financeMoney(plannedSources.presales)}</b></div>
       </div>
       ${financeRequirementProgressHtml(ph?.requirements, { compact: true })}
-      <div class="finance-phase-card-actions"><button class="btn btn-xs" data-act="requirements">Requisitos</button><button class="btn btn-xs" data-act="lines">Gestionar desembolsos</button></div>
+      <div class="finance-phase-card-actions"><button class="btn btn-xs" data-act="requirements">Requisitos</button></div>
     `;
 
     const planCard = makeCardShell({ variant: 'plan', ph, titleRight: planBody });
 
     // Actions PLAN
-    planCard.querySelector('[data-act="edit"]')?.addEventListener('click', () => openPhaseEditor(ph, 'plan'));
+    planCard.querySelector('[data-act="edit"]')?.addEventListener('click', () => openFinancePhaseLines(ph));
     planCard.querySelector('[data-act="requirements"]')?.addEventListener('click', () => openFinanceRequirements(ph, 'plan'));
-    planCard.querySelector('[data-act="lines"]')?.addEventListener('click', () => openFinancePhaseLines(ph));
 
     planCard.querySelector('[data-act="del"]')?.addEventListener('click', async () => {
       if (!ph?._id) return alert('Fase inválida');
@@ -7757,20 +7977,16 @@ const hasRealData =
       </div>
 
       <div class="fin-line" style="margin-top:10px;">
-        <div class="label">Desembolso (banco)</div>
+        <div class="label">Financiación bancaria</div>
         <div class="row between" style="align-items:center;">
           <div class="small">
-            Esperado: <b>${fmt(disbExpected)}</b> · Real: <b>${fmt(disbActual)}</b> · Ejecutado: <b>${disbursementExecution}</b>
-          </div>
-          <div class="row gap">
-            <button class="btn btn-warning btn-xs" data-act="request">Solicitar</button>
-            <button class="btn btn-ghost btn-xs" data-act="clearRequest">Resuelto</button>
+            Aprobado: <b>${fmt(approvedBank)}</b> · Desembolsado: <b>${fmt(disbActual)}</b> · Ejecutado: <b>${disbursementExecution}</b>
           </div>
         </div>
-        <div class="finance-phase-progress"><div style="width:${financeProgressWidth(disbActual, disbExpected)}%"></div></div>
+        <div class="finance-phase-progress"><div style="width:${financeProgressWidth(disbActual, approvedBank)}%"></div></div>
       </div>
       <div class="finance-phase-funding is-real">
-        <div class="finance-phase-funding-title">Banco en esta fase · ${funding.linesCount} línea(s)</div>
+        <div class="finance-phase-funding-title">Banco en esta fase · ${funding.linesCount} ${funding.linesCount === 1 ? 'línea' : 'líneas'}</div>
         <div><span>Desembolsado por líneas</span><b>${financeMoney(funding.disbursed)}</b></div>
         <div><span>Amortizado</span><b>${financeMoney(funding.amortized)}</b></div>
         <div class="is-debt"><span>Saldo por devolver</span><b>${financeMoney(funding.debt)}</b></div>
@@ -7779,7 +7995,6 @@ const hasRealData =
       ${financeRequirementProgressHtml(ph?.requirements, { compact: true })}
       <div class="finance-phase-card-actions">
         <button class="btn btn-xs" data-act="requirements">Requisitos</button>
-        <button class="btn btn-xs" data-act="lines">Líneas de la fase</button>
         <button class="btn btn-xs ${ph?.isCompleted ? 'btn-ghost' : 'btn-success'}" data-act="complete">${ph?.isCompleted ? 'Reabrir fase' : 'Marcar finalizada'}</button>
       </div>
     `;
@@ -7787,9 +8002,8 @@ const hasRealData =
     const realCard = makeCardShell({ variant: 'real', ph, titleRight: realBody });
 
     // Actions REAL
-    realCard.querySelector('[data-act="edit"]')?.addEventListener('click', () => openPhaseEditor(ph, 'real'));
+    realCard.querySelector('[data-act="edit"]')?.addEventListener('click', () => openFinancePhaseLines(ph));
     realCard.querySelector('[data-act="requirements"]')?.addEventListener('click', () => openFinanceRequirements(ph, 'real'));
-    realCard.querySelector('[data-act="lines"]')?.addEventListener('click', () => openFinancePhaseLines(ph));
     realCard.querySelector('[data-act="complete"]')?.addEventListener('click', () => toggleFinancePhaseCompletion(ph));
 
     realCard.querySelector('[data-act="del"]')?.addEventListener('click', async () => {
@@ -7802,46 +8016,6 @@ const hasRealData =
       } catch (e) {
         console.error(e);
         alert('No se pudo eliminar la fase');
-      }
-    });
-
-    realCard.querySelector('[data-act="request"]')?.addEventListener('click', async () => {
-      // Pedimos el monto esperado (si está a 0) o confirmamos solicitud
-      const current = Number(ph?.disbExpected || 0);
-      let expected = current;
-
-      if (!expected) {
-        const suggested = Math.max(0, funding.recommendedBank);
-        const inp = prompt('Monto de desembolso esperado (banco) para esta fase:', String(suggested || 0));
-        if (inp == null) return;
-        expected = Number(String(inp).replace(/[, ]/g, '')) || 0;
-      }
-
-      try {
-        await API.put(`/api/projects/${id}/finance/phases/${ph._id}`, {
-          disbExpected: expected,
-          disbRequested: true,
-          disbRequestedAt: new Date().toISOString()
-        });
-        await loadFinance();
-        await markProjectDataChanged();
-      } catch (e) {
-        console.error(e);
-        alert('No se pudo solicitar el desembolso');
-      }
-    });
-
-    realCard.querySelector('[data-act="clearRequest"]')?.addEventListener('click', async () => {
-      try {
-        await API.put(`/api/projects/${id}/finance/phases/${ph._id}`, {
-          disbRequested: false,
-          disbRequestedAt: null
-        });
-        await loadFinance();
-        await markProjectDataChanged();
-      } catch (e) {
-        console.error(e);
-        alert('No se pudo actualizar el estado del desembolso');
       }
     });
 
@@ -8723,7 +8897,7 @@ const payload = {
   actualEndDate: document.getElementById('ph-actual-end')?.value || null,
   uses: collect('ph-real-uses'),
   sources: collect('ph-real-sources'),
-  // ✅ No tocamos desembolsos aquí (se gestionan desde la tarjeta con "Solicitar/Resuelto")
+  // Los desembolsos se gestionan dentro del modal unificado de la fase.
 };
 
         // solo toca REAL, no toca PLAN

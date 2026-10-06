@@ -2259,7 +2259,7 @@ body.light-theme .provider-exclusive {
       <header class="finance-phase-modal-header">
         <div>
           <span class="small muted">Detalle financiero de la fase</span>
-          <h3 id="financePhaseModalTitle">Líneas de la fase</h3>
+          <h3 id="financePhaseModalTitle">Gestionar fase</h3>
         </div>
         <div class="row gap">
           <button class="btn btn-ghost" id="financePhaseFullscreenBtn" type="button" aria-label="Pantalla completa" title="Pantalla completa">⛶</button>
@@ -2268,8 +2268,9 @@ body.light-theme .provider-exclusive {
       </header>
       <div class="finance-phase-modal-body">
   <div class="small muted" style="border:1px solid rgba(56,189,248,.22);background:rgba(56,189,248,.07);border-radius:8px;padding:10px 12px;margin:0 0 12px;line-height:1.45;">
-    Las líneas representan únicamente la parte de financiación aprobada por el banco. No son el presupuesto total del proyecto. Sirven para dividir el importe financiado por el banco entre conceptos como terreno, infraestructura, construcción, costes directos, costes indirectos u otros.
+    Revisa el presupuesto de la fase y controla, en un mismo lugar, las líneas bancarias, sus desembolsos y amortizaciones.
   </div>
+  <section id="financePhaseOverview" class="finance-phase-overview"></section>
   <div id="financePhaseFundingSummary" class="finance-modal-funding-summary"></div>
   <section class="finance-control-shell" id="financePhaseLinesPanel" aria-label="Control financiero del proyecto">
     <div class="finance-section-head">
@@ -2283,10 +2284,10 @@ body.light-theme .provider-exclusive {
       <section class="finance-panel finance-panel-wide">
         <div class="finance-panel-head">
           <div>
-            <h4>Lineas de prestamo / desembolsos</h4>
+            <h4>Líneas bancarias</h4>
             <span id="financeLoanLinesSummary" class="small muted"></span>
           </div>
-          <button class="btn btn-xs" id="financeAddLoanLineBtn" type="button">Nueva linea</button>
+          <button class="btn btn-xs" id="financeAddLoanLineBtn" type="button">Nueva línea</button>
         </div>
         <div id="financeLoanGlobalSummary" class="finance-loan-summary-grid"></div>
         <div id="financeLoanLinesBody" class="finance-loan-lines"></div>
@@ -2305,11 +2306,11 @@ body.light-theme .provider-exclusive {
     </div>
   </section>
 
-  <section class="finance-panel finance-loan-chart-panel" id="financePhaseLinesChartPanel" aria-label="Resumen grafico de lineas de prestamo">
+  <section class="finance-panel finance-loan-chart-panel" id="financePhaseLinesChartPanel" aria-label="Resumen gráfico de líneas bancarias">
     <div class="finance-panel-head">
       <div>
-        <h4>Resumen por lineas</h4>
-        <span class="small muted">Desembolsado frente a amortizado total por linea.</span>
+        <h4>Resumen por líneas</h4>
+        <span class="small muted">Importe desembolsado frente al total amortizado en cada línea.</span>
       </div>
     </div>
     <div class="finance-chart-box finance-loan-chart-box">

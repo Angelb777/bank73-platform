@@ -44,6 +44,7 @@ function financeApprovedTotals(doc = {}, project = {}) {
 }
 
 function loanEntryStatus(entry, today = new Date()) {
+  if (entry?.entryType === 'disbursement' && entry?.paymentStatus === 'pending') return 'Pendiente de pago';
   const balance = Math.max(0, toNum(entry?.disbursementAmount) - toNum(entry?.amortizedAmount));
   if (balance <= 0) return 'Amortizado';
   if (!entry?.maturityDate) return 'Sin vencimiento';
@@ -58,13 +59,23 @@ function loanEntryStatus(entry, today = new Date()) {
 }
 
 function normalizeLoanEntry(raw = {}) {
+  const entryType = ['disbursement', 'manual_amortization'].includes(raw.entryType) ? raw.entryType : 'legacy';
+  const paymentStatus = entryType === 'disbursement' ? (raw.paymentStatus === 'pending' ? 'pending' : 'paid') : 'legacy';
+  const effectiveDisbursement = entryType === 'disbursement' && paymentStatus === 'pending'
+    ? 0
+    : toNum(raw.disbursementAmount);
   return {
     _id: raw._id,
+    entryType,
+    paymentStatus,
+    movementDate: raw.movementDate || null,
     disbursementDate: raw.disbursementDate || null,
     loanNumber: String(raw.loanNumber || '').trim(),
     disbursementAmount: toNum(raw.disbursementAmount),
+    effectiveDisbursementAmount: effectiveDisbursement,
     maturityDate: raw.maturityDate || null,
     amortizedAmount: toNum(raw.amortizedAmount),
+    inspectionId: raw.inspectionId || null,
     notes: String(raw.notes || '').trim()
   };
 }
@@ -77,15 +88,16 @@ function buildFinanceControlSummary(doc = {}, project = {}) {
       const item = normalizeLoanEntry(entry);
       return {
         ...item,
-        balance: Math.max(0, item.disbursementAmount - item.amortizedAmount),
+        balance: Math.max(0, item.effectiveDisbursementAmount - item.amortizedAmount),
         status: loanEntryStatus(item)
       };
     });
-    const disbursementAmount = entries.reduce((sum, entry) => sum + entry.disbursementAmount, 0);
+    const disbursementAmount = entries.reduce((sum, entry) => sum + entry.effectiveDisbursementAmount, 0);
     const amortizedAmount = entries.reduce((sum, entry) => sum + entry.amortizedAmount, 0);
     let status = entries.some(entry => entry.status === 'Vencido') ? 'Vencido'
       : entries.some(entry => entry.status === 'Proximo a vencer') ? 'Proximo a vencer'
         : entries.some(entry => entry.status === 'Sin vencimiento') ? 'Sin vencimiento'
+          : entries.some(entry => entry.status === 'Pendiente de pago') ? 'Pendiente de pago'
           : (disbursementAmount - amortizedAmount <= 0 ? 'Amortizado' : 'OK');
     return { ...plain, name: plain.name || `Linea ${index + 1}`, entries, disbursementAmount, amortizedAmount, balance: Math.max(0, disbursementAmount - amortizedAmount), status };
   });

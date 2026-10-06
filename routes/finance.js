@@ -9,6 +9,8 @@ const Project = require('../models/Project');
 const Unit = require('../models/Unit');
 const Venta = require('../models/Venta');
 const User = require('../models/User');
+const Inspection = require('../models/Inspection');
+const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment');
 const { requireProjectAccess } = require('../middleware/rbac');
 const { REQUIREMENT_TITLES, PROMOTER_EXPERIENCE_FIELDS, normalizePhaseRequirements } = require('../services/phaseRequirements');
 const {
@@ -18,6 +20,8 @@ const {
 } = require('../services/financeReportContext');
 const { sanitizePromoterProfile } = require('../utils/promoterProfile');
 const audit = require('../utils/audit');
+const { renderInspectionReport } = require('../services/inspectionReport');
+const inspectionReportContext = require('../services/inspectionReportContext');
 
 router.use(bankReadOnly);
 router.use('/projects/:projectId/finance', requireProjectAccess({ commercialOnlySales: false }));
@@ -142,13 +146,21 @@ const cleanDate = (v) => {
 };
 
 function normalizeLoanEntry(raw = {}) {
+  const entryType = ['disbursement', 'manual_amortization'].includes(raw.entryType) ? raw.entryType : 'legacy';
+  const paymentStatus = entryType === 'disbursement'
+    ? (raw.paymentStatus === 'pending' ? 'pending' : 'paid')
+    : 'legacy';
   return {
     _id: mongoose.isValidObjectId(raw._id) ? raw._id : undefined,
+    entryType,
+    paymentStatus,
+    movementDate: cleanDate(raw.movementDate),
     disbursementDate: cleanDate(raw.disbursementDate),
     loanNumber: String(raw.loanNumber || '').trim(),
     disbursementAmount: toNum(raw.disbursementAmount),
     maturityDate: cleanDate(raw.maturityDate),
     amortizedAmount: toNum(raw.amortizedAmount),
+    inspectionId: mongoose.isValidObjectId(raw.inspectionId) ? raw.inspectionId : null,
     notes: String(raw.notes || '').trim(),
   };
 }
@@ -164,6 +176,7 @@ function normalizeLoanLine(raw = {}, idx = 0) {
     phaseId: mongoose.isValidObjectId(raw.phaseId) ? raw.phaseId : null,
     phaseName: String(raw.phaseName || '').trim(),
     name: String(raw.name || `Linea ${idx + 1}`).trim(),
+    approvedAmount: Math.max(0, toNum(raw.approvedAmount)),
     financierTenantKey: String(raw.financierTenantKey || '').trim(),
     financierName: String(raw.financierName || raw.bankName || '').trim(),
     financierType: String(raw.financierType || 'bank').trim(),
@@ -171,6 +184,80 @@ function normalizeLoanLine(raw = {}, idx = 0) {
     entries,
     notes: String(raw.notes || '').trim(),
   };
+}
+
+function activeAvaluatorAssignmentFilter(req, project) {
+  const filter = { projectId: project._id, projectTenantKey: project.tenantKey, status: 'active' };
+  if (req.user?.role === 'bank') filter.bankTenantKey = getTenantKey(req);
+  return filter;
+}
+
+function validateLoanLineLimits(doc, rawLines = []) {
+  for (const phase of (doc.phases || [])) {
+    const phaseId = String(phase._id || '');
+    const approvedForPhase = rawLines
+      .filter(line => String(line?.phaseId || '') === phaseId)
+      .reduce((sum, line) => sum + Math.max(0, toNum(line?.approvedAmount)), 0);
+    let hasBankSource = false;
+    const bankSource = (phase.planSources || []).reduce((sum, item) => {
+      const name = String(item?.name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      if (!/banco|financiacion bancaria|prestamo/.test(name)) return sum;
+      hasBankSource = true;
+      return sum + toNum(item?.amount);
+    }, 0);
+    const bankApproved = hasBankSource ? bankSource : toNum(phase?.financialConditions?.bankFinancedAmount);
+    if ((hasBankSource || bankApproved > 0) && approvedForPhase > bankApproved + 0.01) {
+      throw Object.assign(new Error(`Las líneas de ${phase.name || 'la fase'} superan el importe aprobado por el banco.`), { status: 400 });
+    }
+  }
+}
+
+async function validateLoanLineReports({ req, project, rawLines, currentDoc }) {
+  const assignments = await ProjectAvaluatorAssignment.find(activeAvaluatorAssignmentFilter(req, project)).select('_id bankTenantKey').lean();
+  for (const line of rawLines) {
+    for (const entry of (Array.isArray(line?.entries) ? line.entries : [])) {
+      if (entry?.entryType === 'disbursement' && entry?.paymentStatus === 'paid' && !cleanDate(entry.disbursementDate)) {
+        throw Object.assign(new Error('Indica la fecha de transferencia de cada desembolso pagado.'), { status: 400 });
+      }
+    }
+  }
+  if (!assignments.length) return;
+
+  const previousEntries = new Map();
+  for (const line of (currentDoc.loanLines || [])) {
+    for (const entry of (line.entries || [])) previousEntries.set(String(entry._id), entry);
+  }
+
+  const reportIds = [];
+  for (const line of rawLines) {
+    for (const entry of (Array.isArray(line?.entries) ? line.entries : [])) {
+      const type = String(entry?.entryType || 'legacy');
+      if (type !== 'disbursement') continue;
+      const previous = mongoose.isValidObjectId(entry?._id) ? previousEntries.get(String(entry._id)) : null;
+      const isHistorical = previous && String(previous.entryType || 'legacy') === 'legacy' && !previous.inspectionId;
+      if (previous?.inspectionId && String(previous.inspectionId) !== String(entry.inspectionId || '')) {
+        throw Object.assign(new Error('El informe vinculado a un desembolso guardado no se puede sustituir.'), { status: 409 });
+      }
+      if (!entry.inspectionId && !isHistorical) {
+        throw Object.assign(new Error('Selecciona un informe finalizado del avaluador para cada desembolso.'), { status: 400 });
+      }
+      if (entry.inspectionId) reportIds.push(String(entry.inspectionId));
+    }
+  }
+  if (new Set(reportIds).size !== reportIds.length) {
+    throw Object.assign(new Error('Un informe de avalúo solo puede justificar un desembolso.'), { status: 409 });
+  }
+  if (!reportIds.length) return;
+  const reports = await Inspection.find({
+    _id: { $in: reportIds },
+    projectId: project._id,
+    projectTenantKey: project.tenantKey,
+    status: 'finalized',
+    bankTenantKey: { $in: assignments.map(item => item.bankTenantKey) }
+  }).select('_id').lean();
+  if (reports.length !== reportIds.length) {
+    throw Object.assign(new Error('Alguno de los informes seleccionados no es válido para este proyecto.'), { status: 400 });
+  }
 }
 
 function normalizePhaseFinancialConditions(raw = {}) {
@@ -527,6 +614,8 @@ router.put('/projects/:projectId/finance/loan-lines', async (req, res) => {
 
     const doc = await getOrCreate(projectId, project.tenantKey);
     const lines = Array.isArray(req.body?.loanLines) ? req.body.loanLines : [];
+    validateLoanLineLimits(doc, lines);
+    await validateLoanLineReports({ req, project, rawLines: lines, currentDoc: doc });
     doc.loanLines = lines.map(normalizeLoanLine);
     await doc.save();
 
@@ -535,7 +624,69 @@ router.put('/projects/:projectId/finance/loan-lines', async (req, res) => {
     res.json({ ok: true, financeControl: control, alerts: sharedBuildFinanceControlAlerts(control, commercialUnits) });
   } catch (err) {
     console.error('PUT finance loan-lines error', err);
-    res.status(500).json({ error: 'Error al guardar lineas de prestamo' });
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Error al guardar lineas de prestamo' });
+  }
+});
+
+router.get('/projects/:projectId/finance/avaluation-context', async (req, res) => {
+  try {
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+    const assignments = await ProjectAvaluatorAssignment.find(activeAvaluatorAssignmentFilter(req, project)).select('_id bankTenantKey avaluadorId').lean();
+    if (!assignments.length) return res.json({ hasAssignedAvaluator: false, reports: [] });
+    const reports = await Inspection.find({
+      projectId: project._id,
+      projectTenantKey: project.tenantKey,
+      bankTenantKey: { $in: assignments.map(item => item.bankTenantKey) },
+      status: 'finalized'
+    }).populate('avaluadorId', 'name email').sort({ finalizedAt: -1 }).lean();
+    res.json({
+      hasAssignedAvaluator: true,
+      reports: reports.map(item => ({
+        id: String(item._id),
+        reportNumber: String(item.reportNumber || ''),
+        inspectionDate: item.inspectionDate,
+        finalizedAt: item.finalizedAt,
+        projectProgressPercent: Number(item.projectProgressPercent || 0),
+        verdict: String(item.technicalRecommendation?.verdict || 'not_assessed'),
+        avaluadorName: String(item.avaluadorId?.name || ''),
+        reportPath: `/api/projects/${project._id}/finance/inspection-reports/${item._id}/report.pdf`
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'No se pudieron cargar los informes de avalúo.' });
+  }
+});
+
+router.get('/projects/:projectId/finance/inspection-reports/:inspectionId/report.pdf', async (req, res) => {
+  try {
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+    if (!mongoose.isValidObjectId(req.params.inspectionId)) return res.status(404).json({ error: 'Informe no encontrado.' });
+    const assignments = await ProjectAvaluatorAssignment.find(activeAvaluatorAssignmentFilter(req, project)).select('bankTenantKey').lean();
+    const inspection = await Inspection.findOne({
+      _id: req.params.inspectionId,
+      projectId: project._id,
+      projectTenantKey: project.tenantKey,
+      bankTenantKey: { $in: assignments.map(item => item.bankTenantKey) },
+      status: 'finalized'
+    }).lean();
+    if (!inspection) return res.status(404).json({ error: 'Informe no encontrado.' });
+    const context = await inspectionReportContext.buildInspectionReportContext({
+      scope: { bankTenantKey: inspection.bankTenantKey, projectTenantKey: project.tenantKey, projectId: project._id },
+      inspection,
+      preferFrozen: true
+    });
+    if (!context) return res.status(404).json({ error: 'Informe no encontrado.' });
+    const pdf = new PDFDocument({ size: 'A4', margin: 48, bufferPages: true, info: { Title: `Informe ${inspection.reportNumber}` } });
+    res.type('application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${inspection.reportNumber || 'informe-bank73'}.pdf"`);
+    pdf.pipe(res);
+    await renderInspectionReport(pdf, { context });
+    pdf.end();
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: 'No se pudo generar el informe.' });
+    else res.end();
   }
 });
 
@@ -685,11 +836,15 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
       if (!ph.isCompleted && !('completedAt' in req.body)) ph.completedAt = null;
     }
 
+    if ('planSources' in req.body || 'financialConditions' in req.body) {
+      validateLoanLineLimits(doc, doc.loanLines || []);
+    }
+
     await doc.save();
     res.json({ ok: true, phase: ph, kpis: doc.kpis() });
   } catch (err) {
     console.error('PUT phase error', err);
-    res.status(500).json({ error: 'Error al actualizar fase' });
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Error al actualizar fase' });
   }
 });
 

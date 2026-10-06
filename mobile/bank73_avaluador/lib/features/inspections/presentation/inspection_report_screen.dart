@@ -234,20 +234,12 @@ class _InspectionReportScreenState
 
   Future<void> _shareWord(Inspection inspection) async {
     if (_busy) return;
-    if (!inspection.isFinalized && !_validateAdditionalDetails()) return;
     setState(() => _previewing = true);
     try {
-      final effective = inspection.isFinalized
-          ? inspection
-          : await _saveReportInputs(inspection);
       final repository = ref.read(inspectionRepositoryProvider);
-      final bytes = inspection.isFinalized
-          ? await repository.reportWordBytes(effective.id)
-          : await repository.reportWordPreviewBytes(effective.id);
+      final bytes = await repository.reportWordBytes(inspection.id);
       final directory = await getTemporaryDirectory();
-      final filename = inspection.isFinalized
-          ? '${inspection.reportNumber}.docx'
-          : 'borrador-informe-bank73.docx';
+      final filename = '${inspection.reportNumber}.docx';
       final file = File('${directory.path}${Platform.pathSeparator}$filename');
       await file.writeAsBytes(bytes, flush: true);
       await SharePlus.instance.share(
@@ -261,7 +253,6 @@ class _InspectionReportScreenState
           subject: 'Informe de inspección',
         ),
       );
-      if (mounted && !inspection.isFinalized) _reload();
     } catch (error) {
       if (mounted) await presentApiError(context, ref, error);
     } finally {
@@ -361,29 +352,6 @@ class _InspectionReportScreenState
       if (mounted) await presentApiError(context, ref, error);
     } finally {
       if (mounted) setState(() => _finalizing = false);
-    }
-  }
-
-  Future<void> _preview(Inspection inspection) async {
-    if (_busy) return;
-    if (!_validateAdditionalDetails()) return;
-    setState(() => _previewing = true);
-    try {
-      final updated = await _saveReportInputs(inspection);
-      if (!mounted) return;
-      await Printing.sharePdf(
-        bytes: Uint8List.fromList(
-          await ref
-              .read(inspectionRepositoryProvider)
-              .reportPreviewBytes(updated.id),
-        ),
-        filename: 'borrador-informe-bank73.pdf',
-      );
-      if (mounted) _reload();
-    } catch (error) {
-      if (mounted) await presentApiError(context, ref, error);
-    } finally {
-      if (mounted) setState(() => _previewing = false);
     }
   }
 
@@ -1080,34 +1048,6 @@ class _InspectionReportScreenState
               ),
             ),
             const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _busy
-                        ? null
-                        : () => _preview(bundle.inspection),
-                    icon: const Icon(Icons.picture_as_pdf_outlined),
-                    label: const Text('Descargar PDF'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _busy
-                        ? null
-                        : () => _shareWord(bundle.inspection),
-                    icon: const Icon(Icons.description_outlined),
-                    label: const Text('Descargar Word'),
-                  ),
-                ),
-              ],
-            ),
-            if (_previewing) ...[
-              const SizedBox(height: 8),
-              const LinearProgressIndicator(),
-            ],
-            const SizedBox(height: 14),
             Card(
               color: Bank73Colors.blue.withValues(alpha: .06),
               child: const Padding(
@@ -1225,9 +1165,7 @@ class _InspectionReportScreenState
             ),
             const SizedBox(height: 18),
             FilledButton.icon(
-              onPressed: _busy
-                  ? null
-                  : () => _finalize(bundle.inspection),
+              onPressed: _busy ? null : () => _finalize(bundle.inspection),
               icon: const Icon(Icons.verified_outlined),
               label: Text(
                 _finalizing ? 'Finalizando…' : 'Firmar y finalizar informe',

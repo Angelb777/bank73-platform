@@ -25,9 +25,7 @@ class ReportTransport extends FakeTransport {
           'project': {'id': 'project', 'name': 'Proyecto'},
           'metrics': <String, dynamic>{},
           'activeFronts': <dynamic>[],
-          'current': {
-            'visit': <String, dynamic>{},
-          },
+          'current': {'visit': <String, dynamic>{}},
         },
       };
     }
@@ -92,6 +90,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      expect(find.text('Descargar PDF'), findsNothing);
+      expect(find.text('Descargar Word'), findsNothing);
       final signature = find.byWidgetPredicate(
         (widget) =>
             widget is RawGestureDetector &&
