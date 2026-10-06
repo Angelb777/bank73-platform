@@ -7,6 +7,21 @@ const PDFDocument = require('pdfkit');
 const PizZip = require('pizzip');
 const { renderInspectionReport } = require('../services/inspectionReport');
 const { buildInspectionReportDocx } = require('../services/inspectionReportDocx');
+const { permitsByInstitution } = require('../services/permitChart');
+
+test('permit chart uses the same status buckets as the project summary', () => {
+  assert.deepEqual(permitsByInstitution([
+    { institution: 'Municipio', status: 'pending' },
+    { institution: 'Municipio', status: 'submitted' },
+    { institution: 'Municipio', status: 'in_progress' },
+    { institution: 'Bomberos', status: 'approved' },
+    { institution: 'Bomberos', status: 'rejected' },
+    { institution: 'Bomberos', status: 'waived' }
+  ]), [
+    { institution: 'Municipio', pending: 1, inProcess: 2, approved: 0, rejected: 0 },
+    { institution: 'Bomberos', pending: 0, inProcess: 0, approved: 1, rejected: 1 }
+  ]);
+});
 
 test('professional report renders every main section from one InspectionReportContext', async () => {
   const context = {
@@ -17,7 +32,7 @@ test('professional report renders every main section from one InspectionReportCo
     metrics: { physicalProgress: { previousPercent: 30, currentPercent: 45, periodIncrementPercent: 15 }, administrativeProgress: { percent: 70 }, financialProgress: { percent: 40 } },
     finance: { summary: { budgetApproved: 1000000, loanApproved: 700000, totalDisbursed: 200000 }, financialConditions: {}, loanLines: [], unitAmortizations: [] },
     planning: { phases: [] },
-    compliance: { permits: [], requirements: [], policies: [] },
+    compliance: { permits: [{ title: 'Permiso de obra', institution: 'Municipio', status: 'approved' }], requirements: [], policies: [] },
     inventory: { models: [] },
     workFronts: [{ name: 'Torre 1', status: 'in_progress', previousPercent: 30, currentPercent: 45, periodIncrementPercent: 15, plannedPercent: 50 }],
     unitProgressComparisons: [], pendingIssues: [], photos: [],
@@ -47,7 +62,7 @@ test('editable Word report is generated from the same inspection context', () =>
     metrics: { physicalProgress: { previousPercent: 30, currentPercent: 45, periodIncrementPercent: 15 }, financialProgress: { percent: 40 } },
     finance: { summary: {}, loanLines: [], unitAmortizations: [] },
     planning: { phases: [], summary: {} },
-    compliance: { permits: [], requirements: [], financingConditions: [], planRequirements: [], constructionContracts: [], policies: [], bonds: [], environmentalRequirements: [] },
+    compliance: { permits: [{ title: 'Permiso de obra', institution: 'Municipio', status: 'approved' }], requirements: [], financingConditions: [], planRequirements: [], constructionContracts: [], policies: [], bonds: [], environmentalRequirements: [] },
     inventory: { models: [], folders: [], units: [] },
     workFronts: [], photos: [],
     visit: { reportDetails: { projectDescription: 'Descripción certificada', plans: { status: 'yes' }, workChanges: { hasChanges: false }, budgetAdjustments: { hasAdjustments: false } }, incidents: [], conclusion: 'Continuar.', recommendation: { verdict: 'favorable' } },
@@ -63,6 +78,9 @@ test('editable Word report is generated from the same inspection context', () =>
   const documentXml = zip.file('word/document.xml').asText();
   assert.match(documentXml, /Descripción certificada/);
   assert.match(documentXml, /Certificamos que este informe/);
+  assert.match(documentXml, /Permisos por institución/);
+  assert.match(documentXml, /Distribución por estado/);
+  assert.match(documentXml, /Municipio/);
   assert.ok(zip.file('word/media/signature.png'));
   assert.match(zip.file('word/_rels/document.xml.rels').asText(), /rIdSignature/);
   assert.match(documentXml, /No hay fotografías disponibles/);

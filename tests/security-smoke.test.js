@@ -435,6 +435,42 @@ test('security integration smoke: tenant isolation, project access, IDOR and upl
     assert.equal(res.payload.roleRequested, 'avaluador');
   });
 
+  await t.test('public registration only requires a bank for the bank role', async () => {
+    const promoter = await api('/api/auth/register', {
+      method: 'POST',
+      body: {
+        name: 'Public Promoter',
+        email: 'public.promoter@example.test',
+        password: PASSWORD,
+        roleRequested: 'promoter'
+      }
+    });
+    assert.equal(promoter.status, 201, JSON.stringify(promoter.payload));
+    assert.equal(promoter.payload.roleRequested, 'promoter');
+
+    const bankWithoutName = await api('/api/auth/register', {
+      method: 'POST',
+      body: {
+        name: 'Public Bank',
+        email: 'public.bank@example.test',
+        password: PASSWORD,
+        roleRequested: 'bank'
+      }
+    });
+    assert.equal(bankWithoutName.status, 400);
+    assert.equal(bankWithoutName.payload.error, 'Selecciona el banco.');
+
+    const missingRole = await api('/api/auth/register', {
+      method: 'POST',
+      body: {
+        name: 'Public Missing Role',
+        email: 'public.missing-role@example.test',
+        password: PASSWORD
+      }
+    });
+    assert.equal(missingRole.status, 400);
+  });
+
   let managedAvaluator;
   await t.test('bank creates, lists and activates only its own avaluators', async () => {
     const created = await api('/api/bank/avaluadores', {

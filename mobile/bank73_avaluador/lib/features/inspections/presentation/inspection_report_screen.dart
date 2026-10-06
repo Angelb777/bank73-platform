@@ -65,6 +65,8 @@ class _InspectionReportScreenState
   bool _previewing = false;
   int? _signaturePointer;
 
+  bool get _busy => _finalizing || _previewing;
+
   void _endSignature(int pointer) {
     if (_signaturePointer != pointer) return;
     setState(() {
@@ -192,26 +194,10 @@ class _InspectionReportScreenState
   );
 
   bool _validateAdditionalDetails() {
-    if (_hasWorkChanges == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Indica si se han realizado cambios en la obra.'),
-        ),
-      );
-      return false;
-    }
     if (_hasWorkChanges == true &&
         _workChangesDescription.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Describe los cambios realizados.')),
-      );
-      return false;
-    }
-    if (_hasBudgetAdjustments == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Indica si hubo ajustes en el presupuesto.'),
-        ),
       );
       return false;
     }
@@ -247,6 +233,7 @@ class _InspectionReportScreenState
       );
 
   Future<void> _shareWord(Inspection inspection) async {
+    if (_busy) return;
     if (!inspection.isFinalized && !_validateAdditionalDetails()) return;
     setState(() => _previewing = true);
     try {
@@ -283,6 +270,7 @@ class _InspectionReportScreenState
   }
 
   Future<void> _shareFinalPdf(Inspection inspection) async {
+    if (_busy) return;
     setState(() => _previewing = true);
     try {
       await Printing.sharePdf(
@@ -301,6 +289,7 @@ class _InspectionReportScreenState
   }
 
   Future<void> _finalize(Inspection inspection) async {
+    if (_busy) return;
     if (!_validateAdditionalDetails()) return;
     if (_signer.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -376,6 +365,7 @@ class _InspectionReportScreenState
   }
 
   Future<void> _preview(Inspection inspection) async {
+    if (_busy) return;
     if (!_validateAdditionalDetails()) return;
     setState(() => _previewing = true);
     try {
@@ -416,19 +406,39 @@ class _InspectionReportScreenState
     required String label,
     required bool? value,
     required ValueChanged<bool?> onChanged,
-  }) => DropdownButtonFormField<String>(
-    initialValue: value == null ? 'unknown' : (value ? 'yes' : 'no'),
-    isExpanded: true,
-    decoration: InputDecoration(labelText: label),
-    items: const [
-      DropdownMenuItem(value: 'unknown', child: Text('No verificable')),
-      DropdownMenuItem(value: 'yes', child: Text('Sí')),
-      DropdownMenuItem(value: 'no', child: Text('No')),
-    ],
-    onChanged: _finalizing
-        ? null
-        : (choice) => onChanged(choice == 'unknown' ? null : choice == 'yes'),
+  }) => _questionDropdown(
+    label: label,
+    dropdown: DropdownButtonFormField<String>(
+      initialValue: value == null ? 'unknown' : (value ? 'yes' : 'no'),
+      isExpanded: true,
+      decoration: const InputDecoration(),
+      items: const [
+        DropdownMenuItem(value: 'unknown', child: Text('No verificable')),
+        DropdownMenuItem(value: 'yes', child: Text('Sí')),
+        DropdownMenuItem(value: 'no', child: Text('No')),
+      ],
+      onChanged: _busy
+          ? null
+          : (choice) => onChanged(choice == 'unknown' ? null : choice == 'yes'),
+    ),
   );
+
+  Widget _questionDropdown({required String label, required Widget dropdown}) =>
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Bank73Colors.ink,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 8),
+          dropdown,
+        ],
+      );
 
   Widget _assessmentChoice({
     required String label,
@@ -453,7 +463,7 @@ class _InspectionReportScreenState
         child: Text('No verificable'),
       ),
     ],
-    onChanged: _finalizing ? null : onChanged,
+    onChanged: _busy ? null : onChanged,
   );
 
   @override
@@ -478,7 +488,7 @@ class _InspectionReportScreenState
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: _previewing
+                        onPressed: _busy
                             ? null
                             : () => _shareFinalPdf(bundle.inspection),
                         icon: const Icon(Icons.picture_as_pdf_outlined),
@@ -488,7 +498,7 @@ class _InspectionReportScreenState
                     const SizedBox(width: 10),
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: _previewing
+                        onPressed: _busy
                             ? null
                             : () => _shareWord(bundle.inspection),
                         icon: const Icon(Icons.description_outlined),
@@ -751,7 +761,7 @@ class _InspectionReportScreenState
               children: [
                 TextField(
                   controller: _projectDescription,
-                  readOnly: _finalizing,
+                  readOnly: _busy,
                   minLines: 4,
                   maxLines: 10,
                   maxLength: 10000,
@@ -777,30 +787,31 @@ class _InspectionReportScreenState
                   ? 'Sin requisitos de planos identificados en Bank73'
                   : '${planRequirements.length} referencia(s) disponible(s)',
               children: [
-                DropdownButtonFormField<String>(
-                  initialValue: _plansStatus,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: '¿El proyecto cuenta con los planos aprobados correspondientes?',
+                _questionDropdown(
+                  label: '¿El proyecto cuenta con los planos aprobados correspondientes?',
+                  dropdown: DropdownButtonFormField<String>(
+                    initialValue: _plansStatus,
+                    isExpanded: true,
+                    decoration: const InputDecoration(),
+                    items: const [
+                      DropdownMenuItem(value: 'yes', child: Text('Sí')),
+                      DropdownMenuItem(value: 'no', child: Text('No')),
+                      DropdownMenuItem(
+                        value: 'not_verifiable',
+                        child: Text('No verificable'),
+                      ),
+                    ],
+                    onChanged: _busy
+                        ? null
+                        : (value) => setState(
+                            () => _plansStatus = value ?? 'not_verifiable',
+                          ),
                   ),
-                  items: const [
-                    DropdownMenuItem(value: 'yes', child: Text('Sí')),
-                    DropdownMenuItem(value: 'no', child: Text('No')),
-                    DropdownMenuItem(
-                      value: 'not_verifiable',
-                      child: Text('No verificable'),
-                    ),
-                  ],
-                  onChanged: _finalizing
-                      ? null
-                      : (value) => setState(
-                          () => _plansStatus = value ?? 'not_verifiable',
-                        ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _plansObservations,
-                  readOnly: _finalizing,
+                  readOnly: _busy,
                   minLines: 2,
                   maxLines: 5,
                   decoration: const InputDecoration(
@@ -1004,7 +1015,7 @@ class _InspectionReportScreenState
                     const SizedBox(height: 8),
                     TextField(
                       controller: _technicalConclusion,
-                      readOnly: _finalizing,
+                      readOnly: _busy,
                       minLines: 3,
                       maxLines: 7,
                       maxLength: 10000,
@@ -1040,7 +1051,7 @@ class _InspectionReportScreenState
                             ),
                           )
                           .toList(),
-                      onChanged: _finalizing
+                      onChanged: _busy
                           ? null
                           : (value) => setState(
                               () => _technicalVerdict =
@@ -1050,7 +1061,7 @@ class _InspectionReportScreenState
                     const SizedBox(height: 14),
                     TextField(
                       controller: _recommendationConditions,
-                      readOnly: _finalizing,
+                      readOnly: _busy,
                       minLines: 3,
                       maxLines: 6,
                       maxLength: 5000,
@@ -1073,7 +1084,7 @@ class _InspectionReportScreenState
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: _previewing
+                    onPressed: _busy
                         ? null
                         : () => _preview(bundle.inspection),
                     icon: const Icon(Icons.picture_as_pdf_outlined),
@@ -1083,7 +1094,7 @@ class _InspectionReportScreenState
                 const SizedBox(width: 10),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: _previewing
+                    onPressed: _busy
                         ? null
                         : () => _shareWord(bundle.inspection),
                     icon: const Icon(Icons.description_outlined),
@@ -1214,7 +1225,7 @@ class _InspectionReportScreenState
             ),
             const SizedBox(height: 18),
             FilledButton.icon(
-              onPressed: _finalizing
+              onPressed: _busy
                   ? null
                   : () => _finalize(bundle.inspection),
               icon: const Icon(Icons.verified_outlined),

@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const PizZip = require('pizzip');
+const { permitsByInstitution } = require('./permitChart');
 
 const PHOTO_ROOT = path.resolve(__dirname, '..', 'uploads', 'inspections');
 const CERTIFICATION_TEXT = 'Certificamos que este informe es el producto de la inspección de la obra en la fecha indicada, y su elaboración ha sido de manera objetiva de acuerdo al avance de la obra y a la documentación suministrada por el Promotor y verificada por nosotros. Asimismo, certificamos que nuestra escogencia como inspectores y la aceptación de nuestros honorarios no han influido de ninguna manera en la elaboración de este informe, y por lo tanto todos los datos suministrados son correctos y veraces según nuestro más leal saber y entender.';
@@ -38,6 +39,44 @@ function table(headers, rows, ratios = []) {
   const widths = headers.map((_, index) => Math.round(9360 * (ratios[index] || 1) / total));
   const row = (cells, header = false) => `<w:tr>${header ? '<w:trPr><w:tblHeader/></w:trPr>' : ''}${cells.map((cell, index) => `<w:tc><w:tcPr><w:tcW w:w="${widths[index]}" w:type="dxa"/><w:shd w:fill="${header ? 'E8EEF5' : 'FFFFFF'}"/><w:vAlign w:val="center"/></w:tcPr>${paragraph(dash(cell), { bold: header, after: 40 })}</w:tc>`).join('')}</w:tr>`;
   return `<w:tbl><w:tblPr><w:tblW w:w="9360" w:type="dxa"/><w:tblInd w:w="120" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="single" w:sz="4" w:color="D7DEE8"/><w:left w:val="single" w:sz="4" w:color="D7DEE8"/><w:bottom w:val="single" w:sz="4" w:color="D7DEE8"/><w:right w:val="single" w:sz="4" w:color="D7DEE8"/><w:insideH w:val="single" w:sz="4" w:color="D7DEE8"/><w:insideV w:val="single" w:sz="4" w:color="D7DEE8"/></w:tblBorders><w:tblCellMar><w:top w:w="80" w:type="dxa"/><w:start w:w="120" w:type="dxa"/><w:bottom w:w="80" w:type="dxa"/><w:end w:w="120" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${widths.map(width => `<w:gridCol w:w="${width}"/>`).join('')}</w:tblGrid>${row(headers, true)}${rows.map(cells => row(cells)).join('')}</w:tbl>${paragraph('', { after: 100 })}`;
+}
+
+function coloredRunsParagraph(runs, { align = 'left', before = 0, after = 60, size = 18 } = {}) {
+  const content = runs.map(run => `<w:r><w:rPr><w:color w:val="${run.color || '172033'}"/><w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr><w:t xml:space="preserve">${xml(run.text)}</w:t></w:r>`).join('');
+  return `<w:p><w:pPr><w:jc w:val="${align}"/><w:spacing w:before="${before}" w:after="${after}"/></w:pPr>${content}</w:p>`;
+}
+
+function permitChartTable(items) {
+  const institutions = permitsByInstitution(items);
+  if (!institutions.length) return paragraph('No hay permisos estructurados asociados al proyecto.');
+  const series = [
+    ['Pendiente', 'pending', 'D69E2E'],
+    ['En trámite', 'inProcess', '3182CE'],
+    ['Aprobado', 'approved', '2F855A'],
+    ['Rechazado', 'rejected', 'C53030']
+  ];
+  const maxTotal = Math.max(1, ...institutions.map(item =>
+    item.pending + item.inProcess + item.approved + item.rejected
+  ));
+  const cell = (content, width, fill = 'FFFFFF') => `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/><w:shd w:fill="${fill}"/><w:vAlign w:val="center"/></w:tcPr>${content}</w:tc>`;
+  const header = `<w:tr><w:trPr><w:tblHeader/></w:trPr>${cell(paragraph('Institución', { bold: true, after: 40 }), 2400, 'E8EEF5')}${cell(paragraph('Distribución por estado', { bold: true, after: 40 }), 5960, 'E8EEF5')}${cell(paragraph('Total', { bold: true, align: 'center', after: 40 }), 1000, 'E8EEF5')}</w:tr>`;
+  const rows = institutions.map(item => {
+    const total = item.pending + item.inProcess + item.approved + item.rejected;
+    const runs = [];
+    for (const [, key, color] of series) {
+      const blocks = item[key] ? Math.max(1, Math.round(item[key] / maxTotal * 32)) : 0;
+      if (blocks) runs.push({ text: '■'.repeat(blocks), color });
+    }
+    if (!runs.length) runs.push({ text: '—', color: 'A0AEC0' });
+    const detail = series.map(([name, key]) => `${name}: ${item[key]}`).join(' · ');
+    const chart = coloredRunsParagraph(runs, { after: 20, size: 18 }) + paragraph(detail, { color: '647089', after: 35 });
+    return `<w:tr>${cell(paragraph(item.institution, { after: 40 }), 2400)}${cell(chart, 5960)}${cell(paragraph(String(total), { bold: true, align: 'center', after: 40 }), 1000)}</w:tr>`;
+  }).join('');
+  const legend = coloredRunsParagraph(series.flatMap(([name, , color], index) => [
+    { text: `${index ? '   ' : ''}■ `, color },
+    { text: name, color: '172033' }
+  ]), { after: 140, size: 18 });
+  return `${legend}<w:tbl><w:tblPr><w:tblW w:w="9360" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="single" w:sz="4" w:color="D7DEE8"/><w:left w:val="single" w:sz="4" w:color="D7DEE8"/><w:bottom w:val="single" w:sz="4" w:color="D7DEE8"/><w:right w:val="single" w:sz="4" w:color="D7DEE8"/><w:insideH w:val="single" w:sz="4" w:color="D7DEE8"/><w:insideV w:val="single" w:sz="4" w:color="D7DEE8"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="2400"/><w:gridCol w:w="5960"/><w:gridCol w:w="1000"/></w:tblGrid>${header}${rows}</w:tbl>`;
 }
 
 function keyValues(rows) {
@@ -129,8 +168,14 @@ function buildInspectionReportDocx(context = {}) {
   if (phases.length) body.push(table(['Fase', 'Inicio previsto', 'Fin previsto', 'Inicio real', 'Fin real', 'Estado'], phases.map(item => [item.name, fmtDate(item.startDate), fmtDate(item.endDate), fmtDate(item.actualStartDate), fmtDate(item.actualEndDate), item.isCompleted ? 'Completada' : item.active ? 'Activa' : 'Programada']), [1.7, 1, 1, 1, 1, .9]));
   body.push(keyValues([['Inicio general del programa', fmtDate(context.planning?.summary?.startDate)], ['Finalización prevista', fmtDate(context.planning?.summary?.endDate)], ['Duración estimada', context.planning?.summary?.durationMonths == null ? null : `${context.planning.summary.durationMonths} meses (${context.planning.summary.durationDays} días)`]]));
 
-  body.push(heading('Estudios, permisos, planos, contratos, pólizas y fianzas'));
   const permits = compliance.permits || [];
+  body.push(paragraph('', { pageBreak: true }));
+  body.push(heading('Permisos por institución'));
+  body.push(paragraph('Distribución de los permisos del proyecto por institución y estado.', { color: '647089' }));
+  body.push(permitChartTable(permits));
+
+  body.push(paragraph('', { pageBreak: true }));
+  body.push(heading('Estudios, permisos, planos, contratos, pólizas y fianzas'));
   if (permits.length) body.push(table(['Permiso / estudio', 'Institución', 'Estado', 'Emisión', 'Vencimiento'], permits.map(item => [item.title || item.code, item.institution, label(item.status), fmtDate(item.resolvedAt || item.submittedAt), fmtDate(item.dueDate)]), [2.4, 1.3, .8, 1, 1]));
   body.push(heading('Planos', 2));
   body.push(keyValues([['Planos aprobados correspondientes', label(details.plans?.status)], ['Observaciones', details.plans?.observations]]));

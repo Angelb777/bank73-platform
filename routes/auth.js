@@ -236,7 +236,7 @@ router.post('/register', async (req, res) => {
     }
 
     // Validar roleRequested (acepta todos los nuevos menos 'admin')
-const requested = String(roleRequested || 'bank').toLowerCase();
+const requested = String(roleRequested || '').trim().toLowerCase();
 
 const allowedRequested = Array.isArray(REQUESTABLE_ROLES)
   ? REQUESTABLE_ROLES

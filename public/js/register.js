@@ -73,8 +73,15 @@
 
   function syncBankPicker() {
     const isBank = getRequestedRole() === 'bank';
-    if (bankPickerWrap) bankPickerWrap.style.display = isBank ? '' : 'none';
-    if (bankNameSelect) bankNameSelect.required = isBank;
+    if (bankPickerWrap) {
+      bankPickerWrap.hidden = !isBank;
+      bankPickerWrap.style.display = isBank ? '' : 'none';
+    }
+    if (bankNameSelect) {
+      bankNameSelect.required = isBank;
+      bankNameSelect.disabled = !isBank;
+      if (!isBank) bankNameSelect.value = '';
+    }
   }
 
   roleSelect?.addEventListener('change', syncBankPicker);
@@ -104,8 +111,8 @@
       if (r.checked) return String(r.value).toLowerCase();
     }
 
-    // 3) default sensato
-    return 'bank';
+    // 3) sin selección: la validación del formulario pedirá elegir un rol
+    return '';
   }
 
   // Tenancy header (usa lo que tengas en localStorage o default a bancodemo)

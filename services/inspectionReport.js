@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { permitsByInstitution } = require('./permitChart');
 
 const C = { blue: '#123B6D', navy: '#172033', muted: '#647089', pale: '#EAF2FB', border: '#D7DEE8', green: '#0F7B4E', amber: '#B86A00', white: '#FFFFFF' };
 const MARGIN = 44;
@@ -151,6 +152,57 @@ async function renderInspectionReport(doc, input = {}) {
       paragraph(item.caption || 'Evidencia de inspección', { muted: true, align: 'center', size: 8 });
     } catch (_) { paragraph(`Fotografía no disponible: ${item.caption || item.originalname || ''}`, { muted: true }); }
   };
+  const permitChart = items => {
+    const institutions = permitsByInstitution(items);
+    const series = [
+      ['Pendiente', 'pending', '#D69E2E'],
+      ['En trámite', 'inProcess', '#3182CE'],
+      ['Aprobado', 'approved', '#2F855A'],
+      ['Rechazado', 'rejected', '#C53030']
+    ];
+    const legendY = doc.y;
+    let legendX = MARGIN;
+    for (const [name, , color] of series) {
+      doc.save().roundedRect(legendX, legendY + 1, 9, 9, 2).fill(color).restore();
+      doc.font('Helvetica').fontSize(8).fillColor(C.navy).text(name, legendX + 13, legendY, { lineBreak: false });
+      legendX += doc.widthOfString(name) + 35;
+    }
+    doc.y = legendY + 30;
+    if (!institutions.length) {
+      paragraph('No hay permisos estructurados asociados al proyecto.', { muted: true });
+      return;
+    }
+
+    const labelWidth = Math.min(155, width * .32);
+    const totalWidth = 28;
+    const barX = MARGIN + labelWidth;
+    const barWidth = width - labelWidth - totalWidth;
+    const availableHeight = doc.page.height - 70 - doc.y;
+    const rowHeight = Math.min(38, Math.max(13, availableHeight / institutions.length));
+    const barHeight = Math.max(7, Math.min(17, rowHeight - 7));
+    const maxTotal = Math.max(1, ...institutions.map(item =>
+      item.pending + item.inProcess + item.approved + item.rejected
+    ));
+
+    institutions.forEach(item => {
+      const y = doc.y;
+      const total = item.pending + item.inProcess + item.approved + item.rejected;
+      doc.font('Helvetica').fontSize(rowHeight < 19 ? 6.4 : 7.8).fillColor(C.navy)
+        .text(item.institution, MARGIN, y + 1, { width: labelWidth - 8, height: rowHeight - 2, ellipsis: true, lineBreak: false });
+      doc.save().roundedRect(barX, y, barWidth, barHeight, 2).fill('#EDF2F7').restore();
+      let x = barX;
+      for (const [, key, color] of series) {
+        const segmentWidth = barWidth * item[key] / maxTotal;
+        if (segmentWidth > 0) {
+          doc.save().rect(x, y, segmentWidth, barHeight).fill(color).restore();
+          x += segmentWidth;
+        }
+      }
+      doc.font('Helvetica-Bold').fontSize(7.5).fillColor(C.navy)
+        .text(String(total), barX + barWidth + 7, y + 1, { width: totalWidth - 7, align: 'right', lineBreak: false });
+      doc.y = y + rowHeight;
+    });
+  };
 
   // Portada
   doc.save().rect(0, 0, doc.page.width, doc.page.height).fill('#F7F9FC').restore();
@@ -244,8 +296,14 @@ async function renderInspectionReport(doc, input = {}) {
   }
   keyValues([['Evaluación del plazo', label(visit.scheduleAssessment?.status)], ['Finalización prevista', fmtDate(visit.scheduleAssessment?.forecastCompletionDate)], ['Explicación / plan de recuperación', visit.scheduleAssessment?.notes]]);
 
-  heading('Permisos, planos, contratos, pólizas y fianzas');
   const permits = compliance.permits || [];
+  doc.addPage();
+  heading('Permisos por institución');
+  paragraph('Distribución de los permisos del proyecto por institución y estado.', { muted: true });
+  permitChart(permits);
+
+  doc.addPage();
+  heading('Permisos, planos, contratos, pólizas y fianzas');
   if (permits.length) table(['Permiso / documento', 'N.º', 'Institución', 'Estado', 'Emisión / resolución', 'Vencimiento'], permits.map(item => [item.title || item.code, item.code, item.institution, label(item.status), fmtDate(item.resolvedAt || item.submittedAt), fmtDate(item.dueDate)]), [2.2, .8, 1.3, .8, 1, 1]);
   else paragraph('No hay permisos estructurados asociados al proyecto.', { muted: true });
   const requirements = compliance.requirements || [];
