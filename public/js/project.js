@@ -5503,7 +5503,7 @@ function financePhaseFunding(ph = {}) {
 function financeSourceKind(name = '') {
   const value = String(name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
   if (/banco|financiacion bancaria|prestamo/.test(value)) return 'bank';
-  if (/promotor|aporte propio|capital propio/.test(value)) return 'promoter';
+  if (/promotor|aporte propio|capital propio|fondos? propios?/.test(value)) return 'promoter';
   if (/preventa|venta anticipada/.test(value)) return 'presales';
   return 'other';
 }
@@ -7541,70 +7541,186 @@ function renderFinancePhaseOverview(phase, visibleLines = null) {
   const approvedForLines = phaseLines.reduce((sum, line) => sum + numOr0(line?.approvedAmount), 0);
   const approvedBank = financePhaseApprovedBank(phase);
   const unassigned = approvedBank - approvedForLines;
+  const initialPlanTotal = sumItems(phase?.planUses);
+  const initialPlanBank = planSources.hasBank ? planSources.bank : approvedBank;
+  const initialBankPct = initialPlanTotal > 0
+    ? initialPlanBank / initialPlanTotal * 100
+    : numOr0(phase?.financialConditions?.bankFinancedPct);
   host.innerHTML = `
     <div class="finance-phase-overview-head">
-      <div><h3>Presupuesto y ejecución de la fase</h3><p>La fuente Banco define cuánto está aprobado para desembolsar.</p></div>
+      <div><h3>Resumen de la fase</h3><p>Planifica una vez y registra después únicamente los cambios reales.</p></div>
       <button class="btn btn-xs" type="button" data-save-phase-overview>Guardar fase</button>
     </div>
     <div class="finance-phase-core-fields">
       <label><span>Nombre</span><input class="input" data-phase-overview="name" value="${escapeHtml(phase?.name || '')}"></label>
-      <label><span>Inicio estimado</span><input class="input" type="date" data-phase-overview="startDate" value="${financeDateInput(phase?.startDate)}"></label>
-      <label><span>Fin estimado</span><input class="input" type="date" data-phase-overview="endDate" value="${financeDateInput(phase?.endDate)}"></label>
-      <label><span>Inicio real</span><input class="input" type="date" data-phase-overview="actualStartDate" value="${financeDateInput(phase?.actualStartDate)}"></label>
-      <label><span>Fin real</span><input class="input" type="date" data-phase-overview="actualEndDate" value="${financeDateInput(phase?.actualEndDate)}"></label>
+      <label><span>Inicio previsto</span><input class="input" type="date" data-phase-overview="startDate" value="${financeDateInput(phase?.startDate)}"></label>
+      <label><span>Fin previsto</span><input class="input" type="date" data-phase-overview="endDate" value="${financeDateInput(phase?.endDate)}"></label>
     </div>
-    <div class="finance-phase-budget-grid">
-      <details open>
-        <summary>Estimación</summary>
-        <h4>Usos previstos</h4>
+    <div class="finance-phase-plan-summary" aria-label="Resumen previsto">
+      <article><span>Total previsto</span><strong data-phase-summary="plan-total">${financeMoney(initialPlanTotal)}</strong><small>Suma de usos</small></article>
+      <article><span>Banco</span><strong data-phase-summary="plan-bank">${financeMoney(initialPlanBank)}</strong><small data-phase-summary="plan-bank-pct">${initialBankPct.toFixed(1)}%</small></article>
+      <article><span>Promotor</span><strong data-phase-summary="plan-promoter">${financeMoney(planSources.promoter)}</strong><small data-phase-summary="plan-promoter-pct">${initialPlanTotal ? (planSources.promoter / initialPlanTotal * 100).toFixed(1) : '0.0'}%</small></article>
+      <article><span>Preventas</span><strong data-phase-summary="plan-presales">${financeMoney(planSources.presales)}</strong><small>Fuente prevista</small></article>
+    </div>
+    <div class="finance-phase-view-tabs" role="tablist" aria-label="Vista de la fase">
+      <button class="is-active" type="button" data-phase-view="plan" aria-pressed="true">Estimación</button>
+      <button type="button" data-phase-view="real" aria-pressed="false">Realidad</button>
+    </div>
+    <section class="finance-phase-budget-panel" data-phase-panel="plan">
+        <div class="finance-phase-section-head"><div><h4>Usos previstos</h4><p>El total se calcula automáticamente con estos conceptos.</p></div></div>
         <div data-budget-list="planUses">${financePhaseBudgetRows(phase?.planUses, 'planUses')}</div>
         <button class="btn btn-ghost btn-xs" type="button" data-add-budget-row="planUses">+ Uso</button>
-        <h4>Fuentes previstas</h4>
-        <div class="finance-fixed-sources">
-          <label><span>Banco</span><input class="input" data-fixed-source="plan-bank" type="text" inputmode="decimal" value="${formatPanamaNumber(planSources.hasBank ? planSources.bank : approvedBank)}"></label>
-          <label><span>Promotor</span><input class="input" data-fixed-source="plan-promoter" type="text" inputmode="decimal" value="${formatPanamaNumber(planSources.promoter)}"></label>
-          <label><span>Preventas</span><input class="input" data-fixed-source="plan-presales" type="text" inputmode="decimal" value="${formatPanamaNumber(planSources.presales)}"></label>
+        <div class="finance-phase-section-head finance-phase-financing-head"><div><h4>Financiación prevista</h4><p>Indica el porcentaje del banco; el aporte del promotor se calcula como el importe restante.</p></div></div>
+        <div class="finance-source-split">
+          <label><span>Banco</span><div class="finance-source-inputs"><input class="input" data-plan-bank-pct type="number" min="0" max="100" step="0.01" value="${initialBankPct.toFixed(2)}"><em>%</em><input class="input" data-fixed-source="plan-bank" type="text" readonly value="${formatPanamaNumber(initialPlanBank)}"></div></label>
+          <label><span>Promotor / fondos propios</span><div class="finance-source-inputs"><input class="input" data-plan-promoter-pct type="text" readonly value="0.00"><em>%</em><input class="input" data-fixed-source="plan-promoter" type="text" readonly value="${formatPanamaNumber(planSources.promoter)}"></div></label>
+          <label><span>Preventas</span><div class="finance-source-inputs is-amount-only"><input class="input" data-fixed-source="plan-presales" type="text" inputmode="decimal" value="${formatPanamaNumber(planSources.presales)}"></div></label>
         </div>
         <div data-budget-list="planOther">${financePhaseBudgetRows(planSources.other, 'planOther')}</div>
         <button class="btn btn-ghost btn-xs" type="button" data-add-budget-row="planOther">+ Otra fuente</button>
-      </details>
-      <details>
-        <summary>Ejecución real</summary>
+        <div class="finance-source-balance" data-plan-source-balance></div>
+    </section>
+    <section class="finance-phase-budget-panel" data-phase-panel="real" hidden>
+        <div class="finance-phase-section-head">
+          <div><h4>Ejecución real</h4><p>Copia la estimación como punto de partida y modifica solamente las diferencias.</p></div>
+          <button class="btn btn-ghost btn-xs" type="button" data-copy-plan-to-real>Copiar estimación</button>
+        </div>
+        <div class="finance-real-comparison">
+          <span>Previsto <b data-real-comparison="plan">${financeMoney(initialPlanTotal)}</b></span>
+          <span>Real <b data-real-comparison="real">${financeMoney(sumItems(phase?.uses))}</b></span>
+          <span>Diferencia <b data-real-comparison="difference">${financeMoney(sumItems(phase?.uses) - initialPlanTotal)}</b></span>
+        </div>
+        <div class="finance-phase-real-dates">
+          <label><span>Inicio real</span><input class="input" type="date" data-phase-overview="actualStartDate" value="${financeDateInput(phase?.actualStartDate)}"></label>
+          <label><span>Fin real</span><input class="input" type="date" data-phase-overview="actualEndDate" value="${financeDateInput(phase?.actualEndDate)}"></label>
+        </div>
         <h4>Usos reales</h4>
         <div data-budget-list="realUses">${financePhaseBudgetRows(phase?.uses, 'realUses')}</div>
         <button class="btn btn-ghost btn-xs" type="button" data-add-budget-row="realUses">+ Uso real</button>
         <h4>Fuentes reales</h4>
-        <div class="finance-fixed-sources">
+        <div class="finance-fixed-sources finance-real-sources">
           <label><span>Banco</span><input class="input" data-fixed-source="real-bank" type="text" inputmode="decimal" value="${formatPanamaNumber(realSources.bank)}"></label>
-          <label><span>Promotor</span><input class="input" data-fixed-source="real-promoter" type="text" inputmode="decimal" value="${formatPanamaNumber(realSources.promoter)}"></label>
+          <label><span>Promotor / fondos propios</span><input class="input" data-fixed-source="real-promoter" type="text" inputmode="decimal" value="${formatPanamaNumber(realSources.promoter)}"></label>
           <label><span>Preventas</span><input class="input" data-fixed-source="real-presales" type="text" inputmode="decimal" value="${formatPanamaNumber(realSources.presales)}"></label>
         </div>
         <div data-budget-list="realOther">${financePhaseBudgetRows(realSources.other, 'realOther')}</div>
         <button class="btn btn-ghost btn-xs" type="button" data-add-budget-row="realOther">+ Otra fuente</button>
-      </details>
-    </div>
-    <div class="finance-line-allocation ${unassigned < -0.01 ? 'is-danger' : ''}">
-      <span>Aprobado por el banco <b>${financeMoney(approvedBank)}</b></span>
+    </section>
+    <div class="finance-line-allocation ${unassigned < -0.01 ? 'is-danger' : ''}" data-line-allocation>
+      <span>Aprobado por el banco <b data-line-approved>${financeMoney(approvedBank)}</b></span>
       <span>Asignado a líneas <b>${financeMoney(approvedForLines)}</b></span>
-      <span>${unassigned >= 0 ? 'Pendiente de asignar' : 'Exceso asignado'} <b>${financeMoney(Math.abs(unassigned))}</b></span>
+      <span><span data-line-difference-label>${unassigned >= 0 ? 'Pendiente de asignar' : 'Exceso asignado'}</span> <b data-line-difference>${financeMoney(Math.abs(unassigned))}</b></span>
     </div>`;
 
+  const collectRows = key => Array.from(host.querySelectorAll(`[data-phase-budget-row="${key}"]`)).map(row => ({
+    name: row.querySelector('[data-budget-name]')?.value.trim() || '',
+    amount: numOr0(row.querySelector('[data-budget-amount]')?.value)
+  })).filter(item => item.name || item.amount);
+  const sourceValue = key => numOr0(host.querySelector(`[data-fixed-source="${key}"]`)?.value);
+  const setSourceValue = (key, value) => {
+    const input = host.querySelector(`[data-fixed-source="${key}"]`);
+    if (input) input.value = formatPanamaNumber(value);
+  };
+  const setPhaseView = view => {
+    host.querySelectorAll('[data-phase-panel]').forEach(panel => { panel.hidden = panel.dataset.phasePanel !== view; });
+    host.querySelectorAll('[data-phase-view]').forEach(button => {
+      const active = button.dataset.phaseView === view;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+  };
+  const updateRealComparison = () => {
+    const planTotal = sumItems(collectRows('planUses'));
+    const realTotal = sumItems(collectRows('realUses'));
+    const values = { plan: planTotal, real: realTotal, difference: realTotal - planTotal };
+    Object.entries(values).forEach(([key, value]) => {
+      const output = host.querySelector(`[data-real-comparison="${key}"]`);
+      if (output) output.textContent = financeMoney(value);
+    });
+  };
+  const recalculatePlanSources = () => {
+    const total = sumItems(collectRows('planUses'));
+    const bankPctInput = host.querySelector('[data-plan-bank-pct]');
+    const rawBankPct = numOr0(bankPctInput?.value);
+    const bankPct = Math.min(100, Math.max(0, rawBankPct));
+    if (bankPctInput && rawBankPct !== bankPct) bankPctInput.value = bankPct.toFixed(2);
+    const bank = total * bankPct / 100;
+    const presales = sourceValue('plan-presales');
+    const other = sumItems(collectRows('planOther'));
+    const promoter = Math.max(0, total - bank - presales - other);
+    const promoterPct = total > 0 ? promoter / total * 100 : 0;
+    setSourceValue('plan-bank', bank);
+    setSourceValue('plan-promoter', promoter);
+    const promoterPctInput = host.querySelector('[data-plan-promoter-pct]');
+    if (promoterPctInput) promoterPctInput.value = promoterPct.toFixed(2);
+    const summary = {
+      'plan-total': financeMoney(total),
+      'plan-bank': financeMoney(bank),
+      'plan-bank-pct': `${bankPct.toFixed(1)}%`,
+      'plan-promoter': financeMoney(promoter),
+      'plan-promoter-pct': `${promoterPct.toFixed(1)}%`,
+      'plan-presales': financeMoney(presales)
+    };
+    Object.entries(summary).forEach(([key, value]) => {
+      const output = host.querySelector(`[data-phase-summary="${key}"]`);
+      if (output) output.textContent = value;
+    });
+    const excess = bank + presales + other - total;
+    const balance = host.querySelector('[data-plan-source-balance]');
+    if (balance) {
+      balance.classList.toggle('is-danger', excess > 0.01);
+      balance.textContent = excess > 0.01
+        ? `Las fuentes indicadas superan los usos en ${financeMoney(excess)}.`
+        : `Fuentes equilibradas: Banco ${financeMoney(bank)} + Promotor ${financeMoney(promoter)}${presales ? ` + Preventas ${financeMoney(presales)}` : ''}${other ? ` + Otras ${financeMoney(other)}` : ''}.`;
+    }
+    const lineDifference = bank - approvedForLines;
+    const allocation = host.querySelector('[data-line-allocation]');
+    allocation?.classList.toggle('is-danger', lineDifference < -0.01);
+    const lineApproved = host.querySelector('[data-line-approved]');
+    const lineDifferenceLabel = host.querySelector('[data-line-difference-label]');
+    const lineDifferenceValue = host.querySelector('[data-line-difference]');
+    if (lineApproved) lineApproved.textContent = financeMoney(bank);
+    if (lineDifferenceLabel) lineDifferenceLabel.textContent = lineDifference >= 0 ? 'Pendiente de asignar' : 'Exceso asignado';
+    if (lineDifferenceValue) lineDifferenceValue.textContent = financeMoney(Math.abs(lineDifference));
+    updateRealComparison();
+  };
+
   host.onclick = async event => {
+    const viewButton = event.target.closest('[data-phase-view]');
+    if (viewButton) return setPhaseView(viewButton.dataset.phaseView);
     const remove = event.target.closest('[data-remove-budget-row]');
-    if (remove) return remove.closest('[data-phase-budget-row]')?.remove();
+    if (remove) {
+      remove.closest('[data-phase-budget-row]')?.remove();
+      recalculatePlanSources();
+      return updateRealComparison();
+    }
     const add = event.target.closest('[data-add-budget-row]');
     if (add) {
       const list = host.querySelector(`[data-budget-list="${add.dataset.addBudgetRow}"]`);
       list?.insertAdjacentHTML('beforeend', financePhaseBudgetRows([{ name: '', amount: 0 }], add.dataset.addBudgetRow));
       return;
     }
+    const copy = event.target.closest('[data-copy-plan-to-real]');
+    if (copy) {
+      const actualStart = host.querySelector('[data-phase-overview="actualStartDate"]');
+      const actualEnd = host.querySelector('[data-phase-overview="actualEndDate"]');
+      const existingReal = collectRows('realUses').length || collectRows('realOther').length || sourceValue('real-bank') || sourceValue('real-promoter') || sourceValue('real-presales') || actualStart?.value || actualEnd?.value;
+      if (existingReal && !confirm('Esto reemplazará las fechas, usos y fuentes reales actuales por la estimación. ¿Continuar?')) return;
+      const realUses = host.querySelector('[data-budget-list="realUses"]');
+      const realOther = host.querySelector('[data-budget-list="realOther"]');
+      if (realUses) realUses.innerHTML = financePhaseBudgetRows(collectRows('planUses'), 'realUses');
+      if (realOther) realOther.innerHTML = financePhaseBudgetRows(collectRows('planOther'), 'realOther');
+      setSourceValue('real-bank', sourceValue('plan-bank'));
+      setSourceValue('real-promoter', sourceValue('plan-promoter'));
+      setSourceValue('real-presales', sourceValue('plan-presales'));
+      if (actualStart) actualStart.value = host.querySelector('[data-phase-overview="startDate"]')?.value || '';
+      if (actualEnd) actualEnd.value = host.querySelector('[data-phase-overview="endDate"]')?.value || '';
+      updateRealComparison();
+      setPhaseView('real');
+      return;
+    }
     const save = event.target.closest('[data-save-phase-overview]');
     if (!save) return;
-    const collectRows = key => Array.from(host.querySelectorAll(`[data-phase-budget-row="${key}"]`)).map(row => ({
-      name: row.querySelector('[data-budget-name]')?.value.trim() || '',
-      amount: numOr0(row.querySelector('[data-budget-amount]')?.value)
-    })).filter(item => item.name || item.amount);
-    const sourceValue = key => numOr0(host.querySelector(`[data-fixed-source="${key}"]`)?.value);
     const planBank = sourceValue('plan-bank');
     const planPromoter = sourceValue('plan-promoter');
     const planPresales = sourceValue('plan-presales');
@@ -7612,6 +7728,8 @@ function renderFinancePhaseOverview(phase, visibleLines = null) {
     const realPromoter = sourceValue('real-promoter');
     const realPresales = sourceValue('real-presales');
     const planUses = collectRows('planUses');
+    const excessSources = planBank + planPresales + sumItems(collectRows('planOther')) - sumItems(planUses);
+    if (excessSources > 0.01) return alert(`Las fuentes previstas superan los usos en ${financeMoney(excessSources)}. Revisa el porcentaje del banco, las preventas u otras fuentes.`);
     const payload = {
       name: host.querySelector('[data-phase-overview="name"]')?.value.trim() || 'Fase',
       startDate: host.querySelector('[data-phase-overview="startDate"]')?.value,
@@ -7636,7 +7754,9 @@ function renderFinancePhaseOverview(phase, visibleLines = null) {
         ...(phase?.financialConditions || {}),
         phaseTotal: sumItems(planUses),
         bankFinancedAmount: planBank,
-        promoterContribution: planPromoter
+        bankFinancedPct: numOr0(host.querySelector('[data-plan-bank-pct]')?.value),
+        promoterContribution: planPromoter,
+        promoterContributionPct: numOr0(host.querySelector('[data-plan-promoter-pct]')?.value)
       }
     };
     if (!payload.startDate || !payload.endDate) return alert('Las fechas estimadas de inicio y fin son obligatorias.');
@@ -7654,6 +7774,11 @@ function renderFinancePhaseOverview(phase, visibleLines = null) {
       save.disabled = false;
     }
   };
+  host.oninput = event => {
+    if (event.target.closest('[data-phase-panel="plan"]')) recalculatePlanSources();
+    else if (event.target.closest('[data-phase-panel="real"]')) updateRealComparison();
+  };
+  recalculatePlanSources();
 }
 
 async function openFinancePhaseLines(phase) {
@@ -7692,7 +7817,7 @@ async function openFinancePhaseLines(phase) {
   const canEditPhase = ['admin', 'bank', 'financiero', 'gerencia', 'socios'].includes(myRole);
   if (!canEditPhase) {
     modal.querySelectorAll('input, select, textarea').forEach(control => { control.disabled = true; });
-    modal.querySelectorAll('[data-save-phase-overview], #financeAddLoanLineBtn, [data-finance-add-entry], [data-finance-save-line], [data-finance-remove-line], [data-finance-remove-entry], [data-remove-budget-row], [data-add-budget-row]').forEach(control => { control.hidden = true; });
+    modal.querySelectorAll('[data-save-phase-overview], [data-copy-plan-to-real], #financeAddLoanLineBtn, [data-finance-add-entry], [data-finance-save-line], [data-finance-remove-line], [data-finance-remove-entry], [data-remove-budget-row], [data-add-budget-row]').forEach(control => { control.hidden = true; });
   }
   setTimeout(() => window.Chart?.getChart?.(document.getElementById('financeLoanLinesChart'))?.resize(), 30);
 }
