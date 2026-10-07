@@ -131,6 +131,8 @@ const LoanLineItemSchema = new Schema({
 const LoanLineSchema = new Schema({
   phaseId: { type: Schema.Types.ObjectId, default: null, index: true },
   phaseName: { type: String, default: '' },
+  sourceUseId: { type: Schema.Types.ObjectId, default: null, index: true },
+  approvedAmountMode: { type: String, enum: ['auto', 'manual'], default: 'manual' },
   name: { type: String, default: 'Linea 1' },
   approvedAmount: { type: Number, default: 0 },
   financierTenantKey: { type: String, trim: true, default: '' },

@@ -5340,6 +5340,7 @@ let FINANCE_ALL_LOAN_LINES = [];
 let FINANCE_SELECTED_PHASE_ID = '';
 let FINANCE_SELECTED_PHASE_NAME = '';
 let FINANCE_AVALUATION_CONTEXT = { hasAssignedAvaluator: false, reports: [] };
+let FINANCE_PHASE_MODAL_TAB = 'overview';
 let FINANCE_MODAL_HOME = null;
 let FINANCE_MODAL_NEXT = null;
 
@@ -5443,6 +5444,70 @@ function financeLoanLinesWithApprovedSeeds(savedLines = [], phase = {}) {
   const savedNames = new Set(savedLines.map(line => String(line.name || '').trim().toLowerCase()).filter(Boolean));
   const missingSeeds = seeds.filter(line => !savedNames.has(String(line.name || '').trim().toLowerCase()));
   return [...savedLines, ...missingSeeds];
+}
+
+function financeLoanLinesWithUseSeeds(savedLines = [], phase = {}) {
+  const baseLines = financeLoanLinesWithApprovedSeeds(savedLines, phase).map(line => ({ ...line, entries: Array.isArray(line.entries) ? line.entries : [] }));
+  const uses = (phase?.planUses || []).filter(use => String(use?.name || '').trim() || numOr0(use?.amount));
+  if (!uses.length) return baseLines;
+  const normalizeName = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/\b(de|del|la|el|los|las)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  const claimed = new Set();
+  uses.forEach((use, index) => {
+    const useId = String(use?._id || '');
+    let lineIndex = baseLines.findIndex(line => useId && String(line?.sourceUseId || '') === useId);
+    if (lineIndex < 0) {
+      lineIndex = baseLines.findIndex((line, idx) => (
+        !claimed.has(idx) && !line?.sourceUseId && !numOr0(line?.approvedAmount) && normalizeName(line?.name) === normalizeName(use?.name)
+      ));
+    }
+    if (lineIndex < 0 && !useId) {
+      baseLines.push({
+        _id: `auto-use-${useId || index}-${Date.now()}`,
+        phaseId: String(phase?._id || FINANCE_SELECTED_PHASE_ID || ''),
+        phaseName: phase?.name || FINANCE_SELECTED_PHASE_NAME || '',
+        sourceUseId: useId,
+        approvedAmountMode: 'auto',
+        name: use?.name || `Línea ${baseLines.length + 1}`,
+        approvedAmount: 0,
+        notes: '',
+        entries: []
+      });
+      lineIndex = baseLines.length - 1;
+    }
+    if (lineIndex < 0) return;
+    if (!baseLines[lineIndex].sourceUseId && !numOr0(baseLines[lineIndex].approvedAmount)) {
+      baseLines[lineIndex] = { ...baseLines[lineIndex], sourceUseId: useId, approvedAmountMode: 'auto' };
+    }
+    claimed.add(lineIndex);
+    if (baseLines[lineIndex].approvedAmountMode === 'auto') baseLines[lineIndex].name = use?.name || baseLines[lineIndex].name;
+  });
+
+  const autoLines = baseLines.filter(line => line.approvedAmountMode === 'auto' && line.sourceUseId);
+  const manualApproved = baseLines.filter(line => !autoLines.includes(line)).reduce((sum, line) => sum + numOr0(line.approvedAmount), 0);
+  const available = Math.max(0, financePhaseApprovedBank(phase) - manualApproved);
+  const useById = new Map(uses.map(use => [String(use?._id || ''), use]));
+  const totalUse = autoLines.reduce((sum, line) => sum + numOr0(useById.get(String(line.sourceUseId))?.amount), 0);
+  const floors = autoLines.map(line => (line.entries || []).reduce((sum, entry) => (
+    sum + (entry.entryType === 'disbursement' && entry.paymentStatus === 'pending' ? 0 : numOr0(entry.disbursementAmount))
+  ), 0));
+  const floorTotal = floors.reduce((sum, amount) => sum + amount, 0);
+  let remaining = Math.max(0, available - floorTotal);
+  const desired = autoLines.map(line => totalUse > 0 ? available * numOr0(useById.get(String(line.sourceUseId))?.amount) / totalUse : available / autoLines.length);
+  const gaps = desired.map((amount, index) => Math.max(0, amount - floors[index]));
+  const gapTotal = gaps.reduce((sum, amount) => sum + amount, 0);
+  const allocations = floors.slice();
+  if (remaining > 0 && gapTotal > 0) {
+    const used = Math.min(remaining, gapTotal);
+    gaps.forEach((gap, index) => { allocations[index] += used * gap / gapTotal; });
+    remaining -= used;
+  }
+  if (remaining > 0) autoLines.forEach((line, index) => {
+    const weight = totalUse > 0 ? numOr0(useById.get(String(line.sourceUseId))?.amount) / totalUse : 1 / autoLines.length;
+    allocations[index] += remaining * weight;
+  });
+  autoLines.forEach((line, index) => { line.approvedAmount = Math.round(allocations[index] * 100) / 100; });
+  return baseLines;
 }
 
 function financeProjectBasis() {
@@ -5582,6 +5647,18 @@ function closeFinancePhaseModal() {
   }
   if (page) page.id = 'tab-finanzas';
   portal?.remove();
+}
+
+function setFinancePhaseModalTab(tab = 'overview') {
+  const selected = ['overview', 'lines', 'charts'].includes(tab) ? tab : 'overview';
+  FINANCE_PHASE_MODAL_TAB = selected;
+  document.querySelectorAll('[data-finance-phase-panel]').forEach(panel => { panel.hidden = panel.dataset.financePhasePanel !== selected; });
+  document.querySelectorAll('[data-finance-phase-tab]').forEach(button => {
+    const active = button.dataset.financePhaseTab === selected;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  if (selected === 'charts') setTimeout(() => window.Chart?.getChart?.(document.getElementById('financeLoanLinesChart'))?.resize(), 30);
 }
 
 function mountFinancePhaseModal() {
@@ -5903,6 +5980,8 @@ function collectFinanceLoanLines() {
     _id: isMongoIdLike(card.dataset.id) ? card.dataset.id : undefined,
     phaseId: card.dataset.phaseId || FINANCE_SELECTED_PHASE_ID || null,
     phaseName: card.dataset.phaseName || FINANCE_SELECTED_PHASE_NAME || '',
+    sourceUseId: card.dataset.sourceUseId || null,
+    approvedAmountMode: card.dataset.approvedAmountMode === 'auto' ? 'auto' : 'manual',
     name: card.querySelector('[data-line-field="name"]')?.value || `Linea ${idx + 1}`,
     financierName: card.dataset.financierName || '',
     financierTenantKey: card.dataset.financierTenantKey || '',
@@ -6393,16 +6472,16 @@ function renderFinanceLoanLines(lines = []) {
     const rowId = line._id || `new-${Date.now()}-${idx}`;
     const rowKey = String(rowId);
     const rowsCount = combinedRows.length;
-    const isCollapsed = FINANCE_LOAN_LINE_COLLAPSED.has(rowKey)
-      || (rowsCount > 5 && !FINANCE_LOAN_LINE_EXPANDED.has(rowKey));
+    const isCollapsed = FINANCE_LOAN_LINE_COLLAPSED.has(rowKey) || !FINANCE_LOAN_LINE_EXPANDED.has(rowKey);
     return `
-      <article class="finance-loan-line-card" data-line-card data-id="${escapeHtml(rowId)}" data-phase-id="${escapeHtml(line.phaseId || FINANCE_SELECTED_PHASE_ID || '')}" data-phase-name="${escapeHtml(line.phaseName || FINANCE_SELECTED_PHASE_NAME || '')}" data-financier-name="${escapeHtml(line.financierName || '')}" data-financier-tenant-key="${escapeHtml(line.financierTenantKey || '')}" data-financier-type="${escapeHtml(line.financierType || 'bank')}" data-concept="${escapeHtml(line.concept || '')}">
+      <article class="finance-loan-line-card ${isCollapsed ? 'is-compact' : ''}" data-line-card data-id="${escapeHtml(rowId)}" data-phase-id="${escapeHtml(line.phaseId || FINANCE_SELECTED_PHASE_ID || '')}" data-phase-name="${escapeHtml(line.phaseName || FINANCE_SELECTED_PHASE_NAME || '')}" data-source-use-id="${escapeHtml(line.sourceUseId || '')}" data-approved-amount-mode="${line.approvedAmountMode === 'auto' ? 'auto' : 'manual'}" data-financier-name="${escapeHtml(line.financierName || '')}" data-financier-tenant-key="${escapeHtml(line.financierTenantKey || '')}" data-financier-type="${escapeHtml(line.financierType || 'bank')}" data-concept="${escapeHtml(line.concept || '')}">
         <div class="finance-loan-line-head">
           <label>
             <span>Nombre de la línea</span>
-            <input data-line-field="name" value="${escapeHtml(line.name || `Linea ${idx + 1}`)}" placeholder="Infraestructura">
+            <input data-line-field="name" value="${escapeHtml(line.name || `Linea ${idx + 1}`)}" placeholder="Infraestructura" ${line.approvedAmountMode === 'auto' ? 'readonly' : ''}>
           </label>
           <div class="finance-loan-line-metrics">
+            <span>Aprobado <b>${financeMoney(line.approvedAmount)}</b></span>
             <span>Desembolsado <b>${financeMoney(totals.disbursed)}</b></span>
             <span>Manual <b>${financeMoney(totals.amortized)}</b></span>
             <span>Ventas <b>${financeMoney(totals.allocated)}</b></span>
@@ -6414,7 +6493,7 @@ function renderFinanceLoanLines(lines = []) {
             </div>
           </div>
           <div class="finance-inline-actions">
-            <button class="btn btn-ghost btn-xs" type="button" data-finance-toggle-entries data-count="${rowsCount}" aria-expanded="${isCollapsed ? 'false' : 'true'}">${isCollapsed ? 'Mostrar' : 'Ocultar'} partidas (${rowsCount})</button>
+            <button class="btn btn-ghost btn-xs" type="button" data-finance-toggle-entries data-count="${rowsCount}" aria-expanded="${isCollapsed ? 'false' : 'true'}">${isCollapsed ? 'Ver detalle' : 'Ocultar detalle'} (${rowsCount})</button>
             <button class="btn btn-xs" type="button" data-finance-add-entry="disbursement">+ Desembolso</button>
             <button class="btn btn-ghost btn-xs" type="button" data-finance-add-entry="manual_amortization">+ Amortización manual</button>
             <button class="btn btn-xs" type="button" data-finance-save-line>Guardar</button>
@@ -6422,7 +6501,7 @@ function renderFinanceLoanLines(lines = []) {
           </div>
         </div>
         <div class="finance-loan-line-notes">
-          <label><span>Aprobado para esta línea</span><input data-line-field="approvedAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(line.approvedAmount)}" placeholder="0.00"></label>
+          <label><span>Aprobado para esta línea ${line.approvedAmountMode === 'auto' ? '<span class="finance-auto-line-badge">Automático desde usos</span>' : ''}</span><div class="finance-approved-line-control"><input data-line-field="approvedAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(line.approvedAmount)}" placeholder="0.00" ${line.approvedAmountMode === 'auto' ? 'readonly' : ''}>${line.approvedAmountMode === 'auto' ? '<button class="btn btn-ghost btn-xs" type="button" data-finance-manual-line>Ajustar</button>' : ''}</div></label>
           <label><span>Notas de la línea</span><input data-line-field="notes" value="${escapeHtml(line.notes || '')}" placeholder="Observaciones opcionales"></label>
         </div>
         <div class="finance-table-wrap ${isCollapsed ? 'is-collapsed' : ''}" data-finance-entries-wrap>
@@ -6703,7 +6782,10 @@ async function saveFinanceLoanLines(btn = null) {
     if (btn) await waitFinanceFeedback();
     await loadFinance();
     const updatedPhase = (FINANCE?.phases || []).find(item => String(item._id) === String(FINANCE_SELECTED_PHASE_ID));
-    if (updatedPhase && !document.getElementById('financePhaseLinesModal')?.hidden) await openFinancePhaseLines(updatedPhase);
+    if (updatedPhase && !document.getElementById('financePhaseLinesModal')?.hidden) {
+      const phaseView = document.querySelector('[data-phase-view].is-active')?.dataset.phaseView || 'plan';
+      await openFinancePhaseLines(updatedPhase, phaseView, FINANCE_PHASE_MODAL_TAB);
+    }
     await markProjectDataChanged();
   } catch (e) {
     setFinanceButtonState(btn, originalLabel, false);
@@ -6918,6 +7000,9 @@ function bindFinanceOnce() {
   document.getElementById('addPhaseUnifiedBtn')?.addEventListener('click', () => openPhaseEditor(null, 'plan'));
   document.querySelectorAll('[data-close-finance-phase]').forEach(el => el.addEventListener('click', closeFinancePhaseModal));
   document.getElementById('financePhaseFullscreenBtn')?.addEventListener('click', toggleFinancePhaseFullscreen);
+  document.querySelectorAll('[data-finance-phase-tab]').forEach(button => button.addEventListener('click', () => setFinancePhaseModalTab(button.dataset.financePhaseTab)));
+  document.getElementById('financeExportPhasePdf')?.addEventListener('click', () => downloadFinanceExport('pdf', FINANCE_SELECTED_PHASE_ID));
+  document.getElementById('financeExportPhaseXlsx')?.addEventListener('click', () => downloadFinanceExport('xlsx', FINANCE_SELECTED_PHASE_ID));
   document.addEventListener('keydown', ev => {
     if (ev.key === 'Escape' && !document.getElementById('financePhaseLinesModal')?.hidden) closeFinancePhaseModal();
   });
@@ -6927,6 +7012,8 @@ function bindFinanceOnce() {
       _id: `new-${Date.now()}`,
       name: `Linea ${lines.length + 1}`,
       approvedAmount: 0,
+      approvedAmountMode: 'manual',
+      sourceUseId: null,
       notes: '',
       phaseId: FINANCE_SELECTED_PHASE_ID || null,
       phaseName: FINANCE_SELECTED_PHASE_NAME || '',
@@ -6947,6 +7034,17 @@ function bindFinanceOnce() {
     }, 120);
   });
   document.getElementById('financeLoanLinesBody')?.addEventListener('click', async (ev) => {
+    const manualLineBtn = ev.target.closest('[data-finance-manual-line]');
+    if (manualLineBtn) {
+      const card = manualLineBtn.closest('.finance-loan-line-card');
+      if (!card || !confirm('La línea dejará de recalcularse automáticamente desde el uso. ¿Continuar?')) return;
+      card.dataset.approvedAmountMode = 'manual';
+      card.querySelector('[data-line-field="name"]')?.removeAttribute('readonly');
+      card.querySelector('[data-line-field="approvedAmount"]')?.removeAttribute('readonly');
+      manualLineBtn.remove();
+      card.querySelector('.finance-auto-line-badge')?.remove();
+      return;
+    }
     const toggleEntriesBtn = ev.target.closest('[data-finance-toggle-entries]');
     if (toggleEntriesBtn) {
       const card = toggleEntriesBtn.closest('.finance-loan-line-card');
@@ -6954,6 +7052,7 @@ function bindFinanceOnce() {
       const wrap = card?.querySelector('[data-finance-entries-wrap]');
       const nextCollapsed = !wrap?.classList.contains('is-collapsed');
       wrap?.classList.toggle('is-collapsed', nextCollapsed);
+      card?.classList.toggle('is-compact', nextCollapsed);
       if (key) {
         if (nextCollapsed) {
           FINANCE_LOAN_LINE_COLLAPSED.add(key);
@@ -6964,7 +7063,7 @@ function bindFinanceOnce() {
         }
       }
       const count = toggleEntriesBtn.dataset.count || '';
-      toggleEntriesBtn.textContent = `${nextCollapsed ? 'Mostrar' : 'Ocultar'} partidas${count ? ` (${count})` : ''}`;
+      toggleEntriesBtn.textContent = `${nextCollapsed ? 'Ver detalle' : 'Ocultar detalle'}${count ? ` (${count})` : ''}`;
       toggleEntriesBtn.setAttribute('aria-expanded', nextCollapsed ? 'false' : 'true');
       return;
     }
@@ -7008,6 +7107,10 @@ function bindFinanceOnce() {
           inspectionId: '',
           notes: '',
         });
+      }
+      if (card?.dataset.id) {
+        FINANCE_LOAN_LINE_EXPANDED.add(String(card.dataset.id));
+        FINANCE_LOAN_LINE_COLLAPSED.delete(String(card.dataset.id));
       }
       renderFinanceLoanLines(lines);
       return;
@@ -7088,7 +7191,7 @@ function bindFinanceOnce() {
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-async function downloadFinanceExport(format) {
+async function downloadFinanceExport(format, phaseId = '') {
   try {
     const token =
       localStorage.getItem('token') ||
@@ -7097,12 +7200,13 @@ async function downloadFinanceExport(format) {
 
     if (!token) return alert('No hay token. Vuelve a iniciar sesión.');
 
-    let url = `/api/projects/${id}/finance/export?format=${format}`;
+    const phaseQuery = phaseId ? `&phaseId=${encodeURIComponent(phaseId)}` : '';
+    let url = `/api/projects/${id}/finance/export?format=${format}${phaseQuery}`;
     let method = 'GET';
     let body = null;
     const headers = { Authorization: `Bearer ${token}` };
 
-    if (format === 'pdf') {
+    if (format === 'pdf' && !phaseId) {
       // Espera un poco por si Chart.js está terminando de renderizar
       await sleep(60);
 
@@ -7140,7 +7244,7 @@ async function downloadFinanceExport(format) {
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = blobUrl;
-    a.download = `finanzas_${id}.${ext}`;
+    a.download = phaseId ? `fase_${FINANCE_SELECTED_PHASE_NAME || phaseId}.${ext}` : `finanzas_${id}.${ext}`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -7525,14 +7629,14 @@ function renderFinanceTimeCharts(phases = [], opts = {}) {
 
 function financePhaseBudgetRows(items = [], scope = '') {
   return (items || []).map(item => `
-    <div class="finance-phase-budget-row" data-phase-budget-row="${escapeHtml(scope)}">
+    <div class="finance-phase-budget-row" data-phase-budget-row="${escapeHtml(scope)}" data-budget-id="${escapeHtml(item?._id || '')}">
       <input class="input" data-budget-name value="${escapeHtml(item?.name || '')}" placeholder="Concepto">
       <input class="input" data-budget-amount type="text" inputmode="decimal" value="${formatPanamaNumber(item?.amount)}">
       <button class="btn btn-danger btn-xs" type="button" data-remove-budget-row>Quitar</button>
     </div>`).join('');
 }
 
-function renderFinancePhaseOverview(phase, visibleLines = null) {
+function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'plan') {
   const host = document.getElementById('financePhaseOverview');
   if (!host) return;
   const planSources = financeSourceBuckets(phase?.planSources || []);
@@ -7613,6 +7717,7 @@ function renderFinancePhaseOverview(phase, visibleLines = null) {
     </div>`;
 
   const collectRows = key => Array.from(host.querySelectorAll(`[data-phase-budget-row="${key}"]`)).map(row => ({
+    _id: isMongoIdLike(row.dataset.budgetId) ? row.dataset.budgetId : undefined,
     name: row.querySelector('[data-budget-name]')?.value.trim() || '',
     amount: numOr0(row.querySelector('[data-budget-amount]')?.value)
   })).filter(item => item.name || item.amount);
@@ -7708,8 +7813,8 @@ function renderFinancePhaseOverview(phase, visibleLines = null) {
       if (existingReal && !confirm('Esto reemplazará las fechas, usos y fuentes reales actuales por la estimación. ¿Continuar?')) return;
       const realUses = host.querySelector('[data-budget-list="realUses"]');
       const realOther = host.querySelector('[data-budget-list="realOther"]');
-      if (realUses) realUses.innerHTML = financePhaseBudgetRows(collectRows('planUses'), 'realUses');
-      if (realOther) realOther.innerHTML = financePhaseBudgetRows(collectRows('planOther'), 'realOther');
+      if (realUses) realUses.innerHTML = financePhaseBudgetRows(collectRows('planUses').map(({ _id, ...item }) => item), 'realUses');
+      if (realOther) realOther.innerHTML = financePhaseBudgetRows(collectRows('planOther').map(({ _id, ...item }) => item), 'realOther');
       setSourceValue('real-bank', sourceValue('plan-bank'));
       setSourceValue('real-promoter', sourceValue('plan-promoter'));
       setSourceValue('real-presales', sourceValue('plan-presales'));
@@ -7762,10 +7867,12 @@ function renderFinancePhaseOverview(phase, visibleLines = null) {
     if (!payload.startDate || !payload.endDate) return alert('Las fechas estimadas de inicio y fin son obligatorias.');
     save.disabled = true;
     try {
+      const currentView = host.querySelector('[data-phase-view].is-active')?.dataset.phaseView || 'plan';
+      const currentModalTab = FINANCE_PHASE_MODAL_TAB;
       await API.put(`/api/projects/${id}/finance/phases/${phase._id}`, payload);
       await loadFinance();
       const updated = (FINANCE?.phases || []).find(item => String(item._id) === String(phase._id));
-      if (updated) await openFinancePhaseLines(updated);
+      if (updated) await openFinancePhaseLines(updated, currentView, currentModalTab);
       await markProjectDataChanged();
     } catch (error) {
       console.error(error);
@@ -7779,9 +7886,10 @@ function renderFinancePhaseOverview(phase, visibleLines = null) {
     else if (event.target.closest('[data-phase-panel="real"]')) updateRealComparison();
   };
   recalculatePlanSources();
+  setPhaseView(initialView === 'real' ? 'real' : 'plan');
 }
 
-async function openFinancePhaseLines(phase) {
+async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = 'overview') {
   FINANCE_SELECTED_PHASE_ID = String(phase?._id || '');
   FINANCE_SELECTED_PHASE_NAME = phase?.name || '';
   const modal = mountFinancePhaseModal();
@@ -7800,7 +7908,9 @@ async function openFinancePhaseLines(phase) {
     FINANCE_AVALUATION_CONTEXT = { hasAssignedAvaluator: true, reports: [], loadError: true };
   }
   const savedLines = financeLinesForPhase(FINANCE_SELECTED_PHASE_ID);
-  const lines = financeLoanLinesWithApprovedSeeds(savedLines, phase);
+  const lines = financeLoanLinesWithUseSeeds(savedLines, phase);
+  FINANCE_LOAN_LINE_EXPANDED = new Set();
+  FINANCE_LOAN_LINE_COLLAPSED = new Set();
   const funding = financePhaseFunding(phase);
   const fundingSummary = document.getElementById('financePhaseFundingSummary');
   const approvedBank = financePhaseApprovedBank(phase);
@@ -7811,13 +7921,14 @@ async function openFinancePhaseLines(phase) {
     ['Total amortizado', funding.amortized],
     ['Saldo por pagar', funding.debt],
   ].map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${financeMoney(value)}</strong></div>`).join('');
-  renderFinancePhaseOverview(phase, lines);
+  renderFinancePhaseOverview(phase, lines, initialView);
   renderFinanceLoanLines(lines);
   renderFinanceUnitAmortizations();
+  setFinancePhaseModalTab(initialTab);
   const canEditPhase = ['admin', 'bank', 'financiero', 'gerencia', 'socios'].includes(myRole);
   if (!canEditPhase) {
     modal.querySelectorAll('input, select, textarea').forEach(control => { control.disabled = true; });
-    modal.querySelectorAll('[data-save-phase-overview], [data-copy-plan-to-real], #financeAddLoanLineBtn, [data-finance-add-entry], [data-finance-save-line], [data-finance-remove-line], [data-finance-remove-entry], [data-remove-budget-row], [data-add-budget-row]').forEach(control => { control.hidden = true; });
+    modal.querySelectorAll('[data-save-phase-overview], [data-copy-plan-to-real], #financeAddLoanLineBtn, [data-finance-add-entry], [data-finance-save-line], [data-finance-remove-line], [data-finance-remove-entry], [data-finance-manual-line], [data-remove-budget-row], [data-add-budget-row]').forEach(control => { control.hidden = true; });
   }
   setTimeout(() => window.Chart?.getChart?.(document.getElementById('financeLoanLinesChart'))?.resize(), 30);
 }
@@ -8049,7 +8160,7 @@ function renderPhases(phases = []) {
     const planCard = makeCardShell({ variant: 'plan', ph, titleRight: planBody });
 
     // Actions PLAN
-    planCard.querySelector('[data-act="edit"]')?.addEventListener('click', () => openFinancePhaseLines(ph));
+    planCard.querySelector('[data-act="edit"]')?.addEventListener('click', () => openFinancePhaseLines(ph, 'plan', 'overview'));
     planCard.querySelector('[data-act="requirements"]')?.addEventListener('click', () => openFinanceRequirements(ph, 'plan'));
 
     planCard.querySelector('[data-act="del"]')?.addEventListener('click', async () => {
@@ -8127,7 +8238,7 @@ const hasRealData =
     const realCard = makeCardShell({ variant: 'real', ph, titleRight: realBody });
 
     // Actions REAL
-    realCard.querySelector('[data-act="edit"]')?.addEventListener('click', () => openFinancePhaseLines(ph));
+    realCard.querySelector('[data-act="edit"]')?.addEventListener('click', () => openFinancePhaseLines(ph, 'real', 'overview'));
     realCard.querySelector('[data-act="requirements"]')?.addEventListener('click', () => openFinanceRequirements(ph, 'real'));
     realCard.querySelector('[data-act="complete"]')?.addEventListener('click', () => toggleFinancePhaseCompletion(ph));
 

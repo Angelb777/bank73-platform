@@ -175,6 +175,8 @@ function normalizeLoanLine(raw = {}, idx = 0) {
     _id: mongoose.isValidObjectId(raw._id) ? raw._id : undefined,
     phaseId: mongoose.isValidObjectId(raw.phaseId) ? raw.phaseId : null,
     phaseName: String(raw.phaseName || '').trim(),
+    sourceUseId: mongoose.isValidObjectId(raw.sourceUseId) ? raw.sourceUseId : null,
+    approvedAmountMode: raw.approvedAmountMode === 'auto' ? 'auto' : 'manual',
     name: String(raw.name || `Linea ${idx + 1}`).trim(),
     approvedAmount: Math.max(0, toNum(raw.approvedAmount)),
     financierTenantKey: String(raw.financierTenantKey || '').trim(),
@@ -184,6 +186,123 @@ function normalizeLoanLine(raw = {}, idx = 0) {
     entries,
     notes: String(raw.notes || '').trim(),
   };
+}
+
+function normalizedFinanceName(value = '') {
+  return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/\b(de|del|la|el|los|las)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+}
+
+function loanLineEffectiveDisbursed(line = {}) {
+  const entries = Array.isArray(line.entries) && line.entries.length ? line.entries : [line];
+  return entries.reduce((sum, entry) => {
+    if (entry?.entryType === 'disbursement' && entry?.paymentStatus === 'pending') return sum;
+    return sum + Math.max(0, toNum(entry?.disbursementAmount));
+  }, 0);
+}
+
+function loanLineHasMovements(line = {}) {
+  return (line.entries || []).some(entry => (
+    entry?.disbursementDate || entry?.movementDate || entry?.loanNumber || entry?.maturityDate ||
+    entry?.inspectionId || toNum(entry?.disbursementAmount) || toNum(entry?.amortizedAmount) || String(entry?.notes || '').trim()
+  )) || toNum(line.disbursementAmount) || toNum(line.amortizedAmount);
+}
+
+function phaseBankApproved(phase = {}) {
+  const bankSources = (phase.planSources || []).filter(item => /banco|financiacion bancaria|prestamo/.test(normalizedFinanceName(item?.name)));
+  return bankSources.length
+    ? bankSources.reduce((sum, item) => sum + Math.max(0, toNum(item?.amount)), 0)
+    : Math.max(0, toNum(phase?.financialConditions?.bankFinancedAmount));
+}
+
+function syncLoanLinesFromPhaseUses(doc, phase, { createAll = false, createForUseIds = new Set() } = {}) {
+  const phaseId = String(phase?._id || '');
+  if (!phaseId) return;
+  const uses = Array.from(phase.planUses || []).filter(use => String(use?.name || '').trim() || toNum(use?.amount));
+  const isFirstPhase = String(doc.phases?.[0]?._id || '') === phaseId;
+  const phaseLines = Array.from(doc.loanLines || []).filter(line => String(line?.phaseId || '') === phaseId || (isFirstPhase && !line?.phaseId));
+  const claimedLineIds = new Set();
+
+  for (const use of uses) {
+    const useId = String(use?._id || '');
+    let line = phaseLines.find(item => String(item?.sourceUseId || '') === useId);
+    if (!line) {
+      line = phaseLines.find(item => (
+        !claimedLineIds.has(String(item?._id || '')) &&
+        !item?.sourceUseId &&
+        normalizedFinanceName(item?.name) === normalizedFinanceName(use?.name) &&
+        !toNum(item?.approvedAmount)
+      ));
+      if (line) {
+        line.sourceUseId = use._id;
+        line.approvedAmountMode = 'auto';
+      }
+    }
+    if (!line && (createAll || createForUseIds.has(useId))) {
+      doc.loanLines.push({
+        phaseId: phase._id,
+        phaseName: phase.name || '',
+        sourceUseId: use._id,
+        approvedAmountMode: 'auto',
+        name: String(use?.name || 'Nueva línea').trim(),
+        approvedAmount: 0,
+        entries: []
+      });
+      line = doc.loanLines[doc.loanLines.length - 1];
+      phaseLines.push(line);
+    }
+    if (!line) continue;
+    claimedLineIds.add(String(line._id || ''));
+    line.phaseId = phase._id;
+    line.phaseName = phase.name || '';
+    if (line.approvedAmountMode === 'auto') line.name = String(use?.name || line.name || 'Línea').trim();
+  }
+
+  const activeUseIds = new Set(uses.map(use => String(use?._id || '')));
+  const allocatedLineIds = new Set((doc.unitAmortizations || []).flatMap(item => (item.allocations || []).map(allocation => String(allocation?.loanLineId || ''))));
+  doc.loanLines = (doc.loanLines || []).filter(line => {
+    if (String(line?.phaseId || '') !== phaseId || line.approvedAmountMode !== 'auto' || !line.sourceUseId) return true;
+    if (activeUseIds.has(String(line.sourceUseId))) return true;
+    if (loanLineHasMovements(line) || allocatedLineIds.has(String(line._id || ''))) {
+      line.sourceUseId = null;
+      line.approvedAmountMode = 'manual';
+      return true;
+    }
+    return false;
+  });
+
+  const updatedPhaseLines = Array.from(doc.loanLines || []).filter(line => String(line?.phaseId || '') === phaseId);
+  const autoLines = updatedPhaseLines.filter(line => line.approvedAmountMode === 'auto' && line.sourceUseId);
+  if (!autoLines.length) return;
+  const manualApproved = updatedPhaseLines
+    .filter(line => !autoLines.includes(line))
+    .reduce((sum, line) => sum + Math.max(0, toNum(line?.approvedAmount)), 0);
+  const available = Math.max(0, phaseBankApproved(phase) - manualApproved);
+  const useById = new Map(uses.map(use => [String(use?._id || ''), use]));
+  const totalUse = autoLines.reduce((sum, line) => sum + Math.max(0, toNum(useById.get(String(line.sourceUseId))?.amount)), 0);
+  const floors = autoLines.map(line => loanLineEffectiveDisbursed(line));
+  const floorTotal = floors.reduce((sum, amount) => sum + amount, 0);
+  let remaining = Math.max(0, available - floorTotal);
+  const desired = autoLines.map(line => totalUse > 0
+    ? available * Math.max(0, toNum(useById.get(String(line.sourceUseId))?.amount)) / totalUse
+    : available / autoLines.length);
+  const gaps = desired.map((amount, index) => Math.max(0, amount - floors[index]));
+  const gapTotal = gaps.reduce((sum, amount) => sum + amount, 0);
+  const allocations = floors.slice();
+  if (remaining > 0 && gapTotal > 0) {
+    const used = Math.min(remaining, gapTotal);
+    gaps.forEach((gap, index) => { allocations[index] += used * gap / gapTotal; });
+    remaining -= used;
+  }
+  if (remaining > 0) {
+    autoLines.forEach((line, index) => {
+      const weight = totalUse > 0
+        ? Math.max(0, toNum(useById.get(String(line.sourceUseId))?.amount)) / totalUse
+        : 1 / autoLines.length;
+      allocations[index] += remaining * weight;
+    });
+  }
+  autoLines.forEach((line, index) => { line.approvedAmount = Math.round(allocations[index] * 100) / 100; });
 }
 
 function activeAvaluatorAssignmentFilter(req, project) {
@@ -778,6 +897,7 @@ router.post('/projects/:projectId/finance/phases', async (req, res) => {
       commercialUnits
     });
     doc.phases.push(phaseSeed);
+    syncLoanLinesFromPhaseUses(doc, doc.phases[doc.phases.length - 1], { createAll: true });
 
     await doc.save();
     res.json({ ok: true, phases: doc.phases, kpis: doc.kpis() });
@@ -796,6 +916,7 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
     const doc = await getOrCreate(projectId, project.tenantKey);
     const ph = doc.phases.id(phaseId);
     if (!ph) return res.status(404).json({ error: 'Fase no encontrada' });
+    const previousPlanUseIds = new Set((ph.planUses || []).map(use => String(use?._id || '')));
     const hadActualDisbursement = toNum(ph.disbActual) > 0;
     const requirementCommercialUnits = 'requirements' in req.body
       ? await getFinanceCommercialUnits(projectId, project.tenantKey)
@@ -836,7 +957,9 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
       if (!ph.isCompleted && !('completedAt' in req.body)) ph.completedAt = null;
     }
 
-    if ('planSources' in req.body || 'financialConditions' in req.body) {
+    if ('planUses' in req.body || 'planSources' in req.body || 'financialConditions' in req.body) {
+      const newUseIds = new Set((ph.planUses || []).map(use => String(use?._id || '')).filter(useId => useId && !previousPlanUseIds.has(useId)));
+      syncLoanLinesFromPhaseUses(doc, ph, { createForUseIds: newUseIds });
       validateLoanLineLimits(doc, doc.loanLines || []);
     }
 
@@ -944,12 +1067,51 @@ async function urlToBuffer(url, req) {
   }
 }
 
-function buildFinanceSnapshot(doc) {
-  const phases = (doc.phases || []).map(p => {
+function buildFinanceSnapshot(doc, phaseId = '') {
+  const selectedPhaseId = String(phaseId || '');
+  const firstPhaseId = String(doc.phases?.[0]?._id || '');
+  const phases = (doc.phases || []).filter(p => !selectedPhaseId || String(p?._id || '') === selectedPhaseId).map(p => {
     const planUses = sumItems(p.planUses);
     const planSources = sumItems(p.planSources);
     const realUses = sumItems(p.uses);
     const realSources = sumItems(p.sources);
+
+    const loanLines = (doc.loanLines || []).filter(line => (
+      String(line?.phaseId || '') === String(p?._id || '') || (!line?.phaseId && String(p?._id || '') === firstPhaseId)
+    )).map(line => {
+      const entries = (line.entries || []).map(entry => ({
+        entryType: entry.entryType || 'legacy',
+        paymentStatus: entry.paymentStatus || 'legacy',
+        date: entry.movementDate || entry.disbursementDate || null,
+        loanNumber: entry.loanNumber || '',
+        disbursementAmount: toNum(entry.disbursementAmount),
+        maturityDate: entry.maturityDate || null,
+        amortizedAmount: toNum(entry.amortizedAmount),
+        inspectionId: entry.inspectionId ? String(entry.inspectionId) : '',
+        notes: entry.notes || ''
+      }));
+      const salesAmortizations = (doc.unitAmortizations || []).flatMap(unit => (unit.allocations || [])
+        .filter(allocation => String(allocation?.loanLineId || '') === String(line?._id || '') || (!allocation?.loanLineId && String(allocation?.loanLineName || '') === String(line?.name || '')))
+        .map(allocation => ({
+          entryType: 'sale_amortization',
+          paymentStatus: 'automatic',
+          date: unit.checkDate || null,
+          loanNumber: unit.checkNumber || unit.lot || '',
+          disbursementAmount: 0,
+          maturityDate: null,
+          amortizedAmount: toNum(allocation.amount),
+          inspectionId: '',
+          notes: [unit.lot, unit.clientName].filter(Boolean).join(' · ')
+        })));
+      return {
+        id: String(line._id || ''),
+        name: line.name || 'Línea',
+        approvedAmount: toNum(line.approvedAmount),
+        approvedAmountMode: line.approvedAmountMode || 'manual',
+        notes: line.notes || '',
+        entries: [...entries, ...salesAmortizations]
+      };
+    });
 
     return {
       id: String(p._id),
@@ -971,6 +1133,7 @@ function buildFinanceSnapshot(doc) {
       sources: Array.isArray(p.sources) ? p.sources : [],
       planUsesItems: Array.isArray(p.planUses) ? p.planUses : [],
       planSourcesItems: Array.isArray(p.planSources) ? p.planSources : [],
+      loanLines,
     };
   });
 
@@ -1019,12 +1182,12 @@ function autoFitColumns(ws, max = 60) {
   });
 }
 
-async function exportFinanceXlsx({ req, res, projectId, projectName, updatedAt, doc, kpis, chartsPayload }) {
+async function exportFinanceXlsx({ req, res, projectId, projectName, updatedAt, doc, kpis, chartsPayload, phaseId = '' }) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'TrustForBanks';
   wb.created = new Date();
 
-  const snap = buildFinanceSnapshot(doc);
+  const snap = buildFinanceSnapshot(doc, phaseId);
 
   // ===== Hoja Resumen =====
   const sh0 = wb.addWorksheet('Resumen');
@@ -1140,6 +1303,32 @@ async function exportFinanceXlsx({ req, res, projectId, projectName, updatedAt, 
   }
   sh3.getColumn(5).numFmt = 'yyyy-mm-dd';
 
+  // ===== Líneas y movimientos =====
+  const sh4 = wb.addWorksheet('Líneas');
+  sh4.addRow(['Fase', 'Línea', 'Aprobado', 'Desembolsado pagado', 'Amortizado', 'Saldo', 'Cálculo', 'Notas']);
+  styleSheetHeaderRow(sh4.getRow(1));
+  const sh5 = wb.addWorksheet('Movimientos');
+  sh5.addRow(['Fase', 'Línea', 'Tipo', 'Fecha', 'No. préstamo', 'Desembolso', 'Vencimiento', 'Amortización', 'Pago', 'Informe de avalúo', 'Notas']);
+  styleSheetHeaderRow(sh5.getRow(1));
+  snap.phases.forEach(phase => (phase.loanLines || []).forEach(line => {
+    const disbursed = (line.entries || []).reduce((sum, entry) => sum + (entry.entryType === 'disbursement' && entry.paymentStatus === 'pending' ? 0 : toNum(entry.disbursementAmount)), 0);
+    const amortized = (line.entries || []).reduce((sum, entry) => sum + toNum(entry.amortizedAmount), 0);
+    sh4.addRow([phase.name, line.name, line.approvedAmount, disbursed, amortized, Math.max(0, disbursed - amortized), line.approvedAmountMode === 'auto' ? 'Automático' : 'Manual', line.notes]);
+    (line.entries || []).forEach(entry => sh5.addRow([
+      phase.name, line.name, entry.entryType, entry.date ? new Date(entry.date) : '', entry.loanNumber,
+      entry.disbursementAmount, entry.maturityDate ? new Date(entry.maturityDate) : '', entry.amortizedAmount,
+      entry.paymentStatus, entry.inspectionId, entry.notes
+    ]));
+  }));
+  [sh4, sh5].forEach(sheet => autoFitColumns(sheet, 46));
+  for (let row = 2; row <= sh4.rowCount; row++) [3, 4, 5, 6].forEach(column => { sh4.getRow(row).getCell(column).numFmt = '#,##0.00'; });
+  for (let row = 2; row <= sh5.rowCount; row++) {
+    sh5.getRow(row).getCell(4).numFmt = 'yyyy-mm-dd';
+    sh5.getRow(row).getCell(6).numFmt = '#,##0.00';
+    sh5.getRow(row).getCell(7).numFmt = 'yyyy-mm-dd';
+    sh5.getRow(row).getCell(8).numFmt = '#,##0.00';
+  }
+
   // ===== Hoja Gráficas (si llegan) =====
   const charts = chartsPayload || {};
   const chartEntries = Object.entries(charts).filter(([_, v]) => typeof v === 'string' && v.startsWith('data:image/'));
@@ -1164,7 +1353,7 @@ async function exportFinanceXlsx({ req, res, projectId, projectName, updatedAt, 
   }
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition', `attachment; filename="finanzas_${projectId}.xlsx"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${phaseId ? `fase_${phaseId}` : `finanzas_${projectId}`}.xlsx"`);
   await wb.xlsx.write(res);
   return res.end();
 }
@@ -1373,12 +1562,12 @@ function financePdfTable(doc, rows, cols) {
   doc.moveDown(0.8);
 }
 
-async function exportFinancePdf({ req, res, projectId, projectName, projectCurrency = 'PAB', updatedAt, doc, chartsPayload }) {
-  const snap = buildFinanceSnapshot(doc);
+async function exportFinancePdf({ req, res, projectId, projectName, projectCurrency = 'PAB', updatedAt, doc, chartsPayload, phaseId = '' }) {
+  const snap = buildFinanceSnapshot(doc, phaseId);
   const money = (n) => moneyES(n, projectCurrency);
 
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="finanzas_${projectId}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${phaseId ? `fase_${phaseId}` : `finanzas_${projectId}`}.pdf"`);
 
   // bufferPages para footer con total
   const pdf = new PDFDocument({ margin: 40, bufferPages: true });
@@ -1506,6 +1695,38 @@ async function exportFinancePdf({ req, res, projectId, projectName, projectCurre
       { key:'n', label:'Partida', wPct:0.72, align:'left' },
       { key:'a', label:'Monto', wPct:0.28, align:'right' },
     ]);
+
+    financePdfSection(pdf, 'Líneas bancarias');
+    const lineRows = (p.loanLines || []).map(line => {
+      const disbursed = (line.entries || []).reduce((sum, entry) => sum + (entry.entryType === 'disbursement' && entry.paymentStatus === 'pending' ? 0 : toNum(entry.disbursementAmount)), 0);
+      const amortized = (line.entries || []).reduce((sum, entry) => sum + toNum(entry.amortizedAmount), 0);
+      return { name: line.name, approved: money(line.approvedAmount), disbursed: money(disbursed), amortized: money(amortized), balance: money(Math.max(0, disbursed - amortized)) };
+    });
+    financePdfTable(pdf, lineRows, [
+      { key:'name', label:'Línea', wPct:0.28, align:'left' },
+      { key:'approved', label:'Aprobado', wPct:0.18, align:'right' },
+      { key:'disbursed', label:'Desemb.', wPct:0.18, align:'right' },
+      { key:'amortized', label:'Amort.', wPct:0.18, align:'right' },
+      { key:'balance', label:'Saldo', wPct:0.18, align:'right' },
+    ]);
+
+    for (const line of (p.loanLines || [])) {
+      if (!(line.entries || []).length) continue;
+      financePdfSection(pdf, `Movimientos — ${line.name}`);
+      financePdfTable(pdf, line.entries.map(entry => ({
+        type: entry.entryType === 'sale_amortization' ? 'Venta' : entry.entryType === 'manual_amortization' ? 'Amortización' : entry.entryType === 'disbursement' ? 'Desembolso' : 'Histórico',
+        date: fmtDate(entry.date),
+        disbursed: money(entry.disbursementAmount),
+        amortized: money(entry.amortizedAmount),
+        status: entry.paymentStatus === 'pending' ? 'Pendiente' : entry.paymentStatus === 'automatic' ? 'Automática' : 'Pagado'
+      })), [
+        { key:'type', label:'Tipo', wPct:0.24, align:'left' },
+        { key:'date', label:'Fecha', wPct:0.18, align:'left' },
+        { key:'disbursed', label:'Desembolso', wPct:0.22, align:'right' },
+        { key:'amortized', label:'Amortización', wPct:0.22, align:'right' },
+        { key:'status', label:'Estado', wPct:0.14, align:'left' },
+      ]);
+    }
   }
 
   // Footer con total páginas (2ª pasada)
@@ -1536,6 +1757,9 @@ async function handleFinanceExport(req, res) {
 
     const doc = await getOrCreate(projectId, project.tenantKey);
     const kpis = doc.kpis ? doc.kpis() : {};
+    const exportPhaseId = String(req.query?.phaseId || req.body?.phaseId || '').trim();
+    if (exportPhaseId && !mongoose.isValidObjectId(exportPhaseId)) return res.status(400).json({ error: 'phaseId inválido' });
+    if (exportPhaseId && !doc.phases.id(exportPhaseId)) return res.status(404).json({ error: 'Fase no encontrada' });
 
     const projectName = project?.name || 'Proyecto';
     const projectCurrency = project?.currency || 'PAB';
@@ -1551,13 +1775,13 @@ async function handleFinanceExport(req, res) {
 
     if (format === 'xlsx') {
       return exportFinanceXlsx({
-        req, res, projectId, projectName, projectCurrency, updatedAt, doc, kpis, chartsPayload
+        req, res, projectId, projectName, projectCurrency, updatedAt, doc, kpis, chartsPayload, phaseId: exportPhaseId
       });
     }
 
     // pdf
     return exportFinancePdf({
-      req, res, projectId, projectName, projectCurrency, updatedAt, doc, chartsPayload
+      req, res, projectId, projectName, projectCurrency, updatedAt, doc, chartsPayload, phaseId: exportPhaseId
     });
 
   } catch (err) {

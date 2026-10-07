@@ -2267,16 +2267,30 @@ body.light-theme .provider-exclusive {
         </div>
       </header>
       <div class="finance-phase-modal-body">
-  <div class="small muted" style="border:1px solid rgba(56,189,248,.22);background:rgba(56,189,248,.07);border-radius:8px;padding:10px 12px;margin:0 0 12px;line-height:1.45;">
-    Revisa el presupuesto de la fase y controla, en un mismo lugar, las líneas bancarias, sus desembolsos y amortizaciones.
+  <div class="finance-phase-guide">
+    <b>Cómo se organiza:</b> el resumen define el presupuesto global; las líneas distribuyen el préstamo y los movimientos registran desembolsos y amortizaciones.
   </div>
-  <section id="financePhaseOverview" class="finance-phase-overview"></section>
+  <div class="finance-phase-modal-toolbar">
+    <nav class="finance-phase-main-tabs" aria-label="Secciones de la fase">
+      <button type="button" class="is-active" data-finance-phase-tab="overview">Resumen global</button>
+      <button type="button" data-finance-phase-tab="lines">Líneas y movimientos</button>
+      <button type="button" data-finance-phase-tab="charts">Gráficas</button>
+    </nav>
+    <div class="finance-phase-export-actions">
+      <button class="btn btn-ghost btn-xs" id="financeExportPhasePdf" type="button">Exportar PDF</button>
+      <button class="btn btn-ghost btn-xs" id="financeExportPhaseXlsx" type="button">Exportar Excel</button>
+    </div>
+  </div>
+  <section data-finance-phase-panel="overview">
+    <section id="financePhaseOverview" class="finance-phase-overview"></section>
+  </section>
+  <section data-finance-phase-panel="lines" hidden>
   <div id="financePhaseFundingSummary" class="finance-modal-funding-summary"></div>
-  <section class="finance-control-shell" id="financePhaseLinesPanel" aria-label="Control financiero del proyecto">
+  <section class="finance-control-shell" id="financePhaseLinesPanel" aria-label="Líneas, desembolsos y amortizaciones">
     <div class="finance-section-head">
       <div>
-        <h3>Control financiero integral</h3>
-        <p>Prestamo promotor, vencimientos, ventas por unidad y amortizacion.</p>
+        <h3>Líneas, desembolsos y amortizaciones</h3>
+        <p>Cada línea agrupa los movimientos relacionados con un uso o concepto financiado.</p>
       </div>
     </div>
 
@@ -2305,7 +2319,9 @@ body.light-theme .provider-exclusive {
       </section>
     </div>
   </section>
+  </section>
 
+  <section data-finance-phase-panel="charts" hidden>
   <section class="finance-panel finance-loan-chart-panel" id="financePhaseLinesChartPanel" aria-label="Resumen gráfico de líneas bancarias">
     <div class="finance-panel-head">
       <div>
@@ -2316,6 +2332,7 @@ body.light-theme .provider-exclusive {
     <div class="finance-chart-box finance-loan-chart-box">
       <canvas id="financeLoanLinesChart"></canvas>
     </div>
+  </section>
   </section>
       </div>
     </div>
