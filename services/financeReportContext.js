@@ -44,6 +44,7 @@ function financeApprovedTotals(doc = {}, project = {}) {
 }
 
 function loanEntryStatus(entry, today = new Date()) {
+  if (entry?.entryType === 'disbursement' && entry?.fundingParty === 'promoter' && entry?.promoterContributionStatus === 'contributed') return 'Aporte realizado';
   if (entry?.entryType === 'disbursement' && entry?.paymentStatus === 'pending') return 'Pendiente de pago';
   const balance = Math.max(0, toNum(entry?.disbursementAmount) - toNum(entry?.amortizedAmount));
   if (balance <= 0) return 'Amortizado';
@@ -70,12 +71,29 @@ function normalizeLoanEntry(raw = {}) {
     paymentStatus,
     workflowStatus: paymentStatus === 'paid'
       ? 'disbursed'
-      : ['prepared', 'requested', 'disbursed'].includes(raw.workflowStatus)
+      : ['prepared', 'requested', 'returned', 'disbursed'].includes(raw.workflowStatus)
       ? raw.workflowStatus
       : 'prepared',
+    advanceAccountNumber: Number(raw.advanceAccountNumber || 0) || null,
+    fundingParty: ['bank', 'promoter', 'mixed'].includes(raw.fundingParty) ? raw.fundingParty : 'bank',
+    promoterContributionAmount: Math.max(0, toNum(raw.promoterContributionAmount)),
+    promoterContributionStatus: raw.promoterContributionStatus === 'contributed' ? 'contributed' : 'pending',
+    promoterContributedAt: raw.promoterContributedAt || null,
+    promoterContributedBy: raw.promoterContributedBy || null,
+    promoterContributedByRole: String(raw.promoterContributedByRole || '').trim(),
     requestedAt: raw.requestedAt || null,
     requestedBy: raw.requestedBy || null,
     requestedByRole: String(raw.requestedByRole || '').trim(),
+    requestDocumentId: raw.requestDocumentId || null,
+    requestDocumentName: String(raw.requestDocumentName || '').trim(),
+    requirementsSnapshot: Array.isArray(raw.requirementsSnapshot) ? raw.requirementsSnapshot : [],
+    requirementsConfirmedAt: raw.requirementsConfirmedAt || null,
+    requirementsConfirmedBy: raw.requirementsConfirmedBy || null,
+    requirementsConfirmedByRole: String(raw.requirementsConfirmedByRole || '').trim(),
+    returnedAt: raw.returnedAt || null,
+    returnedBy: raw.returnedBy || null,
+    returnedByRole: String(raw.returnedByRole || '').trim(),
+    returnComment: String(raw.returnComment || '').trim(),
     disbursedAt: raw.disbursedAt || null,
     disbursedBy: raw.disbursedBy || null,
     disbursedByRole: String(raw.disbursedByRole || '').trim(),

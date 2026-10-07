@@ -119,8 +119,15 @@ test('bank write guard allows only the explicit bank write workflows', () => {
 test('finance disbursement schema stores request and confirmation traceability', () => {
   const entrySchema = ProjectFinance.schema.path('loanLines').schema.path('entries').schema;
   assert.ok(entrySchema.path('workflowStatus'));
+  assert.ok(entrySchema.path('advanceAccountNumber'));
+  assert.ok(entrySchema.path('fundingParty'));
+  assert.ok(entrySchema.path('promoterContributionAmount'));
   assert.ok(entrySchema.path('requestedAt'));
   assert.ok(entrySchema.path('requestedBy'));
+  assert.ok(entrySchema.path('requestDocumentId'));
+  assert.ok(entrySchema.path('requirementsSnapshot'));
+  assert.ok(entrySchema.path('returnedAt'));
+  assert.ok(entrySchema.path('returnComment'));
   assert.ok(entrySchema.path('disbursedAt'));
   assert.ok(entrySchema.path('disbursedBy'));
   assert.ok(entrySchema.path('transferReference'));

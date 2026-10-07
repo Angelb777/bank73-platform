@@ -10,6 +10,7 @@ const Unit = require('../models/Unit');
 const Venta = require('../models/Venta');
 const User = require('../models/User');
 const Inspection = require('../models/Inspection');
+const Document = require('../models/Document');
 const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment');
 const { requireProjectAccess } = require('../middleware/rbac');
 const { REQUIREMENT_TITLES, PROMOTER_EXPERIENCE_FIELDS, normalizePhaseRequirements } = require('../services/phaseRequirements');
@@ -153,7 +154,7 @@ function normalizeLoanEntry(raw = {}) {
   const workflowStatus = entryType === 'disbursement'
     ? (paymentStatus === 'paid'
         ? 'disbursed'
-        : ['prepared', 'requested', 'disbursed'].includes(raw.workflowStatus)
+        : ['prepared', 'requested', 'returned', 'disbursed'].includes(raw.workflowStatus)
         ? raw.workflowStatus
         : 'prepared')
     : 'prepared';
@@ -162,9 +163,26 @@ function normalizeLoanEntry(raw = {}) {
     entryType,
     paymentStatus,
     workflowStatus,
+    advanceAccountNumber: Number.isInteger(Number(raw.advanceAccountNumber)) && Number(raw.advanceAccountNumber) > 0 ? Number(raw.advanceAccountNumber) : null,
+    fundingParty: ['bank', 'promoter', 'mixed'].includes(raw.fundingParty) ? raw.fundingParty : 'bank',
+    promoterContributionAmount: Math.max(0, toNum(raw.promoterContributionAmount)),
+    promoterContributionStatus: raw.promoterContributionStatus === 'contributed' ? 'contributed' : 'pending',
+    promoterContributedAt: cleanDate(raw.promoterContributedAt),
+    promoterContributedBy: mongoose.isValidObjectId(raw.promoterContributedBy) ? raw.promoterContributedBy : null,
+    promoterContributedByRole: String(raw.promoterContributedByRole || '').trim(),
     requestedAt: cleanDate(raw.requestedAt),
     requestedBy: mongoose.isValidObjectId(raw.requestedBy) ? raw.requestedBy : null,
     requestedByRole: String(raw.requestedByRole || '').trim(),
+    requestDocumentId: mongoose.isValidObjectId(raw.requestDocumentId) ? raw.requestDocumentId : null,
+    requestDocumentName: String(raw.requestDocumentName || '').trim().slice(0, 240),
+    requirementsSnapshot: Array.isArray(raw.requirementsSnapshot) ? raw.requirementsSnapshot : [],
+    requirementsConfirmedAt: cleanDate(raw.requirementsConfirmedAt),
+    requirementsConfirmedBy: mongoose.isValidObjectId(raw.requirementsConfirmedBy) ? raw.requirementsConfirmedBy : null,
+    requirementsConfirmedByRole: String(raw.requirementsConfirmedByRole || '').trim(),
+    returnedAt: cleanDate(raw.returnedAt),
+    returnedBy: mongoose.isValidObjectId(raw.returnedBy) ? raw.returnedBy : null,
+    returnedByRole: String(raw.returnedByRole || '').trim(),
+    returnComment: String(raw.returnComment || '').trim().slice(0, 500),
     disbursedAt: cleanDate(raw.disbursedAt),
     disbursedBy: mongoose.isValidObjectId(raw.disbursedBy) ? raw.disbursedBy : null,
     disbursedByRole: String(raw.disbursedByRole || '').trim(),
@@ -184,7 +202,7 @@ function normalizeLoanEntry(raw = {}) {
 function loanEntryWorkflowStatus(entry = {}) {
   if (entry?.entryType !== 'disbursement') return '';
   if (entry?.paymentStatus === 'paid') return 'disbursed';
-  if (['prepared', 'requested', 'disbursed'].includes(String(entry.workflowStatus || ''))) {
+  if (['prepared', 'requested', 'returned', 'disbursed'].includes(String(entry.workflowStatus || ''))) {
     return String(entry.workflowStatus);
   }
   return entry?.paymentStatus === 'paid' ? 'disbursed' : 'prepared';
@@ -194,7 +212,11 @@ function mergeProtectedLoanWorkflow(rawLines = [], currentDoc) {
   const merged = rawLines.map(line => ({ ...line, entries: Array.isArray(line?.entries) ? line.entries.map(entry => ({ ...entry })) : [] }));
   const rawLinesById = new Map(merged.filter(line => mongoose.isValidObjectId(line?._id)).map(line => [String(line._id), line]));
   const protectedFields = [
-    'paymentStatus', 'workflowStatus', 'requestedAt', 'requestedBy', 'requestedByRole',
+    'paymentStatus', 'workflowStatus', 'advanceAccountNumber',
+    'promoterContributionStatus', 'promoterContributedAt', 'promoterContributedBy', 'promoterContributedByRole',
+    'requestedAt', 'requestedBy', 'requestedByRole', 'requestDocumentId', 'requestDocumentName',
+    'requirementsSnapshot', 'requirementsConfirmedAt', 'requirementsConfirmedBy', 'requirementsConfirmedByRole',
+    'returnedAt', 'returnedBy', 'returnedByRole', 'returnComment',
     'disbursedAt', 'disbursedBy', 'disbursedByRole', 'transferReference', 'workflowNote'
   ];
 
@@ -203,12 +225,13 @@ function mergeProtectedLoanWorkflow(rawLines = [], currentDoc) {
     for (const currentEntry of (currentLine?.entries || [])) {
       if (currentEntry?.entryType !== 'disbursement') continue;
       const status = loanEntryWorkflowStatus(currentEntry);
+      const contributionLocked = currentEntry?.promoterContributionStatus === 'contributed';
       const rawEntry = rawLine?.entries?.find(entry => String(entry?._id || '') === String(currentEntry?._id || ''));
-      if (!rawEntry && ['requested', 'disbursed'].includes(status)) {
-        throw Object.assign(new Error('Un desembolso solicitado o desembolsado no se puede eliminar.'), { status: 409 });
+      if (!rawEntry && (['requested', 'returned', 'disbursed'].includes(status) || contributionLocked)) {
+        throw Object.assign(new Error('Una cuenta solicitada, aportada o desembolsada no se puede eliminar.'), { status: 409 });
       }
       if (!rawEntry) continue;
-      if (['requested', 'disbursed'].includes(status)) {
+      if (['requested', 'disbursed'].includes(status) || contributionLocked) {
         const saved = currentEntry.toObject ? currentEntry.toObject() : currentEntry;
         Object.assign(rawEntry, saved, { _id: currentEntry._id });
       } else {
@@ -223,11 +246,72 @@ function mergeProtectedLoanWorkflow(rawLines = [], currentDoc) {
       Object.assign(entry, {
         paymentStatus: 'pending', workflowStatus: 'prepared', requestedAt: null, requestedBy: null,
         requestedByRole: '', disbursedAt: null, disbursedBy: null, disbursedByRole: '',
-        transferReference: '', workflowNote: ''
+        advanceAccountNumber: null, promoterContributionStatus: 'pending', promoterContributedAt: null,
+        promoterContributedBy: null, promoterContributedByRole: '', requestDocumentId: null,
+        requestDocumentName: '', requirementsSnapshot: [], requirementsConfirmedAt: null,
+        requirementsConfirmedBy: null, requirementsConfirmedByRole: '', returnedAt: null,
+        returnedBy: null, returnedByRole: '', returnComment: '', transferReference: '', workflowNote: ''
       });
     }
   }
   return merged;
+}
+
+function assignAdvanceAccountNumbers(lines = [], currentDoc) {
+  const currentById = new Map();
+  let next = 0;
+  for (const line of (currentDoc?.loanLines || [])) {
+    for (const entry of (line?.entries || [])) {
+      const number = Number(entry?.advanceAccountNumber || 0);
+      if (entry?._id && number > 0) currentById.set(String(entry._id), number);
+      next = Math.max(next, number);
+    }
+  }
+  for (const line of lines) {
+    for (const entry of (line?.entries || [])) {
+      if (entry?.entryType !== 'disbursement') continue;
+      const savedNumber = entry?._id ? currentById.get(String(entry._id)) : null;
+      if (savedNumber) entry.advanceAccountNumber = savedNumber;
+      else entry.advanceAccountNumber = ++next;
+    }
+  }
+  return lines;
+}
+
+function snapshotPhaseRequirements(phase) {
+  return (phase?.requirements || []).map((item, index) => {
+    const raw = item?.toObject ? item.toObject() : item;
+    const validity = String(raw?.structuredData?.validityStatus || '').toUpperCase();
+    const compliant = String(raw?.status || '').toUpperCase() === 'CUMPLIDO' && !['EXPIRED', 'MISSING'].includes(validity);
+    return {
+      requirementId: raw?._id ? String(raw._id) : '',
+      legacyRequirementIds: Array.isArray(raw?.legacyRequirementIds) ? raw.legacyRequirementIds.map(String) : [],
+      number: Number(raw?.number || index + 1),
+      title: String(raw?.title || `Requisito ${index + 1}`).trim(),
+      status: String(raw?.status || 'PENDIENTE').toUpperCase(),
+      reviewStatus: compliant ? 'compliant' : (validity === 'EXPIRED' ? 'expired' : 'pending'),
+      information: String(raw?.information || '').trim().slice(0, 2000),
+      manualInformation: String(raw?.manualInformation || '').trim().slice(0, 2000),
+      sourceLabel: String(raw?.sourceLabel || '').trim().slice(0, 160),
+      observations: String(raw?.observations || '').trim().slice(0, 500),
+      structuredData: raw?.structuredData || {},
+      capturedAt: new Date()
+    };
+  });
+}
+
+function validateLoanFunding(lines = []) {
+  for (const line of lines) {
+    for (const entry of (line?.entries || [])) {
+      if (entry?.entryType !== 'disbursement') continue;
+      const party = ['bank', 'promoter', 'mixed'].includes(entry.fundingParty) ? entry.fundingParty : 'bank';
+      const bankAmount = Math.max(0, toNum(entry.disbursementAmount));
+      const promoterAmount = Math.max(0, toNum(entry.promoterContributionAmount));
+      if (party === 'bank' && promoterAmount > 0) throw Object.assign(new Error('Una cuenta financiada solo por el banco no puede incluir aporte del promotor. Selecciona “Banco + promotor”.'), { status: 400 });
+      if (party === 'promoter' && bankAmount > 0) throw Object.assign(new Error('Una cuenta financiada solo por el promotor no puede incluir importe del banco.'), { status: 400 });
+      if (party === 'mixed' && (!bankAmount || !promoterAmount)) throw Object.assign(new Error('Una cuenta mixta debe indicar tanto el importe del banco como el aporte del promotor.'), { status: 400 });
+    }
+  }
 }
 
 function normalizeLoanLine(raw = {}, idx = 0) {
@@ -820,8 +904,9 @@ router.put('/projects/:projectId/finance/loan-lines', async (req, res) => {
 
     const doc = await getOrCreate(projectId, project.tenantKey);
     const rawLines = Array.isArray(req.body?.loanLines) ? req.body.loanLines : [];
-    const lines = mergeProtectedLoanWorkflow(rawLines, doc);
+    const lines = assignAdvanceAccountNumbers(mergeProtectedLoanWorkflow(rawLines, doc), doc);
     validateLoanLineLimits(doc, lines);
+    validateLoanFunding(lines);
     await validateLoanLineReports({ req, project, rawLines: lines, currentDoc: doc });
     doc.loanLines = lines.map(normalizeLoanLine);
     await doc.save();
@@ -838,52 +923,105 @@ router.put('/projects/:projectId/finance/loan-lines', async (req, res) => {
 router.patch('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId/status', async (req, res) => {
   try {
     const { projectId, lineId, entryId } = req.params;
-    if (![projectId, lineId, entryId].every(mongoose.isValidObjectId)) {
-      return res.status(400).json({ error: 'Identificador de desembolso inválido.' });
-    }
+    if (![projectId, lineId, entryId].every(mongoose.isValidObjectId)) return res.status(400).json({ error: 'Identificador de desembolso inválido.' });
 
     const role = String(req.user?.role || '').toLowerCase().trim();
     const action = String(req.body?.action || '').toLowerCase().trim();
-    if (action === 'request' && !['admin', 'promoter'].includes(role)) {
-      return res.status(403).json({ error: 'Solo el promotor puede solicitar el desembolso.' });
-    }
-    if (action === 'disburse' && !['admin', 'promoter', 'bank'].includes(role)) {
-      return res.status(403).json({ error: 'No tienes permisos para confirmar este desembolso.' });
-    }
-    if (!['request', 'disburse'].includes(action)) {
-      return res.status(400).json({ error: 'Acción de desembolso no válida.' });
-    }
+    if (['request', 'contribute'].includes(action) && !['admin', 'promoter'].includes(role)) return res.status(403).json({ error: 'Solo el promotor puede realizar esta acción.' });
+    if (action === 'disburse' && !['admin', 'promoter', 'bank'].includes(role)) return res.status(403).json({ error: 'No tienes permisos para confirmar este desembolso.' });
+    if (action === 'return' && !['admin', 'bank'].includes(role)) return res.status(403).json({ error: 'Solo el banco o el superadmin pueden devolver una solicitud.' });
+    if (!['request', 'contribute', 'return', 'disburse'].includes(action)) return res.status(400).json({ error: 'Acción de desembolso no válida.' });
 
-    const project = await Project.findById(projectId);
-    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
     const doc = await getOrCreate(projectId, project.tenantKey);
     const line = doc.loanLines.id(lineId);
     const entry = line?.entries?.id(entryId);
-    if (!line || !entry || entry.entryType !== 'disbursement') {
-      return res.status(404).json({ error: 'Desembolso no encontrado.' });
-    }
-    if (toNum(entry.disbursementAmount) <= 0) {
-      return res.status(400).json({ error: 'El desembolso debe tener un importe mayor que cero.' });
-    }
+    if (!line || !entry || entry.entryType !== 'disbursement') return res.status(404).json({ error: 'Desembolso no encontrado.' });
 
-    const currentStatus = loanEntryWorkflowStatus(entry);
-    if (currentStatus === 'disbursed') {
-      return res.status(409).json({ error: 'Este desembolso ya está confirmado como desembolsado.' });
+    if (!(Number(entry.advanceAccountNumber) > 0)) {
+      const highest = (doc.loanLines || []).flatMap(item => item.entries || []).reduce((max, item) => Math.max(max, Number(item?.advanceAccountNumber || 0)), 0);
+      entry.advanceAccountNumber = highest + 1;
     }
-    await validateWorkflowReport({ req, project, entry });
+    const currentStatus = loanEntryWorkflowStatus(entry);
+    if (currentStatus === 'disbursed') return res.status(409).json({ error: 'Este desembolso ya está confirmado como desembolsado.' });
+    if (['request', 'contribute', 'disburse'].includes(action)) await validateWorkflowReport({ req, project, entry });
 
     const actorId = req.user?.userId || req.user?._id || req.user?.id || null;
     const now = new Date();
     if (action === 'request') {
-      if (currentStatus === 'requested') {
-        return res.status(409).json({ error: 'Este desembolso ya está solicitado.' });
-      }
+      if (!['bank', 'mixed'].includes(entry.fundingParty)) return res.status(400).json({ error: 'Esta cuenta no incluye aportación del banco.' });
+      if (entry.fundingParty === 'mixed' && entry.promoterContributionStatus !== 'contributed') return res.status(409).json({ error: 'Confirma primero la aportación del promotor correspondiente a esta cuenta.' });
+      if (toNum(entry.disbursementAmount) <= 0) return res.status(400).json({ error: 'El importe solicitado al banco debe ser mayor que cero.' });
+      if (currentStatus === 'requested') return res.status(409).json({ error: 'Este desembolso ya está solicitado.' });
+      if (req.body?.requirementsConfirmed !== true) return res.status(400).json({ error: 'Confirma que has revisado los requisitos de la fase.' });
+
+      const documentId = String(req.body?.documentId || '');
+      if (!mongoose.isValidObjectId(documentId)) return res.status(400).json({ error: 'Adjunta la carta de solicitud firmada en PDF.' });
+      const requestDocument = await Document.findOne({ _id: documentId, projectId: project._id, tenantKey: project.tenantKey, category: 'disbursementRequest', status: 'ACTIVE' }).lean();
+      const isPdf = requestDocument && (requestDocument.mimetype === 'application/pdf' || String(requestDocument.originalname || '').toLowerCase().endsWith('.pdf'));
+      if (!isPdf) return res.status(400).json({ error: 'La carta de solicitud debe ser un PDF del proyecto.' });
+      await ensureFinanceRequirements(doc, project, await getFinanceCommercialUnits(projectId, project.tenantKey));
+
       entry.workflowStatus = 'requested';
       entry.paymentStatus = 'pending';
       entry.requestedAt = now;
       entry.requestedBy = actorId;
       entry.requestedByRole = role;
+      entry.requestDocumentId = requestDocument._id;
+      entry.requestDocumentName = String(requestDocument.originalname || 'Carta de solicitud.pdf');
+      const phase = (line.phaseId ? doc.phases.id(line.phaseId) : null)
+        || (doc.phases || []).find(item => String(item?.name || '') === String(line.phaseName || ''))
+        || doc.phases?.[0]
+        || null;
+      const requirementsSnapshot = snapshotPhaseRequirements(phase);
+      const requirementIds = requirementsSnapshot.flatMap(item => [item.requirementId, ...(item.legacyRequirementIds || [])]).filter(id => mongoose.isValidObjectId(id));
+      const requirementDocuments = requirementIds.length ? await Document.find({
+        projectId: project._id,
+        tenantKey: project.tenantKey,
+        requirementId: { $in: requirementIds },
+        status: 'ACTIVE'
+      }).select('_id requirementId originalname mimetype').lean() : [];
+      entry.requirementsSnapshot = requirementsSnapshot.map(item => ({
+        ...item,
+        documents: requirementDocuments.filter(document => [item.requirementId, ...(item.legacyRequirementIds || [])].includes(String(document.requirementId))).map(document => ({
+          id: String(document._id),
+          name: String(document.originalname || 'Documento'),
+          mimetype: String(document.mimetype || '')
+        }))
+      }));
+      entry.requirementsConfirmedAt = now;
+      entry.requirementsConfirmedBy = actorId;
+      entry.requirementsConfirmedByRole = role;
+      entry.returnedAt = null;
+      entry.returnedBy = null;
+      entry.returnedByRole = '';
+      entry.returnComment = '';
+    } else if (action === 'contribute') {
+      if (!['promoter', 'mixed'].includes(entry.fundingParty) || toNum(entry.promoterContributionAmount) <= 0) return res.status(400).json({ error: 'Esta cuenta no tiene aportación del promotor.' });
+      if (entry.promoterContributionStatus === 'contributed') return res.status(409).json({ error: 'La aportación del promotor ya está confirmada.' });
+      entry.promoterContributionStatus = 'contributed';
+      entry.promoterContributedAt = cleanDate(req.body?.contributionDate) || now;
+      entry.promoterContributedBy = actorId;
+      entry.promoterContributedByRole = role;
+    } else if (action === 'return') {
+      if (currentStatus !== 'requested') return res.status(409).json({ error: 'Solo se puede devolver una solicitud pendiente.' });
+      const comment = String(req.body?.comment || '').trim().slice(0, 500);
+      if (!comment) return res.status(400).json({ error: 'Indica el motivo de la devolución.' });
+      entry.workflowStatus = 'returned';
+      entry.paymentStatus = 'pending';
+      entry.returnedAt = now;
+      entry.returnedBy = actorId;
+      entry.returnedByRole = role;
+      entry.returnComment = comment;
     } else {
+      if (role === 'bank' && currentStatus !== 'requested') return res.status(409).json({ error: 'El banco solo puede confirmar solicitudes recibidas.' });
+      if (role === 'bank' && !['bank', 'mixed'].includes(entry.fundingParty)) return res.status(400).json({ error: 'Esta cuenta no corresponde al banco.' });
+      if (entry.fundingParty === 'mixed' && entry.promoterContributionStatus !== 'contributed') return res.status(409).json({ error: 'Confirma primero la aportación del promotor correspondiente a esta cuenta.' });
+      if (toNum(entry.disbursementAmount) <= 0) return res.status(400).json({ error: 'El importe del banco debe ser mayor que cero.' });
+      const hasRequirementIssues = currentStatus === 'requested' && (entry.requirementsSnapshot || []).some(item => item?.reviewStatus !== 'compliant');
+      const overrideComment = String(req.body?.overrideComment || '').trim().slice(0, 500);
+      if (hasRequirementIssues && !overrideComment) return res.status(400).json({ error: 'Hay requisitos pendientes o vencidos. Indica una justificación para continuar.' });
       const transferDate = cleanDate(req.body?.transferDate);
       if (!transferDate) return res.status(400).json({ error: 'Indica la fecha efectiva de la transferencia.' });
       entry.workflowStatus = 'disbursed';
@@ -893,31 +1031,99 @@ router.patch('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId/s
       entry.disbursedBy = actorId;
       entry.disbursedByRole = role;
       entry.transferReference = String(req.body?.transferReference || '').trim().slice(0, 120);
-      entry.workflowNote = String(req.body?.note || '').trim().slice(0, 500);
+      entry.workflowNote = overrideComment || String(req.body?.note || '').trim().slice(0, 500);
     }
 
     await doc.save();
-    await audit(req, action === 'request' ? 'finance.disbursement_requested' : 'finance.disbursement_confirmed', {
+    const auditAction = ({ request: 'finance.disbursement_requested', contribute: 'finance.promoter_contribution_confirmed', return: 'finance.disbursement_returned', disburse: 'finance.disbursement_confirmed' })[action];
+    await audit(req, auditAction, {
       tenantKey: project.tenantKey,
       targetType: 'loanLineEntry',
       targetId: entry._id,
       projectId: project._id,
-      message: action === 'request' ? 'Desembolso solicitado por el promotor' : `Desembolso confirmado por ${role}`,
+      message: ({ request: 'Desembolso solicitado por el promotor', contribute: 'Aportación del promotor confirmada', return: 'Solicitud devuelta al promotor', disburse: `Desembolso confirmado por ${role}` })[action],
       metadata: { lineId: String(line._id), amount: toNum(entry.disbursementAmount), workflowStatus: entry.workflowStatus }
     });
 
     const control = sharedBuildFinanceControlSummary(doc, project || {});
     const commercialUnits = await getFinanceCommercialUnits(projectId, project.tenantKey);
-    res.json({
-      ok: true,
-      loanLine: line,
-      entry,
-      financeControl: control,
-      alerts: sharedBuildFinanceControlAlerts(control, commercialUnits)
-    });
+    res.json({ ok: true, loanLine: line, entry, financeControl: control, alerts: sharedBuildFinanceControlAlerts(control, commercialUnits) });
   } catch (err) {
     console.error('PATCH disbursement status error', err);
     res.status(err.status || 500).json({ error: err.status ? err.message : 'No se pudo actualizar el desembolso.' });
+  }
+});
+
+router.get('/projects/:projectId/finance/disbursement-requests', async (req, res) => {
+  try {
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+    const doc = await getOrCreate(project._id, project.tenantKey);
+    const rows = [];
+    for (const line of (doc.loanLines || [])) {
+      for (const entry of (line.entries || [])) {
+        if (entry?.entryType !== 'disbursement' || !['requested', 'returned'].includes(loanEntryWorkflowStatus(entry))) continue;
+        rows.push({ line, entry });
+      }
+    }
+    const inspectionIds = rows.map(row => row.entry.inspectionId).filter(Boolean);
+    const inspections = await Inspection.find({ _id: { $in: inspectionIds }, projectId: project._id, status: 'finalized' })
+      .select('_id reportNumber inspectionDate finalizedAt projectProgressPercent technicalRecommendation')
+      .lean();
+    const inspectionById = new Map(inspections.map(item => [String(item._id), item]));
+    res.json({
+      project: { id: String(project._id), name: project.name, currency: project.currency || 'PAB' },
+      requests: rows.map(({ line, entry }) => {
+        const report = inspectionById.get(String(entry.inspectionId || ''));
+        const requirements = Array.isArray(entry.requirementsSnapshot) ? entry.requirementsSnapshot : [];
+        return {
+          lineId: String(line._id),
+          lineName: String(line.name || 'Línea bancaria'),
+          phaseId: line.phaseId ? String(line.phaseId) : '',
+          phaseName: String(line.phaseName || ''),
+          entryId: String(entry._id),
+          status: loanEntryWorkflowStatus(entry),
+          advanceAccountNumber: Number(entry.advanceAccountNumber || 0) || null,
+          fundingParty: entry.fundingParty || 'bank',
+          bankAmount: toNum(entry.disbursementAmount),
+          promoterAmount: toNum(entry.promoterContributionAmount),
+          promoterContributionStatus: entry.promoterContributionStatus || 'pending',
+          requestedAt: entry.requestedAt,
+          returnedAt: entry.returnedAt,
+          returnComment: entry.returnComment || '',
+          requestDocument: entry.requestDocumentId ? {
+            id: String(entry.requestDocumentId),
+            name: entry.requestDocumentName || 'Carta de solicitud.pdf',
+            url: `/api/documents/${entry.requestDocumentId}/download`
+          } : null,
+          report: report ? {
+            id: String(report._id),
+            number: report.reportNumber || 'Informe de avalúo',
+            date: report.inspectionDate || report.finalizedAt,
+            progress: Number(report.projectProgressPercent || 0),
+            verdict: String(report.technicalRecommendation?.verdict || 'not_assessed'),
+            url: `/api/projects/${project._id}/finance/inspection-reports/${report._id}/report.pdf`
+          } : null,
+          requirements: requirements.map(item => ({
+            ...(item?.toObject ? item.toObject() : item),
+            documents: (item?.documents || []).map(document => ({
+              id: String(document?.id || ''),
+              name: String(document?.name || 'Documento'),
+              mimetype: String(document?.mimetype || ''),
+              url: document?.id ? `/api/documents/${document.id}/download` : ''
+            }))
+          })),
+          requirementSummary: {
+            total: requirements.length,
+            compliant: requirements.filter(item => item?.reviewStatus === 'compliant').length,
+            issues: requirements.filter(item => item?.reviewStatus !== 'compliant').length
+          }
+        };
+      })
+    });
+  } catch (err) {
+    console.error('GET disbursement requests error', err);
+    res.status(500).json({ error: 'No se pudieron cargar las solicitudes de desembolso.' });
   }
 });
 
@@ -1257,6 +1463,10 @@ function buildFinanceSnapshot(doc, phaseId = '') {
         entryType: entry.entryType || 'legacy',
         paymentStatus: entry.paymentStatus || 'legacy',
         workflowStatus: loanEntryWorkflowStatus(entry),
+        advanceAccountNumber: Number(entry.advanceAccountNumber || 0) || '',
+        fundingParty: entry.fundingParty || 'bank',
+        promoterContributionAmount: toNum(entry.promoterContributionAmount),
+        promoterContributionStatus: entry.promoterContributionStatus || 'pending',
         requestedAt: entry.requestedAt || null,
         requestedByRole: entry.requestedByRole || '',
         disbursedAt: entry.disbursedAt || null,
@@ -1488,15 +1698,15 @@ async function exportFinanceXlsx({ req, res, projectId, projectName, updatedAt, 
   sh4.addRow(['Fase', 'Línea', 'Aprobado', 'Desembolsado pagado', 'Amortizado', 'Saldo', 'Cálculo', 'Notas']);
   styleSheetHeaderRow(sh4.getRow(1));
   const sh5 = wb.addWorksheet('Movimientos');
-  sh5.addRow(['Fase', 'Línea', 'Tipo', 'Fecha', 'No. préstamo', 'Desembolso', 'Vencimiento', 'Amortización', 'Estado', 'Solicitado', 'Confirmado por', 'Referencia', 'Informe de avalúo', 'Notas']);
+  sh5.addRow(['Fase', 'Línea', 'Cuenta de avance', 'Tipo', 'Quién aporta', 'Fecha', 'No. préstamo', 'Banco', 'Aporte promotor', 'Vencimiento', 'Amortización', 'Estado', 'Solicitado', 'Confirmado por', 'Referencia', 'Informe de avalúo', 'Notas']);
   styleSheetHeaderRow(sh5.getRow(1));
   snap.phases.forEach(phase => (phase.loanLines || []).forEach(line => {
     const disbursed = (line.entries || []).reduce((sum, entry) => sum + (entry.entryType === 'disbursement' && entry.paymentStatus === 'pending' ? 0 : toNum(entry.disbursementAmount)), 0);
     const amortized = (line.entries || []).reduce((sum, entry) => sum + toNum(entry.amortizedAmount), 0);
     sh4.addRow([phase.name, line.name, line.approvedAmount, disbursed, amortized, Math.max(0, disbursed - amortized), line.approvedAmountMode === 'auto' ? 'Automático' : 'Manual', line.notes]);
     (line.entries || []).forEach(entry => sh5.addRow([
-      phase.name, line.name, entry.entryType, entry.date ? new Date(entry.date) : '', entry.loanNumber,
-      entry.disbursementAmount, entry.maturityDate ? new Date(entry.maturityDate) : '', entry.amortizedAmount,
+      phase.name, line.name, entry.advanceAccountNumber, entry.entryType, entry.fundingParty, entry.date ? new Date(entry.date) : '', entry.loanNumber,
+      entry.disbursementAmount, entry.promoterContributionAmount, entry.maturityDate ? new Date(entry.maturityDate) : '', entry.amortizedAmount,
       entry.workflowStatus || entry.paymentStatus, entry.requestedAt ? new Date(entry.requestedAt) : '', entry.disbursedByRole,
       entry.transferReference, entry.inspectionId, entry.notes
     ]));
@@ -1504,11 +1714,12 @@ async function exportFinanceXlsx({ req, res, projectId, projectName, updatedAt, 
   [sh4, sh5].forEach(sheet => autoFitColumns(sheet, 46));
   for (let row = 2; row <= sh4.rowCount; row++) [3, 4, 5, 6].forEach(column => { sh4.getRow(row).getCell(column).numFmt = '#,##0.00'; });
   for (let row = 2; row <= sh5.rowCount; row++) {
-    sh5.getRow(row).getCell(4).numFmt = 'yyyy-mm-dd';
-    sh5.getRow(row).getCell(6).numFmt = '#,##0.00';
-    sh5.getRow(row).getCell(7).numFmt = 'yyyy-mm-dd';
+    sh5.getRow(row).getCell(6).numFmt = 'yyyy-mm-dd';
     sh5.getRow(row).getCell(8).numFmt = '#,##0.00';
+    sh5.getRow(row).getCell(9).numFmt = '#,##0.00';
     sh5.getRow(row).getCell(10).numFmt = 'yyyy-mm-dd';
+    sh5.getRow(row).getCell(11).numFmt = '#,##0.00';
+    sh5.getRow(row).getCell(13).numFmt = 'yyyy-mm-dd';
   }
 
   // ===== Hoja Gráficas (si llegan) =====
@@ -1896,11 +2107,11 @@ async function exportFinancePdf({ req, res, projectId, projectName, projectCurre
       if (!(line.entries || []).length) continue;
       financePdfSection(pdf, `Movimientos — ${line.name}`);
       financePdfTable(pdf, line.entries.map(entry => ({
-        type: entry.entryType === 'sale_amortization' ? 'Venta' : entry.entryType === 'manual_amortization' ? 'Amortización' : entry.entryType === 'disbursement' ? 'Desembolso' : 'Histórico',
+        type: entry.entryType === 'sale_amortization' ? 'Venta' : entry.entryType === 'manual_amortization' ? 'Amortización' : entry.entryType === 'disbursement' ? `Cuenta ${entry.advanceAccountNumber || '—'} · ${entry.fundingParty === 'mixed' ? 'Mixta' : entry.fundingParty === 'promoter' ? 'Promotor' : 'Banco'}` : 'Histórico',
         date: fmtDate(entry.date),
         disbursed: money(entry.disbursementAmount),
         amortized: money(entry.amortizedAmount),
-        status: entry.workflowStatus === 'requested' ? 'Solicitado' : entry.workflowStatus === 'prepared' ? 'Preparado' : entry.paymentStatus === 'automatic' ? 'Automática' : 'Desembolsado'
+        status: entry.workflowStatus === 'requested' ? 'Solicitado' : entry.workflowStatus === 'returned' ? 'Devuelto' : entry.workflowStatus === 'prepared' ? 'Preparado' : entry.paymentStatus === 'automatic' ? 'Automática' : 'Desembolsado'
       })), [
         { key:'type', label:'Tipo', wPct:0.24, align:'left' },
         { key:'date', label:'Fecha', wPct:0.18, align:'left' },

@@ -64,7 +64,7 @@ test('pending transfers keep their approved amount without increasing disbursed 
     loanLines: [{
       name: 'Infraestructura', approvedAmount: 350000,
       entries: [
-        { entryType: 'disbursement', paymentStatus: 'pending', workflowStatus: 'requested', requestedByRole: 'promoter', disbursementAmount: 150000 },
+        { entryType: 'disbursement', paymentStatus: 'pending', workflowStatus: 'requested', requestedByRole: 'promoter', advanceAccountNumber: 2, fundingParty: 'mixed', promoterContributionAmount: 30000, requestDocumentName: 'solicitud.pdf', requirementsSnapshot: [{ title: 'Póliza', reviewStatus: 'compliant' }], disbursementAmount: 150000 },
         { entryType: 'disbursement', paymentStatus: 'paid', disbursementAmount: 100000, disbursementDate: '2026-10-01' }
       ]
     }]
@@ -73,6 +73,10 @@ test('pending transfers keep their approved amount without increasing disbursed 
   assert.equal(control.loanLines[0].entries[0].status, 'Pendiente de pago');
   assert.equal(control.loanLines[0].entries[0].workflowStatus, 'requested');
   assert.equal(control.loanLines[0].entries[0].requestedByRole, 'promoter');
+  assert.equal(control.loanLines[0].entries[0].advanceAccountNumber, 2);
+  assert.equal(control.loanLines[0].entries[0].fundingParty, 'mixed');
+  assert.equal(control.loanLines[0].entries[0].promoterContributionAmount, 30000);
+  assert.equal(control.loanLines[0].entries[0].requestDocumentName, 'solicitud.pdf');
   assert.equal(control.loanLines[0].entries[1].workflowStatus, 'disbursed');
   assert.equal(control.totals.loanApproved, 350000);
   assert.equal(control.totals.totalDisbursed, 100000);

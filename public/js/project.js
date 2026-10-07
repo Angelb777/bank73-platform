@@ -5961,6 +5961,7 @@ function financeLineStatus(line) {
 }
 
 function financeEntryStatus(line) {
+  if (line?.entryType === 'disbursement' && line?.fundingParty === 'promoter' && line?.promoterContributionStatus === 'contributed') return { key: 'ok', label: 'Aporte realizado' };
   if (line?.entryType === 'disbursement' && line?.paymentStatus === 'pending') return { key: 'pending-payment', label: 'Pendiente de pago' };
   const balance = Math.max(0, numOr0(line?.disbursementAmount) - numOr0(line?.amortizedAmount));
   if (balance <= 0) return { key: 'amortized', label: 'Amortizado' };
@@ -5994,6 +5995,10 @@ function collectFinanceLoanLines() {
       entryType: row.dataset.entryType || 'legacy',
       paymentStatus: row.dataset.paymentStatus || row.querySelector('[data-field="paymentStatus"]')?.value || 'legacy',
       workflowStatus: row.dataset.workflowStatus || '',
+      advanceAccountNumber: numOr0(row.dataset.advanceAccountNumber) || null,
+      fundingParty: row.querySelector('[data-field="fundingParty"]')?.value || row.dataset.fundingParty || 'bank',
+      promoterContributionAmount: numOr0(row.querySelector('[data-field="promoterContributionAmount"]')?.value),
+      promoterContributionStatus: row.dataset.promoterContributionStatus || 'pending',
       requestedAt: row.dataset.requestedAt || null,
       requestedBy: row.dataset.requestedBy || null,
       requestedByRole: row.dataset.requestedByRole || '',
@@ -6377,7 +6382,7 @@ function financeInspectionOptions(selectedId = '', usedIds = new Set()) {
 
 function financeDisbursementWorkflowStatus(entry = {}) {
   if (entry.paymentStatus === 'paid') return 'disbursed';
-  if (['prepared', 'requested', 'disbursed'].includes(entry.workflowStatus)) return entry.workflowStatus;
+  if (['prepared', 'requested', 'returned', 'disbursed'].includes(entry.workflowStatus)) return entry.workflowStatus;
   return 'prepared';
 }
 
@@ -6387,24 +6392,58 @@ function financeActorRoleLabel(role = '') {
 
 function financeDisbursementWorkflowCell(entry = {}, saved = false) {
   const status = financeDisbursementWorkflowStatus(entry);
+  const promoterOnlyDone = entry.fundingParty === 'promoter' && entry.promoterContributionStatus === 'contributed';
   const requestedDate = financeDateInput(entry.requestedAt);
   const disbursedDate = financeDateInput(entry.disbursementDate || entry.disbursedAt);
   const canRequest = ['admin', 'promoter'].includes(myRole);
   const canConfirm = ['admin', 'promoter'].includes(myRole) || (myRole === 'bank' && status === 'requested');
-  const statusHtml = status === 'disbursed'
+  const requestDocument = entry.requestDocumentId ? `<button class="finance-report-link" type="button" data-open-request-document="${escapeHtml(entry.requestDocumentId)}">Ver carta</button>` : '';
+  const statusHtml = promoterOnlyDone
+    ? `<span class="finance-status is-ok">Aporte realizado</span><small>Confirmado por ${escapeHtml(financeActorRoleLabel(entry.promoterContributedByRole || 'promoter'))}</small>`
+    : status === 'disbursed'
     ? `<span class="finance-status is-ok">Desembolsado</span><small>${disbursedDate ? `el ${escapeHtml(disbursedDate)}` : ''}${entry.disbursedByRole ? ` · Confirmado por ${escapeHtml(financeActorRoleLabel(entry.disbursedByRole))}` : ''}</small>`
     : status === 'requested'
       ? `<span class="finance-status is-warn">Solicitado</span><small>${requestedDate ? `el ${escapeHtml(requestedDate)}` : 'Pendiente del banco'}</small>`
+      : status === 'returned'
+        ? `<span class="finance-status is-danger">Devuelto</span><small>${escapeHtml(entry.returnComment || 'Revisa la solicitud')}</small>`
       : '<span class="finance-status is-missing">Preparado</span><small>Aún no solicitado</small>';
   const actions = !saved
     ? '<small>Guarda la línea para continuar</small>'
-    : status === 'disbursed'
+    : status === 'disbursed' || promoterOnlyDone
       ? (entry.transferReference ? `<small>Ref. ${escapeHtml(entry.transferReference)}</small>` : '')
-      : `${status === 'prepared' && canRequest ? '<button class="btn btn-xs" type="button" data-finance-disbursement-action="request">Solicitar</button>' : ''}${canConfirm ? '<button class="btn btn-success btn-xs" type="button" data-finance-disbursement-action="disburse">Marcar desembolsado</button>' : ''}`;
-  return `<div class="finance-disbursement-workflow is-${status}">${statusHtml}<div class="finance-disbursement-actions">${actions}</div></div>`;
+      : `${['prepared', 'returned'].includes(status) && canRequest && ['bank', 'mixed'].includes(entry.fundingParty || 'bank') && (entry.fundingParty !== 'mixed' || entry.promoterContributionStatus === 'contributed') ? '<button class="btn btn-xs" type="button" data-finance-disbursement-action="request">Solicitar al banco</button>' : ''}${entry.fundingParty === 'mixed' && entry.promoterContributionStatus !== 'contributed' ? '<small>Primero confirma el aporte del promotor</small>' : ''}${['promoter', 'mixed'].includes(entry.fundingParty) && entry.promoterContributionStatus !== 'contributed' && canRequest ? '<button class="btn btn-xs" type="button" data-finance-disbursement-action="contribute">Confirmar aporte promotor</button>' : ''}${canConfirm && ['bank', 'mixed'].includes(entry.fundingParty || 'bank') && (entry.fundingParty !== 'mixed' || entry.promoterContributionStatus === 'contributed') ? '<button class="btn btn-success btn-xs" type="button" data-finance-disbursement-action="disburse">Marcar desembolsado</button>' : ''}`;
+  return `<div class="finance-disbursement-workflow is-${status}">${statusHtml}${requestDocument}<div class="finance-disbursement-actions">${actions}</div></div>`;
 }
 
-function openFinanceDisbursementDialog({ direct = false } = {}) {
+function openFinanceRequestDialog({ entry = {}, phase = {} } = {}) {
+  return new Promise(resolve => {
+    const requirements = Array.isArray(phase?.requirements) ? phase.requirements : [];
+    const overlay = document.createElement('div');
+    overlay.className = 'finance-disbursement-dialog-backdrop';
+    overlay.innerHTML = `
+      <form class="finance-disbursement-dialog finance-request-dialog">
+        <h3>Solicitar desembolso · Cuenta de avance ${escapeHtml(String(entry.advanceAccountNumber || '—'))}</h3>
+        <p>El banco recibirá la carta firmada, el informe del avaluador y esta fotografía de los requisitos de la fase.</p>
+        <div class="finance-request-summary"><span>Importe solicitado</span><strong>${financeMoney(entry.disbursementAmount)}</strong></div>
+        <label><span>Carta de solicitud firmada · PDF</span><input class="input" name="requestPdf" type="file" accept="application/pdf,.pdf" required></label>
+        <div class="finance-request-requirements"><b>Requisitos de ${escapeHtml(phase?.name || 'la fase')}</b>${requirements.length ? requirements.map(item => `<div><span class="finance-status ${String(item.status).toUpperCase() === 'CUMPLIDO' ? 'is-ok' : 'is-warn'}">${String(item.status).toUpperCase() === 'CUMPLIDO' ? 'Cumplido' : 'Pendiente'}</span><span>${escapeHtml(item.title || 'Requisito')}</span></div>`).join('') : '<p class="small muted">No hay requisitos configurados en esta fase.</p>'}</div>
+        <label class="finance-request-confirm"><input name="requirementsConfirmed" type="checkbox" required><span>He revisado los requisitos y confirmo que la solicitud está lista para el banco.</span></label>
+        <div class="finance-disbursement-dialog-actions"><button class="btn btn-ghost" type="button" data-cancel>Cancelar</button><button class="btn" type="submit">Enviar solicitud</button></div>
+      </form>`;
+    document.body.appendChild(overlay);
+    const close = value => { overlay.remove(); resolve(value); };
+    overlay.querySelector('[data-cancel]')?.addEventListener('click', () => close(null));
+    overlay.addEventListener('click', event => { if (event.target === overlay) close(null); });
+    overlay.querySelector('form')?.addEventListener('submit', event => {
+      event.preventDefault();
+      const file = event.currentTarget.elements.requestPdf?.files?.[0];
+      if (!file || !file.name.toLowerCase().endsWith('.pdf') || (file.type && file.type !== 'application/pdf')) return alert('Selecciona una carta firmada en formato PDF.');
+      close({ file, requirementsConfirmed: true });
+    });
+  });
+}
+
+function openFinanceDisbursementDialog({ direct = false, hasRequirementIssues = false } = {}) {
   return new Promise(resolve => {
     const today = new Date().toISOString().slice(0, 10);
     const overlay = document.createElement('div');
@@ -6415,7 +6454,7 @@ function openFinanceDisbursementDialog({ direct = false } = {}) {
         <p>${direct ? 'Este desembolso no se solicitó previamente en la plataforma. Puedes registrarlo directamente como desembolsado.' : 'Registra los datos de la transferencia realizada.'}</p>
         <label><span>Fecha efectiva de transferencia</span><input class="input" name="transferDate" type="date" value="${today}" required></label>
         <label><span>Referencia bancaria <em>(opcional)</em></span><input class="input" name="transferReference" maxlength="120" placeholder="Número o referencia de transferencia"></label>
-        <label><span>Comentario <em>(opcional)</em></span><textarea class="input" name="note" maxlength="500" rows="3" placeholder="Observaciones"></textarea></label>
+        <label><span>Comentario <em>(${hasRequirementIssues ? 'obligatorio: hay requisitos por revisar' : 'opcional'})</em></span><textarea class="input" name="note" maxlength="500" rows="3" placeholder="Observaciones" ${hasRequirementIssues ? 'required' : ''}></textarea></label>
         <div class="finance-disbursement-dialog-actions">
           <button class="btn btn-ghost" type="button" data-cancel>Cancelar</button>
           <button class="btn btn-success" type="submit">Confirmar desembolso</button>
@@ -6431,7 +6470,8 @@ function openFinanceDisbursementDialog({ direct = false } = {}) {
       close({
         transferDate: String(form.get('transferDate') || ''),
         transferReference: String(form.get('transferReference') || '').trim(),
-        note: String(form.get('note') || '').trim()
+        note: String(form.get('note') || '').trim(),
+        overrideComment: hasRequirementIssues ? String(form.get('note') || '').trim() : ''
       });
     });
   });
@@ -6446,17 +6486,47 @@ async function updateFinanceDisbursementStatus(button, action) {
     alert('Guarda primero la línea y el desembolso.');
     return;
   }
+  const initialLabel = button.textContent;
   let payload = { action };
   if (action === 'request') {
-    if (!confirm('¿Solicitar este desembolso al banco? El importe y el informe quedarán bloqueados.')) return;
+    const phase = (FINANCE?.phases || []).find(item => String(item._id) === String(card?.dataset.phaseId || FINANCE_SELECTED_PHASE_ID));
+    const line = (FINANCE_CONTROL?.loanLines || []).find(item => String(item._id) === String(lineId));
+    const entry = (line?.entries || []).find(item => String(item._id) === String(entryId)) || {};
+    const values = await openFinanceRequestDialog({ entry, phase });
+    if (!values) return;
+    setFinanceButtonState(button, 'Subiendo carta...', true);
+    const fd = new FormData();
+    fd.append('files', values.file);
+    fd.append('projectId', id);
+    fd.append('category', 'disbursementRequest');
+    fd.append('folder', 'financiero');
+    fd.append('subfolder', 'Solicitudes de desembolso');
+    let uploaded;
+    try {
+      uploaded = await API.upload('/api/documents/upload?category=disbursementRequest&folder=financiero', fd);
+    } catch (error) {
+      setFinanceButtonState(button, initialLabel, false);
+      alert(error.message || 'No se pudo subir la carta de solicitud.');
+      return;
+    }
+    const documentItem = Array.isArray(uploaded) ? uploaded[0] : (uploaded?.documents?.[0] || uploaded?.document || uploaded);
+    if (!documentItem?._id) {
+      setFinanceButtonState(button, initialLabel, false);
+      alert('La carta se subió, pero no se pudo asociar a la solicitud.');
+      return;
+    }
+    payload = { action, documentId: documentItem._id, requirementsConfirmed: true };
+  } else if (action === 'contribute') {
+    if (!confirm('¿Confirmar que el promotor ya realizó su aportación a esta cuenta de avance?')) return;
+    payload = { action, contributionDate: new Date().toISOString().slice(0, 10) };
   } else {
-    const values = await openFinanceDisbursementDialog({ direct: financeDisbursementWorkflowStatus({ workflowStatus: row.dataset.workflowStatus, paymentStatus: row.dataset.paymentStatus }) === 'prepared' });
+    const values = await openFinanceDisbursementDialog({ direct: financeDisbursementWorkflowStatus({ workflowStatus: row.dataset.workflowStatus, paymentStatus: row.dataset.paymentStatus }) !== 'requested', hasRequirementIssues: row.dataset.requirementIssues === '1' });
     if (!values) return;
     payload = { ...payload, ...values };
   }
-  const previousLabel = button.textContent;
+  const previousLabel = initialLabel;
   try {
-    setFinanceButtonState(button, action === 'request' ? 'Solicitando...' : 'Confirmando...', true);
+    setFinanceButtonState(button, action === 'request' ? 'Solicitando...' : action === 'contribute' ? 'Confirmando aporte...' : 'Confirmando...', true);
     await API.patch(`/api/projects/${id}/finance/loan-lines/${encodeURIComponent(lineId)}/entries/${encodeURIComponent(entryId)}/status`, payload);
     await loadFinance();
     const phase = (FINANCE?.phases || []).find(item => String(item._id) === String(FINANCE_SELECTED_PHASE_ID));
@@ -6620,9 +6690,10 @@ function renderFinanceLoanLines(lines = []) {
             <thead>
               <tr>
                 <th>Tipo</th>
+                <th>Cuenta / financiación</th>
                 <th>Fecha</th>
                 <th>No. préstamo</th>
-                <th>Desembolso</th>
+                <th>Importe banco</th>
                 <th>Vencimiento</th>
                 <th>Amortización manual</th>
                 <th>Informe de avalúo</th>
@@ -6639,6 +6710,7 @@ function renderFinanceLoanLines(lines = []) {
                   return `
                     <tr class="finance-sale-entry-row">
                       <td><span class="finance-status is-ok">Venta</span></td>
+                      <td><span class="small muted">—</span></td>
                       <td><input value="${escapeHtml(financeDateInput(sale.checkDate) || '-')}" disabled></td>
                       <td><input value="${escapeHtml(sale.checkNumber ? `Cheque ${sale.checkNumber}` : sale.lot || 'Venta')}" disabled></td>
                       <td><input value="${formatPanamaNumber(0)}" disabled></td>
@@ -6658,15 +6730,16 @@ function renderFinanceLoanLines(lines = []) {
                 const isDisbursement = entryType === 'disbursement';
                 const isManualAmortization = entryType === 'manual_amortization';
                 const workflowStatus = isDisbursement ? financeDisbursementWorkflowStatus(entry) : '';
-                const workflowLocked = isDisbursement && ['requested', 'disbursed'].includes(workflowStatus);
+                const workflowLocked = isDisbursement && (['requested', 'disbursed'].includes(workflowStatus) || entry.promoterContributionStatus === 'contributed');
                 const savedEntry = isMongoIdLike(entry._id);
                 const paidAmount = isDisbursement && workflowStatus !== 'disbursed' ? 0 : numOr0(entry.disbursementAmount);
                 const entryBalance = Math.max(0, paidAmount - numOr0(entry.amortizedAmount));
                 const entryStatus = financeEntryStatus(entry);
                 const report = financeInspectionReport(entry.inspectionId);
                 return `
-                  <tr data-entry-row data-entry-id="${escapeHtml(entry._id || `new-entry-${Date.now()}-${entryIdx}`)}" data-entry-type="${entryType}" data-payment-status="${escapeHtml(entry.paymentStatus || 'legacy')}" data-workflow-status="${escapeHtml(workflowStatus)}" data-requested-at="${escapeHtml(entry.requestedAt || '')}" data-requested-by="${escapeHtml(entry.requestedBy || '')}" data-requested-by-role="${escapeHtml(entry.requestedByRole || '')}" data-disbursed-at="${escapeHtml(entry.disbursedAt || '')}" data-disbursed-by="${escapeHtml(entry.disbursedBy || '')}" data-disbursed-by-role="${escapeHtml(entry.disbursedByRole || '')}" data-transfer-reference="${escapeHtml(entry.transferReference || '')}" data-workflow-note="${escapeHtml(entry.workflowNote || '')}">
+                  <tr data-entry-row data-entry-id="${escapeHtml(entry._id || `new-entry-${Date.now()}-${entryIdx}`)}" data-entry-type="${entryType}" data-payment-status="${escapeHtml(entry.paymentStatus || 'legacy')}" data-workflow-status="${escapeHtml(workflowStatus)}" data-advance-account-number="${escapeHtml(entry.advanceAccountNumber || '')}" data-funding-party="${escapeHtml(entry.fundingParty || 'bank')}" data-promoter-contribution-status="${escapeHtml(entry.promoterContributionStatus || 'pending')}" data-requirement-issues="${(entry.requirementsSnapshot || []).some(item => item?.reviewStatus !== 'compliant') ? '1' : '0'}" data-requested-at="${escapeHtml(entry.requestedAt || '')}" data-requested-by="${escapeHtml(entry.requestedBy || '')}" data-requested-by-role="${escapeHtml(entry.requestedByRole || '')}" data-disbursed-at="${escapeHtml(entry.disbursedAt || '')}" data-disbursed-by="${escapeHtml(entry.disbursedBy || '')}" data-disbursed-by-role="${escapeHtml(entry.disbursedByRole || '')}" data-transfer-reference="${escapeHtml(entry.transferReference || '')}" data-workflow-note="${escapeHtml(entry.workflowNote || '')}">
                     <td><span class="finance-entry-kind is-${entryType}">${isDisbursement ? 'Desembolso' : isManualAmortization ? 'Amortización' : 'Histórica'}</span></td>
+                    <td>${isDisbursement ? `<div class="finance-account-source"><b>Cuenta ${escapeHtml(String(entry.advanceAccountNumber || 'Nueva'))}</b><select data-field="fundingParty" ${workflowLocked ? 'disabled' : ''}><option value="bank" ${(entry.fundingParty || 'bank') === 'bank' ? 'selected' : ''}>Solo banco</option><option value="promoter" ${entry.fundingParty === 'promoter' ? 'selected' : ''}>Solo promotor</option><option value="mixed" ${entry.fundingParty === 'mixed' ? 'selected' : ''}>Banco + promotor</option></select><label><span>Aporte promotor</span><input data-field="promoterContributionAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.promoterContributionAmount)}" ${workflowLocked ? 'disabled' : ''}></label>${entry.promoterContributionStatus === 'contributed' ? '<small class="finance-status is-ok">Aportado</small>' : ''}</div>` : '<span class="small muted">—</span>'}</td>
                     <td><input data-field="${isManualAmortization ? 'movementDate' : 'disbursementDate'}" type="date" value="${financeDateInput(isManualAmortization ? entry.movementDate : entry.disbursementDate)}" ${workflowLocked ? 'disabled' : ''}></td>
                     <td><input data-field="loanNumber" value="${escapeHtml(entry.loanNumber || '')}" ${isManualAmortization || workflowLocked ? 'disabled' : ''}></td>
                     <td><input data-field="disbursementAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.disbursementAmount)}" ${isManualAmortization || workflowLocked ? 'disabled' : ''}></td>
@@ -7218,6 +7291,10 @@ function bindFinanceOnce() {
           entryType,
           paymentStatus: entryType === 'disbursement' ? 'pending' : 'legacy',
           workflowStatus: entryType === 'disbursement' ? 'prepared' : '',
+          advanceAccountNumber: null,
+          fundingParty: 'bank',
+          promoterContributionAmount: 0,
+          promoterContributionStatus: 'pending',
           movementDate: '',
           disbursementDate: '',
           loanNumber: '',
@@ -7245,6 +7322,17 @@ function bindFinanceOnce() {
       } catch (error) {
         console.error(error);
         alert('No se pudo abrir el informe de avalúo.');
+      }
+      return;
+    }
+
+    const requestDocumentBtn = ev.target.closest('[data-open-request-document]');
+    if (requestDocumentBtn) {
+      try {
+        await openSecureFile(secureDocUrl(requestDocumentBtn.dataset.openRequestDocument), 'carta-solicitud-desembolso.pdf', 'view');
+      } catch (error) {
+        console.error(error);
+        alert('No se pudo abrir la carta de solicitud.');
       }
       return;
     }

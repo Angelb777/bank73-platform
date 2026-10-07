@@ -398,8 +398,8 @@
     const unitsTotal = p.unitsTotal || 0;
     const pendingDisbursementRequests = Number(p.pendingDisbursementRequests || 0);
     const pendingDisbursementAmount = Number(p.pendingDisbursementAmount || 0);
-    const pendingDisbursementAlert = role === 'bank' && pendingDisbursementRequests > 0
-      ? `<div class="portfolio-disbursement-alert"><span>${pendingDisbursementRequests} ${pendingDisbursementRequests === 1 ? 'solicitud pendiente' : 'solicitudes pendientes'}</span><strong>${pendingDisbursementAmount.toLocaleString('es-PA', { style: 'currency', currency: p.currency || 'PAB' })}</strong></div>`
+    const pendingDisbursementAlert = ['bank', 'admin'].includes(role) && pendingDisbursementRequests > 0
+      ? `<button type="button" class="portfolio-disbursement-alert" data-review-disbursements="${escapeHtml(p._id)}"><span>${pendingDisbursementRequests} ${pendingDisbursementRequests === 1 ? 'solicitud de desembolso pendiente' : 'solicitudes de desembolso pendientes'}</span><strong>${pendingDisbursementAmount.toLocaleString('es-PA', { style: 'currency', currency: p.currency || 'PAB' })}</strong><small>Revisar ahora →</small></button>`
       : '';
 
     return `
@@ -437,6 +437,96 @@
       </article>
     `;
   }
+
+  async function openPortfolioSecureFile(url) {
+    const token = API.getToken?.() || localStorage.getItem('token') || '';
+    const tenant = API.getTenant?.() || localStorage.getItem('tenantKey') || localStorage.getItem('tenant') || '';
+    const headers = {};
+    if (token) headers.Authorization = String(token).toLowerCase().startsWith('bearer ') ? token : `Bearer ${token}`;
+    if (tenant) { headers['X-Tenant'] = tenant; headers['X-Tenant-Key'] = tenant; }
+    const response = await fetch(url, { headers, credentials: 'include' });
+    if (!response.ok) throw new Error('No se pudo abrir el documento.');
+    const objectUrl = URL.createObjectURL(await response.blob());
+    window.open(objectUrl, '_blank', 'noopener');
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+  }
+
+  function requirementStatusLabel(status) {
+    return status === 'compliant' ? 'Cumplido' : status === 'expired' ? 'Vencido' : 'Pendiente';
+  }
+
+  async function openDisbursementReview(projectId) {
+    const overlay = document.createElement('div');
+    overlay.className = 'portfolio-disbursement-review-backdrop';
+    overlay.innerHTML = '<section class="portfolio-disbursement-review"><p>Cargando solicitud…</p></section>';
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', event => { if (event.target === overlay || event.target.closest('[data-close-disbursement-review]')) close(); });
+    try {
+      const data = await API.get(`/api/projects/${encodeURIComponent(projectId)}/finance/disbursement-requests`);
+      const requests = (data.requests || []).filter(item => item.status === 'requested');
+      overlay.querySelector('section').innerHTML = `
+        <header><div><span class="small muted">Revisión bancaria</span><h2>${escapeHtml(data.project?.name || 'Proyecto')}</h2><p>Comprueba los tres elementos necesarios antes de confirmar la transferencia.</p></div><button class="btn btn-ghost" type="button" data-close-disbursement-review>✕ Cerrar</button></header>
+        <div class="portfolio-disbursement-review-list">
+          ${requests.length ? requests.map(item => {
+            const issues = Number(item.requirementSummary?.issues || 0);
+            return `<article class="portfolio-disbursement-request" data-line-id="${escapeHtml(item.lineId)}" data-entry-id="${escapeHtml(item.entryId)}" data-has-issues="${issues > 0 ? '1' : '0'}">
+              <div class="portfolio-disbursement-request-head"><div><span class="finance-status is-warn">Cuenta de avance ${escapeHtml(String(item.advanceAccountNumber || '—'))}</span><h3>${escapeHtml(item.phaseName || 'Fase')} · ${escapeHtml(item.lineName)}</h3>${item.fundingParty === 'mixed' ? `<small>Aporte promotor: ${Number(item.promoterAmount || 0).toLocaleString('es-PA', { style: 'currency', currency: data.project?.currency || 'PAB' })} · ${item.promoterContributionStatus === 'contributed' ? 'confirmado' : 'pendiente'}</small>` : ''}</div><div class="portfolio-request-bank-amount"><span>Solicitado al banco</span><strong>${Number(item.bankAmount || 0).toLocaleString('es-PA', { style: 'currency', currency: data.project?.currency || 'PAB' })}</strong></div></div>
+              <div class="portfolio-disbursement-checks">
+                <section><b>1. Solicitud firmada</b><p>${escapeHtml(item.requestDocument?.name || 'No adjuntada')}</p>${item.requestDocument ? `<button class="btn btn-xs" type="button" data-open-secure="${escapeHtml(item.requestDocument.url)}">Ver carta PDF</button>` : '<span class="finance-status is-missing">Falta documento</span>'}</section>
+                <section><b>2. Informe del avaluador</b><p>${escapeHtml(item.report?.number || 'Sin informe')} ${item.report ? `· Avance ${Number(item.report.progress || 0).toFixed(1)}%` : ''}</p>${item.report ? `<button class="btn btn-xs" type="button" data-open-secure="${escapeHtml(item.report.url)}">Ver informe PDF</button>` : '<span class="finance-status is-missing">Falta informe</span>'}</section>
+                <section><b>3. Requisitos de la fase</b><p>${item.requirementSummary?.compliant || 0} de ${item.requirementSummary?.total || 0} cumplidos al solicitar</p><span class="finance-status ${issues ? 'is-warn' : 'is-ok'}">${issues ? `${issues} por revisar` : 'Todo conforme'}</span></section>
+              </div>
+              <details class="portfolio-requirement-review" ${issues ? 'open' : ''}><summary>Ver requisitos</summary><div>${(item.requirements || []).map(req => `<div><span class="finance-status ${req.reviewStatus === 'compliant' ? 'is-ok' : 'is-warn'}">${requirementStatusLabel(req.reviewStatus)}</span><span><b>${escapeHtml(req.title || 'Requisito')}</b>${req.information || req.manualInformation || req.observations ? `<small>${escapeHtml(req.manualInformation || req.information || req.observations)}</small>` : ''}${(req.documents || []).length ? `<span class="portfolio-requirement-docs">${req.documents.map(document => `<button class="btn btn-ghost btn-xs" type="button" data-open-secure="${escapeHtml(document.url)}">${escapeHtml(document.name)}</button>`).join('')}</span>` : ''}</span></div>`).join('') || '<p class="muted">La fase no tiene requisitos configurados.</p>'}</div></details>
+              <div class="portfolio-disbursement-decision"><label><span>Fecha de transferencia</span><input class="input" type="date" data-transfer-date value="${new Date().toISOString().slice(0, 10)}"></label><label><span>Referencia <em>(opcional)</em></span><input class="input" data-transfer-reference maxlength="120"></label>${issues ? '<label class="is-wide"><span>Justificación para continuar con requisitos pendientes</span><textarea class="input" data-override-comment rows="2" maxlength="500" required></textarea></label>' : ''}</div>
+              <footer><a class="btn btn-ghost" href="/project?id=${encodeURIComponent(projectId)}&ref=portfolio#finanzas">Abrir detalle financiero</a><button class="btn btn-danger" type="button" data-return-request>Devolver al promotor</button><button class="btn btn-success" type="button" data-confirm-request>Marcar como desembolsado</button></footer>
+            </article>`;
+          }).join('') : '<div class="card"><p>No quedan solicitudes pendientes en este proyecto.</p></div>'}
+        </div>`;
+
+      overlay.querySelector('section').addEventListener('click', async event => {
+        const secure = event.target.closest('[data-open-secure]');
+        if (secure) {
+          try { await openPortfolioSecureFile(secure.dataset.openSecure); } catch (error) { alert(error.message); }
+          return;
+        }
+        const card = event.target.closest('[data-entry-id]');
+        if (!card) return;
+        const endpoint = `/api/projects/${encodeURIComponent(projectId)}/finance/loan-lines/${encodeURIComponent(card.dataset.lineId)}/entries/${encodeURIComponent(card.dataset.entryId)}/status`;
+        const returnButton = event.target.closest('[data-return-request]');
+        if (returnButton) {
+          const comment = prompt('Indica claramente qué debe corregir el promotor:');
+          if (!comment?.trim()) return;
+          returnButton.disabled = true;
+          try { await API.patch(endpoint, { action: 'return', comment: comment.trim() }); close(); await loadList(); } catch (error) { returnButton.disabled = false; alert(error.message || 'No se pudo devolver la solicitud.'); }
+          return;
+        }
+        const confirmButton = event.target.closest('[data-confirm-request]');
+        if (confirmButton) {
+          const transferDate = card.querySelector('[data-transfer-date]')?.value;
+          const overrideComment = card.querySelector('[data-override-comment]')?.value?.trim() || '';
+          if (!transferDate) return alert('Indica la fecha efectiva de transferencia.');
+          if (card.dataset.hasIssues === '1' && !overrideComment) return alert('Explica por qué se continúa con requisitos pendientes o vencidos.');
+          confirmButton.disabled = true;
+          try {
+            await API.patch(endpoint, { action: 'disburse', transferDate, transferReference: card.querySelector('[data-transfer-reference]')?.value?.trim() || '', overrideComment });
+            close();
+            await loadList();
+          } catch (error) { confirmButton.disabled = false; alert(error.message || 'No se pudo confirmar el desembolso.'); }
+        }
+      });
+    } catch (error) {
+      overlay.querySelector('section').innerHTML = `<header><h2>No se pudo abrir la solicitud</h2><button class="btn btn-ghost" data-close-disbursement-review>✕ Cerrar</button></header><p>${escapeHtml(error.message || 'Inténtalo de nuevo.')}</p>`;
+    }
+  }
+
+  container?.addEventListener('click', event => {
+    const button = event.target.closest('[data-review-disbursements]');
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openDisbursementReview(button.dataset.reviewDisbursements);
+  });
 
   // ===== Portfolio list + search =====
   let FULL_LIST = [];

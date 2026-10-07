@@ -1287,6 +1287,15 @@ async function deleteDocHandler(req, res) {
       return res.status(403).json({ error: 'No tienes acceso a la carpeta de este documento' });
     }
 
+    const linkedDisbursement = await ProjectFinance.exists({
+      tenantKey,
+      project: doc.projectId,
+      'loanLines.entries.requestDocumentId': doc._id
+    });
+    if (linkedDisbursement) {
+      return res.status(409).json({ error: 'Este PDF forma parte de una solicitud de desembolso y no se puede eliminar.' });
+    }
+
     await Document.deleteOne({ _id: docId, tenantKey });
 
     await audit(req, 'document.deleted', {
