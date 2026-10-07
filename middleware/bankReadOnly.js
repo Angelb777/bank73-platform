@@ -7,8 +7,9 @@ function bankReadOnly(req, res, next) {
   const requirementUploadCategory = String(req.query?.category || '').toLowerCase();
   const isFinanceRequirementUpload = method === 'POST' && path === '/api/documents/upload' && ['financerequirement', 'architecturalplans'].includes(requirementUploadCategory);
   const isFinanceRequirementSourceUpdate = method === 'PUT' && /^\/api\/projects\/[^/]+\/finance\/(?:promoter-experience|legal-parties)$/.test(path);
+  const isDisbursementStatusUpdate = method === 'PATCH' && /^\/api\/projects\/[^/]+\/finance\/loan-lines\/[^/]+\/entries\/[^/]+\/status$/.test(path);
 
-  if (role === 'bank' && !isProjectCreate && !isFundingInterest && !isFinanceRequirementUpload && !isFinanceRequirementSourceUpdate && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+  if (role === 'bank' && !isProjectCreate && !isFundingInterest && !isFinanceRequirementUpload && !isFinanceRequirementSourceUpdate && !isDisbursementStatusUpdate && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
     return res.status(403).json({
       error: 'Rol bank en modo observador: esta operacion es solo de lectura.'
     });

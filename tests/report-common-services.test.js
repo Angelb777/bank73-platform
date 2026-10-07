@@ -64,13 +64,16 @@ test('pending transfers keep their approved amount without increasing disbursed 
     loanLines: [{
       name: 'Infraestructura', approvedAmount: 350000,
       entries: [
-        { entryType: 'disbursement', paymentStatus: 'pending', disbursementAmount: 150000 },
+        { entryType: 'disbursement', paymentStatus: 'pending', workflowStatus: 'requested', requestedByRole: 'promoter', disbursementAmount: 150000 },
         { entryType: 'disbursement', paymentStatus: 'paid', disbursementAmount: 100000, disbursementDate: '2026-10-01' }
       ]
     }]
   }, {});
   assert.equal(control.loanLines[0].entries[0].disbursementAmount, 150000);
   assert.equal(control.loanLines[0].entries[0].status, 'Pendiente de pago');
+  assert.equal(control.loanLines[0].entries[0].workflowStatus, 'requested');
+  assert.equal(control.loanLines[0].entries[0].requestedByRole, 'promoter');
+  assert.equal(control.loanLines[0].entries[1].workflowStatus, 'disbursed');
   assert.equal(control.totals.loanApproved, 350000);
   assert.equal(control.totals.totalDisbursed, 100000);
   assert.equal(control.totals.availableToDisburse, 250000);

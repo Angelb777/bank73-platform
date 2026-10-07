@@ -106,13 +106,24 @@ test('average sale price uses commercial units and falls back to housing models'
   assert.equal(averageProjectSalePrice({ housingModels: [{ price: 100000, unitsCount: 1 }, { price: 200000, unitsCount: 3 }] }), 175000);
 });
 
-test('bank write guard allows only project creation and published-opportunity interest submission', () => {
+test('bank write guard allows only the explicit bank write workflows', () => {
   assert.equal(runBankGuard('POST', '/api/projects').nextCalled, true);
   assert.equal(runBankGuard('POST', '/api/funding/opportunities/abc123/interests').nextCalled, true);
+  assert.equal(runBankGuard('PATCH', '/api/projects/project1/finance/loan-lines/line1/entries/entry1/status').nextCalled, true);
   const blocked = runBankGuard('PATCH', '/api/projects/abc123');
   assert.equal(blocked.nextCalled, false);
   assert.equal(blocked.responseStatus, 403);
   assert.match(blocked.responseBody.error, /solo de lectura/i);
+});
+
+test('finance disbursement schema stores request and confirmation traceability', () => {
+  const entrySchema = ProjectFinance.schema.path('loanLines').schema.path('entries').schema;
+  assert.ok(entrySchema.path('workflowStatus'));
+  assert.ok(entrySchema.path('requestedAt'));
+  assert.ok(entrySchema.path('requestedBy'));
+  assert.ok(entrySchema.path('disbursedAt'));
+  assert.ok(entrySchema.path('disbursedBy'));
+  assert.ok(entrySchema.path('transferReference'));
 });
 
 test('funding management always scopes projects to the active tenant', () => {

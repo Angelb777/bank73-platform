@@ -3254,6 +3254,27 @@ body.light-theme #cards .card.status-FINALIZADO .badge {
   overflow: hidden;
 }
 
+#cards .portfolio-disbursement-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(245, 158, 11, .45);
+  border-radius: 10px;
+  background: rgba(245, 158, 11, .12);
+  color: #fde68a;
+  font-size: .78rem;
+  font-weight: 800;
+}
+#cards .portfolio-disbursement-alert strong { color: inherit; white-space: nowrap; }
+body.light-theme #cards .portfolio-disbursement-alert {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+}
+
 #cards .portfolio-status-pill,
 #cards .portfolio-type-pill {
   display: inline-flex;
@@ -5232,6 +5253,56 @@ body.light-theme .finance-entry-kind.is-manual_amortization { color: #166534; }
   border-color: rgba(239,68,68,.38);
   background: rgba(239,68,68,.14);
 }
+
+#tab-finanzas .finance-disbursement-workflow {
+  display: grid;
+  min-width: 185px;
+  gap: 5px;
+}
+#tab-finanzas .finance-disbursement-workflow small {
+  display: block;
+  color: var(--muted, #94a3b8);
+  font-size: 11px;
+  line-height: 1.25;
+}
+#tab-finanzas .finance-disbursement-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+#tab-finanzas .finance-disbursement-actions:empty { display: none; }
+#tab-finanzas .finance-disbursement-actions .btn { white-space: nowrap; }
+
+.finance-disbursement-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 24000;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(2, 6, 23, .78);
+  backdrop-filter: blur(5px);
+}
+.finance-disbursement-dialog {
+  width: min(520px, calc(100vw - 28px));
+  padding: 20px;
+  border: 1px solid rgba(148, 163, 184, .3);
+  border-radius: 16px;
+  background: #0f172a;
+  color: #e7e9f0;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .6);
+}
+.finance-disbursement-dialog h3 { margin: 0 0 6px; }
+.finance-disbursement-dialog p { margin: 0 0 16px; color: #94a3b8; line-height: 1.45; }
+.finance-disbursement-dialog label { display: block; margin-top: 11px; }
+.finance-disbursement-dialog label > span { display: block; margin-bottom: 5px; font-size: .78rem; font-weight: 800; color: #cbd5e1; }
+.finance-disbursement-dialog label em { color: #94a3b8; font-style: normal; font-weight: 500; }
+.finance-disbursement-dialog textarea { resize: vertical; }
+.finance-disbursement-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+body.light-theme .finance-disbursement-dialog { border-color: #cbd5e1; background: #f8fafc; color: #172033; }
+body.light-theme .finance-disbursement-dialog p,
+body.light-theme .finance-disbursement-dialog label > span { color: #475569; }
 
 #tab-finanzas .finance-unit-grid {
   display: grid;

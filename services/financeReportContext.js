@@ -68,6 +68,19 @@ function normalizeLoanEntry(raw = {}) {
     _id: raw._id,
     entryType,
     paymentStatus,
+    workflowStatus: paymentStatus === 'paid'
+      ? 'disbursed'
+      : ['prepared', 'requested', 'disbursed'].includes(raw.workflowStatus)
+      ? raw.workflowStatus
+      : 'prepared',
+    requestedAt: raw.requestedAt || null,
+    requestedBy: raw.requestedBy || null,
+    requestedByRole: String(raw.requestedByRole || '').trim(),
+    disbursedAt: raw.disbursedAt || null,
+    disbursedBy: raw.disbursedBy || null,
+    disbursedByRole: String(raw.disbursedByRole || '').trim(),
+    transferReference: String(raw.transferReference || '').trim(),
+    workflowNote: String(raw.workflowNote || '').trim(),
     movementDate: raw.movementDate || null,
     disbursementDate: raw.disbursementDate || null,
     loanNumber: String(raw.loanNumber || '').trim(),

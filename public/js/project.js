@@ -5992,7 +5992,16 @@ function collectFinanceLoanLines() {
     entries: Array.from(card.querySelectorAll('[data-entry-row]')).map(row => ({
       _id: isMongoIdLike(row.dataset.entryId) ? row.dataset.entryId : undefined,
       entryType: row.dataset.entryType || 'legacy',
-      paymentStatus: row.querySelector('[data-field="paymentStatus"]')?.value || 'legacy',
+      paymentStatus: row.dataset.paymentStatus || row.querySelector('[data-field="paymentStatus"]')?.value || 'legacy',
+      workflowStatus: row.dataset.workflowStatus || '',
+      requestedAt: row.dataset.requestedAt || null,
+      requestedBy: row.dataset.requestedBy || null,
+      requestedByRole: row.dataset.requestedByRole || '',
+      disbursedAt: row.dataset.disbursedAt || null,
+      disbursedBy: row.dataset.disbursedBy || null,
+      disbursedByRole: row.dataset.disbursedByRole || '',
+      transferReference: row.dataset.transferReference || '',
+      workflowNote: row.dataset.workflowNote || '',
       movementDate: row.querySelector('[data-field="movementDate"]')?.value || null,
       disbursementDate: row.querySelector('[data-field="disbursementDate"]')?.value || null,
       loanNumber: row.querySelector('[data-field="loanNumber"]')?.value || '',
@@ -6366,6 +6375,105 @@ function financeInspectionOptions(selectedId = '', usedIds = new Set()) {
   }).join('')}`;
 }
 
+function financeDisbursementWorkflowStatus(entry = {}) {
+  if (entry.paymentStatus === 'paid') return 'disbursed';
+  if (['prepared', 'requested', 'disbursed'].includes(entry.workflowStatus)) return entry.workflowStatus;
+  return 'prepared';
+}
+
+function financeActorRoleLabel(role = '') {
+  return ({ admin: 'Superadmin', promoter: 'Promotor', bank: 'Banco' })[String(role).toLowerCase()] || 'Usuario';
+}
+
+function financeDisbursementWorkflowCell(entry = {}, saved = false) {
+  const status = financeDisbursementWorkflowStatus(entry);
+  const requestedDate = financeDateInput(entry.requestedAt);
+  const disbursedDate = financeDateInput(entry.disbursementDate || entry.disbursedAt);
+  const canRequest = ['admin', 'promoter'].includes(myRole);
+  const canConfirm = ['admin', 'promoter'].includes(myRole) || (myRole === 'bank' && status === 'requested');
+  const statusHtml = status === 'disbursed'
+    ? `<span class="finance-status is-ok">Desembolsado</span><small>${disbursedDate ? `el ${escapeHtml(disbursedDate)}` : ''}${entry.disbursedByRole ? ` · Confirmado por ${escapeHtml(financeActorRoleLabel(entry.disbursedByRole))}` : ''}</small>`
+    : status === 'requested'
+      ? `<span class="finance-status is-warn">Solicitado</span><small>${requestedDate ? `el ${escapeHtml(requestedDate)}` : 'Pendiente del banco'}</small>`
+      : '<span class="finance-status is-missing">Preparado</span><small>Aún no solicitado</small>';
+  const actions = !saved
+    ? '<small>Guarda la línea para continuar</small>'
+    : status === 'disbursed'
+      ? (entry.transferReference ? `<small>Ref. ${escapeHtml(entry.transferReference)}</small>` : '')
+      : `${status === 'prepared' && canRequest ? '<button class="btn btn-xs" type="button" data-finance-disbursement-action="request">Solicitar</button>' : ''}${canConfirm ? '<button class="btn btn-success btn-xs" type="button" data-finance-disbursement-action="disburse">Marcar desembolsado</button>' : ''}`;
+  return `<div class="finance-disbursement-workflow is-${status}">${statusHtml}<div class="finance-disbursement-actions">${actions}</div></div>`;
+}
+
+function openFinanceDisbursementDialog({ direct = false } = {}) {
+  return new Promise(resolve => {
+    const today = new Date().toISOString().slice(0, 10);
+    const overlay = document.createElement('div');
+    overlay.className = 'finance-disbursement-dialog-backdrop';
+    overlay.innerHTML = `
+      <form class="finance-disbursement-dialog">
+        <h3>Confirmar desembolso</h3>
+        <p>${direct ? 'Este desembolso no se solicitó previamente en la plataforma. Puedes registrarlo directamente como desembolsado.' : 'Registra los datos de la transferencia realizada.'}</p>
+        <label><span>Fecha efectiva de transferencia</span><input class="input" name="transferDate" type="date" value="${today}" required></label>
+        <label><span>Referencia bancaria <em>(opcional)</em></span><input class="input" name="transferReference" maxlength="120" placeholder="Número o referencia de transferencia"></label>
+        <label><span>Comentario <em>(opcional)</em></span><textarea class="input" name="note" maxlength="500" rows="3" placeholder="Observaciones"></textarea></label>
+        <div class="finance-disbursement-dialog-actions">
+          <button class="btn btn-ghost" type="button" data-cancel>Cancelar</button>
+          <button class="btn btn-success" type="submit">Confirmar desembolso</button>
+        </div>
+      </form>`;
+    document.body.appendChild(overlay);
+    const close = value => { overlay.remove(); resolve(value); };
+    overlay.querySelector('[data-cancel]')?.addEventListener('click', () => close(null));
+    overlay.addEventListener('click', event => { if (event.target === overlay) close(null); });
+    overlay.querySelector('form')?.addEventListener('submit', event => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      close({
+        transferDate: String(form.get('transferDate') || ''),
+        transferReference: String(form.get('transferReference') || '').trim(),
+        note: String(form.get('note') || '').trim()
+      });
+    });
+  });
+}
+
+async function updateFinanceDisbursementStatus(button, action) {
+  const card = button.closest('[data-line-card]');
+  const row = button.closest('[data-entry-row]');
+  const lineId = card?.dataset.id || '';
+  const entryId = row?.dataset.entryId || '';
+  if (!isMongoIdLike(lineId) || !isMongoIdLike(entryId)) {
+    alert('Guarda primero la línea y el desembolso.');
+    return;
+  }
+  let payload = { action };
+  if (action === 'request') {
+    if (!confirm('¿Solicitar este desembolso al banco? El importe y el informe quedarán bloqueados.')) return;
+  } else {
+    const values = await openFinanceDisbursementDialog({ direct: financeDisbursementWorkflowStatus({ workflowStatus: row.dataset.workflowStatus, paymentStatus: row.dataset.paymentStatus }) === 'prepared' });
+    if (!values) return;
+    payload = { ...payload, ...values };
+  }
+  const previousLabel = button.textContent;
+  try {
+    setFinanceButtonState(button, action === 'request' ? 'Solicitando...' : 'Confirmando...', true);
+    await API.patch(`/api/projects/${id}/finance/loan-lines/${encodeURIComponent(lineId)}/entries/${encodeURIComponent(entryId)}/status`, payload);
+    await loadFinance();
+    const phase = (FINANCE?.phases || []).find(item => String(item._id) === String(FINANCE_SELECTED_PHASE_ID));
+    if (phase) {
+      await openFinancePhaseLines(phase, 'real', 'lines');
+      FINANCE_LOAN_LINE_EXPANDED.add(String(lineId));
+      FINANCE_LOAN_LINE_COLLAPSED.delete(String(lineId));
+      renderFinanceLoanLines(financeLoanLinesWithUseSeeds(financeLinesForPhase(phase._id), phase));
+    }
+    await markProjectDataChanged();
+  } catch (error) {
+    console.error('[Finance] estado de desembolso', error);
+    setFinanceButtonState(button, previousLabel, false);
+    alert(error.message || 'No se pudo actualizar el desembolso.');
+  }
+}
+
 function renderFinancePhaseLineCharts(phases = [], containerId = 'financePhaseLineCharts', chartPrefix = 'financePhaseLineChart', options = {}) {
   const wrap = document.getElementById(containerId);
   if (!wrap) return;
@@ -6454,9 +6562,12 @@ function renderFinanceLoanLines(lines = []) {
     const recoveredPct = financePct(totals.recovered, totals.disbursed);
     const balancePct = financePct(totals.balance, totals.disbursed);
     const lineStatus = financeLineStatus(line);
+    const requestedCount = (line.entries || []).filter(entry => entry.entryType === 'disbursement' && financeDisbursementWorkflowStatus(entry) === 'requested').length;
     const status = !(line.entries || []).length
       ? { key: 'neutral', label: 'Sin movimientos' }
-      : lineStatus.key === 'pending'
+      : requestedCount
+        ? { key: 'warn', label: `${requestedCount} ${requestedCount === 1 ? 'solicitud pendiente' : 'solicitudes pendientes'}` }
+        : lineStatus.key === 'pending'
         ? lineStatus
         : totals.balance <= 0 ? { key: 'amortized', label: 'Amortizado' } : lineStatus;
     const salesAllocations = financeSalesAllocationsForLine(line);
@@ -6546,23 +6657,26 @@ function renderFinanceLoanLines(lines = []) {
                 const entryType = ['disbursement', 'manual_amortization'].includes(entry.entryType) ? entry.entryType : 'legacy';
                 const isDisbursement = entryType === 'disbursement';
                 const isManualAmortization = entryType === 'manual_amortization';
-                const paidAmount = isDisbursement && entry.paymentStatus === 'pending' ? 0 : numOr0(entry.disbursementAmount);
+                const workflowStatus = isDisbursement ? financeDisbursementWorkflowStatus(entry) : '';
+                const workflowLocked = isDisbursement && ['requested', 'disbursed'].includes(workflowStatus);
+                const savedEntry = isMongoIdLike(entry._id);
+                const paidAmount = isDisbursement && workflowStatus !== 'disbursed' ? 0 : numOr0(entry.disbursementAmount);
                 const entryBalance = Math.max(0, paidAmount - numOr0(entry.amortizedAmount));
                 const entryStatus = financeEntryStatus(entry);
                 const report = financeInspectionReport(entry.inspectionId);
                 return `
-                  <tr data-entry-row data-entry-id="${escapeHtml(entry._id || `new-entry-${Date.now()}-${entryIdx}`)}" data-entry-type="${entryType}">
+                  <tr data-entry-row data-entry-id="${escapeHtml(entry._id || `new-entry-${Date.now()}-${entryIdx}`)}" data-entry-type="${entryType}" data-payment-status="${escapeHtml(entry.paymentStatus || 'legacy')}" data-workflow-status="${escapeHtml(workflowStatus)}" data-requested-at="${escapeHtml(entry.requestedAt || '')}" data-requested-by="${escapeHtml(entry.requestedBy || '')}" data-requested-by-role="${escapeHtml(entry.requestedByRole || '')}" data-disbursed-at="${escapeHtml(entry.disbursedAt || '')}" data-disbursed-by="${escapeHtml(entry.disbursedBy || '')}" data-disbursed-by-role="${escapeHtml(entry.disbursedByRole || '')}" data-transfer-reference="${escapeHtml(entry.transferReference || '')}" data-workflow-note="${escapeHtml(entry.workflowNote || '')}">
                     <td><span class="finance-entry-kind is-${entryType}">${isDisbursement ? 'Desembolso' : isManualAmortization ? 'Amortización' : 'Histórica'}</span></td>
-                    <td><input data-field="${isManualAmortization ? 'movementDate' : 'disbursementDate'}" type="date" value="${financeDateInput(isManualAmortization ? entry.movementDate : entry.disbursementDate)}"></td>
-                    <td><input data-field="loanNumber" value="${escapeHtml(entry.loanNumber || '')}" ${isManualAmortization ? 'disabled' : ''}></td>
-                    <td><input data-field="disbursementAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.disbursementAmount)}" ${isManualAmortization ? 'disabled' : ''}></td>
-                    <td><input data-field="maturityDate" type="date" value="${financeDateInput(entry.maturityDate)}" ${isManualAmortization ? 'disabled' : ''}></td>
+                    <td><input data-field="${isManualAmortization ? 'movementDate' : 'disbursementDate'}" type="date" value="${financeDateInput(isManualAmortization ? entry.movementDate : entry.disbursementDate)}" ${workflowLocked ? 'disabled' : ''}></td>
+                    <td><input data-field="loanNumber" value="${escapeHtml(entry.loanNumber || '')}" ${isManualAmortization || workflowLocked ? 'disabled' : ''}></td>
+                    <td><input data-field="disbursementAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.disbursementAmount)}" ${isManualAmortization || workflowLocked ? 'disabled' : ''}></td>
+                    <td><input data-field="maturityDate" type="date" value="${financeDateInput(entry.maturityDate)}" ${isManualAmortization || workflowLocked ? 'disabled' : ''}></td>
                     <td><input data-field="amortizedAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.amortizedAmount)}" ${isDisbursement ? 'disabled' : ''}></td>
-                    <td>${isDisbursement ? `<select data-field="inspectionId" ${(entry.inspectionId && isMongoIdLike(entry._id)) || (FINANCE_AVALUATION_CONTEXT.hasAssignedAvaluator && !(FINANCE_AVALUATION_CONTEXT.reports || []).length) ? 'disabled' : ''}>${financeInspectionOptions(entry.inspectionId, usedReportIds)}</select>${report ? `<button class="finance-report-link" type="button" data-open-inspection="${escapeHtml(report.id)}">Ver PDF</button>` : ''}` : '<span class="small muted">—</span>'}</td>
-                    <td>${isDisbursement ? `<select data-field="paymentStatus"><option value="pending" ${entry.paymentStatus === 'pending' ? 'selected' : ''}>Pendiente</option><option value="paid" ${entry.paymentStatus !== 'pending' ? 'selected' : ''}>Pagado</option></select>` : `<span class="finance-status is-${entryStatus.key}">${isManualAmortization ? 'Manual' : entryStatus.label}</span>`}</td>
+                    <td>${isDisbursement ? `<select data-field="inspectionId" ${workflowLocked || (entry.inspectionId && savedEntry) || (FINANCE_AVALUATION_CONTEXT.hasAssignedAvaluator && !(FINANCE_AVALUATION_CONTEXT.reports || []).length) ? 'disabled' : ''}>${financeInspectionOptions(entry.inspectionId, usedReportIds)}</select>${report ? `<button class="finance-report-link" type="button" data-open-inspection="${escapeHtml(report.id)}">Ver PDF</button>` : ''}` : '<span class="small muted">—</span>'}</td>
+                    <td>${isDisbursement ? financeDisbursementWorkflowCell(entry, savedEntry) : `<span class="finance-status is-${entryStatus.key}">${isManualAmortization ? 'Manual' : entryStatus.label}</span>`}</td>
                     <td class="finance-balance">${financeMoney(entryBalance)}</td>
-                    <td><input data-field="notes" value="${escapeHtml(entry.notes || '')}"></td>
-                    <td><button class="btn btn-danger btn-xs" type="button" data-finance-remove-entry>Quitar</button></td>
+                    <td><input data-field="notes" value="${escapeHtml(entry.notes || '')}" ${workflowLocked ? 'disabled' : ''}></td>
+                    <td>${workflowLocked ? '<span class="small muted">Bloqueado</span>' : '<button class="btn btn-danger btn-xs" type="button" data-finance-remove-entry>Quitar</button>'}</td>
                   </tr>
                 `;
               }).join('')}
@@ -7034,6 +7148,11 @@ function bindFinanceOnce() {
     }, 120);
   });
   document.getElementById('financeLoanLinesBody')?.addEventListener('click', async (ev) => {
+    const workflowButton = ev.target.closest('[data-finance-disbursement-action]');
+    if (workflowButton) {
+      await updateFinanceDisbursementStatus(workflowButton, workflowButton.dataset.financeDisbursementAction);
+      return;
+    }
     const manualLineBtn = ev.target.closest('[data-finance-manual-line]');
     if (manualLineBtn) {
       const card = manualLineBtn.closest('.finance-loan-line-card');
@@ -7098,6 +7217,7 @@ function bindFinanceOnce() {
           _id: `new-entry-${Date.now()}`,
           entryType,
           paymentStatus: entryType === 'disbursement' ? 'pending' : 'legacy',
+          workflowStatus: entryType === 'disbursement' ? 'prepared' : '',
           movementDate: '',
           disbursementDate: '',
           loanNumber: '',
@@ -7925,7 +8045,7 @@ async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = '
   renderFinanceLoanLines(lines);
   renderFinanceUnitAmortizations();
   setFinancePhaseModalTab(initialTab);
-  const canEditPhase = ['admin', 'bank', 'financiero', 'gerencia', 'socios'].includes(myRole);
+  const canEditPhase = ['admin', 'financiero', 'gerencia', 'socios'].includes(myRole);
   if (!canEditPhase) {
     modal.querySelectorAll('input, select, textarea').forEach(control => { control.disabled = true; });
     modal.querySelectorAll('[data-save-phase-overview], [data-copy-plan-to-real], #financeAddLoanLineBtn, [data-finance-add-entry], [data-finance-save-line], [data-finance-remove-line], [data-finance-remove-entry], [data-finance-manual-line], [data-remove-budget-row], [data-add-budget-row]').forEach(control => { control.hidden = true; });

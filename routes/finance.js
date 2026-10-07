@@ -150,10 +150,26 @@ function normalizeLoanEntry(raw = {}) {
   const paymentStatus = entryType === 'disbursement'
     ? (raw.paymentStatus === 'pending' ? 'pending' : 'paid')
     : 'legacy';
+  const workflowStatus = entryType === 'disbursement'
+    ? (paymentStatus === 'paid'
+        ? 'disbursed'
+        : ['prepared', 'requested', 'disbursed'].includes(raw.workflowStatus)
+        ? raw.workflowStatus
+        : 'prepared')
+    : 'prepared';
   return {
     _id: mongoose.isValidObjectId(raw._id) ? raw._id : undefined,
     entryType,
     paymentStatus,
+    workflowStatus,
+    requestedAt: cleanDate(raw.requestedAt),
+    requestedBy: mongoose.isValidObjectId(raw.requestedBy) ? raw.requestedBy : null,
+    requestedByRole: String(raw.requestedByRole || '').trim(),
+    disbursedAt: cleanDate(raw.disbursedAt),
+    disbursedBy: mongoose.isValidObjectId(raw.disbursedBy) ? raw.disbursedBy : null,
+    disbursedByRole: String(raw.disbursedByRole || '').trim(),
+    transferReference: String(raw.transferReference || '').trim().slice(0, 120),
+    workflowNote: String(raw.workflowNote || '').trim().slice(0, 500),
     movementDate: cleanDate(raw.movementDate),
     disbursementDate: cleanDate(raw.disbursementDate),
     loanNumber: String(raw.loanNumber || '').trim(),
@@ -163,6 +179,55 @@ function normalizeLoanEntry(raw = {}) {
     inspectionId: mongoose.isValidObjectId(raw.inspectionId) ? raw.inspectionId : null,
     notes: String(raw.notes || '').trim(),
   };
+}
+
+function loanEntryWorkflowStatus(entry = {}) {
+  if (entry?.entryType !== 'disbursement') return '';
+  if (entry?.paymentStatus === 'paid') return 'disbursed';
+  if (['prepared', 'requested', 'disbursed'].includes(String(entry.workflowStatus || ''))) {
+    return String(entry.workflowStatus);
+  }
+  return entry?.paymentStatus === 'paid' ? 'disbursed' : 'prepared';
+}
+
+function mergeProtectedLoanWorkflow(rawLines = [], currentDoc) {
+  const merged = rawLines.map(line => ({ ...line, entries: Array.isArray(line?.entries) ? line.entries.map(entry => ({ ...entry })) : [] }));
+  const rawLinesById = new Map(merged.filter(line => mongoose.isValidObjectId(line?._id)).map(line => [String(line._id), line]));
+  const protectedFields = [
+    'paymentStatus', 'workflowStatus', 'requestedAt', 'requestedBy', 'requestedByRole',
+    'disbursedAt', 'disbursedBy', 'disbursedByRole', 'transferReference', 'workflowNote'
+  ];
+
+  for (const currentLine of (currentDoc?.loanLines || [])) {
+    const rawLine = rawLinesById.get(String(currentLine?._id || ''));
+    for (const currentEntry of (currentLine?.entries || [])) {
+      if (currentEntry?.entryType !== 'disbursement') continue;
+      const status = loanEntryWorkflowStatus(currentEntry);
+      const rawEntry = rawLine?.entries?.find(entry => String(entry?._id || '') === String(currentEntry?._id || ''));
+      if (!rawEntry && ['requested', 'disbursed'].includes(status)) {
+        throw Object.assign(new Error('Un desembolso solicitado o desembolsado no se puede eliminar.'), { status: 409 });
+      }
+      if (!rawEntry) continue;
+      if (['requested', 'disbursed'].includes(status)) {
+        const saved = currentEntry.toObject ? currentEntry.toObject() : currentEntry;
+        Object.assign(rawEntry, saved, { _id: currentEntry._id });
+      } else {
+        protectedFields.forEach(field => { rawEntry[field] = currentEntry[field] ?? null; });
+      }
+    }
+  }
+
+  for (const line of merged) {
+    for (const entry of (line.entries || [])) {
+      if (entry?.entryType !== 'disbursement' || mongoose.isValidObjectId(entry?._id)) continue;
+      Object.assign(entry, {
+        paymentStatus: 'pending', workflowStatus: 'prepared', requestedAt: null, requestedBy: null,
+        requestedByRole: '', disbursedAt: null, disbursedBy: null, disbursedByRole: '',
+        transferReference: '', workflowNote: ''
+      });
+    }
+  }
+  return merged;
 }
 
 function normalizeLoanLine(raw = {}, idx = 0) {
@@ -376,6 +441,28 @@ async function validateLoanLineReports({ req, project, rawLines, currentDoc }) {
   }).select('_id').lean();
   if (reports.length !== reportIds.length) {
     throw Object.assign(new Error('Alguno de los informes seleccionados no es válido para este proyecto.'), { status: 400 });
+  }
+}
+
+async function validateWorkflowReport({ req, project, entry }) {
+  const assignments = await ProjectAvaluatorAssignment.find({
+    projectId: project._id,
+    projectTenantKey: project.tenantKey,
+    status: 'active'
+  }).select('_id bankTenantKey').lean();
+  if (!assignments.length) return;
+  if (!entry?.inspectionId) {
+    throw Object.assign(new Error('Este desembolso necesita un informe finalizado del avaluador.'), { status: 400 });
+  }
+  const report = await Inspection.findOne({
+    _id: entry.inspectionId,
+    projectId: project._id,
+    projectTenantKey: project.tenantKey,
+    status: 'finalized',
+    bankTenantKey: { $in: assignments.map(item => item.bankTenantKey) }
+  }).select('_id').lean();
+  if (!report) {
+    throw Object.assign(new Error('El informe de avalúo vinculado no es válido para este proyecto.'), { status: 400 });
   }
 }
 
@@ -732,7 +819,8 @@ router.put('/projects/:projectId/finance/loan-lines', async (req, res) => {
     if (!project) return;
 
     const doc = await getOrCreate(projectId, project.tenantKey);
-    const lines = Array.isArray(req.body?.loanLines) ? req.body.loanLines : [];
+    const rawLines = Array.isArray(req.body?.loanLines) ? req.body.loanLines : [];
+    const lines = mergeProtectedLoanWorkflow(rawLines, doc);
     validateLoanLineLimits(doc, lines);
     await validateLoanLineReports({ req, project, rawLines: lines, currentDoc: doc });
     doc.loanLines = lines.map(normalizeLoanLine);
@@ -744,6 +832,92 @@ router.put('/projects/:projectId/finance/loan-lines', async (req, res) => {
   } catch (err) {
     console.error('PUT finance loan-lines error', err);
     res.status(err.status || 500).json({ error: err.status ? err.message : 'Error al guardar lineas de prestamo' });
+  }
+});
+
+router.patch('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId/status', async (req, res) => {
+  try {
+    const { projectId, lineId, entryId } = req.params;
+    if (![projectId, lineId, entryId].every(mongoose.isValidObjectId)) {
+      return res.status(400).json({ error: 'Identificador de desembolso inválido.' });
+    }
+
+    const role = String(req.user?.role || '').toLowerCase().trim();
+    const action = String(req.body?.action || '').toLowerCase().trim();
+    if (action === 'request' && !['admin', 'promoter'].includes(role)) {
+      return res.status(403).json({ error: 'Solo el promotor puede solicitar el desembolso.' });
+    }
+    if (action === 'disburse' && !['admin', 'promoter', 'bank'].includes(role)) {
+      return res.status(403).json({ error: 'No tienes permisos para confirmar este desembolso.' });
+    }
+    if (!['request', 'disburse'].includes(action)) {
+      return res.status(400).json({ error: 'Acción de desembolso no válida.' });
+    }
+
+    const project = await Project.findById(projectId);
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    const doc = await getOrCreate(projectId, project.tenantKey);
+    const line = doc.loanLines.id(lineId);
+    const entry = line?.entries?.id(entryId);
+    if (!line || !entry || entry.entryType !== 'disbursement') {
+      return res.status(404).json({ error: 'Desembolso no encontrado.' });
+    }
+    if (toNum(entry.disbursementAmount) <= 0) {
+      return res.status(400).json({ error: 'El desembolso debe tener un importe mayor que cero.' });
+    }
+
+    const currentStatus = loanEntryWorkflowStatus(entry);
+    if (currentStatus === 'disbursed') {
+      return res.status(409).json({ error: 'Este desembolso ya está confirmado como desembolsado.' });
+    }
+    await validateWorkflowReport({ req, project, entry });
+
+    const actorId = req.user?.userId || req.user?._id || req.user?.id || null;
+    const now = new Date();
+    if (action === 'request') {
+      if (currentStatus === 'requested') {
+        return res.status(409).json({ error: 'Este desembolso ya está solicitado.' });
+      }
+      entry.workflowStatus = 'requested';
+      entry.paymentStatus = 'pending';
+      entry.requestedAt = now;
+      entry.requestedBy = actorId;
+      entry.requestedByRole = role;
+    } else {
+      const transferDate = cleanDate(req.body?.transferDate);
+      if (!transferDate) return res.status(400).json({ error: 'Indica la fecha efectiva de la transferencia.' });
+      entry.workflowStatus = 'disbursed';
+      entry.paymentStatus = 'paid';
+      entry.disbursementDate = transferDate;
+      entry.disbursedAt = now;
+      entry.disbursedBy = actorId;
+      entry.disbursedByRole = role;
+      entry.transferReference = String(req.body?.transferReference || '').trim().slice(0, 120);
+      entry.workflowNote = String(req.body?.note || '').trim().slice(0, 500);
+    }
+
+    await doc.save();
+    await audit(req, action === 'request' ? 'finance.disbursement_requested' : 'finance.disbursement_confirmed', {
+      tenantKey: project.tenantKey,
+      targetType: 'loanLineEntry',
+      targetId: entry._id,
+      projectId: project._id,
+      message: action === 'request' ? 'Desembolso solicitado por el promotor' : `Desembolso confirmado por ${role}`,
+      metadata: { lineId: String(line._id), amount: toNum(entry.disbursementAmount), workflowStatus: entry.workflowStatus }
+    });
+
+    const control = sharedBuildFinanceControlSummary(doc, project || {});
+    const commercialUnits = await getFinanceCommercialUnits(projectId, project.tenantKey);
+    res.json({
+      ok: true,
+      loanLine: line,
+      entry,
+      financeControl: control,
+      alerts: sharedBuildFinanceControlAlerts(control, commercialUnits)
+    });
+  } catch (err) {
+    console.error('PATCH disbursement status error', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'No se pudo actualizar el desembolso.' });
   }
 });
 
@@ -1082,6 +1256,12 @@ function buildFinanceSnapshot(doc, phaseId = '') {
       const entries = (line.entries || []).map(entry => ({
         entryType: entry.entryType || 'legacy',
         paymentStatus: entry.paymentStatus || 'legacy',
+        workflowStatus: loanEntryWorkflowStatus(entry),
+        requestedAt: entry.requestedAt || null,
+        requestedByRole: entry.requestedByRole || '',
+        disbursedAt: entry.disbursedAt || null,
+        disbursedByRole: entry.disbursedByRole || '',
+        transferReference: entry.transferReference || '',
         date: entry.movementDate || entry.disbursementDate || null,
         loanNumber: entry.loanNumber || '',
         disbursementAmount: toNum(entry.disbursementAmount),
@@ -1308,7 +1488,7 @@ async function exportFinanceXlsx({ req, res, projectId, projectName, updatedAt, 
   sh4.addRow(['Fase', 'Línea', 'Aprobado', 'Desembolsado pagado', 'Amortizado', 'Saldo', 'Cálculo', 'Notas']);
   styleSheetHeaderRow(sh4.getRow(1));
   const sh5 = wb.addWorksheet('Movimientos');
-  sh5.addRow(['Fase', 'Línea', 'Tipo', 'Fecha', 'No. préstamo', 'Desembolso', 'Vencimiento', 'Amortización', 'Pago', 'Informe de avalúo', 'Notas']);
+  sh5.addRow(['Fase', 'Línea', 'Tipo', 'Fecha', 'No. préstamo', 'Desembolso', 'Vencimiento', 'Amortización', 'Estado', 'Solicitado', 'Confirmado por', 'Referencia', 'Informe de avalúo', 'Notas']);
   styleSheetHeaderRow(sh5.getRow(1));
   snap.phases.forEach(phase => (phase.loanLines || []).forEach(line => {
     const disbursed = (line.entries || []).reduce((sum, entry) => sum + (entry.entryType === 'disbursement' && entry.paymentStatus === 'pending' ? 0 : toNum(entry.disbursementAmount)), 0);
@@ -1317,7 +1497,8 @@ async function exportFinanceXlsx({ req, res, projectId, projectName, updatedAt, 
     (line.entries || []).forEach(entry => sh5.addRow([
       phase.name, line.name, entry.entryType, entry.date ? new Date(entry.date) : '', entry.loanNumber,
       entry.disbursementAmount, entry.maturityDate ? new Date(entry.maturityDate) : '', entry.amortizedAmount,
-      entry.paymentStatus, entry.inspectionId, entry.notes
+      entry.workflowStatus || entry.paymentStatus, entry.requestedAt ? new Date(entry.requestedAt) : '', entry.disbursedByRole,
+      entry.transferReference, entry.inspectionId, entry.notes
     ]));
   }));
   [sh4, sh5].forEach(sheet => autoFitColumns(sheet, 46));
@@ -1327,6 +1508,7 @@ async function exportFinanceXlsx({ req, res, projectId, projectName, updatedAt, 
     sh5.getRow(row).getCell(6).numFmt = '#,##0.00';
     sh5.getRow(row).getCell(7).numFmt = 'yyyy-mm-dd';
     sh5.getRow(row).getCell(8).numFmt = '#,##0.00';
+    sh5.getRow(row).getCell(10).numFmt = 'yyyy-mm-dd';
   }
 
   // ===== Hoja Gráficas (si llegan) =====
@@ -1718,7 +1900,7 @@ async function exportFinancePdf({ req, res, projectId, projectName, projectCurre
         date: fmtDate(entry.date),
         disbursed: money(entry.disbursementAmount),
         amortized: money(entry.amortizedAmount),
-        status: entry.paymentStatus === 'pending' ? 'Pendiente' : entry.paymentStatus === 'automatic' ? 'Automática' : 'Pagado'
+        status: entry.workflowStatus === 'requested' ? 'Solicitado' : entry.workflowStatus === 'prepared' ? 'Preparado' : entry.paymentStatus === 'automatic' ? 'Automática' : 'Desembolsado'
       })), [
         { key:'type', label:'Tipo', wPct:0.24, align:'left' },
         { key:'date', label:'Fecha', wPct:0.18, align:'left' },

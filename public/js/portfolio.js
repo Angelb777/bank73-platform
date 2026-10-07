@@ -396,6 +396,11 @@
     const typeText = displayProjectType ? escapeHtml(displayProjectType) : '';
     const unitsSold = p.unitsSold || 0;
     const unitsTotal = p.unitsTotal || 0;
+    const pendingDisbursementRequests = Number(p.pendingDisbursementRequests || 0);
+    const pendingDisbursementAmount = Number(p.pendingDisbursementAmount || 0);
+    const pendingDisbursementAlert = role === 'bank' && pendingDisbursementRequests > 0
+      ? `<div class="portfolio-disbursement-alert"><span>${pendingDisbursementRequests} ${pendingDisbursementRequests === 1 ? 'solicitud pendiente' : 'solicitudes pendientes'}</span><strong>${pendingDisbursementAmount.toLocaleString('es-PA', { style: 'currency', currency: p.currency || 'PAB' })}</strong></div>`
+      : '';
 
     return `
       <article class="card portfolio-project-card ${statusClass(p.status)}">
@@ -419,6 +424,7 @@
           <p class="small muted">${p.location ? `Ubicación: ${escapeHtml(p.location)}` : '&nbsp;'}</p>
           <p class="small muted portfolio-card-promoter ${promoterText ? '' : 'is-empty'}">${promoterText || '&nbsp;'}</p>
         </div>
+          ${pendingDisbursementAlert}
           <div class="portfolio-card-commercial">
             <span class="portfolio-card-progress-title">Avance comercial</span>
             <progress class="portfolio-card-progress" max="100" value="${soldPct}" aria-label="${soldPct}% de unidades vendidas">${soldPct}%</progress>

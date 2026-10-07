@@ -1342,9 +1342,22 @@ router.get('/portfolio', async (req, res) => {
     ]);
 
     const byProject = new Map(agg.map(a => [String(a._id), a]));
+    const financeDocs = await ProjectFinance.find({ project: { $in: pids } })
+      .select('project loanLines.entries.entryType loanLines.entries.workflowStatus loanLines.entries.disbursementAmount')
+      .lean();
+    const disbursementRequestsByProject = new Map(financeDocs.map(finance => {
+      const requested = (finance.loanLines || []).flatMap(line => line.entries || []).filter(entry => (
+        entry?.entryType === 'disbursement' && entry?.workflowStatus === 'requested'
+      ));
+      return [String(finance.project), {
+        count: requested.length,
+        amount: requested.reduce((sum, entry) => sum + Math.max(0, Number(entry?.disbursementAmount || 0)), 0)
+      }];
+    }));
 
     const out = projects.map(p => {
       const m = byProject.get(String(p._id));
+      const pendingDisbursements = disbursementRequestsByProject.get(String(p._id)) || { count: 0, amount: 0 };
       return {
         _id: p._id,
         name: p.name,
@@ -1360,6 +1373,8 @@ router.get('/portfolio', async (req, res) => {
         updatedAt: p.updatedAt,
         unitsTotal: m?.total ?? p.unitsTotal ?? 0,
         unitsSold: m?.sold ?? 0,
+        pendingDisbursementRequests: pendingDisbursements.count,
+        pendingDisbursementAmount: pendingDisbursements.amount,
       };
     });
 
@@ -2952,13 +2967,17 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       ? financeDoc.loanLines.map((line, idx) => {
           const entriesSource = Array.isArray(line.entries) && line.entries.length ? line.entries : [line];
           const entries = entriesSource.map((entry, entryIdx) => {
-            const disbursementAmount = toNum(entry.disbursementAmount);
+            const requestedDisbursementAmount = toNum(entry.disbursementAmount);
+            const disbursementAmount = entry?.entryType === 'disbursement' && entry?.paymentStatus === 'pending'
+              ? 0
+              : requestedDisbursementAmount;
             const amortizedAmount = toNum(entry.amortizedAmount);
             return {
               id: String(entry._id || `${line._id || idx}-${entryIdx}`),
               disbursementDate: entry.disbursementDate || null,
               loanNumber: clean(entry.loanNumber) || '',
               disbursementAmount,
+              requestedDisbursementAmount,
               maturityDate: entry.maturityDate || null,
               amortizedAmount,
               balance: Math.max(0, disbursementAmount - amortizedAmount),
@@ -3205,7 +3224,11 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
 
     for (const line of (financeDoc?.loanLines || [])) {
       const entries = Array.isArray(line.entries) && line.entries.length ? line.entries : [line];
-      const disbursed = entries.reduce((acc, entry) => acc + toNum(entry?.disbursementAmount), 0);
+      const disbursed = entries.reduce((acc, entry) => (
+        entry?.entryType === 'disbursement' && entry?.paymentStatus === 'pending'
+          ? acc
+          : acc + toNum(entry?.disbursementAmount)
+      ), 0);
       const manualAmortized = entries.reduce((acc, entry) => acc + toNum(entry?.amortizedAmount), 0);
       const allocatedAmortized = [String(line._id || ''), String(line.name || '')]
         .reduce((acc, key) => acc + toNum(financeAllocationsByLine.get(key)), 0);
@@ -3213,6 +3236,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       if (lineBalance <= 0) continue;
 
       for (const entry of entries) {
+        if (entry?.entryType === 'disbursement' && entry?.paymentStatus === 'pending') continue;
         if (!entry?.maturityDate || toNum(entry?.disbursementAmount) <= 0) continue;
         const dueTime = new Date(entry.maturityDate).getTime();
         if (!Number.isFinite(dueTime)) continue;
