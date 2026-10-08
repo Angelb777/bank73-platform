@@ -69,7 +69,7 @@ router.post('/mobile-login', async (req, res) => {
         tenantKeys: bankTenantKeys
       },
       process.env.JWT_SECRET,
-      { expiresIn: '8h' }
+      { expiresIn: process.env.MOBILE_JWT_EXPIRES_IN || '30d' }
     );
 
     await audit(req, 'auth.mobile_login_success', {

@@ -4,6 +4,10 @@ abstract final class ApiConfig {
     defaultValue: 'development',
   );
   static const _configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
+  static const registrationTenantKey = String.fromEnvironment(
+    'REGISTRATION_TENANT_KEY',
+    defaultValue: 'bancodemo',
+  );
 
   static String get baseUrl {
     final value = _configuredBaseUrl.trim().isNotEmpty

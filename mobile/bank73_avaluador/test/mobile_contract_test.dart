@@ -3,6 +3,7 @@ import 'package:bank73_avaluador/core/api/api_config.dart';
 import 'package:bank73_avaluador/core/errors/api_exception.dart';
 import 'package:bank73_avaluador/core/models/models.dart';
 import 'package:bank73_avaluador/core/storage/secure_session_store.dart';
+import 'package:bank73_avaluador/features/auth/data/auth_repository.dart';
 import 'package:bank73_avaluador/features/inspections/data/inspection_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -29,6 +30,7 @@ class FakeTransport implements ApiTransport {
   String? method;
   String? path;
   Map<String, dynamic>? body;
+  bool? authenticated;
 
   @override
   Future<Map<String, dynamic>> delete(String path) async {
@@ -71,6 +73,7 @@ class FakeTransport implements ApiTransport {
     method = 'POST';
     this.path = path;
     this.body = body;
+    this.authenticated = authenticated;
     return response;
   }
 
@@ -144,6 +147,33 @@ Map<String, dynamic> inspectionUnitJson({
 void main() {
   test('default physical-device backend is the real HTTPS service', () {
     expect(ApiConfig.baseUrl, 'https://www.bank73.com');
+  });
+
+  test('avaluator registration matches the public web registration', () async {
+    final transport = FakeTransport()
+      ..response = {
+        'message': 'Registro recibido.',
+        'status': 'pending',
+        'roleRequested': 'avaluador',
+      };
+    final repository = AuthRepository(transport, MemorySessionStore(null));
+
+    final message = await repository.registerAvaluator(
+      name: '  Ana Avaluadora  ',
+      email: '  ANA@EXAMPLE.COM ',
+      password: 'secret',
+    );
+
+    expect(message, 'Registro recibido.');
+    expect(transport.path, '/api/auth/register');
+    expect(transport.authenticated, isFalse);
+    expect(transport.body, {
+      'tenantKey': 'bancodemo',
+      'name': 'Ana Avaluadora',
+      'email': 'ana@example.com',
+      'password': 'secret',
+      'roleRequested': 'avaluador',
+    });
   });
 
   test(

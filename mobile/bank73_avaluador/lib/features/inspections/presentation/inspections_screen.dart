@@ -201,7 +201,7 @@ class _InspectionsScreenState extends ConsumerState<InspectionsScreen> {
                     ),
                   ),
                   title: Text(
-                    'Cuenta de avance N.º ${item.sequence}',
+                    '${item.accountName}${item.revision > 1 ? ' · Revisión ${item.revision}' : ''}',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   subtitle: Padding(

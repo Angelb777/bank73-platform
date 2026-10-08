@@ -164,7 +164,7 @@ async function buildBaseSnapshot({ scope, inspectionDate = new Date(), excludeIn
   if (!project) return null;
 
   const previousInspection = await findPreviousFinalizedInspection(scope, inspectionDate, excludeInspectionId);
-  const [finance, permitRecords, checklists, documents, units, folders, promoter, bankTenant, technicalUsers, sequenceBase] = await Promise.all([
+  const [finance, permitRecords, checklists, documents, units, folders, promoter, bankTenant, technicalUsers, latestInspection] = await Promise.all([
     ProjectFinance.findOne({ project: scope.projectId, tenantKey: scope.projectTenantKey }).lean(),
     ProjectPermit.find({ projectId: scope.projectId, tenantKey: scope.projectTenantKey }).lean(),
     ProjectChecklist.find({ projectId: scope.projectId, $or: [{ tenantKey: scope.projectTenantKey }, { tenantKey: { $exists: false } }] }).lean(),
@@ -174,8 +174,12 @@ async function buildBaseSnapshot({ scope, inspectionDate = new Date(), excludeIn
     project.assignedPromoters?.[0] ? User.findById(project.assignedPromoters[0]).select('name email promoterProfile promoterCategory').lean() : null,
     Tenant.findOne({ tenantKey: scope.bankTenantKey }).select('tenantKey name').lean(),
     User.find({ _id: { $in: project.assignedTecnicos || [] } }).select('name email professionalProfile').lean(),
-    Inspection.countDocuments({ bankTenantKey: scope.bankTenantKey, projectTenantKey: scope.projectTenantKey, projectId: scope.projectId, deletedAt: null })
+    Inspection.findOne({ bankTenantKey: scope.bankTenantKey, projectTenantKey: scope.projectTenantKey, projectId: scope.projectId, deletedAt: null })
+      .sort({ sequence: -1, revision: -1 })
+      .select('sequence')
+      .lean()
   ]);
+  const sequenceBase = Number(latestInspection?.sequence || 0);
 
   const phaseSource = finance?.phases?.length ? finance.phases : (project.financePhases || []);
   const phases = phaseSource.map(phase => phaseDto(phase, new Date(inspectionDate)));

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -7,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:printing/printing.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -61,6 +63,11 @@ class _InspectionReportScreenState
   String _qualityStatus = 'not_assessed';
   String _environmentalStatus = 'not_assessed';
   bool _formInitialized = false;
+  bool _hydrating = false;
+  bool _autosaving = false;
+  bool _reportDirty = false;
+  Timer? _autosaveTimer;
+  Inspection? _draftInspection;
   bool _finalizing = false;
   bool _previewing = false;
   int? _signaturePointer;
@@ -79,11 +86,28 @@ class _InspectionReportScreenState
   void initState() {
     super.initState();
     _signer.text = ref.read(authControllerProvider).user?.name ?? '';
+    for (final controller in [
+      _technicalConclusion,
+      _recommendationConditions,
+      _projectDescription,
+      _plansObservations,
+      _workChangesDescription,
+      _workChangesBudgetImpact,
+      _workChangesScheduleImpact,
+      _workChangesObservations,
+      _budgetAdjustmentsExplanation,
+      _contractsObservations,
+      _qualityObservations,
+      _environmentalObservations,
+    ]) {
+      controller.addListener(_scheduleReportAutosave);
+    }
     _future = _load();
   }
 
   @override
   void dispose() {
+    _autosaveTimer?.cancel();
     _signer.dispose();
     _technicalConclusion.dispose();
     _recommendationConditions.dispose();
@@ -109,8 +133,10 @@ class _InspectionReportScreenState
       repository.inspectionPack(widget.inspectionId),
     ]);
     final inspection = results[0] as Inspection;
+    _draftInspection = inspection;
     final pack = results[3] as InspectionPack;
     if (mounted && !_formInitialized) {
+      _hydrating = true;
       _formInitialized = true;
       _technicalVerdict = inspection.technicalVerdict;
       _technicalConclusion.text = inspection.technicalConclusion;
@@ -157,6 +183,7 @@ class _InspectionReportScreenState
       _environmentalObservations.text =
           inspection.environmentalAssessment?.observations ??
           inspection.environmentalObservations;
+      _hydrating = false;
     }
     return _ReportBundle(
       inspection,
@@ -166,7 +193,75 @@ class _InspectionReportScreenState
     );
   }
 
+  Future<void> _revise(Inspection inspection) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Rectificar informe firmado'),
+        content: const Text(
+          'Se creará una revisión editable con todos los datos y fotografías. El informe firmado original se conservará intacto y tendrás que firmar de nuevo la revisión.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Crear revisión'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _finalizing = true);
+    try {
+      final revision = await ref
+          .read(inspectionRepositoryProvider)
+          .revise(inspection.id);
+      if (mounted)
+        context.go(
+          '/projects/${inspection.projectId}/inspections/${revision.id}',
+        );
+    } catch (error) {
+      if (mounted) await presentApiError(context, ref, error);
+    } finally {
+      if (mounted) setState(() => _finalizing = false);
+    }
+  }
+
   void _reload() => setState(() => _future = _load());
+
+  void _scheduleReportAutosave() {
+    if (_hydrating || _draftInspection?.isFinalized != false) return;
+    if (mounted) setState(() => _reportDirty = true);
+    _autosaveTimer?.cancel();
+    _autosaveTimer = Timer(const Duration(milliseconds: 800), () async {
+      if (_autosaving || _busy) return _scheduleReportAutosave();
+      if ((_hasWorkChanges == true &&
+              _workChangesDescription.text.trim().isEmpty) ||
+          (_hasBudgetAdjustments == true &&
+              _budgetAdjustmentsExplanation.text.trim().isEmpty)) {
+        return;
+      }
+      final inspection = _draftInspection;
+      if (inspection == null) return;
+      setState(() => _autosaving = true);
+      try {
+        _draftInspection = await _saveReportInputs(inspection);
+        if (mounted) setState(() => _reportDirty = false);
+      } catch (error) {
+        if (mounted) await presentApiError(context, ref, error);
+      } finally {
+        if (mounted) setState(() => _autosaving = false);
+      }
+    });
+  }
+
+  void _changeReportState(VoidCallback change) {
+    setState(change);
+    _scheduleReportAutosave();
+  }
 
   Future<String?> _signatureData() async {
     if (_points.whereType<Offset>().length < 2) return null;
@@ -211,26 +306,29 @@ class _InspectionReportScreenState
     return true;
   }
 
-  Future<Inspection> _saveReportInputs(Inspection inspection) => ref
-      .read(inspectionRepositoryProvider)
-      .saveVisit(
-        inspectionId: inspection.id,
-        version: inspection.version,
-        reportDetails: _reportDetails(),
-        qualityAssessment: InspectionQuickAssessment(
-          status: _qualityStatus,
-          checks: inspection.qualityAssessment?.checks ?? const [],
-          observations: _qualityObservations.text.trim(),
-        ),
-        environmentalAssessment: InspectionQuickAssessment(
-          status: _environmentalStatus,
-          checks: inspection.environmentalAssessment?.checks ?? const [],
-          observations: _environmentalObservations.text.trim(),
-        ),
-        technicalConclusion: _technicalConclusion.text.trim(),
-        technicalVerdict: _technicalVerdict,
-        recommendationConditions: _recommendationConditions.text.trim(),
-      );
+  Future<Inspection> _saveReportInputs(Inspection inspection) {
+    final current = _draftInspection ?? inspection;
+    return ref
+        .read(inspectionRepositoryProvider)
+        .saveVisit(
+          inspectionId: current.id,
+          version: current.version,
+          reportDetails: _reportDetails(),
+          qualityAssessment: InspectionQuickAssessment(
+            status: _qualityStatus,
+            checks: current.qualityAssessment?.checks ?? const [],
+            observations: _qualityObservations.text.trim(),
+          ),
+          environmentalAssessment: InspectionQuickAssessment(
+            status: _environmentalStatus,
+            checks: current.environmentalAssessment?.checks ?? const [],
+            observations: _environmentalObservations.text.trim(),
+          ),
+          technicalConclusion: _technicalConclusion.text.trim(),
+          technicalVerdict: _technicalVerdict,
+          recommendationConditions: _recommendationConditions.text.trim(),
+        );
+  }
 
   Future<void> _shareWord(Inspection inspection) async {
     if (_busy) return;
@@ -281,6 +379,17 @@ class _InspectionReportScreenState
 
   Future<void> _finalize(Inspection inspection) async {
     if (_busy) return;
+    if (_autosaving) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Espera un instante a que termine el guardado automático.',
+          ),
+        ),
+      );
+      return;
+    }
+    _autosaveTimer?.cancel();
     if (!_validateAdditionalDetails()) return;
     if (_signer.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -335,7 +444,8 @@ class _InspectionReportScreenState
     if (confirmed != true || !mounted) return;
     setState(() => _finalizing = true);
     try {
-      final updated = await _saveReportInputs(inspection);
+      final updated = await _saveReportInputs(_draftInspection ?? inspection);
+      _draftInspection = updated;
       await ref
           .read(inspectionRepositoryProvider)
           .finalize(
@@ -572,6 +682,19 @@ class _InspectionReportScreenState
                   ],
                 ),
               ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: _busy ? null : () => _revise(bundle.inspection),
+                    icon: const Icon(Icons.edit_note_outlined),
+                    label: Text(
+                      'Rectificar informe${bundle.inspection.revision > 1 ? ' · revisión ${bundle.inspection.revision + 1}' : ''}',
+                    ),
+                  ),
+                ),
+              ),
               Expanded(
                 child: PdfPreview(
                   build: (_) async => Uint8List.fromList(
@@ -632,7 +755,7 @@ class _InspectionReportScreenState
           padding: const EdgeInsets.all(16),
           children: [
             StatusPill(
-              'Cuenta de avance N.º ${bundle.inspection.sequence} · Vista previa',
+              '${bundle.inspection.accountName}${bundle.inspection.revision > 1 ? ' · Revisión ${bundle.inspection.revision}' : ''} · Vista previa',
             ),
             const SizedBox(height: 12),
             Row(
@@ -888,7 +1011,7 @@ class _InspectionReportScreenState
                     ],
                     onChanged: _busy
                         ? null
-                        : (value) => setState(
+                        : (value) => _changeReportState(
                             () => _plansStatus = value ?? 'not_verifiable',
                           ),
                   ),
@@ -914,7 +1037,8 @@ class _InspectionReportScreenState
                 _yesNoChoice(
                   label: '¿Se han realizado cambios?',
                   value: _hasWorkChanges,
-                  onChanged: (value) => setState(() => _hasWorkChanges = value),
+                  onChanged: (value) =>
+                      _changeReportState(() => _hasWorkChanges = value),
                 ),
                 if (_hasWorkChanges == true) ...[
                   const SizedBox(height: 12),
@@ -966,7 +1090,7 @@ class _InspectionReportScreenState
                   label: '¿El promotor ha realizado ajustes desde la última inspección?',
                   value: _hasBudgetAdjustments,
                   onChanged: (value) =>
-                      setState(() => _hasBudgetAdjustments = value),
+                      _changeReportState(() => _hasBudgetAdjustments = value),
                 ),
                 if (_hasBudgetAdjustments == true) ...[
                   const SizedBox(height: 12),
@@ -1010,8 +1134,9 @@ class _InspectionReportScreenState
                   label: 'Valoración de calidad',
                   value: _qualityStatus,
                   environmental: false,
-                  onChanged: (value) =>
-                      setState(() => _qualityStatus = value ?? 'not_assessed'),
+                  onChanged: (value) => _changeReportState(
+                    () => _qualityStatus = value ?? 'not_assessed',
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -1036,7 +1161,7 @@ class _InspectionReportScreenState
                   label: 'Cumplimiento ambiental',
                   value: _environmentalStatus,
                   environmental: true,
-                  onChanged: (value) => setState(
+                  onChanged: (value) => _changeReportState(
                     () => _environmentalStatus = value ?? 'not_assessed',
                   ),
                 ),
@@ -1138,7 +1263,7 @@ class _InspectionReportScreenState
                           .toList(),
                       onChanged: _busy
                           ? null
-                          : (value) => setState(
+                          : (value) => _changeReportState(
                               () => _technicalVerdict =
                                   value ?? TechnicalVerdict.notAssessed,
                             ),
@@ -1281,6 +1406,16 @@ class _InspectionReportScreenState
               ),
             ),
             const SizedBox(height: 18),
+            Text(
+              _autosaving
+                  ? 'Guardando automáticamente…'
+                  : _reportDirty
+                  ? 'Cambios pendientes…'
+                  : 'Datos del informe guardados',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Bank73Colors.muted),
+            ),
+            const SizedBox(height: 8),
             FilledButton.icon(
               onPressed: _busy ? null : () => _finalize(bundle.inspection),
               icon: const Icon(Icons.verified_outlined),

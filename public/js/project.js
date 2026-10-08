@@ -6376,7 +6376,9 @@ function financeInspectionOptions(selectedId = '', usedIds = new Set()) {
     : 'No requerido';
   return `<option value="">${emptyLabel}</option>${available.map(report => {
     const date = financeDateInput(report.inspectionDate || report.finalizedAt);
-    return `<option value="${escapeHtml(report.id)}" ${String(report.id) === selected ? 'selected' : ''}>${escapeHtml(report.reportNumber || 'Informe')} · ${escapeHtml(date || 'Sin fecha')} · ${numOr0(report.projectProgressPercent).toFixed(1)}%</option>`;
+    const account = report.accountName || `Cuenta n.º ${report.sequence || '—'}`;
+    const revision = Number(report.revision || 1) > 1 ? ` · Rev. ${Number(report.revision)}` : '';
+    return `<option value="${escapeHtml(report.id)}" ${String(report.id) === selected ? 'selected' : ''}>${escapeHtml(account)}${revision} · ${escapeHtml(report.reportNumber || 'Informe')} · ${escapeHtml(date || 'Sin fecha')} · ${numOr0(report.projectProgressPercent).toFixed(1)}%</option>`;
   }).join('')}`;
 }
 

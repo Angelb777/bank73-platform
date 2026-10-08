@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -43,9 +45,14 @@ class _InspectionBundle {
 class _InspectionScreenState extends ConsumerState<InspectionScreen> {
   late Future<_InspectionBundle> _future;
   final _observations = TextEditingController();
+  final _accountName = TextEditingController();
+  final _sequence = TextEditingController();
   DateTime? _date;
   Inspection? _inspection;
   bool _saving = false;
+  bool _generalDirty = false;
+  bool _saveFailed = false;
+  Timer? _autosaveTimer;
   String _query = '';
   String _incidentFilter = 'all';
   int _area = 0;
@@ -66,7 +73,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
 
   @override
   void dispose() {
+    _autosaveTimer?.cancel();
     _observations.dispose();
+    _accountName.dispose();
+    _sequence.dispose();
     super.dispose();
   }
 
@@ -87,6 +97,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
         _inspection = inspection;
         _date = inspection.inspectionDate?.toLocal() ?? DateTime.now();
         _observations.text = inspection.generalObservations;
+        _accountName.text = inspection.accountName;
+        _sequence.text = inspection.sequence.toString();
       }
       return _InspectionBundle(
         inspection,
@@ -115,12 +127,33 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
       firstDate: DateTime(2000),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
-    if (selected != null) setState(() => _date = selected);
+    if (selected != null) {
+      setState(() => _date = selected);
+      _scheduleGeneralSave();
+    }
+  }
+
+  void _scheduleGeneralSave() {
+    if (_inspection?.isFinalized != false) return;
+    setState(() {
+      _generalDirty = true;
+      _saveFailed = false;
+    });
+    _autosaveTimer?.cancel();
+    _autosaveTimer = Timer(const Duration(milliseconds: 700), () {
+      if (_saving) return _scheduleGeneralSave();
+      _saveGeneral();
+    });
   }
 
   Future<void> _saveGeneral() async {
     final current = _inspection;
     if (current == null || _date == null) return;
+    final sequence = int.tryParse(_sequence.text.trim());
+    if (sequence == null || sequence < 1 || _accountName.text.trim().isEmpty) {
+      if (mounted) setState(() => _saveFailed = true);
+      return;
+    }
     setState(() => _saving = true);
     try {
       final updated = await ref
@@ -130,21 +163,28 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
             version: current.version,
             inspectionDate: _date!,
             generalObservations: _observations.text.trim(),
+            sequence: sequence,
+            accountName: _accountName.text.trim(),
           );
       _inspection = updated;
       if (mounted)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Borrador actualizado.')));
+        setState(() {
+          _generalDirty = false;
+          _saveFailed = false;
+        });
     } on ApiException catch (error) {
       if (error.isVersionConflict) {
         if (mounted) await _showConflict();
         _reload();
       } else if (mounted) {
+        setState(() => _saveFailed = true);
         await presentApiError(context, ref, error);
       }
     } catch (error) {
-      if (mounted) await presentApiError(context, ref, error);
+      if (mounted) {
+        setState(() => _saveFailed = true);
+        await presentApiError(context, ref, error);
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1134,6 +1174,46 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                           ?.copyWith(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 14),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: TextField(
+                            controller: _accountName,
+                            readOnly: bundle.inspection.isFinalized,
+                            maxLength: 160,
+                            decoration: const InputDecoration(
+                              labelText: 'Nombre de la inspección',
+                              counterText: '',
+                            ),
+                            onChanged: (_) => _scheduleGeneralSave(),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: _sequence,
+                            readOnly: bundle.inspection.isFinalized,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Cuenta n.º',
+                            ),
+                            onChanged: (_) => _scheduleGeneralSave(),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6, bottom: 12),
+                      child: Text(
+                        'Se propone automáticamente; puede adaptarse para proyectos ya iniciados.',
+                        style: TextStyle(
+                          color: Bank73Colors.muted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
                     InkWell(
                       onTap: bundle.inspection.isFinalized ? null : _pickDate,
                       borderRadius: BorderRadius.circular(14),
@@ -1155,14 +1235,25 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                         labelText: 'Observaciones generales',
                         alignLabelWithHint: true,
                       ),
+                      onChanged: (_) => _scheduleGeneralSave(),
                     ),
                     if (!bundle.inspection.isFinalized) ...[
-                      const SizedBox(height: 16),
-                      FilledButton.icon(
-                        onPressed: _saving ? null : _saveGeneral,
-                        icon: const Icon(Icons.save_outlined),
-                        label: Text(
-                          _saving ? 'Guardando…' : 'Guardar borrador',
+                      const SizedBox(height: 12),
+                      InkWell(
+                        onTap: _saveFailed ? _saveGeneral : null,
+                        child: Text(
+                          _saving
+                              ? 'Guardando automáticamente…'
+                              : _saveFailed
+                              ? 'Sin guardar · toca para reintentar'
+                              : _generalDirty
+                              ? 'Cambios pendientes…'
+                              : 'Todo guardado',
+                          style: TextStyle(
+                            color: _saveFailed
+                                ? Colors.redAccent
+                                : Bank73Colors.muted,
+                          ),
                         ),
                       ),
                     ],

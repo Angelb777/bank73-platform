@@ -70,6 +70,8 @@ class InspectionRepository {
     required int version,
     required DateTime inspectionDate,
     required String generalObservations,
+    required int sequence,
+    required String accountName,
   }) async {
     final response = await _api.patch(
       '/api/mobile/v1/inspections/$inspectionId',
@@ -77,6 +79,8 @@ class InspectionRepository {
         'version': version,
         'inspectionDate': inspectionDate.toUtc().toIso8601String(),
         'generalObservations': generalObservations,
+        'sequence': sequence,
+        'accountName': accountName,
       },
     );
     return Inspection.fromJson(
@@ -117,6 +121,7 @@ class InspectionRepository {
     String? commonAreaKey,
     String? workFrontKey,
     String? incidentId,
+    String? activityKey,
   }) async {
     final query = <String, String>{
       if (unitId != null && unitId.isNotEmpty) 'unitId': unitId,
@@ -125,6 +130,8 @@ class InspectionRepository {
       if (workFrontKey != null && workFrontKey.isNotEmpty)
         'workFrontKey': workFrontKey,
       if (incidentId != null && incidentId.isNotEmpty) 'incidentId': incidentId,
+      if (activityKey != null && activityKey.isNotEmpty)
+        'activityKey': activityKey,
     };
     final suffix = query.isEmpty ? '' : '?${Uri(queryParameters: query).query}';
     final response = await _api.get(
@@ -146,6 +153,7 @@ class InspectionRepository {
     String? commonAreaKey,
     String? workFrontKey,
     String? incidentId,
+    String? activityKey,
     String category = 'general',
     String caption = '',
   }) async {
@@ -161,6 +169,8 @@ class InspectionRepository {
           'workFrontKey': workFrontKey,
         if (incidentId != null && incidentId.isNotEmpty)
           'incidentId': incidentId,
+        if (activityKey != null && activityKey.isNotEmpty)
+          'activityKey': activityKey,
         'category': category,
         if (caption.isNotEmpty) 'caption': caption,
       },
@@ -172,6 +182,16 @@ class InspectionRepository {
 
   Future<List<int>> evidenceBytes(InspectionEvidence item) =>
       _api.getBytes(item.filePath);
+
+  Future<Inspection> revise(String inspectionId) async {
+    final response = await _api.post(
+      '/api/mobile/v1/inspections/$inspectionId/revise',
+      body: const {},
+    );
+    return Inspection.fromJson(
+      Map<String, dynamic>.from(response['inspection'] as Map),
+    );
+  }
 
   Future<void> deleteEvidence(String inspectionId, String evidenceId) async {
     await _api.delete(

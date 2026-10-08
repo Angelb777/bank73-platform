@@ -90,6 +90,11 @@ void main() {
       await tester.pumpAndSettle();
       final scrollable = find.byType(Scrollable).first;
       expect(tester.takeException(), isNull);
+      await tester.scrollUntilVisible(
+        find.text('0/52 unidades revisadas'),
+        120,
+        scrollable: scrollable,
+      );
       expect(find.text('0/52 unidades revisadas'), findsOneWidget);
       final unit = find.text('Unidad 0');
       await tester.scrollUntilVisible(unit, 200, scrollable: scrollable);

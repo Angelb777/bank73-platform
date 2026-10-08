@@ -199,6 +199,7 @@ test('mobile API exposes the inspection lifecycle and evidence routes', () => {
     'PATCH /inspections/:inspectionId',
     'POST /inspections/:inspectionId/evidence',
     'POST /inspections/:inspectionId/finalize',
+    'POST /inspections/:inspectionId/revise',
     'POST /projects/:projectId/inspections',
     'PUT /inspections/:inspectionId/project-progress',
     'PUT /inspections/:inspectionId/units/:unitId',

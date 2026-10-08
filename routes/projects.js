@@ -1343,15 +1343,19 @@ router.get('/portfolio', async (req, res) => {
 
     const byProject = new Map(agg.map(a => [String(a._id), a]));
     const financeDocs = await ProjectFinance.find({ project: { $in: pids } })
-      .select('project loanLines.entries.entryType loanLines.entries.workflowStatus loanLines.entries.disbursementAmount')
+      .select('project loanLines.entries.entryType loanLines.entries.workflowStatus loanLines.entries.disbursementAmount loanLines.entries.returnAlertAcknowledgedAt')
       .lean();
     const disbursementRequestsByProject = new Map(financeDocs.map(finance => {
       const requested = (finance.loanLines || []).flatMap(line => line.entries || []).filter(entry => (
         entry?.entryType === 'disbursement' && entry?.workflowStatus === 'requested'
       ));
+      const returned = (finance.loanLines || []).flatMap(line => line.entries || []).filter(entry => (
+        entry?.entryType === 'disbursement' && entry?.workflowStatus === 'returned' && !entry?.returnAlertAcknowledgedAt
+      ));
       return [String(finance.project), {
         count: requested.length,
-        amount: requested.reduce((sum, entry) => sum + Math.max(0, Number(entry?.disbursementAmount || 0)), 0)
+        amount: requested.reduce((sum, entry) => sum + Math.max(0, Number(entry?.disbursementAmount || 0)), 0),
+        returnedCount: returned.length
       }];
     }));
 
@@ -1375,6 +1379,7 @@ router.get('/portfolio', async (req, res) => {
         unitsSold: m?.sold ?? 0,
         pendingDisbursementRequests: pendingDisbursements.count,
         pendingDisbursementAmount: pendingDisbursements.amount,
+        returnedDisbursementRequests: pendingDisbursements.returnedCount || 0,
       };
     });
 
@@ -1644,6 +1649,8 @@ router.get('/:id', requireProjectAccess(), async (req, res) => {
 
 router.post('/:id/expiry-alerts/resolve', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   try {
+    const role = String(req.user?.role || '').toLowerCase();
+    if (!['admin', 'bank', 'promoter'].includes(role)) return res.status(403).json({ error: 'No tienes permisos para atender alertas.' });
     const { id } = req.params;
     const key = String(req.body?.key || '').trim();
     const kind = String(req.body?.kind || '').trim();

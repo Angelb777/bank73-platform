@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_theme.dart';
 import '../application/auth_controller.dart';
@@ -140,6 +141,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                       ),
                                     )
                                   : const Text('Entrar'),
+                            ),
+                            const SizedBox(height: 10),
+                            TextButton(
+                              onPressed: busy
+                                  ? null
+                                  : () => context.push('/register'),
+                              child: const Text('Crear cuenta'),
                             ),
                           ],
                         ),

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../features/auth/application/auth_controller.dart';
 import '../features/auth/presentation/login_screen.dart';
+import '../features/auth/presentation/register_screen.dart';
 import '../features/auth/presentation/splash_screen.dart';
 import '../features/inspections/presentation/inspection_screen.dart';
 import '../features/inspections/presentation/inspection_report_screen.dart';
@@ -34,19 +35,21 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final auth = ref.read(authControllerProvider);
       final onLogin = state.matchedLocation == '/login';
+      final onRegister = state.matchedLocation == '/register';
       final onSplash = state.matchedLocation == '/splash';
       if (auth.status == AuthStatus.checking)
         return onSplash ? null : '/splash';
       if (auth.status == AuthStatus.authenticating)
         return onLogin ? null : '/login';
       if (auth.status == AuthStatus.unauthenticated)
-        return onLogin ? null : '/login';
-      if (onLogin || onSplash) return '/portfolio';
+        return onLogin || onRegister ? null : '/login';
+      if (onLogin || onRegister || onSplash) return '/portfolio';
       return null;
     },
     routes: [
       GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
+      GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
       GoRoute(path: '/portfolio', builder: (_, __) => const PortfolioScreen()),
       GoRoute(
         path: '/projects/:projectId',

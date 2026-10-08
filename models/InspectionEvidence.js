@@ -16,6 +16,7 @@ const inspectionEvidenceSchema = new mongoose.Schema({
     index: true
   },
   unitId: { type: mongoose.Schema.Types.ObjectId, ref: 'Unit', default: null, index: true },
+  activityKey: { type: String, trim: true, default: '', maxlength: 200, index: true },
   commonAreaKey: { type: String, trim: true, default: '', index: true },
   workFrontKey: { type: String, trim: true, default: '', index: true },
   incidentId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
@@ -35,6 +36,7 @@ const inspectionEvidenceSchema = new mongoose.Schema({
 }, { timestamps: true, versionKey: false });
 
 inspectionEvidenceSchema.index({ inspectionId: 1, unitId: 1, createdAt: 1 });
+inspectionEvidenceSchema.index({ inspectionId: 1, unitId: 1, activityKey: 1, createdAt: 1 });
 inspectionEvidenceSchema.index({ inspectionId: 1, commonAreaKey: 1, createdAt: 1 });
 inspectionEvidenceSchema.index({ inspectionId: 1, workFrontKey: 1, createdAt: 1 });
 inspectionEvidenceSchema.index({ inspectionId: 1, incidentId: 1, createdAt: 1 });

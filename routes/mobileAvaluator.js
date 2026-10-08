@@ -15,6 +15,7 @@ const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment
 const Inspection = require('../models/Inspection');
 const InspectionUnit = require('../models/InspectionUnit');
 const InspectionEvidence = require('../models/InspectionEvidence');
+const ProjectFinance = require('../models/ProjectFinance');
 const AvaluationTemplate = require('../models/AvaluationTemplate');
 const inspectionReportContext = require('../services/inspectionReportContext');
 const { requireRole } = require('../middleware/rbac');
@@ -290,6 +291,8 @@ function inspectionDto(inspection) {
     finalizedAt: inspection.finalizedAt || null,
     reportNumber: String(inspection.reportNumber || ''),
     sequence: Number(inspection.sequence || 1),
+    accountName: String(inspection.accountName || `Cuenta n.º ${Number(inspection.sequence || 1)}`),
+    revision: Number(inspection.revision || 1),
     previousInspectionId: inspection.previousInspectionId ? String(inspection.previousInspectionId) : null,
     technicalRecommendation: inspection.technicalRecommendation || null,
     technicalConclusion: String(inspection.technicalConclusion || ''),
@@ -733,7 +736,7 @@ router.get('/projects/:projectId/inspection-pack', async (req, res) => {
 
 router.post('/projects/:projectId/inspections', async (req, res) => {
   try {
-    const extraFields = unexpectedFields(req.body, ['inspectionDate', 'generalObservations']);
+    const extraFields = unexpectedFields(req.body, ['inspectionDate', 'generalObservations', 'sequence', 'accountName']);
     if (extraFields.length) {
       return res.status(400).json({ error: 'Campos no permitidos.', fields: extraFields });
     }
@@ -759,6 +762,15 @@ router.post('/projects/:projectId/inspections', async (req, res) => {
       inspectionReportContext.buildBaseSnapshot({ scope, inspectionDate: startedAt })
     ]);
     if (!startSnapshot) return res.status(404).json({ error: 'Proyecto no encontrado.' });
+    const suggestedSequence = Number(startSnapshot.history?.sequence || 1);
+    const requestedSequence = req.body?.sequence == null ? suggestedSequence : Number(req.body.sequence);
+    if (!Number.isInteger(requestedSequence) || requestedSequence < 1) return res.status(400).json({ error: 'sequence invalida.' });
+    const accountName = String(req.body?.accountName || `Cuenta n.º ${requestedSequence}`).trim();
+    if (!accountName || accountName.length > 160) return res.status(400).json({ error: 'accountName invalido.' });
+    if (req.body?.sequence != null) {
+      const duplicateSequence = await Inspection.exists({ ...scope, sequence: requestedSequence, revision: 1, deletedAt: null });
+      if (duplicateSequence) return res.status(409).json({ error: 'Ya existe una cuenta con ese numero en el proyecto.' });
+    }
     const previousAreasByKey = new Map((startSnapshot.history?.previousCommonAreas || []).map(area => [String(area.key), area]));
     const inspection = await Inspection.create({
       bankTenantKey: resolved.assignment.bankTenantKey,
@@ -809,7 +821,9 @@ router.post('/projects/:projectId/inspections', async (req, res) => {
         carriedFromIncidentId: mongoose.Types.ObjectId.isValid(String(issue._id || issue.id || '')) ? (issue._id || issue.id) : null,
         observedAt: issue.observedAt || startedAt
       })),
-      sequence: startSnapshot.history.sequence,
+      sequence: requestedSequence,
+      accountName,
+      revision: 1,
       previousInspectionId: startSnapshot.history.previousInspectionId || null,
       snapshotSchemaVersion: startSnapshot.schemaVersion,
       startSnapshot,
@@ -818,7 +832,7 @@ router.post('/projects/:projectId/inspections', async (req, res) => {
 
     res.status(201).json({ inspection: inspectionDto(inspection) });
   } catch (e) {
-    res.status(e?.name === 'ValidationError' ? 400 : 500).json({ error: e.message });
+    res.status(e?.code === 11000 ? 409 : e?.name === 'ValidationError' ? 400 : 500).json({ error: e?.code === 11000 ? 'Ya existe una cuenta con ese numero en el proyecto.' : e.message });
   }
 });
 
@@ -889,7 +903,7 @@ router.get('/inspections/:inspectionId', async (req, res) => {
 
 router.patch('/inspections/:inspectionId', async (req, res) => {
   try {
-    const extraFields = unexpectedFields(req.body, ['inspectionDate', 'generalObservations', 'version']);
+    const extraFields = unexpectedFields(req.body, ['inspectionDate', 'generalObservations', 'sequence', 'accountName', 'version']);
     if (extraFields.length) {
       return res.status(400).json({ error: 'Campos no permitidos.', fields: extraFields });
     }
@@ -913,6 +927,27 @@ router.patch('/inspections/:inspectionId', async (req, res) => {
       if (value.length > 10000) return res.status(400).json({ error: 'generalObservations demasiado larga.' });
       set.generalObservations = value;
     }
+    if (req.body?.sequence !== undefined) {
+      const sequence = Number(req.body.sequence);
+      if (!Number.isInteger(sequence) || sequence < 1) return res.status(400).json({ error: 'sequence invalida.' });
+      const rootId = resolved.inspection.rootInspectionId || resolved.inspection._id;
+      const duplicate = await Inspection.exists({
+        bankTenantKey: resolved.inspection.bankTenantKey,
+        projectTenantKey: resolved.inspection.projectTenantKey,
+        projectId: resolved.inspection.projectId,
+        sequence,
+        deletedAt: null,
+        _id: { $ne: rootId },
+        $or: [{ rootInspectionId: null }, { rootInspectionId: { $exists: false } }, { rootInspectionId: { $ne: rootId } }]
+      });
+      if (duplicate) return res.status(409).json({ error: 'Ya existe una cuenta con ese numero en el proyecto.' });
+      set.sequence = sequence;
+    }
+    if (req.body?.accountName !== undefined) {
+      const value = String(req.body.accountName || '').trim();
+      if (!value || value.length > 160) return res.status(400).json({ error: 'accountName invalido.' });
+      set.accountName = value;
+    }
     if (!Object.keys(set).length) return res.status(400).json({ error: 'No hay campos editables.' });
 
     const inspection = await Inspection.findOneAndUpdate(
@@ -934,6 +969,79 @@ router.patch('/inspections/:inspectionId', async (req, res) => {
 
     res.json({ inspection: inspectionDto(inspection) });
   } catch (e) {
+    res.status(e?.name === 'ValidationError' ? 400 : 500).json({ error: e.message });
+  }
+});
+
+router.post('/inspections/:inspectionId/revise', async (req, res) => {
+  let revision = null;
+  const copiedFiles = [];
+  try {
+    const extraFields = unexpectedFields(req.body, []);
+    if (extraFields.length) return res.status(400).json({ error: 'Campos no permitidos.', fields: extraFields });
+    const resolved = await authorizedInspectionFor(req, req.params.inspectionId);
+    if (!resolved) return res.status(404).json({ error: 'Inspeccion no encontrada.' });
+    if (resolved.inspection.status !== 'finalized') return res.status(409).json({ error: 'Solo se puede rectificar un informe firmado.' });
+    if (resolved.inspection.supersededByInspectionId) return res.status(409).json({ error: 'Este informe ya tiene una rectificacion posterior.' });
+    const existingDraft = await Inspection.findOne({
+      revisesInspectionId: resolved.inspection._id,
+      status: 'draft',
+      deletedAt: null
+    }).lean();
+    if (existingDraft) return res.json({ inspection: inspectionDto(existingDraft), existing: true });
+
+    const source = resolved.inspection.toObject ? resolved.inspection.toObject() : { ...resolved.inspection };
+    const rootInspectionId = source.rootInspectionId || source._id;
+    const omitted = new Set(['_id', 'createdAt', 'updatedAt', 'signature', 'finalizedAt', 'reportNumber', 'reportSnapshot', 'supersededByInspectionId']);
+    const clone = Object.fromEntries(Object.entries(source).filter(([key]) => !omitted.has(key)));
+    revision = await Inspection.create({
+      ...clone,
+      status: 'draft',
+      revision: Number(source.revision || 1) + 1,
+      rootInspectionId,
+      revisesInspectionId: source._id,
+      startedAt: new Date(),
+      version: 0,
+      technicalRecommendation: undefined,
+      technicalConclusion: ''
+    });
+
+    const units = await InspectionUnit.find({ inspectionId: source._id }).lean();
+    if (units.length) {
+      await InspectionUnit.insertMany(units.map(item => {
+        const { _id, createdAt, updatedAt, ...rest } = item;
+        return { ...rest, inspectionId: revision._id, version: 0 };
+      }));
+    }
+    const evidence = await InspectionEvidence.find({ inspectionId: source._id }).lean();
+    for (const item of evidence) {
+      const extension = path.extname(item.filename || item.originalname || '').toLowerCase() || '.jpg';
+      const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
+      const sourcePath = path.resolve(__dirname, '..', item.path);
+      const sourceRelative = path.relative(evidenceUploadDir, sourcePath);
+      if (sourceRelative.startsWith('..') || path.isAbsolute(sourceRelative)) throw new Error('Ruta de evidencia invalida.');
+      const targetPath = path.join(evidenceUploadDir, filename);
+      await fs.promises.copyFile(sourcePath, targetPath, fs.constants.COPYFILE_EXCL);
+      copiedFiles.push(targetPath);
+      const { _id, createdAt, updatedAt, ...rest } = item;
+      await InspectionEvidence.create({
+        ...rest,
+        inspectionId: revision._id,
+        filename,
+        path: `uploads/inspections/${filename}`,
+        uploadedBy: resolved.context.userId
+      });
+    }
+    res.status(201).json({ inspection: inspectionDto(revision) });
+  } catch (e) {
+    if (revision?._id) {
+      await Promise.all([
+        Inspection.deleteOne({ _id: revision._id }).catch(() => {}),
+        InspectionUnit.deleteMany({ inspectionId: revision._id }).catch(() => {}),
+        InspectionEvidence.deleteMany({ inspectionId: revision._id }).catch(() => {})
+      ]);
+    }
+    await Promise.all(copiedFiles.map(file => fs.promises.unlink(file).catch(() => {})));
     res.status(e?.name === 'ValidationError' ? 400 : 500).json({ error: e.message });
   }
 });
@@ -1310,6 +1418,7 @@ router.get('/inspections/:inspectionId/evidence', async (req, res) => {
       }
       query.unitId = req.query.unitId;
     }
+    if (req.query.activityKey) query.activityKey = String(req.query.activityKey).trim();
     if (req.query.commonAreaKey) query.commonAreaKey = String(req.query.commonAreaKey).trim();
     if (req.query.workFrontKey) query.workFrontKey = String(req.query.workFrontKey).trim();
     if (req.query.incidentId) {
@@ -1334,6 +1443,7 @@ router.post('/inspections/:inspectionId/evidence', evidenceUpload, async (req, r
     }
 
     const unitId = String(req.body?.unitId || '').trim();
+    const activityKey = String(req.body?.activityKey || '').trim();
     const commonAreaKey = String(req.body?.commonAreaKey || '').trim();
     const workFrontKey = String(req.body?.workFrontKey || '').trim();
     const incidentId = String(req.body?.incidentId || '').trim();
@@ -1350,6 +1460,13 @@ router.post('/inspections/:inspectionId/evidence', evidenceUpload, async (req, r
         deletedAt: null
       });
       if (!unit) return res.status(404).json({ error: 'Unidad no encontrada.' });
+    }
+    if (activityKey) {
+      if (!unitId) return res.status(400).json({ error: 'activityKey requiere una unidad.' });
+      const inspectionUnit = await InspectionUnit.findOne({ inspectionId: resolved.inspection._id, unitId }).lean();
+      if (!inspectionUnit || !(inspectionUnit.activities || []).some(item => String(item.key) === activityKey)) {
+        return res.status(400).json({ error: 'Actividad de unidad invalida.' });
+      }
     }
     if (commonAreaKey && !commonAreasForInspection(resolved.inspection).some(area => String(area.key) === commonAreaKey)) {
       return res.status(400).json({ error: 'Zona comun invalida.' });
@@ -1371,6 +1488,7 @@ router.post('/inspections/:inspectionId/evidence', evidenceUpload, async (req, r
       inspectionId: resolved.inspection._id,
       projectId: resolved.inspection.projectId,
       unitId: unitId || null,
+      activityKey,
       commonAreaKey,
       workFrontKey,
       incidentId: incidentId || null,
@@ -1485,7 +1603,8 @@ router.post('/inspections/:inspectionId/finalize', async (req, res) => {
       return res.status(400).json({ error: 'Registra el avance general o al menos una unidad antes de finalizar.' });
     }
     const finalizedAt = new Date();
-    const reportNumber = `B73-${finalizedAt.getUTCFullYear()}-${String(resolved.inspection._id).slice(-8).toUpperCase()}`;
+    const revisionSuffix = Number(resolved.inspection.revision || 1) > 1 ? `-R${Number(resolved.inspection.revision)}` : '';
+    const reportNumber = `B73-${finalizedAt.getUTCFullYear()}-${String(resolved.inspection._id).slice(-8).toUpperCase()}${revisionSuffix}`;
     const signature = { signerName, imageData: signatureImage, signedAt: finalizedAt };
     const finalInspectionState = {
       ...resolved.inspection,
@@ -1529,6 +1648,38 @@ router.post('/inspections/:inspectionId/finalize', async (req, res) => {
       { new: true, runValidators: true }
     ).lean();
     if (!inspection) return res.status(409).json({ error: 'version_conflict' });
+    if (inspection.revisesInspectionId) {
+      await Inspection.updateOne(
+        { _id: inspection.revisesInspectionId, status: 'finalized', supersededByInspectionId: null },
+        { $set: { supersededByInspectionId: inspection._id } }
+      );
+      await ProjectFinance.updateMany(
+        {
+          project: inspection.projectId,
+          tenantKey: inspection.projectTenantKey,
+          'loanLines.entries': {
+            $elemMatch: {
+              inspectionId: inspection.revisesInspectionId,
+              workflowStatus: { $ne: 'disbursed' }
+            }
+          }
+        },
+        {
+          $set: {
+            'loanLines.$[].entries.$[entry].inspectionId': inspection._id,
+            'loanLines.$[].entries.$[entry].advanceAccountNumber': Number(inspection.sequence)
+          }
+        },
+        {
+          arrayFilters: [
+            {
+              'entry.inspectionId': inspection.revisesInspectionId,
+              'entry.workflowStatus': { $ne: 'disbursed' }
+            }
+          ]
+        }
+      );
+    }
     res.json({ inspection: inspectionDto(inspection) });
   } catch (e) {
     res.status(e?.name === 'ValidationError' ? 400 : 500).json({ error: e.message });

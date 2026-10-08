@@ -133,6 +133,11 @@ const inspectionSchema = new mongoose.Schema({
     default: 1,
     required: true
   },
+  accountName: { type: String, trim: true, maxlength: 160, default: '' },
+  revision: { type: Number, min: 1, default: 1, required: true },
+  rootInspectionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Inspection', default: null, index: true },
+  revisesInspectionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Inspection', default: null, index: true },
+  supersededByInspectionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Inspection', default: null, index: true },
   previousInspectionId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Inspection',
@@ -226,6 +231,10 @@ inspectionSchema.index({
   projectId: 1,
   createdAt: -1
 });
+inspectionSchema.index(
+  { bankTenantKey: 1, projectTenantKey: 1, projectId: 1, sequence: 1, revision: 1 },
+  { unique: true, partialFilterExpression: { deletedAt: null } }
+);
 inspectionSchema.index({
   bankTenantKey: 1,
   assignmentId: 1,

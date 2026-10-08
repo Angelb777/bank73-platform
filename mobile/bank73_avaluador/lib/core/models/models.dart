@@ -638,6 +638,8 @@ class Inspection {
     required this.id,
     required this.projectId,
     required this.sequence,
+    required this.accountName,
+    required this.revision,
     required this.status,
     required this.inspectionDate,
     required this.startedAt,
@@ -665,6 +667,8 @@ class Inspection {
   final String id;
   final String projectId;
   final int sequence;
+  final String accountName;
+  final int revision;
   final String status;
   final DateTime? inspectionDate;
   final DateTime? startedAt;
@@ -693,6 +697,11 @@ class Inspection {
     id: (json['id'] ?? '').toString(),
     projectId: (json['projectId'] ?? '').toString(),
     sequence: (json['sequence'] as num?)?.toInt() ?? 1,
+    accountName:
+        (json['accountName'] ??
+                'Cuenta n.º ${(json['sequence'] as num?)?.toInt() ?? 1}')
+            .toString(),
+    revision: (json['revision'] as num?)?.toInt() ?? 1,
     status: (json['status'] ?? '').toString(),
     inspectionDate: _date(json['inspectionDate']),
     startedAt: _date(json['startedAt']),

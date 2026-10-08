@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -27,6 +29,9 @@ class _ProjectProgressScreenState extends ConsumerState<ProjectProgressScreen> {
   Inspection? _inspection;
   double _projectProgress = 0;
   bool _saving = false;
+  bool _dirty = false;
+  bool _saveFailed = false;
+  Timer? _autosaveTimer;
 
   @override
   void initState() {
@@ -36,6 +41,7 @@ class _ProjectProgressScreenState extends ConsumerState<ProjectProgressScreen> {
 
   @override
   void dispose() {
+    _autosaveTimer?.cancel();
     for (final controller in _observations.values) {
       controller.dispose();
     }
@@ -77,6 +83,17 @@ class _ProjectProgressScreenState extends ConsumerState<ProjectProgressScreen> {
                 100)
             .clamp(0, 100);
 
+  void _scheduleSave() {
+    if (_inspection?.isFinalized != false) return;
+    setState(() { _dirty = true; _saveFailed = false; });
+    _autosaveTimer?.cancel();
+    _autosaveTimer = Timer(const Duration(milliseconds: 700), () {
+      if (_saving) return _scheduleSave();
+      final inspection = _inspection;
+      if (inspection != null) _save(inspection);
+    });
+  }
+
   Future<void> _save(Inspection inspection) async {
     setState(() => _saving = true);
     try {
@@ -100,16 +117,12 @@ class _ProjectProgressScreenState extends ConsumerState<ProjectProgressScreen> {
             commonAreas: areas,
           );
       _inspection = updated;
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Avance general guardado.')),
-        );
-      }
+      if (mounted) setState(() { _dirty = false; _saveFailed = false; });
     } on ApiException catch (error) {
       if (error.isVersionConflict) _reload();
-      if (mounted) await presentApiError(context, ref, error);
+      if (mounted) { setState(() => _saveFailed = true); await presentApiError(context, ref, error); }
     } catch (error) {
-      if (mounted) await presentApiError(context, ref, error);
+      if (mounted) { setState(() => _saveFailed = true); await presentApiError(context, ref, error); }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -126,6 +139,8 @@ class _ProjectProgressScreenState extends ConsumerState<ProjectProgressScreen> {
       scopeLabel: area.name,
     );
     if (incident == null) return;
+    _autosaveTimer?.cancel();
+    if (_dirty) await _save(_inspection ?? inspection);
     setState(() => _saving = true);
     try {
       await ref.read(inspectionRepositoryProvider).saveVisit(
@@ -188,7 +203,7 @@ class _ProjectProgressScreenState extends ConsumerState<ProjectProgressScreen> {
                     max: 100,
                     divisions: 100,
                     onChanged: editable
-                        ? (value) => setState(() => _projectProgress = value)
+                        ? (value) { setState(() => _projectProgress = value); _scheduleSave(); }
                         : null,
                   ),
                   Text(
@@ -225,8 +240,7 @@ class _ProjectProgressScreenState extends ConsumerState<ProjectProgressScreen> {
                         max: 100,
                         divisions: 100,
                         onChanged: editable
-                            ? (value) =>
-                                  setState(() => _progress[area.key] = value)
+                            ? (value) { setState(() => _progress[area.key] = value); _scheduleSave(); }
                             : null,
                       ),
                       TextField(
@@ -238,6 +252,7 @@ class _ProjectProgressScreenState extends ConsumerState<ProjectProgressScreen> {
                           labelText: 'Observaciones de esta zona',
                           alignLabelWithHint: true,
                         ),
+                        onChanged: (_) => _scheduleSave(),
                       ),
                       const SizedBox(height: 12),
                       ...inspection.incidents
@@ -279,10 +294,12 @@ class _ProjectProgressScreenState extends ConsumerState<ProjectProgressScreen> {
               ),
             ),
             if (editable)
-              FilledButton.icon(
-                onPressed: _saving ? null : () => _save(inspection),
-                icon: const Icon(Icons.save_outlined),
-                label: Text(_saving ? 'Guardando…' : 'Guardar avance general'),
+              InkWell(
+                onTap: _saveFailed ? () => _save(inspection) : null,
+                child: Text(
+                  _saving ? 'Guardando automáticamente…' : (_saveFailed ? 'Sin guardar · toca para reintentar' : (_dirty ? 'Cambios pendientes…' : 'Todo guardado')),
+                  style: TextStyle(color: _saveFailed ? Colors.redAccent : Bank73Colors.muted),
+                ),
               ),
             const SizedBox(height: 24),
           ],

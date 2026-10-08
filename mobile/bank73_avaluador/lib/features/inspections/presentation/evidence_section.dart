@@ -8,6 +8,7 @@ import '../../../app/theme/app_theme.dart';
 import '../../../core/errors/error_presenter.dart';
 import '../../../core/models/models.dart';
 import '../data/inspection_repository.dart';
+import 'continuous_camera_screen.dart';
 
 class EvidenceSection extends ConsumerStatefulWidget {
   const EvidenceSection({
@@ -17,6 +18,7 @@ class EvidenceSection extends ConsumerStatefulWidget {
     this.commonAreaKey,
     this.workFrontKey,
     this.incidentId,
+    this.activityKey,
     this.category = 'general',
     this.editable = true,
     this.embedded = false,
@@ -28,6 +30,7 @@ class EvidenceSection extends ConsumerStatefulWidget {
   final String? commonAreaKey;
   final String? workFrontKey;
   final String? incidentId;
+  final String? activityKey;
   final String category;
   final bool editable;
   final bool embedded;
@@ -55,43 +58,51 @@ class _EvidenceSectionState extends ConsumerState<EvidenceSection> {
         commonAreaKey: widget.commonAreaKey,
         workFrontKey: widget.workFrontKey,
         incidentId: widget.incidentId,
+        activityKey: widget.activityKey,
       );
 
   void _reload() => setState(() => _future = _load());
 
-  Future<void> _pick(ImageSource source) async {
-    final image = await ImagePicker().pickImage(
-      source: source,
+  Future<void> _pickCamera() async {
+    final paths = await Navigator.push<List<String>>(
+      context,
+      MaterialPageRoute(builder: (_) => const ContinuousCameraScreen()),
+    );
+    if (paths == null || paths.isEmpty || !mounted) return;
+    await _upload(paths);
+  }
+
+  Future<void> _pickGallery() async {
+    final images = await ImagePicker().pickMultiImage(
       imageQuality: 82,
       maxWidth: 2000,
     );
-    if (image == null || !mounted) return;
+    if (images.isEmpty || !mounted) return;
+    await _upload(images.map((image) => image.path).toList());
+  }
+
+  Future<void> _upload(List<String> paths) async {
     final caption = await _caption();
     if (caption == null || !mounted) return;
     setState(() => _uploading = true);
     try {
-      await ref
-          .read(inspectionRepositoryProvider)
-          .uploadEvidence(
+      for (final path in paths) {
+        await ref.read(inspectionRepositoryProvider).uploadEvidence(
             inspectionId: widget.inspectionId,
-            filePath: image.path,
+            filePath: path,
             unitId: widget.unitId,
             commonAreaKey: widget.commonAreaKey,
             workFrontKey: widget.workFrontKey,
             incidentId: widget.incidentId,
+            activityKey: widget.activityKey,
             category: widget.category,
             caption: caption,
           );
+      }
       if (mounted) {
         _reload();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Fotografía guardada.'),
-            action: SnackBarAction(
-              label: 'Otra foto',
-              onPressed: () => _pick(ImageSource.camera),
-            ),
-          ),
+          SnackBar(content: Text('${paths.length} ${paths.length == 1 ? 'fotografía guardada' : 'fotografías guardadas'}.'),),
         );
       }
     } catch (error) {
@@ -146,7 +157,7 @@ class _EvidenceSectionState extends ConsumerState<EvidenceSection> {
               title: const Text('Tomar fotografía'),
               onTap: () {
                 Navigator.pop(sheetContext);
-                _pick(ImageSource.camera);
+                _pickCamera();
               },
             ),
             ListTile(
@@ -154,7 +165,7 @@ class _EvidenceSectionState extends ConsumerState<EvidenceSection> {
               title: const Text('Elegir de la galería'),
               onTap: () {
                 Navigator.pop(sheetContext);
-                _pick(ImageSource.gallery);
+                _pickGallery();
               },
             ),
           ],

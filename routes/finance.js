@@ -183,6 +183,9 @@ function normalizeLoanEntry(raw = {}) {
     returnedBy: mongoose.isValidObjectId(raw.returnedBy) ? raw.returnedBy : null,
     returnedByRole: String(raw.returnedByRole || '').trim(),
     returnComment: String(raw.returnComment || '').trim().slice(0, 500),
+    returnAlertAcknowledgedAt: cleanDate(raw.returnAlertAcknowledgedAt),
+    returnAlertAcknowledgedBy: mongoose.isValidObjectId(raw.returnAlertAcknowledgedBy) ? raw.returnAlertAcknowledgedBy : null,
+    returnAlertAcknowledgedByRole: String(raw.returnAlertAcknowledgedByRole || '').trim(),
     disbursedAt: cleanDate(raw.disbursedAt),
     disbursedBy: mongoose.isValidObjectId(raw.disbursedBy) ? raw.disbursedBy : null,
     disbursedByRole: String(raw.disbursedByRole || '').trim(),
@@ -217,6 +220,7 @@ function mergeProtectedLoanWorkflow(rawLines = [], currentDoc) {
     'requestedAt', 'requestedBy', 'requestedByRole', 'requestDocumentId', 'requestDocumentName',
     'requirementsSnapshot', 'requirementsConfirmedAt', 'requirementsConfirmedBy', 'requirementsConfirmedByRole',
     'returnedAt', 'returnedBy', 'returnedByRole', 'returnComment',
+    'returnAlertAcknowledgedAt', 'returnAlertAcknowledgedBy', 'returnAlertAcknowledgedByRole',
     'disbursedAt', 'disbursedBy', 'disbursedByRole', 'transferReference', 'workflowNote'
   ];
 
@@ -250,7 +254,8 @@ function mergeProtectedLoanWorkflow(rawLines = [], currentDoc) {
         promoterContributedBy: null, promoterContributedByRole: '', requestDocumentId: null,
         requestDocumentName: '', requirementsSnapshot: [], requirementsConfirmedAt: null,
         requirementsConfirmedBy: null, requirementsConfirmedByRole: '', returnedAt: null,
-        returnedBy: null, returnedByRole: '', returnComment: '', transferReference: '', workflowNote: ''
+        returnedBy: null, returnedByRole: '', returnComment: '', returnAlertAcknowledgedAt: null,
+        returnAlertAcknowledgedBy: null, returnAlertAcknowledgedByRole: '', transferReference: '', workflowNote: ''
       });
     }
   }
@@ -489,7 +494,7 @@ async function validateLoanLineReports({ req, project, rawLines, currentDoc }) {
       }
     }
   }
-  if (!assignments.length) return;
+  if (!assignments.length) return null;
 
   const previousEntries = new Map();
   for (const line of (currentDoc.loanLines || [])) {
@@ -522,13 +527,20 @@ async function validateLoanLineReports({ req, project, rawLines, currentDoc }) {
     projectTenantKey: project.tenantKey,
     status: 'finalized',
     bankTenantKey: { $in: assignments.map(item => item.bankTenantKey) }
-  }).select('_id').lean();
+  }).select('_id sequence').lean();
   if (reports.length !== reportIds.length) {
     throw Object.assign(new Error('Alguno de los informes seleccionados no es válido para este proyecto.'), { status: 400 });
   }
+  const reportById = new Map(reports.map(report => [String(report._id), report]));
+  for (const line of rawLines) {
+    for (const entry of (Array.isArray(line?.entries) ? line.entries : [])) {
+      const report = reportById.get(String(entry?.inspectionId || ''));
+      if (report) entry.advanceAccountNumber = Number(report.sequence);
+    }
+  }
 }
 
-async function validateWorkflowReport({ req, project, entry }) {
+async function validateWorkflowReport({ project, entry }) {
   const assignments = await ProjectAvaluatorAssignment.find({
     projectId: project._id,
     projectTenantKey: project.tenantKey,
@@ -544,10 +556,11 @@ async function validateWorkflowReport({ req, project, entry }) {
     projectTenantKey: project.tenantKey,
     status: 'finalized',
     bankTenantKey: { $in: assignments.map(item => item.bankTenantKey) }
-  }).select('_id').lean();
+  }).select('_id sequence').lean();
   if (!report) {
     throw Object.assign(new Error('El informe de avalúo vinculado no es válido para este proyecto.'), { status: 400 });
   }
+  return report;
 }
 
 function normalizePhaseFinancialConditions(raw = {}) {
@@ -930,7 +943,8 @@ router.patch('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId/s
     if (['request', 'contribute'].includes(action) && !['admin', 'promoter'].includes(role)) return res.status(403).json({ error: 'Solo el promotor puede realizar esta acción.' });
     if (action === 'disburse' && !['admin', 'promoter', 'bank'].includes(role)) return res.status(403).json({ error: 'No tienes permisos para confirmar este desembolso.' });
     if (action === 'return' && !['admin', 'bank'].includes(role)) return res.status(403).json({ error: 'Solo el banco o el superadmin pueden devolver una solicitud.' });
-    if (!['request', 'contribute', 'return', 'disburse'].includes(action)) return res.status(400).json({ error: 'Acción de desembolso no válida.' });
+    if (action === 'acknowledge_return' && !['admin', 'bank', 'promoter'].includes(role)) return res.status(403).json({ error: 'No tienes permisos para atender esta alerta.' });
+    if (!['request', 'contribute', 'return', 'disburse', 'acknowledge_return'].includes(action)) return res.status(400).json({ error: 'Acción de desembolso no válida.' });
 
     const project = await loadTenantProject(req, res);
     if (!project) return;
@@ -945,7 +959,10 @@ router.patch('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId/s
     }
     const currentStatus = loanEntryWorkflowStatus(entry);
     if (currentStatus === 'disbursed') return res.status(409).json({ error: 'Este desembolso ya está confirmado como desembolsado.' });
-    if (['request', 'contribute', 'disburse'].includes(action)) await validateWorkflowReport({ req, project, entry });
+    if (['request', 'contribute', 'disburse'].includes(action)) {
+      const workflowReport = await validateWorkflowReport({ project, entry });
+      if (workflowReport?.sequence) entry.advanceAccountNumber = Number(workflowReport.sequence);
+    }
 
     const actorId = req.user?.userId || req.user?._id || req.user?.id || null;
     const now = new Date();
@@ -997,6 +1014,9 @@ router.patch('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId/s
       entry.returnedBy = null;
       entry.returnedByRole = '';
       entry.returnComment = '';
+      entry.returnAlertAcknowledgedAt = null;
+      entry.returnAlertAcknowledgedBy = null;
+      entry.returnAlertAcknowledgedByRole = '';
     } else if (action === 'contribute') {
       if (!['promoter', 'mixed'].includes(entry.fundingParty) || toNum(entry.promoterContributionAmount) <= 0) return res.status(400).json({ error: 'Esta cuenta no tiene aportación del promotor.' });
       if (entry.promoterContributionStatus === 'contributed') return res.status(409).json({ error: 'La aportación del promotor ya está confirmada.' });
@@ -1014,6 +1034,14 @@ router.patch('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId/s
       entry.returnedBy = actorId;
       entry.returnedByRole = role;
       entry.returnComment = comment;
+      entry.returnAlertAcknowledgedAt = null;
+      entry.returnAlertAcknowledgedBy = null;
+      entry.returnAlertAcknowledgedByRole = '';
+    } else if (action === 'acknowledge_return') {
+      if (currentStatus !== 'returned') return res.status(409).json({ error: 'Esta alerta ya no corresponde a una solicitud devuelta.' });
+      entry.returnAlertAcknowledgedAt = now;
+      entry.returnAlertAcknowledgedBy = actorId;
+      entry.returnAlertAcknowledgedByRole = role;
     } else {
       if (role === 'bank' && currentStatus !== 'requested') return res.status(409).json({ error: 'El banco solo puede confirmar solicitudes recibidas.' });
       if (role === 'bank' && !['bank', 'mixed'].includes(entry.fundingParty)) return res.status(400).json({ error: 'Esta cuenta no corresponde al banco.' });
@@ -1035,13 +1063,13 @@ router.patch('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId/s
     }
 
     await doc.save();
-    const auditAction = ({ request: 'finance.disbursement_requested', contribute: 'finance.promoter_contribution_confirmed', return: 'finance.disbursement_returned', disburse: 'finance.disbursement_confirmed' })[action];
+    const auditAction = ({ request: 'finance.disbursement_requested', contribute: 'finance.promoter_contribution_confirmed', return: 'finance.disbursement_returned', disburse: 'finance.disbursement_confirmed', acknowledge_return: 'finance.disbursement_return_acknowledged' })[action];
     await audit(req, auditAction, {
       tenantKey: project.tenantKey,
       targetType: 'loanLineEntry',
       targetId: entry._id,
       projectId: project._id,
-      message: ({ request: 'Desembolso solicitado por el promotor', contribute: 'Aportación del promotor confirmada', return: 'Solicitud devuelta al promotor', disburse: `Desembolso confirmado por ${role}` })[action],
+      message: ({ request: 'Desembolso solicitado por el promotor', contribute: 'Aportación del promotor confirmada', return: 'Solicitud devuelta al promotor', disburse: `Desembolso confirmado por ${role}`, acknowledge_return: 'Alerta de solicitud devuelta marcada como atendida' })[action],
       metadata: { lineId: String(line._id), amount: toNum(entry.disbursementAmount), workflowStatus: entry.workflowStatus }
     });
 
@@ -1068,7 +1096,7 @@ router.get('/projects/:projectId/finance/disbursement-requests', async (req, res
     }
     const inspectionIds = rows.map(row => row.entry.inspectionId).filter(Boolean);
     const inspections = await Inspection.find({ _id: { $in: inspectionIds }, projectId: project._id, status: 'finalized' })
-      .select('_id reportNumber inspectionDate finalizedAt projectProgressPercent technicalRecommendation')
+      .select('_id reportNumber inspectionDate finalizedAt projectProgressPercent technicalRecommendation sequence accountName revision')
       .lean();
     const inspectionById = new Map(inspections.map(item => [String(item._id), item]));
     res.json({
@@ -1091,6 +1119,7 @@ router.get('/projects/:projectId/finance/disbursement-requests', async (req, res
           requestedAt: entry.requestedAt,
           returnedAt: entry.returnedAt,
           returnComment: entry.returnComment || '',
+          returnAlertAcknowledgedAt: entry.returnAlertAcknowledgedAt || null,
           requestDocument: entry.requestDocumentId ? {
             id: String(entry.requestDocumentId),
             name: entry.requestDocumentName || 'Carta de solicitud.pdf',
@@ -1102,6 +1131,10 @@ router.get('/projects/:projectId/finance/disbursement-requests', async (req, res
             date: report.inspectionDate || report.finalizedAt,
             progress: Number(report.projectProgressPercent || 0),
             verdict: String(report.technicalRecommendation?.verdict || 'not_assessed'),
+            conditions: String(report.technicalRecommendation?.conditions || report.technicalRecommendation?.notes || ''),
+            sequence: Number(report.sequence || entry.advanceAccountNumber || 0) || null,
+            accountName: String(report.accountName || `Cuenta n.º ${Number(report.sequence || entry.advanceAccountNumber || 0)}`),
+            revision: Number(report.revision || 1),
             url: `/api/projects/${project._id}/finance/inspection-reports/${report._id}/report.pdf`
           } : null,
           requirements: requirements.map(item => ({
@@ -1137,17 +1170,22 @@ router.get('/projects/:projectId/finance/avaluation-context', async (req, res) =
       projectId: project._id,
       projectTenantKey: project.tenantKey,
       bankTenantKey: { $in: assignments.map(item => item.bankTenantKey) },
-      status: 'finalized'
+      status: 'finalized',
+      supersededByInspectionId: null
     }).populate('avaluadorId', 'name email').sort({ finalizedAt: -1 }).lean();
     res.json({
       hasAssignedAvaluator: true,
       reports: reports.map(item => ({
         id: String(item._id),
         reportNumber: String(item.reportNumber || ''),
+        sequence: Number(item.sequence || 1),
+        accountName: String(item.accountName || `Cuenta n.º ${Number(item.sequence || 1)}`),
+        revision: Number(item.revision || 1),
         inspectionDate: item.inspectionDate,
         finalizedAt: item.finalizedAt,
         projectProgressPercent: Number(item.projectProgressPercent || 0),
         verdict: String(item.technicalRecommendation?.verdict || 'not_assessed'),
+        conditions: String(item.technicalRecommendation?.conditions || item.technicalRecommendation?.notes || ''),
         avaluadorName: String(item.avaluadorId?.name || ''),
         reportPath: `/api/projects/${project._id}/finance/inspection-reports/${item._id}/report.pdf`
       }))

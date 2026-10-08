@@ -1,4 +1,5 @@
 import '../../../core/api/api_client.dart';
+import '../../../core/api/api_config.dart';
 import '../../../core/models/models.dart';
 import '../../../core/storage/secure_session_store.dart';
 
@@ -26,6 +27,27 @@ class AuthRepository {
       await _store.clear();
       rethrow;
     }
+  }
+
+  Future<String> registerAvaluator({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    final response = await _api.post(
+      '/api/auth/register',
+      authenticated: false,
+      body: {
+        'tenantKey': ApiConfig.registrationTenantKey,
+        'name': name.trim(),
+        'email': email.trim().toLowerCase(),
+        'password': password,
+        'roleRequested': 'avaluador',
+      },
+    );
+    return (response['message'] ??
+            'Registro recibido. Tu cuenta está pendiente de aprobación por Bank73.')
+        .toString();
   }
 
   Future<AppUser> me() async =>

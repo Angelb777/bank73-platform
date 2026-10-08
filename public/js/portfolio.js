@@ -398,8 +398,12 @@
     const unitsTotal = p.unitsTotal || 0;
     const pendingDisbursementRequests = Number(p.pendingDisbursementRequests || 0);
     const pendingDisbursementAmount = Number(p.pendingDisbursementAmount || 0);
+    const returnedDisbursementRequests = Number(p.returnedDisbursementRequests || 0);
     const pendingDisbursementAlert = ['bank', 'admin'].includes(role) && pendingDisbursementRequests > 0
       ? `<button type="button" class="portfolio-disbursement-alert" data-review-disbursements="${escapeHtml(p._id)}"><span>${pendingDisbursementRequests} ${pendingDisbursementRequests === 1 ? 'solicitud de desembolso pendiente' : 'solicitudes de desembolso pendientes'}</span><strong>${pendingDisbursementAmount.toLocaleString('es-PA', { style: 'currency', currency: p.currency || 'PAB' })}</strong><small>Revisar ahora →</small></button>`
+      : '';
+    const returnedDisbursementAlert = ['promoter', 'admin'].includes(role) && returnedDisbursementRequests > 0
+      ? `<button type="button" class="portfolio-disbursement-alert is-returned" data-review-disbursements="${escapeHtml(p._id)}"><span>${returnedDisbursementRequests} ${returnedDisbursementRequests === 1 ? 'solicitud devuelta' : 'solicitudes devueltas'}</span><small>Ver motivo →</small></button>`
       : '';
 
     return `
@@ -425,6 +429,7 @@
           <p class="small muted portfolio-card-promoter ${promoterText ? '' : 'is-empty'}">${promoterText || '&nbsp;'}</p>
         </div>
           ${pendingDisbursementAlert}
+          ${returnedDisbursementAlert}
           <div class="portfolio-card-commercial">
             <span class="portfolio-card-progress-title">Avance comercial</span>
             <progress class="portfolio-card-progress" max="100" value="${soldPct}" aria-label="${soldPct}% de unidades vendidas">${soldPct}%</progress>
@@ -455,6 +460,10 @@
     return status === 'compliant' ? 'Cumplido' : status === 'expired' ? 'Vencido' : 'Pendiente';
   }
 
+  function verdictLabel(verdict) {
+    return ({ favorable: 'Favorable', conditional: 'Favorable con condiciones', unfavorable: 'Desfavorable', not_assessed: 'Sin valorar' })[verdict] || 'Sin valorar';
+  }
+
   async function openDisbursementReview(projectId) {
     const overlay = document.createElement('div');
     overlay.className = 'portfolio-disbursement-review-backdrop';
@@ -464,17 +473,26 @@
     overlay.addEventListener('click', event => { if (event.target === overlay || event.target.closest('[data-close-disbursement-review]')) close(); });
     try {
       const data = await API.get(`/api/projects/${encodeURIComponent(projectId)}/finance/disbursement-requests`);
-      const requests = (data.requests || []).filter(item => item.status === 'requested');
+      const requests = (data.requests || []).filter(item => {
+        if (role === 'bank') return item.status === 'requested';
+        if (role === 'promoter') return item.status === 'returned' && !item.returnAlertAcknowledgedAt;
+        return item.status === 'requested' || (item.status === 'returned' && !item.returnAlertAcknowledgedAt);
+      });
       overlay.querySelector('section').innerHTML = `
         <header><div><span class="small muted">Revisión bancaria</span><h2>${escapeHtml(data.project?.name || 'Proyecto')}</h2><p>Comprueba los tres elementos necesarios antes de confirmar la transferencia.</p></div><button class="btn btn-ghost" type="button" data-close-disbursement-review>✕ Cerrar</button></header>
         <div class="portfolio-disbursement-review-list">
           ${requests.length ? requests.map(item => {
             const issues = Number(item.requirementSummary?.issues || 0);
+            if (item.status === 'returned') return `<article class="portfolio-disbursement-request is-returned" data-line-id="${escapeHtml(item.lineId)}" data-entry-id="${escapeHtml(item.entryId)}">
+              <div class="portfolio-disbursement-request-head"><div><span class="finance-status is-danger">Solicitud devuelta</span><h3>${escapeHtml(item.report?.accountName || `Cuenta n.º ${item.advanceAccountNumber || '—'}`)} · ${escapeHtml(item.phaseName || 'Fase')}</h3></div><div class="portfolio-request-bank-amount"><span>Importe solicitado</span><strong>${Number(item.bankAmount || 0).toLocaleString('es-PA', { style: 'currency', currency: data.project?.currency || 'PAB' })}</strong></div></div>
+              <section class="portfolio-return-reason"><b>Motivo indicado por el banco</b><p>${escapeHtml(item.returnComment || 'Sin detalle adicional.')}</p></section>
+              <footer><a class="btn" href="/project?id=${encodeURIComponent(projectId)}&ref=portfolio#finanzas">Corregir en Finanzas</a><button class="btn btn-ghost" type="button" data-acknowledge-return>Marcar atendida</button></footer>
+            </article>`;
             return `<article class="portfolio-disbursement-request" data-line-id="${escapeHtml(item.lineId)}" data-entry-id="${escapeHtml(item.entryId)}" data-has-issues="${issues > 0 ? '1' : '0'}">
-              <div class="portfolio-disbursement-request-head"><div><span class="finance-status is-warn">Cuenta de avance ${escapeHtml(String(item.advanceAccountNumber || '—'))}</span><h3>${escapeHtml(item.phaseName || 'Fase')} · ${escapeHtml(item.lineName)}</h3>${item.fundingParty === 'mixed' ? `<small>Aporte promotor: ${Number(item.promoterAmount || 0).toLocaleString('es-PA', { style: 'currency', currency: data.project?.currency || 'PAB' })} · ${item.promoterContributionStatus === 'contributed' ? 'confirmado' : 'pendiente'}</small>` : ''}</div><div class="portfolio-request-bank-amount"><span>Solicitado al banco</span><strong>${Number(item.bankAmount || 0).toLocaleString('es-PA', { style: 'currency', currency: data.project?.currency || 'PAB' })}</strong></div></div>
+              <div class="portfolio-disbursement-request-head"><div><span class="finance-status is-warn">Solicitud de desembolso</span><h3>${escapeHtml(item.report?.accountName || `Cuenta n.º ${item.advanceAccountNumber || '—'}`)}${Number(item.report?.revision || 1) > 1 ? ` · Revisión ${Number(item.report.revision)}` : ''}</h3><small>${escapeHtml(item.phaseName || 'Fase')} · ${escapeHtml(item.lineName)}</small>${item.fundingParty === 'mixed' ? `<small>Aporte promotor: ${Number(item.promoterAmount || 0).toLocaleString('es-PA', { style: 'currency', currency: data.project?.currency || 'PAB' })} · ${item.promoterContributionStatus === 'contributed' ? 'confirmado' : 'pendiente'}</small>` : ''}</div><div class="portfolio-request-bank-amount"><span>Solicitado al banco</span><strong>${Number(item.bankAmount || 0).toLocaleString('es-PA', { style: 'currency', currency: data.project?.currency || 'PAB' })}</strong></div></div>
               <div class="portfolio-disbursement-checks">
                 <section><b>1. Solicitud firmada</b><p>${escapeHtml(item.requestDocument?.name || 'No adjuntada')}</p>${item.requestDocument ? `<button class="btn btn-xs" type="button" data-open-secure="${escapeHtml(item.requestDocument.url)}">Ver carta PDF</button>` : '<span class="finance-status is-missing">Falta documento</span>'}</section>
-                <section><b>2. Informe del avaluador</b><p>${escapeHtml(item.report?.number || 'Sin informe')} ${item.report ? `· Avance ${Number(item.report.progress || 0).toFixed(1)}%` : ''}</p>${item.report ? `<button class="btn btn-xs" type="button" data-open-secure="${escapeHtml(item.report.url)}">Ver informe PDF</button>` : '<span class="finance-status is-missing">Falta informe</span>'}</section>
+                <section><b>2. Informe del avaluador</b><p>${escapeHtml(item.report?.number || 'Sin informe')} ${item.report ? `· Avance ${Number(item.report.progress || 0).toFixed(1)}%` : ''}</p>${item.report ? `<span class="finance-status ${item.report.verdict === 'unfavorable' ? 'is-danger' : item.report.verdict === 'favorable' ? 'is-ok' : 'is-warn'}">${escapeHtml(verdictLabel(item.report.verdict))}</span>${item.report.conditions ? `<small class="portfolio-report-conditions">${escapeHtml(item.report.conditions)}</small>` : ''}<button class="btn btn-xs" type="button" data-open-secure="${escapeHtml(item.report.url)}">Ver informe PDF</button>` : '<span class="finance-status is-missing">Falta informe</span>'}</section>
                 <section><b>3. Requisitos de la fase</b><p>${item.requirementSummary?.compliant || 0} de ${item.requirementSummary?.total || 0} cumplidos al solicitar</p><span class="finance-status ${issues ? 'is-warn' : 'is-ok'}">${issues ? `${issues} por revisar` : 'Todo conforme'}</span></section>
               </div>
               <details class="portfolio-requirement-review" ${issues ? 'open' : ''}><summary>Ver requisitos</summary><div>${(item.requirements || []).map(req => `<div><span class="finance-status ${req.reviewStatus === 'compliant' ? 'is-ok' : 'is-warn'}">${requirementStatusLabel(req.reviewStatus)}</span><span><b>${escapeHtml(req.title || 'Requisito')}</b>${req.information || req.manualInformation || req.observations ? `<small>${escapeHtml(req.manualInformation || req.information || req.observations)}</small>` : ''}${(req.documents || []).length ? `<span class="portfolio-requirement-docs">${req.documents.map(document => `<button class="btn btn-ghost btn-xs" type="button" data-open-secure="${escapeHtml(document.url)}">${escapeHtml(document.name)}</button>`).join('')}</span>` : ''}</span></div>`).join('') || '<p class="muted">La fase no tiene requisitos configurados.</p>'}</div></details>
@@ -493,6 +511,12 @@
         const card = event.target.closest('[data-entry-id]');
         if (!card) return;
         const endpoint = `/api/projects/${encodeURIComponent(projectId)}/finance/loan-lines/${encodeURIComponent(card.dataset.lineId)}/entries/${encodeURIComponent(card.dataset.entryId)}/status`;
+        const acknowledgeButton = event.target.closest('[data-acknowledge-return]');
+        if (acknowledgeButton) {
+          acknowledgeButton.disabled = true;
+          try { await API.patch(endpoint, { action: 'acknowledge_return' }); close(); await loadList(); } catch (error) { acknowledgeButton.disabled = false; alert(error.message || 'No se pudo atender la alerta.'); }
+          return;
+        }
         const returnButton = event.target.closest('[data-return-request]');
         if (returnButton) {
           const comment = prompt('Indica claramente qué debe corregir el promotor:');

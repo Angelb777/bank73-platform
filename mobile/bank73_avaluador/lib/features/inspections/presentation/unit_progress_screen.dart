@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -98,6 +100,8 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
   InspectionUnit? _saved;
   bool _saving = false;
   bool _dirty = false;
+  Timer? _autosaveTimer;
+  _ProgressBundle? _bundle;
 
   @override
   void initState() {
@@ -107,6 +111,7 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
 
   @override
   void dispose() {
+    _autosaveTimer?.cancel();
     _observations.dispose();
     super.dispose();
   }
@@ -135,6 +140,7 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
         results[4] as InspectionUnit?,
       );
       if (mounted) {
+        _bundle = bundle;
         _saved = bundle.saved;
         _dirty = false;
         _observations.text = bundle.saved?.observations ?? '';
@@ -207,6 +213,17 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
       .firstOrNull
       ?.progressPercent;
 
+  void _scheduleSave() {
+    if (_bundle?.inspection.isFinalized != false) return;
+    if (mounted) setState(() => _dirty = true);
+    _autosaveTimer?.cancel();
+    _autosaveTimer = Timer(const Duration(milliseconds: 700), () {
+      final bundle = _bundle;
+      if (_saving) return _scheduleSave();
+      if (bundle != null) _save(bundle);
+    });
+  }
+
   Future<void> _save(_ProgressBundle bundle) async {
     if (!_activities.any((item) => item.applicable)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -240,12 +257,6 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
         _saved = saved;
         _dirty = false;
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Avance guardado en el borrador.')),
-        );
-        Navigator.of(context).pop(true);
-      }
     } on ApiException catch (error) {
       if (error.isVersionConflict) {
         if (mounted) {
@@ -322,6 +333,7 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
       );
       _dirty = true;
     });
+    _scheduleSave();
   }
 
   Future<void> _renameActivity(_EditableActivity activity) async {
@@ -355,6 +367,7 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
       activity.name = name;
       _dirty = true;
     });
+    _scheduleSave();
   }
 
   Future<void> _addIncident(_ProgressBundle bundle) async {
@@ -520,25 +533,39 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
                     ),
                     ..._activities.map((activity) {
                       final previous = _previousProgress(bundle, activity.key);
-                      return _ActivityEditor(
-                        name: activity.name,
-                        value: activity.progress,
-                        applicable: activity.applicable,
-                        previous: previous,
-                        editable: !bundle.inspection.isFinalized,
-                        onChanged: (value) => setState(() {
-                          activity.progress = value;
-                          _dirty = true;
-                        }),
-                        onApplicabilityChanged: (value) => setState(() {
-                          activity.applicable = value;
-                          _dirty = true;
-                        }),
-                        onRename: () => _renameActivity(activity),
-                        onRemove: () => setState(() {
-                          _activities.remove(activity);
-                          _dirty = true;
-                        }),
+                      return Column(
+                        children: [
+                          _ActivityEditor(
+                            name: activity.name,
+                            value: activity.progress,
+                            applicable: activity.applicable,
+                            previous: previous,
+                            editable: !bundle.inspection.isFinalized,
+                            onChanged: (value) {
+                              setState(() => activity.progress = value);
+                              _scheduleSave();
+                            },
+                            onApplicabilityChanged: (value) {
+                              setState(() => activity.applicable = value);
+                              _scheduleSave();
+                            },
+                            onRename: () => _renameActivity(activity),
+                            onRemove: () {
+                              setState(() => _activities.remove(activity));
+                              _scheduleSave();
+                            },
+                          ),
+                          EvidenceSection(
+                            inspectionId: widget.inspectionId,
+                            unitId: widget.unitId,
+                            activityKey: activity.key,
+                            category: 'progress',
+                            editable: !bundle.inspection.isFinalized,
+                            embedded: true,
+                            title: 'Fotos de ${activity.name}',
+                          ),
+                          const Divider(height: 24),
+                        ],
                       );
                     }),
                     if (!bundle.inspection.isFinalized)
@@ -564,6 +591,7 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
                 labelText: 'Observaciones de la unidad',
                 alignLabelWithHint: true,
               ),
+              onChanged: (_) => _scheduleSave(),
             ),
             const SizedBox(height: 14),
             EvidenceSection(
@@ -606,10 +634,9 @@ class _UnitProgressScreenState extends ConsumerState<UnitProgressScreen> {
                 label: const Text('Añadir incidencia de esta unidad'),
               ),
               const SizedBox(height: 10),
-              FilledButton.icon(
-                onPressed: _saving ? null : () => _save(bundle),
-                icon: const Icon(Icons.save_outlined),
-                label: Text(_saving ? 'Guardando…' : 'Guardar avance'),
+              Text(
+                _saving ? 'Guardando automáticamente…' : (_dirty ? 'Cambios pendientes de guardar' : 'Todo guardado'),
+                style: const TextStyle(color: Bank73Colors.muted),
               ),
             ],
             const SizedBox(height: 20),

@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const jwt = require('jsonwebtoken');
 
 const authRouter = require('../routes/auth');
 const mobileRouter = require('../routes/mobileAvaluator');
@@ -46,12 +47,16 @@ test('mobile login needs only email/password and issues all active bank tenants'
   const originalFind = User.find;
   const originalAuditCreate = AuditLog.create;
   const previousSecret = process.env.JWT_SECRET;
+  const previousMobileExpiry = process.env.MOBILE_JWT_EXPIRES_IN;
   t.after(() => {
     User.find = originalFind;
     AuditLog.create = originalAuditCreate;
     process.env.JWT_SECRET = previousSecret;
+    if (previousMobileExpiry === undefined) delete process.env.MOBILE_JWT_EXPIRES_IN;
+    else process.env.MOBILE_JWT_EXPIRES_IN = previousMobileExpiry;
   });
   process.env.JWT_SECRET = 'test-mobile-multibank-secret';
+  delete process.env.MOBILE_JWT_EXPIRES_IN;
 
   const evaluator = {
     _id: { toString: () => '64b000000000000000000001' },
@@ -83,6 +88,8 @@ test('mobile login needs only email/password and issues all active bank tenants'
   assert.equal(userFilter.role, 'avaluador');
   assert.deepEqual(capture.payload.tenantKeys, ['bank-a', 'bank-b']);
   assert.ok(capture.payload.token);
+  const decoded = jwt.decode(capture.payload.token);
+  assert.ok(decoded.exp - decoded.iat >= (30 * 24 * 60 * 60) - 1);
 });
 
 test('mobile assignment lookup accepts every active bank but no tenant outside membership', async (t) => {
