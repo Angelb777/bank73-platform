@@ -398,13 +398,36 @@ async function buildInspectionReportContext({ scope, inspection, preferFrozen = 
     const previousItem = previousUnitsById.get(id(item.unitId)) || previousUnitsByStableKey.get(unitStableKey(item));
     const previousPercent = optionalNumber(previousItem?.progressPercent);
     const currentPercent = number(item.progressPercent);
+    const previousActivitiesByKey = new Map((previousItem?.activities || []).map(activity => [String(activity.key), activity]));
+    const previousActivitiesByName = new Map((previousItem?.activities || []).map(activity => [String(activity.name || '').trim().toLocaleLowerCase('es'), activity]));
+    const activities = (item.activities || [])
+      .filter(activity => activity?.applicable !== false)
+      .map(activity => {
+        const previousActivity = previousActivitiesByKey.get(String(activity.key))
+          || previousActivitiesByName.get(String(activity.name || '').trim().toLocaleLowerCase('es'));
+        const previousActivityPercent = optionalNumber(previousActivity?.progressPercent);
+        const currentActivityPercent = number(activity.progressPercent);
+        return {
+          key: String(activity.key || ''),
+          name: String(activity.name || ''),
+          order: number(activity.order),
+          previousPercent: previousActivityPercent,
+          currentPercent: currentActivityPercent,
+          previousKnown: previousActivityPercent !== null,
+          periodIncrementPercent: previousActivityPercent === null
+            ? null
+            : Math.round((currentActivityPercent - previousActivityPercent) * 10000) / 10000
+        };
+      })
+      .sort((a, b) => a.order - b.order);
     return {
       unitId: id(item.unitId),
       reference: plain(item.unitReferenceSnapshot || previousItem?.unitReferenceSnapshot || {}),
       previousPercent,
       currentPercent,
       previousKnown: previousPercent !== null,
-      periodIncrementPercent: previousPercent === null ? null : Math.round((currentPercent - previousPercent) * 10000) / 10000
+      periodIncrementPercent: previousPercent === null ? null : Math.round((currentPercent - previousPercent) * 10000) / 10000,
+      activities
     };
   });
   const previousAreasByKey = new Map((context.history?.previousCommonAreas || []).map(area => [String(area.key), area]));

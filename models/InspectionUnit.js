@@ -15,6 +15,14 @@ const progressSectionSchema = new mongoose.Schema({
   progressPercent: { type: Number, required: true, min: 0, max: 100 }
 }, { _id: false });
 
+const unitActivitySchema = new mongoose.Schema({
+  key: { type: String, required: true, trim: true, maxlength: 120 },
+  name: { type: String, required: true, trim: true, maxlength: 160 },
+  order: { type: Number, required: true, min: 0 },
+  progressPercent: { type: Number, required: true, min: 0, max: 100 },
+  applicable: { type: Boolean, default: true }
+}, { _id: false });
+
 const inspectionUnitSchema = new mongoose.Schema({
   bankTenantKey: {
     type: String,
@@ -58,6 +66,10 @@ const inspectionUnitSchema = new mongoose.Schema({
   },
   progressSections: {
     type: [progressSectionSchema],
+    default: undefined
+  },
+  activities: {
+    type: [unitActivitySchema],
     default: undefined
   },
   observations: {

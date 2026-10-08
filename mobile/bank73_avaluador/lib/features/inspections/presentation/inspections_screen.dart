@@ -50,7 +50,7 @@ class _InspectionsScreenState extends ConsumerState<InspectionsScreen> {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: Text('Iniciar inspección ${pack.sequence}'),
+          title: Text('Iniciar cuenta de avance N.º ${pack.sequence}'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -201,10 +201,7 @@ class _InspectionsScreenState extends ConsumerState<InspectionsScreen> {
                     ),
                   ),
                   title: Text(
-                    item.inspectionDate == null
-                        ? 'Inspección'
-                        : DateFormat('dd/MM/yyyy')
-                              .format(item.inspectionDate!.toLocal()),
+                    'Cuenta de avance N.º ${item.sequence}',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   subtitle: Padding(
@@ -219,6 +216,11 @@ class _InspectionsScreenState extends ConsumerState<InspectionsScreen> {
                               ? 'Borrador'
                               : 'Modificada ${DateFormat('dd/MM/yyyy HH:mm').format(item.updatedAt!.toLocal())}',
                         ),
+                        if (item.inspectionDate != null)
+                          Text(
+                            DateFormat('dd/MM/yyyy')
+                                .format(item.inspectionDate!.toLocal()),
+                          ),
                         if (item.isFinalized) ...[
                           const SizedBox(height: 6),
                           Row(

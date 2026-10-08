@@ -365,7 +365,8 @@ class _InspectionReportScreenState
       leading: Icon(icon, color: Bank73Colors.strongBlue),
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(subtitle),
-      childrenPadding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+      // Floating labels need room above the first field when the section opens.
+      childrenPadding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
       children: children,
     ),
   );
@@ -433,6 +434,101 @@ class _InspectionReportScreenState
     ],
     onChanged: _busy ? null : onChanged,
   );
+
+  String _comparisonPercent(dynamic value) =>
+      value is num ? formatPercent(value.toDouble()) : '—';
+
+  Widget _unitComparisonCard(Map<String, dynamic> item) {
+    final reference = Map<String, dynamic>.from(
+      item['reference'] as Map? ?? const {},
+    );
+    final activities = (item['activities'] as List? ?? const [])
+        .whereType<Map>()
+        .map((activity) => Map<String, dynamic>.from(activity))
+        .toList();
+    final unitName = (reference['code'] ?? '').toString().trim().isNotEmpty
+        ? reference['code'].toString()
+        : [reference['manzana'], reference['lote']]
+              .map((value) => value?.toString().trim() ?? '')
+              .where((value) => value.isNotEmpty)
+              .join('-');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Bank73Colors.background,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            [
+              unitName.isEmpty ? 'Unidad' : unitName,
+              reference['modelo']?.toString() ?? '',
+            ].where((value) => value.isNotEmpty).join(' · '),
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Anterior ${_comparisonPercent(item['previousPercent'])} · '
+            'Actual ${_comparisonPercent(item['currentPercent'])}',
+            style: const TextStyle(color: Bank73Colors.muted),
+          ),
+          if (activities.isNotEmpty) ...[
+            const Divider(height: 22),
+            const Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Actividad',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                SizedBox(
+                  width: 68,
+                  child: Text('Anterior', textAlign: TextAlign.end),
+                ),
+                SizedBox(
+                  width: 68,
+                  child: Text('Actual', textAlign: TextAlign.end),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ...activities.map(
+              (activity) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(activity['name']?.toString() ?? '')),
+                    SizedBox(
+                      width: 68,
+                      child: Text(
+                        _comparisonPercent(activity['previousPercent']),
+                        textAlign: TextAlign.end,
+                      ),
+                    ),
+                    SizedBox(
+                      width: 68,
+                      child: Text(
+                        _comparisonPercent(activity['currentPercent']),
+                        textAlign: TextAlign.end,
+                        style: const TextStyle(
+                          color: Bank73Colors.strongBlue,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -514,6 +610,14 @@ class _InspectionReportScreenState
         final constructionContracts = contextItems('constructionContracts');
         final policies = contextItems('policies');
         final bonds = contextItems('bonds');
+        final reportCurrent = Map<String, dynamic>.from(
+          bundle.pack.raw['current'] as Map? ?? const {},
+        );
+        final unitComparisons =
+            (reportCurrent['unitProgressComparisons'] as List? ?? const [])
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList();
         final programSummary = Map<String, dynamic>.from(
           bundle.pack.raw['programSummary'] as Map? ?? const {},
         );
@@ -527,7 +631,9 @@ class _InspectionReportScreenState
               : const NeverScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           children: [
-            const StatusPill('Vista previa · borrador'),
+            StatusPill(
+              'Cuenta de avance N.º ${bundle.inspection.sequence} · Vista previa',
+            ),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -567,6 +673,17 @@ class _InspectionReportScreenState
               ],
             ),
             const SizedBox(height: 14),
+            if (unitComparisons.isNotEmpty) ...[
+              _reportSection(
+                icon: Icons.table_chart_outlined,
+                title: 'Avance por unidad',
+                subtitle: bundle.inspection.sequence > 1
+                    ? 'Cuenta ${bundle.inspection.sequence - 1} frente a cuenta ${bundle.inspection.sequence}'
+                    : 'Primera cuenta de avance',
+                children: unitComparisons.map(_unitComparisonCard).toList(),
+              ),
+              const SizedBox(height: 14),
+            ],
             _reportSection(
               icon: Icons.account_balance_outlined,
               title: 'Información precargada de Bank73',

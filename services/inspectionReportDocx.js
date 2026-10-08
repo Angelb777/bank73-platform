@@ -117,6 +117,7 @@ function buildInspectionReportDocx(context = {}) {
   body.push(paragraph(project.name || '', { bold: true, color: '123B6D', align: 'center', after: 360 }));
   body.push(keyValues([
     ['Informe', inspection.reportNumber || `Inspección ${inspection.sequence || ''}`],
+    ['Cuenta de avance', `N.º ${inspection.sequence || 1}`],
     ['Fecha de visita', fmtDate(inspection.inspectionDate)],
     ['Ubicación', [project.location?.address, project.location?.city, project.location?.province].filter(Boolean).join(', ') || project.location?.label],
     ['Promotor', context.participants?.promoter?.name],
@@ -226,6 +227,20 @@ function buildInspectionReportDocx(context = {}) {
   }
 
   body.push(heading('Avance anterior, periodo y acumulado'));
+  const unitComparisons = context.unitProgressComparisons || [];
+  if (unitComparisons.length) {
+    body.push(heading(`Resumen global de unidades · Cuenta de avance N.º ${inspection.sequence || 1}`, 2));
+    body.push(table(['Unidad', 'Modelo', 'Cuenta anterior', 'Avance periodo', 'Cuenta actual'], unitComparisons.map(item => [item.reference?.code || [item.reference?.manzana, item.reference?.lote].filter(Boolean).join('-'), item.reference?.modelo, pct(item.previousPercent), item.periodIncrementPercent == null ? '—' : `${num(item.periodIncrementPercent).toFixed(1)} pts`, pct(item.currentPercent)]), [1.3, 1.3, 1, 1, 1]));
+  }
+  const unitsWithActivities = unitComparisons.filter(item => (item.activities || []).length);
+  if (unitsWithActivities.length) {
+    body.push(heading('Detalle de actividades por unidad', 2));
+    for (const item of unitsWithActivities) {
+      const unitName = item.reference?.code || [item.reference?.manzana, item.reference?.lote].filter(Boolean).join('-') || 'Unidad';
+      body.push(heading(`${unitName}${item.reference?.modelo ? ` · ${item.reference.modelo}` : ''}`, 3));
+      body.push(table(['Actividad', 'Cuenta anterior', 'Avance periodo', 'Cuenta actual'], item.activities.map(activity => [activity.name, pct(activity.previousPercent), activity.periodIncrementPercent == null ? '—' : `${num(activity.periodIncrementPercent).toFixed(1)} pts`, pct(activity.currentPercent)]), [3, 1, 1, 1]));
+    }
+  }
   const folders = (context.workFronts || []).filter(item => item.sourceType === 'folder');
   if (folders.length) body.push(table(['Agrupación física', 'Unidades', 'Anterior', 'Periodo', 'Actual'], folders.map(item => [item.name, item.unitCount, pct(item.previousPercent), item.periodIncrementPercent == null ? '—' : `${num(item.periodIncrementPercent).toFixed(1)} pts`, pct(item.currentPercent)]), [2.4, .8, 1, 1, 1]));
   const areas = (context.workFronts || []).filter(item => item.sourceType === 'common_area');

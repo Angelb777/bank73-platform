@@ -35,7 +35,14 @@ test('professional report renders every main section from one InspectionReportCo
     compliance: { permits: [{ title: 'Permiso de obra', institution: 'Municipio', status: 'approved' }], requirements: [], policies: [] },
     inventory: { models: [] },
     workFronts: [{ name: 'Torre 1', status: 'in_progress', previousPercent: 30, currentPercent: 45, periodIncrementPercent: 15, plannedPercent: 50 }],
-    unitProgressComparisons: [], pendingIssues: [], photos: [],
+    unitProgressComparisons: [{
+      unitId: 'unit-1',
+      reference: { code: 'A-1', modelo: 'Modelo A' },
+      previousPercent: 30,
+      currentPercent: 45,
+      periodIncrementPercent: 15,
+      activities: [{ name: 'Estructura', previousPercent: 20, currentPercent: 50, periodIncrementPercent: 30 }]
+    }], pendingIssues: [], photos: [],
     visit: { generalObservations: 'Visita ejecutada.', incidents: [], qualityObservations: 'Conforme.', environmentalObservations: 'Conforme.', recommendation: { verdict: 'favorable', notes: 'Continuar.' }, conclusion: 'Continuar.' },
     signature: { signerName: 'Perito', signedAt: new Date() }, audit: { snapshotCapturedAt: new Date() }
   };
@@ -65,6 +72,14 @@ test('editable Word report is generated from the same inspection context', () =>
     compliance: { permits: [{ title: 'Permiso de obra', institution: 'Municipio', status: 'approved' }], requirements: [], financingConditions: [], planRequirements: [], constructionContracts: [], policies: [], bonds: [], environmentalRequirements: [] },
     inventory: { models: [], folders: [], units: [] },
     workFronts: [], photos: [],
+    unitProgressComparisons: [{
+      unitId: 'unit-1',
+      reference: { code: 'A-1', modelo: 'Modelo A' },
+      previousPercent: 30,
+      currentPercent: 45,
+      periodIncrementPercent: 15,
+      activities: [{ name: 'Estructura', previousPercent: 20, currentPercent: 50, periodIncrementPercent: 30 }]
+    }],
     visit: { reportDetails: { projectDescription: 'Descripción certificada', plans: { status: 'yes' }, workChanges: { hasChanges: false }, budgetAdjustments: { hasAdjustments: false } }, incidents: [], conclusion: 'Continuar.', recommendation: { verdict: 'favorable' } },
     signature: {
       signerName: 'Perito',
@@ -81,6 +96,9 @@ test('editable Word report is generated from the same inspection context', () =>
   assert.match(documentXml, /Permisos por institución/);
   assert.match(documentXml, /Distribución por estado/);
   assert.match(documentXml, /Municipio/);
+  assert.match(documentXml, /Cuenta de avance/);
+  assert.match(documentXml, /Resumen global de unidades/);
+  assert.match(documentXml, /Estructura/);
   assert.ok(zip.file('word/media/signature.png'));
   assert.match(zip.file('word/_rels/document.xml.rels').asText(), /rIdSignature/);
   assert.match(documentXml, /No hay fotografías disponibles/);

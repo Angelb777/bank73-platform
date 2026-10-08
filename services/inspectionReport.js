@@ -213,7 +213,7 @@ async function renderInspectionReport(doc, input = {}) {
   doc.font('Helvetica').fontSize(11).fillColor('#DCE9F8').text(dash(project.name), MARGIN, 190, { width, ellipsis: true });
   doc.y = 275;
   keyValues([
-    ['Informe', inspection.reportNumber || `Inspección ${inspection.sequence || ''}`], ['Fecha de visita', fmtDate(inspection.inspectionDate)],
+    ['Informe', inspection.reportNumber || `Inspección ${inspection.sequence || ''}`], ['Cuenta de avance', `N.º ${inspection.sequence || 1}`], ['Fecha de visita', fmtDate(inspection.inspectionDate)],
     ['Fecha del informe', fmtDate(inspection.finalizedAt || ctx.generatedAt)],
     ['Ubicación', [project.location?.address, project.location?.city, project.location?.province].filter(Boolean).join(', ') || project.location?.label],
     ['Promotor', ctx.participants?.promoter?.name || project.legal?.promoterLegalName], ['Banco', ctx.participants?.bank?.name], ['Avaluador', ctx.signature?.signerName || 'Pendiente de firma']
@@ -355,6 +355,20 @@ async function renderInspectionReport(doc, input = {}) {
   if (otherRelevant.length) { subheading('Otra documentación vigente'); table(['Documento', 'Categoría / carpeta', 'Estado', 'Vencimiento'], otherRelevant.map(item => [item.title, [item.category, item.folder, item.subfolder].filter(Boolean).join(' / '), label(item.status), fmtDate(item.expiryDate)]), [2.7, 1.6, .8, 1]); }
 
   heading('Avance anterior, periodo y acumulado');
+  const allUnitRows = ctx.unitProgressComparisons || [];
+  if (allUnitRows.length) {
+    subheading(`Resumen global de unidades · Cuenta de avance N.º ${inspection.sequence || 1}`);
+    table(['Unidad', 'Modelo', 'Cuenta anterior', 'Avance periodo', 'Cuenta actual'], allUnitRows.map(item => [item.reference?.code || [item.reference?.manzana, item.reference?.lote].filter(Boolean).join('-'), item.reference?.modelo, pct(item.previousPercent), delta(item.periodIncrementPercent), pct(item.currentPercent)]), [1.3, 1.3, 1, 1, 1]);
+  }
+  const unitsWithActivities = allUnitRows.filter(item => (item.activities || []).length);
+  if (unitsWithActivities.length) {
+    subheading('Detalle de actividades por unidad');
+    for (const item of unitsWithActivities) {
+      const unitName = item.reference?.code || [item.reference?.manzana, item.reference?.lote].filter(Boolean).join('-') || 'Unidad';
+      paragraph(`${unitName}${item.reference?.modelo ? ` · ${item.reference.modelo}` : ''}`, { bold: true });
+      table(['Actividad', 'Cuenta anterior', 'Avance periodo', 'Cuenta actual'], item.activities.map(activity => [activity.name, pct(activity.previousPercent), delta(activity.periodIncrementPercent), pct(activity.currentPercent)]), [3, 1, 1, 1]);
+    }
+  }
   progress('Avance general', physical.previousPercent, physical.currentPercent, visit.scheduleAssessment?.plannedProgressPercent);
   const fronts = ctx.workFronts || [];
   const hierarchicalReport = Number(ctx.schemaVersion || 1) >= 3;
@@ -374,7 +388,7 @@ async function renderInspectionReport(doc, input = {}) {
   if (principalFronts.length) table(['Frente', 'Estado', 'Anterior', 'Periodo', 'Actual', 'Previsto', 'Observación'], principalFronts.map(front => [front.name, label(front.status), pct(front.previousPercent), delta(front.periodIncrementPercent), pct(front.currentPercent), pct(front.plannedPercent), front.observation]), [1.5, .8, .7, .7, .7, .7, 2]);
   const areaRows = fronts.filter(front => front.sourceType === 'common_area');
   if (areaRows.length) { subheading('Zonas comunes'); table(['Zona', 'Anterior', 'Periodo', 'Actual', 'Observación'], areaRows.map(area => [area.name, pct(area.previousPercent), delta(area.periodIncrementPercent), pct(area.currentPercent), area.observation]), [1.5, .7, .7, .7, 2.5]); }
-  const unitRows = physicalFronts.length ? [] : (ctx.unitProgressComparisons || []);
+  const unitRows = physicalFronts.length ? [] : allUnitRows;
   if (unitRows.length) { subheading('Unidades inspeccionadas'); table(['Unidad', 'Modelo', 'Anterior', 'Periodo', 'Acumulado'], unitRows.map(item => [item.reference?.code || [item.reference?.manzana, item.reference?.lote].filter(Boolean).join('-'), item.reference?.modelo, pct(item.previousPercent), delta(item.periodIncrementPercent), pct(item.currentPercent)]), [1.3, 1.3, .9, .9, .9]); }
 
   heading('Cambios, incidencias y riesgos');

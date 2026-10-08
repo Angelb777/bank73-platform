@@ -31,6 +31,17 @@ const SECTIONS = [
   { key: 'acabados', name: 'Acabados', weight: 60, order: 2 }
 ];
 
+test('unit activity progress is the simple mean of applicable activities', () => {
+  const result = mobileRouter._helpers.activityProgress([
+    { key: 'estructura', name: 'Estructura', order: 8, progressPercent: 80, applicable: true },
+    { key: 'electricidad', name: 'Electricidad', order: 3, progressPercent: 40, applicable: true },
+    { key: 'cubierta', name: 'Cubierta', order: 1, progressPercent: 100, applicable: false }
+  ]);
+  assert.equal(result.progressPercent, 60);
+  assert.equal(result.activities.length, 3);
+  assert.deepEqual(result.activities.map(item => item.order), [0, 1, 2]);
+});
+
 function routeHandler(router, method, path) {
   return router.stack.find(layer =>
     layer.route?.path === path && layer.route.methods[String(method).toLowerCase()]

@@ -358,4 +358,36 @@ class InspectionRepository {
       Map<String, dynamic>.from(response['inspectionUnit'] as Map),
     );
   }
+
+  Future<InspectionUnit> saveActivityProgress({
+    required String inspectionId,
+    required String unitId,
+    required int version,
+    required List<InspectionUnitActivity> activities,
+    required String observations,
+  }) async {
+    final response = await _api.put(
+      '/api/mobile/v1/inspections/$inspectionId/units/$unitId',
+      body: {
+        'version': version,
+        'observations': observations,
+        'activities': activities
+            .asMap()
+            .entries
+            .map(
+              (entry) => {
+                'key': entry.value.key,
+                'name': entry.value.name,
+                'order': entry.key,
+                'progressPercent': entry.value.progressPercent,
+                'applicable': entry.value.applicable,
+              },
+            )
+            .toList(),
+      },
+    );
+    return InspectionUnit.fromJson(
+      Map<String, dynamic>.from(response['inspectionUnit'] as Map),
+    );
+  }
 }

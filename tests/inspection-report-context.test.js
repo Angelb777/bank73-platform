@@ -39,7 +39,14 @@ function baseSnapshot() {
       previousInspection: { id: IDS.previous, physicalProgressPercent: 42 },
       previousPhysicalProgressPercent: 42,
       previousCommonAreas: [],
-      previousUnits: [{ unitId: 'unit-1', progressPercent: 40 }],
+      previousUnits: [{
+        unitId: 'unit-1',
+        progressPercent: 40,
+        activities: [
+          { key: 'estructura', name: 'Estructura', order: 0, progressPercent: 30, applicable: true },
+          { key: 'electricidad', name: 'Electricidad', order: 1, progressPercent: 50, applicable: true }
+        ]
+      }],
       previousPhotos: []
     },
     metrics: {
@@ -94,7 +101,16 @@ test('draft context calculates prior, period and accumulated physical progress i
     assert.equal(filter.bankTenantKey, 'bank-a');
     assert.equal(filter.projectTenantKey, 'project-owner');
     return { sort: () => ({ lean: async () => [
-      { _id: 'unit-progress', unitId: 'unit-1', progressPercent: 58 },
+      {
+        _id: 'unit-progress',
+        unitId: 'unit-1',
+        progressPercent: 58,
+        activities: [
+          { key: 'estructura', name: 'Estructura', order: 0, progressPercent: 50, applicable: true },
+          { key: 'electricidad', name: 'Electricidad', order: 1, progressPercent: 66, applicable: true },
+          { key: 'no-aplica', name: 'No aplica', order: 2, progressPercent: 100, applicable: false }
+        ]
+      },
       { _id: 'unit-progress-new', unitId: 'unit-2', progressPercent: 35, unitReferenceSnapshot: { code: 'NUEVA-2' } }
     ] }) };
   };
@@ -123,6 +139,9 @@ test('draft context calculates prior, period and accumulated physical progress i
   assert.equal(context.inspectionUnits.length, 2);
   assert.equal(context.unitProgressComparisons[0].previousPercent, 40);
   assert.equal(context.unitProgressComparisons[0].periodIncrementPercent, 18);
+  assert.equal(context.unitProgressComparisons[0].activities.length, 2);
+  assert.equal(context.unitProgressComparisons[0].activities[0].previousPercent, 30);
+  assert.equal(context.unitProgressComparisons[0].activities[0].periodIncrementPercent, 20);
   assert.equal(context.unitProgressComparisons[1].previousPercent, null);
   assert.equal(context.unitProgressComparisons[1].periodIncrementPercent, null);
   assert.equal(context.workFronts.find(item => item.key === 'phase:new').previousPercent, null);

@@ -340,6 +340,17 @@ function inspectionUnitDto(item) {
           }))
           .sort((a, b) => a.order - b.order)
       : null,
+    activities: Array.isArray(item.activities)
+      ? item.activities
+          .map(activity => ({
+            key: String(activity.key || ''),
+            name: String(activity.name || ''),
+            order: Number(activity.order),
+            progressPercent: Number(activity.progressPercent),
+            applicable: activity.applicable !== false
+          }))
+          .sort((a, b) => a.order - b.order)
+      : null,
     observations: String(item.observations || ''),
     inspectedAt: item.inspectedAt,
     version: Number(item.version || 0),
@@ -430,6 +441,55 @@ function structuredProgress(methodology, submitted, previous = []) {
   ) / 100;
   const progressPercent = Math.min(100, Math.max(0, Math.round(weighted * 10000) / 10000));
   return { progressSections, progressPercent };
+}
+
+function activityProgress(submitted) {
+  if (!Array.isArray(submitted) || !submitted.length) {
+    return { error: 'activities debe contener al menos una actividad.' };
+  }
+  const keys = new Set();
+  const names = new Set();
+  const activities = [];
+  for (const [index, raw] of submitted.entries()) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return { error: 'activities contiene una actividad invalida.' };
+    }
+    if (Object.keys(raw).some(key => !['key', 'name', 'order', 'progressPercent', 'applicable'].includes(key))) {
+      return { error: 'La actividad contiene campos no permitidos.' };
+    }
+    const key = String(raw.key || '').trim();
+    const name = String(raw.name || '').trim();
+    const progressPercent = raw.progressPercent === null || raw.progressPercent === ''
+      ? NaN
+      : Number(raw.progressPercent);
+    if (!key || key.length > 120 || !/^[a-zA-Z0-9_-]+$/.test(key)) {
+      return { error: 'La clave de la actividad no es valida.' };
+    }
+    if (!name || name.length > 160) return { error: 'El nombre de la actividad no es valido.' };
+    const normalizedName = name.toLocaleLowerCase('es');
+    if (keys.has(key) || names.has(normalizedName)) {
+      return { error: 'No se permiten actividades duplicadas.' };
+    }
+    if (!Number.isFinite(progressPercent) || progressPercent < 0 || progressPercent > 100) {
+      return { error: 'El avance de cada actividad debe estar entre 0 y 100.' };
+    }
+    keys.add(key);
+    names.add(normalizedName);
+    activities.push({
+      key,
+      name,
+      order: index,
+      progressPercent,
+      applicable: raw.applicable !== false
+    });
+  }
+  const applicable = activities.filter(activity => activity.applicable);
+  if (!applicable.length) return { error: 'Debe existir al menos una actividad aplicable.' };
+  const mean = applicable.reduce((sum, activity) => sum + activity.progressPercent, 0) / applicable.length;
+  return {
+    activities,
+    progressPercent: Math.min(100, Math.max(0, Math.round(mean * 10000) / 10000))
+  };
 }
 
 async function activeAssignmentFor(req, projectId) {
@@ -1078,7 +1138,7 @@ router.put('/inspections/:inspectionId/visit', async (req, res) => {
 
 router.put('/inspections/:inspectionId/units/:unitId', async (req, res) => {
   try {
-    const extraFields = unexpectedFields(req.body, ['progressPercent', 'progressSections', 'observations', 'version']);
+    const extraFields = unexpectedFields(req.body, ['progressPercent', 'progressSections', 'activities', 'observations', 'version']);
     if (extraFields.length) {
       return res.status(400).json({ error: 'Campos no permitidos.', fields: extraFields });
     }
@@ -1112,7 +1172,16 @@ router.put('/inspections/:inspectionId/units/:unitId', async (req, res) => {
     const existing = await InspectionUnit.findOne(identity).lean();
     let progressPercent;
     let progressSections;
-    if (resolved.inspection.methodology) {
+    let activities;
+    if (req.body?.activities !== undefined) {
+      if (req.body?.progressPercent !== undefined || req.body?.progressSections !== undefined) {
+        return res.status(400).json({ error: 'El avance general se calcula a partir de las actividades.' });
+      }
+      const calculated = activityProgress(req.body.activities);
+      if (calculated.error) return res.status(400).json({ error: calculated.error });
+      progressPercent = calculated.progressPercent;
+      activities = calculated.activities;
+    } else if (resolved.inspection.methodology) {
       if (req.body?.progressPercent !== undefined) {
         return res.status(400).json({ error: 'progressPercent se calcula en el servidor.' });
       }
@@ -1148,6 +1217,7 @@ router.put('/inspections/:inspectionId/units/:unitId', async (req, res) => {
           $set: {
             progressPercent,
             ...(progressSections ? { progressSections } : {}),
+            ...(activities ? { activities } : {}),
             observations,
             inspectedAt: now,
             updatedBy: resolved.context.userId
@@ -1170,6 +1240,7 @@ router.put('/inspections/:inspectionId/units/:unitId', async (req, res) => {
         },
         progressPercent,
         progressSections,
+        activities,
         observations,
         inspectedAt: now,
         updatedBy: resolved.context.userId,
@@ -1553,6 +1624,7 @@ module.exports._helpers = {
   evidenceDto,
   methodologySnapshot,
   structuredProgress,
+  activityProgress,
   authorizedInspectionFor,
   parseExpectedVersion,
   PROJECT_LIST_FIELDS,

@@ -637,6 +637,7 @@ class Inspection {
   const Inspection({
     required this.id,
     required this.projectId,
+    required this.sequence,
     required this.status,
     required this.inspectionDate,
     required this.startedAt,
@@ -663,6 +664,7 @@ class Inspection {
   });
   final String id;
   final String projectId;
+  final int sequence;
   final String status;
   final DateTime? inspectionDate;
   final DateTime? startedAt;
@@ -690,6 +692,7 @@ class Inspection {
   factory Inspection.fromJson(Map<String, dynamic> json) => Inspection(
     id: (json['id'] ?? '').toString(),
     projectId: (json['projectId'] ?? '').toString(),
+    sequence: (json['sequence'] as num?)?.toInt() ?? 1,
     status: (json['status'] ?? '').toString(),
     inspectionDate: _date(json['inspectionDate']),
     startedAt: _date(json['startedAt']),
@@ -811,6 +814,30 @@ class InspectionProgressSection {
       );
 }
 
+class InspectionUnitActivity {
+  const InspectionUnitActivity({
+    required this.key,
+    required this.name,
+    required this.order,
+    required this.progressPercent,
+    required this.applicable,
+  });
+  final String key;
+  final String name;
+  final int order;
+  final double progressPercent;
+  final bool applicable;
+
+  factory InspectionUnitActivity.fromJson(Map<String, dynamic> json) =>
+      InspectionUnitActivity(
+        key: (json['key'] ?? '').toString(),
+        name: (json['name'] ?? '').toString(),
+        order: (json['order'] as num?)?.toInt() ?? 0,
+        progressPercent: _number(json['progressPercent']),
+        applicable: json['applicable'] != false,
+      );
+}
+
 class InspectionUnit {
   const InspectionUnit({
     required this.id,
@@ -822,6 +849,7 @@ class InspectionUnit {
     required this.version,
     required this.updatedAt,
     required this.progressSections,
+    required this.activities,
   });
   final String id;
   final String inspectionId;
@@ -832,6 +860,7 @@ class InspectionUnit {
   final int version;
   final DateTime? updatedAt;
   final List<InspectionProgressSection>? progressSections;
+  final List<InspectionUnitActivity>? activities;
 
   factory InspectionUnit.fromJson(Map<String, dynamic> json) => InspectionUnit(
     id: (json['id'] ?? '').toString(),
@@ -846,6 +875,11 @@ class InspectionUnit {
         ? null
         : (json['progressSections'] as List)
               .map((item) => InspectionProgressSection.fromJson(_map(item)))
+              .toList(),
+    activities: json['activities'] == null
+        ? null
+        : (json['activities'] as List)
+              .map((item) => InspectionUnitActivity.fromJson(_map(item)))
               .toList(),
   );
 }
