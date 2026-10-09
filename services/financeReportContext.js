@@ -62,9 +62,18 @@ function loanEntryStatus(entry, today = new Date()) {
 function normalizeLoanEntry(raw = {}) {
   const entryType = ['disbursement', 'manual_amortization'].includes(raw.entryType) ? raw.entryType : 'legacy';
   const paymentStatus = entryType === 'disbursement' ? (raw.paymentStatus === 'pending' ? 'pending' : 'paid') : 'legacy';
-  const effectiveDisbursement = entryType === 'disbursement' && paymentStatus === 'pending'
-    ? 0
-    : toNum(raw.disbursementAmount);
+  const fundingParty = ['bank', 'promoter', 'mixed'].includes(raw.fundingParty) ? raw.fundingParty : 'bank';
+  const promoterContributionStatus = raw.promoterContributionStatus === 'contributed' ? 'contributed' : 'pending';
+  const isPaid = entryType !== 'disbursement' || paymentStatus === 'paid';
+  const bankDisbursementAmount = isPaid && ['bank', 'mixed'].includes(fundingParty)
+    ? toNum(raw.disbursementAmount)
+    : 0;
+  const promoterDisbursementAmount = fundingParty === 'promoter' && (isPaid || promoterContributionStatus === 'contributed')
+    ? (toNum(raw.disbursementAmount) || toNum(raw.promoterContributionAmount))
+    : fundingParty === 'mixed' && promoterContributionStatus === 'contributed'
+      ? toNum(raw.promoterContributionAmount)
+      : 0;
+  const effectiveDisbursement = bankDisbursementAmount + promoterDisbursementAmount;
   return {
     _id: raw._id,
     entryType,
@@ -75,9 +84,9 @@ function normalizeLoanEntry(raw = {}) {
       ? raw.workflowStatus
       : 'prepared',
     advanceAccountNumber: Number(raw.advanceAccountNumber || 0) || null,
-    fundingParty: ['bank', 'promoter', 'mixed'].includes(raw.fundingParty) ? raw.fundingParty : 'bank',
+    fundingParty,
     promoterContributionAmount: Math.max(0, toNum(raw.promoterContributionAmount)),
-    promoterContributionStatus: raw.promoterContributionStatus === 'contributed' ? 'contributed' : 'pending',
+    promoterContributionStatus,
     promoterContributedAt: raw.promoterContributedAt || null,
     promoterContributedBy: raw.promoterContributedBy || null,
     promoterContributedByRole: String(raw.promoterContributedByRole || '').trim(),
@@ -104,6 +113,8 @@ function normalizeLoanEntry(raw = {}) {
     loanNumber: String(raw.loanNumber || '').trim(),
     disbursementAmount: toNum(raw.disbursementAmount),
     effectiveDisbursementAmount: effectiveDisbursement,
+    bankDisbursementAmount,
+    promoterDisbursementAmount,
     maturityDate: raw.maturityDate || null,
     amortizedAmount: toNum(raw.amortizedAmount),
     inspectionId: raw.inspectionId || null,
@@ -123,14 +134,16 @@ function buildFinanceControlSummary(doc = {}, project = {}) {
         status: loanEntryStatus(item)
       };
     });
-    const disbursementAmount = entries.reduce((sum, entry) => sum + entry.effectiveDisbursementAmount, 0);
+    const bankDisbursementAmount = entries.reduce((sum, entry) => sum + entry.bankDisbursementAmount, 0);
+    const promoterDisbursementAmount = entries.reduce((sum, entry) => sum + entry.promoterDisbursementAmount, 0);
+    const disbursementAmount = bankDisbursementAmount + promoterDisbursementAmount;
     const amortizedAmount = entries.reduce((sum, entry) => sum + entry.amortizedAmount, 0);
     let status = entries.some(entry => entry.status === 'Vencido') ? 'Vencido'
       : entries.some(entry => entry.status === 'Proximo a vencer') ? 'Proximo a vencer'
         : entries.some(entry => entry.status === 'Sin vencimiento') ? 'Sin vencimiento'
           : entries.some(entry => entry.status === 'Pendiente de pago') ? 'Pendiente de pago'
           : (disbursementAmount - amortizedAmount <= 0 ? 'Amortizado' : 'OK');
-    return { ...plain, name: plain.name || `Linea ${index + 1}`, entries, disbursementAmount, amortizedAmount, balance: Math.max(0, disbursementAmount - amortizedAmount), status };
+    return { ...plain, name: plain.name || `Linea ${index + 1}`, entries, disbursementAmount, bankDisbursementAmount, promoterDisbursementAmount, amortizedAmount, balance: Math.max(0, bankDisbursementAmount - amortizedAmount), status };
   });
 
   const unitAmortizations = (doc.unitAmortizations || []).map(item => {
@@ -162,11 +175,13 @@ function buildFinanceControlSummary(doc = {}, project = {}) {
       .reduce((sum, key) => sum + toNum(allocationsByLine.get(key)), 0);
     line.allocatedAmortized = allocatedAmortized;
     line.totalRecovered = toNum(line.amortizedAmount) + allocatedAmortized;
-    line.balanceAfterSales = Math.max(0, toNum(line.disbursementAmount) - line.totalRecovered);
+    line.balanceAfterSales = Math.max(0, toNum(line.bankDisbursementAmount) - line.totalRecovered);
     if (line.balanceAfterSales <= 0) line.status = 'Amortizado';
   });
 
-  const totalDisbursed = loanLines.reduce((sum, line) => sum + toNum(line.disbursementAmount), 0);
+  const totalBankDisbursed = loanLines.reduce((sum, line) => sum + toNum(line.bankDisbursementAmount), 0);
+  const totalPromoterDisbursed = loanLines.reduce((sum, line) => sum + toNum(line.promoterDisbursementAmount), 0);
+  const totalDisbursed = totalBankDisbursed + totalPromoterDisbursed;
   const totalManualAmortized = loanLines.reduce((sum, line) => sum + toNum(line.amortizedAmount), 0);
   const totalAllocatedAmortized = loanLines.reduce((sum, line) => sum + toNum(line.allocatedAmortized), 0);
   const totalAmortized = totalManualAmortized + totalAllocatedAmortized;
@@ -182,12 +197,14 @@ function buildFinanceControlSummary(doc = {}, project = {}) {
       loanApproved: approved.loanApproved,
       promoterContribution: approved.promoterContribution,
       totalDisbursed,
-      availableToDisburse: approved.loanApproved - totalDisbursed,
+      totalBankDisbursed,
+      totalPromoterDisbursed,
+      availableToDisburse: approved.loanApproved - totalBankDisbursed,
       totalAmortized,
       totalManualAmortized,
       totalAllocatedAmortized,
-      currentDebtBalance: totalDisbursed - totalAmortized,
-      amortizationPct: totalDisbursed > 0 ? totalAmortized / totalDisbursed : 0,
+      currentDebtBalance: totalBankDisbursed - totalAmortized,
+      amortizationPct: totalBankDisbursed > 0 ? totalAmortized / totalBankDisbursed : 0,
       upcomingMaturities: loanLines.filter(line => line.status === 'Proximo a vencer').length,
       overdueMaturities: loanLines.filter(line => line.status === 'Vencido').length,
       checkAmountTotal: unitAmortizations.reduce((sum, unit) => sum + toNum(unit.checkAmount), 0),
@@ -226,8 +243,8 @@ function buildFinanceControlAlerts(control, commercialUnits = [], now = new Date
   for (const unit of commercialUnits || []) {
     if (String(unit.clientName || '').trim() && isSoldLike(unit.commercialStatus) && !financeByUnit.has(String(unit.unitId))) alerts.push({ type: 'sold_without_finance', message: `Unidad ${unit.unitLabel}: vendida o con CPP sin informacion financiera.` });
   }
-  if (toNum(control.totals.totalAmortized) > toNum(control.totals.totalDisbursed)) alerts.push({ type: 'over_amortized', message: 'La amortizacion total supera el monto desembolsado.' });
-  if (toNum(control.totals.loanApproved) < toNum(control.totals.totalDisbursed)) alerts.push({ type: 'loan_exceeded', message: 'El loan aprobado es menor que el desembolsado total.' });
+  if (toNum(control.totals.totalAmortized) > toNum(control.totals.totalBankDisbursed)) alerts.push({ type: 'over_amortized', message: 'La amortizacion total supera el monto desembolsado por el banco.' });
+  if (toNum(control.totals.loanApproved) < toNum(control.totals.totalBankDisbursed)) alerts.push({ type: 'loan_exceeded', message: 'El prestamo aprobado es menor que lo desembolsado por el banco.' });
   return alerts;
 }
 

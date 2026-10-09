@@ -49,10 +49,29 @@ test('shared Finance context preserves approved, disbursed and amortized totals'
   });
   const control = buildFinanceControlSummary(finance, {});
   assert.equal(control.totals.totalDisbursed, 350000);
+  assert.equal(control.totals.totalBankDisbursed, 350000);
+  assert.equal(control.totals.totalPromoterDisbursed, 0);
   assert.equal(control.totals.totalManualAmortized, 50000);
   assert.equal(control.totals.totalAllocatedAmortized, 20000);
   assert.equal(control.totals.currentDebtBalance, 280000);
   assert.equal(control.totals.planVsRealDifference, -600000);
+});
+
+test('Finance context separates bank and promoter disbursements', () => {
+  const control = buildFinanceControlSummary({
+    phases: [{ planSources: [{ name: 'Banco', amount: 500000 }] }],
+    loanLines: [{
+      entries: [
+        { entryType: 'disbursement', paymentStatus: 'paid', fundingParty: 'bank', disbursementAmount: 120000 },
+        { entryType: 'disbursement', paymentStatus: 'paid', fundingParty: 'promoter', promoterContributionStatus: 'contributed', disbursementAmount: 30000 }
+      ]
+    }]
+  }, {});
+  assert.equal(control.totals.totalBankDisbursed, 120000);
+  assert.equal(control.totals.totalPromoterDisbursed, 30000);
+  assert.equal(control.totals.totalDisbursed, 150000);
+  assert.equal(control.totals.availableToDisburse, 380000);
+  assert.equal(control.totals.currentDebtBalance, 120000);
 });
 
 test('pending transfers keep their approved amount without increasing disbursed debt', () => {

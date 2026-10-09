@@ -5604,7 +5604,7 @@ function renderFinanceCoherence(phases = FINANCE?.phases || []) {
   const planAllocated = phases.reduce((sum, ph) => sum + sumItems(ph.planUses), 0);
   const bankRecommended = phases.reduce((sum, ph) => sum + financePhaseFunding(ph).recommendedBank, 0);
   const promoterRecommended = phases.reduce((sum, ph) => sum + financePhaseFunding(ph).recommendedPromoter, 0);
-  const totalDisbursed = numOr0(FINANCE_CONTROL?.totals?.totalDisbursed);
+  const totalDisbursed = numOr0(FINANCE_CONTROL?.totals?.totalBankDisbursed ?? FINANCE_CONTROL?.totals?.totalDisbursed);
   const totalAmortized = numOr0(FINANCE_CONTROL?.totals?.totalAmortized);
   const debt = Math.max(0, totalDisbursed - totalAmortized);
   const rows = [
@@ -5955,13 +5955,13 @@ function financeLineStatus(line) {
   if (statuses.includes('upcoming')) return { key: 'upcoming', label: 'Proximo a vencer' };
   if (statuses.includes('pending-payment')) return { key: 'pending', label: 'Pendiente de pago' };
   if (statuses.includes('missing')) return { key: 'missing', label: 'Sin vencimiento' };
-  const balance = entries.reduce((acc, entry) => acc + Math.max(0, entry?.entryType === 'disbursement' && entry?.paymentStatus === 'pending' ? 0 : numOr0(entry?.disbursementAmount) - numOr0(entry?.amortizedAmount)), 0);
+  const balance = financeLoanLineTotals(line).balance;
   if (balance <= 0) return { key: 'amortized', label: 'Amortizado' };
   return { key: 'ok', label: 'OK' };
 }
 
 function financeEntryStatus(line) {
-  if (line?.entryType === 'disbursement' && line?.fundingParty === 'promoter' && line?.promoterContributionStatus === 'contributed') return { key: 'ok', label: 'Aporte realizado' };
+  if (line?.entryType === 'disbursement' && line?.fundingParty === 'promoter' && line?.promoterContributionStatus === 'contributed') return { key: 'ok', label: 'Desembolsado por promotor' };
   if (line?.entryType === 'disbursement' && line?.paymentStatus === 'pending') return { key: 'pending-payment', label: 'Pendiente de pago' };
   const balance = Math.max(0, numOr0(line?.disbursementAmount) - numOr0(line?.amortizedAmount));
   if (balance <= 0) return { key: 'amortized', label: 'Amortizado' };
@@ -5997,7 +5997,7 @@ function collectFinanceLoanLines() {
       workflowStatus: row.dataset.workflowStatus || '',
       advanceAccountNumber: numOr0(row.dataset.advanceAccountNumber) || null,
       fundingParty: row.querySelector('[data-field="fundingParty"]')?.value || row.dataset.fundingParty || 'bank',
-      promoterContributionAmount: numOr0(row.querySelector('[data-field="promoterContributionAmount"]')?.value),
+      promoterContributionAmount: numOr0(row.querySelector('[data-field="promoterContributionAmount"]')?.value ?? row.dataset.promoterContributionAmount),
       promoterContributionStatus: row.dataset.promoterContributionStatus || 'pending',
       requestedAt: row.dataset.requestedAt || null,
       requestedBy: row.dataset.requestedBy || null,
@@ -6073,7 +6073,9 @@ function collectFinanceUnitAmortizations() {
 function computeFinanceControlTotals() {
   const loanLines = collectFinanceLoanLines().length ? collectFinanceLoanLines() : (FINANCE_CONTROL?.loanLines || []);
   const unitAmortizations = currentFinanceUnitAmortizations();
-  const totalDisbursed = loanLines.reduce((a, l) => a + financeLoanLineTotals(l).disbursed, 0);
+  const totalBankDisbursed = loanLines.reduce((a, l) => a + financeLoanLineTotals(l).bankDisbursed, 0);
+  const totalPromoterDisbursed = loanLines.reduce((a, l) => a + financeLoanLineTotals(l).promoterDisbursed, 0);
+  const totalDisbursed = totalBankDisbursed + totalPromoterDisbursed;
   const totalManualAmortized = loanLines.reduce((a, l) => a + financeLoanLineTotals(l).amortized, 0);
   const totalAllocatedAmortized = unitAmortizations.reduce((a, u) =>
     a + (u.allocations || []).reduce((acc, allocation) => acc + numOr0(allocation.amount), 0), 0);
@@ -6087,10 +6089,12 @@ function computeFinanceControlTotals() {
     budgetApproved,
     loanApproved,
     totalDisbursed,
-    availableToDisburse: loanApproved - totalDisbursed,
+    totalBankDisbursed,
+    totalPromoterDisbursed,
+    availableToDisburse: loanApproved - totalBankDisbursed,
     totalAmortized,
-    currentDebtBalance: totalDisbursed - totalAmortized,
-    amortizationPct: totalDisbursed > 0 ? totalAmortized / totalDisbursed : 0,
+    currentDebtBalance: totalBankDisbursed - totalAmortized,
+    amortizationPct: totalBankDisbursed > 0 ? totalAmortized / totalBankDisbursed : 0,
     upcomingMaturities: loanLines.filter(l => financeLineStatus(l).key === 'upcoming').length,
     overdueMaturities: loanLines.filter(l => financeLineStatus(l).key === 'overdue').length,
     checkAmountTotal: unitAmortizations.reduce((a, u) => a + numOr0(u.checkAmount), 0),
@@ -6103,16 +6107,28 @@ function computeFinanceControlTotals() {
 
 function financeLoanLineTotals(line = {}) {
   const entries = Array.isArray(line.entries) && line.entries.length ? line.entries : [line];
-  const disbursed = entries.reduce((a, entry) => a + (entry.entryType === 'disbursement' && entry.paymentStatus === 'pending' ? 0 : numOr0(entry.disbursementAmount)), 0);
+  const bankDisbursed = entries.reduce((a, entry) => {
+    const paid = entry.entryType !== 'disbursement' || entry.paymentStatus !== 'pending';
+    return a + (paid && ['bank', 'mixed'].includes(entry.fundingParty || 'bank') ? numOr0(entry.disbursementAmount) : 0);
+  }, 0);
+  const promoterDisbursed = entries.reduce((a, entry) => {
+    const paid = entry.entryType !== 'disbursement' || entry.paymentStatus !== 'pending';
+    if (entry.fundingParty === 'promoter' && (paid || entry.promoterContributionStatus === 'contributed')) return a + (numOr0(entry.disbursementAmount) || numOr0(entry.promoterContributionAmount));
+    if (entry.fundingParty === 'mixed' && entry.promoterContributionStatus === 'contributed') return a + numOr0(entry.promoterContributionAmount);
+    return a;
+  }, 0);
+  const disbursed = bankDisbursed + promoterDisbursed;
   const amortized = entries.reduce((a, entry) => a + numOr0(entry.amortizedAmount), 0);
   const allocated = financeAllocatedToLine(line);
   const recovered = amortized + allocated;
   return {
     disbursed,
+    bankDisbursed,
+    promoterDisbursed,
     amortized,
     allocated,
     recovered,
-    balance: Math.max(0, disbursed - recovered),
+    balance: Math.max(0, bankDisbursed - recovered),
   };
 }
 
@@ -6335,6 +6351,8 @@ function renderFinanceControlKpis(totals = null) {
     ['Presupuesto Total', financeMoney(totals.budgetApproved), 'budget'],
     ['Cuantía Bancaria Aprobada', financeMoney(totals.loanApproved), 'loan'],
     ['Aporte promotor', financeMoney(totals.promoterContribution), 'promoter'],
+    ['Desembolsado por banco', financeMoney(totals.totalBankDisbursed ?? totals.totalDisbursed), 'loan'],
+    ['Desembolsado por promotor', financeMoney(totals.totalPromoterDisbursed), 'promoter'],
     ['Desembolsado total', financeMoney(totals.totalDisbursed), 'disbursed'],
     ['Disponible por desembolsar', financeMoney(totals.availableToDisburse), totals.availableToDisburse < 0 ? 'danger' : 'ok'],
     ['Amortización total', financeMoney(totals.totalAmortized), 'ok'],
@@ -6401,7 +6419,7 @@ function financeDisbursementWorkflowCell(entry = {}, saved = false) {
   const canConfirm = ['admin', 'promoter'].includes(myRole) || (myRole === 'bank' && status === 'requested');
   const requestDocument = entry.requestDocumentId ? `<button class="finance-report-link" type="button" data-open-request-document="${escapeHtml(entry.requestDocumentId)}">Ver carta</button>` : '';
   const statusHtml = promoterOnlyDone
-    ? `<span class="finance-status is-ok">Aporte realizado</span><small>Confirmado por ${escapeHtml(financeActorRoleLabel(entry.promoterContributedByRole || 'promoter'))}</small>`
+    ? `<span class="finance-status is-ok">Desembolsado por promotor</span><small>Confirmado por ${escapeHtml(financeActorRoleLabel(entry.promoterContributedByRole || 'promoter'))}</small>`
     : status === 'disbursed'
     ? `<span class="finance-status is-ok">Desembolsado</span><small>${disbursedDate ? `el ${escapeHtml(disbursedDate)}` : ''}${entry.disbursedByRole ? ` · Confirmado por ${escapeHtml(financeActorRoleLabel(entry.disbursedByRole))}` : ''}</small>`
     : status === 'requested'
@@ -6413,7 +6431,7 @@ function financeDisbursementWorkflowCell(entry = {}, saved = false) {
     ? '<small>Guarda la línea para continuar</small>'
     : status === 'disbursed' || promoterOnlyDone
       ? (entry.transferReference ? `<small>Ref. ${escapeHtml(entry.transferReference)}</small>` : '')
-      : `${['prepared', 'returned'].includes(status) && canRequest && ['bank', 'mixed'].includes(entry.fundingParty || 'bank') && (entry.fundingParty !== 'mixed' || entry.promoterContributionStatus === 'contributed') ? '<button class="btn btn-xs" type="button" data-finance-disbursement-action="request">Solicitar al banco</button>' : ''}${entry.fundingParty === 'mixed' && entry.promoterContributionStatus !== 'contributed' ? '<small>Primero confirma el aporte del promotor</small>' : ''}${['promoter', 'mixed'].includes(entry.fundingParty) && entry.promoterContributionStatus !== 'contributed' && canRequest ? '<button class="btn btn-xs" type="button" data-finance-disbursement-action="contribute">Confirmar aporte promotor</button>' : ''}${canConfirm && ['bank', 'mixed'].includes(entry.fundingParty || 'bank') && (entry.fundingParty !== 'mixed' || entry.promoterContributionStatus === 'contributed') ? '<button class="btn btn-success btn-xs" type="button" data-finance-disbursement-action="disburse">Marcar desembolsado</button>' : ''}`;
+      : `${['prepared', 'returned'].includes(status) && canRequest && ['bank', 'mixed'].includes(entry.fundingParty || 'bank') && (entry.fundingParty !== 'mixed' || entry.promoterContributionStatus === 'contributed') ? '<button class="btn btn-xs" type="button" data-finance-disbursement-action="request">Solicitar al banco</button>' : ''}${entry.fundingParty === 'mixed' && entry.promoterContributionStatus !== 'contributed' ? '<small>Primero confirma el aporte del promotor</small>' : ''}${['promoter', 'mixed'].includes(entry.fundingParty) && entry.promoterContributionStatus !== 'contributed' && canRequest ? `<button class="btn btn-xs" type="button" data-finance-disbursement-action="contribute">${entry.fundingParty === 'promoter' ? 'Confirmar desembolso promotor' : 'Confirmar aporte promotor'}</button>` : ''}${canConfirm && ['bank', 'mixed'].includes(entry.fundingParty || 'bank') && (entry.fundingParty !== 'mixed' || entry.promoterContributionStatus === 'contributed') ? '<button class="btn btn-success btn-xs" type="button" data-finance-disbursement-action="disburse">Marcar desembolsado</button>' : ''}`;
   return `<div class="finance-disbursement-workflow is-${status}">${statusHtml}${requestDocument}<div class="finance-disbursement-actions">${actions}</div></div>`;
 }
 
@@ -6519,7 +6537,7 @@ async function updateFinanceDisbursementStatus(button, action) {
     }
     payload = { action, documentId: documentItem._id, requirementsConfirmed: true };
   } else if (action === 'contribute') {
-    if (!confirm('¿Confirmar que el promotor ya realizó su aportación a esta cuenta de avance?')) return;
+    if (!confirm('¿Confirmar que el promotor ya realizó este desembolso?')) return;
     payload = { action, contributionDate: new Date().toISOString().slice(0, 10) };
   } else {
     const values = await openFinanceDisbursementDialog({ direct: financeDisbursementWorkflowStatus({ workflowStatus: row.dataset.workflowStatus, paymentStatus: row.dataset.paymentStatus }) !== 'requested', hasRequirementIssues: row.dataset.requirementIssues === '1' });
@@ -6543,6 +6561,58 @@ async function updateFinanceDisbursementStatus(button, action) {
     console.error('[Finance] estado de desembolso', error);
     setFinanceButtonState(button, previousLabel, false);
     alert(error.message || 'No se pudo actualizar el desembolso.');
+  }
+}
+
+async function deleteFinanceDisbursementEntry(button) {
+  const card = button.closest('[data-line-card]');
+  const row = button.closest('[data-entry-row]');
+  const lineId = card?.dataset.id || '';
+  const entryId = row?.dataset.entryId || '';
+
+  if (!['admin', 'promoter', 'bank'].includes(myRole)) {
+    alert('Solo Promotor, Admin o Banco pueden eliminar una partida de desembolso.');
+    return;
+  }
+
+  if (row?.dataset.entryType !== 'disbursement') {
+    row?.remove();
+    renderFinanceLoanLines(collectFinanceLoanLines());
+    return;
+  }
+
+  if (!isMongoIdLike(lineId) || !isMongoIdLike(entryId)) {
+    row?.remove();
+    renderFinanceLoanLines(collectFinanceLoanLines());
+    return;
+  }
+
+  const password = prompt('Introduce tu contraseña para eliminar definitivamente esta partida de desembolso:');
+  if (password === null) return;
+  if (!password) {
+    alert('Debes introducir tu contraseña.');
+    return;
+  }
+
+  const previousLabel = button.textContent;
+  try {
+    setFinanceButtonState(button, 'Eliminando...', true);
+    await API.del(`/api/projects/${id}/finance/loan-lines/${encodeURIComponent(lineId)}/entries/${encodeURIComponent(entryId)}`, {
+      body: JSON.stringify({ password })
+    });
+    await loadFinance();
+    const phase = (FINANCE?.phases || []).find(item => String(item._id) === String(FINANCE_SELECTED_PHASE_ID));
+    if (phase) {
+      await openFinancePhaseLines(phase, 'real', 'lines');
+      FINANCE_LOAN_LINE_EXPANDED.add(String(lineId));
+      FINANCE_LOAN_LINE_COLLAPSED.delete(String(lineId));
+      renderFinanceLoanLines(financeLoanLinesWithUseSeeds(financeLinesForPhase(phase._id), phase));
+    }
+    await markProjectDataChanged();
+  } catch (error) {
+    console.error('[Finance] eliminar desembolso', error);
+    setFinanceButtonState(button, previousLabel, false);
+    alert(error.message || 'No se pudo eliminar la partida de desembolso.');
   }
 }
 
@@ -6734,14 +6804,14 @@ function renderFinanceLoanLines(lines = []) {
                 const workflowStatus = isDisbursement ? financeDisbursementWorkflowStatus(entry) : '';
                 const workflowLocked = isDisbursement && (['requested', 'disbursed'].includes(workflowStatus) || entry.promoterContributionStatus === 'contributed');
                 const savedEntry = isMongoIdLike(entry._id);
-                const paidAmount = isDisbursement && workflowStatus !== 'disbursed' ? 0 : numOr0(entry.disbursementAmount);
+                const paidAmount = isDisbursement && workflowStatus !== 'disbursed' ? 0 : (entry.fundingParty === 'promoter' ? 0 : numOr0(entry.disbursementAmount));
                 const entryBalance = Math.max(0, paidAmount - numOr0(entry.amortizedAmount));
                 const entryStatus = financeEntryStatus(entry);
                 const report = financeInspectionReport(entry.inspectionId);
                 return `
-                  <tr data-entry-row data-entry-id="${escapeHtml(entry._id || `new-entry-${Date.now()}-${entryIdx}`)}" data-entry-type="${entryType}" data-payment-status="${escapeHtml(entry.paymentStatus || 'legacy')}" data-workflow-status="${escapeHtml(workflowStatus)}" data-advance-account-number="${escapeHtml(entry.advanceAccountNumber || '')}" data-funding-party="${escapeHtml(entry.fundingParty || 'bank')}" data-promoter-contribution-status="${escapeHtml(entry.promoterContributionStatus || 'pending')}" data-requirement-issues="${(entry.requirementsSnapshot || []).some(item => item?.reviewStatus !== 'compliant') ? '1' : '0'}" data-requested-at="${escapeHtml(entry.requestedAt || '')}" data-requested-by="${escapeHtml(entry.requestedBy || '')}" data-requested-by-role="${escapeHtml(entry.requestedByRole || '')}" data-disbursed-at="${escapeHtml(entry.disbursedAt || '')}" data-disbursed-by="${escapeHtml(entry.disbursedBy || '')}" data-disbursed-by-role="${escapeHtml(entry.disbursedByRole || '')}" data-transfer-reference="${escapeHtml(entry.transferReference || '')}" data-workflow-note="${escapeHtml(entry.workflowNote || '')}">
+                  <tr data-entry-row data-entry-id="${escapeHtml(entry._id || `new-entry-${Date.now()}-${entryIdx}`)}" data-entry-type="${entryType}" data-payment-status="${escapeHtml(entry.paymentStatus || 'legacy')}" data-workflow-status="${escapeHtml(workflowStatus)}" data-advance-account-number="${escapeHtml(entry.advanceAccountNumber || '')}" data-funding-party="${escapeHtml(entry.fundingParty || 'bank')}" data-promoter-contribution-amount="${escapeHtml(entry.promoterContributionAmount || '')}" data-promoter-contribution-status="${escapeHtml(entry.promoterContributionStatus || 'pending')}" data-requirement-issues="${(entry.requirementsSnapshot || []).some(item => item?.reviewStatus !== 'compliant') ? '1' : '0'}" data-requested-at="${escapeHtml(entry.requestedAt || '')}" data-requested-by="${escapeHtml(entry.requestedBy || '')}" data-requested-by-role="${escapeHtml(entry.requestedByRole || '')}" data-disbursed-at="${escapeHtml(entry.disbursedAt || '')}" data-disbursed-by="${escapeHtml(entry.disbursedBy || '')}" data-disbursed-by-role="${escapeHtml(entry.disbursedByRole || '')}" data-transfer-reference="${escapeHtml(entry.transferReference || '')}" data-workflow-note="${escapeHtml(entry.workflowNote || '')}">
                     <td><span class="finance-entry-kind is-${entryType}">${isDisbursement ? 'Desembolso' : isManualAmortization ? 'Amortización' : 'Histórica'}</span></td>
-                    <td>${isDisbursement ? `<div class="finance-account-source"><b>Cuenta ${escapeHtml(String(entry.advanceAccountNumber || 'Nueva'))}</b><select data-field="fundingParty" ${workflowLocked ? 'disabled' : ''}><option value="bank" ${(entry.fundingParty || 'bank') === 'bank' ? 'selected' : ''}>Solo banco</option><option value="promoter" ${entry.fundingParty === 'promoter' ? 'selected' : ''}>Solo promotor</option><option value="mixed" ${entry.fundingParty === 'mixed' ? 'selected' : ''}>Banco + promotor</option></select><label><span>Aporte promotor</span><input data-field="promoterContributionAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.promoterContributionAmount)}" ${workflowLocked ? 'disabled' : ''}></label>${entry.promoterContributionStatus === 'contributed' ? '<small class="finance-status is-ok">Aportado</small>' : ''}</div>` : '<span class="small muted">—</span>'}</td>
+                    <td>${isDisbursement ? `<div class="finance-account-source"><b>Cuenta ${escapeHtml(String(entry.advanceAccountNumber || 'Nueva'))}</b><select data-field="fundingParty" ${workflowLocked ? 'disabled' : ''}><option value="bank" ${(entry.fundingParty || 'bank') === 'bank' ? 'selected' : ''}>Banco</option><option value="promoter" ${entry.fundingParty === 'promoter' ? 'selected' : ''}>Promotor</option>${entry.fundingParty === 'mixed' ? '<option value="mixed" selected>Banco + promotor (histórico)</option>' : ''}</select>${entry.promoterContributionStatus === 'contributed' ? '<small class="finance-status is-ok">Desembolsado</small>' : ''}</div>` : '<span class="small muted">—</span>'}</td>
                     <td><input data-field="${isManualAmortization ? 'movementDate' : 'disbursementDate'}" type="date" value="${financeDateInput(isManualAmortization ? entry.movementDate : entry.disbursementDate)}" ${workflowLocked ? 'disabled' : ''}></td>
                     <td><input data-field="loanNumber" value="${escapeHtml(entry.loanNumber || '')}" ${isManualAmortization || workflowLocked ? 'disabled' : ''}></td>
                     <td><input data-field="disbursementAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.disbursementAmount)}" ${isManualAmortization || workflowLocked ? 'disabled' : ''}></td>
@@ -6751,7 +6821,7 @@ function renderFinanceLoanLines(lines = []) {
                     <td>${isDisbursement ? financeDisbursementWorkflowCell(entry, savedEntry) : `<span class="finance-status is-${entryStatus.key}">${isManualAmortization ? 'Manual' : entryStatus.label}</span>`}</td>
                     <td class="finance-balance">${financeMoney(entryBalance)}</td>
                     <td><input data-field="notes" value="${escapeHtml(entry.notes || '')}" ${workflowLocked ? 'disabled' : ''}></td>
-                    <td>${workflowLocked ? '<span class="small muted">Bloqueado</span>' : '<button class="btn btn-danger btn-xs" type="button" data-finance-remove-entry>Quitar</button>'}</td>
+                    <td>${['admin', 'promoter', 'bank'].includes(myRole) ? `<button class="btn btn-danger btn-xs" type="button" data-finance-remove-entry>${workflowLocked ? 'Eliminar' : 'Quitar'}</button>` : '<span class="small muted">Bloqueado</span>'}</td>
                   </tr>
                 `;
               }).join('')}
@@ -7341,9 +7411,7 @@ function bindFinanceOnce() {
 
     const removeEntryBtn = ev.target.closest('[data-finance-remove-entry]');
     if (removeEntryBtn) {
-      const row = removeEntryBtn.closest('[data-entry-row]');
-      row?.remove();
-      renderFinanceLoanLines(collectFinanceLoanLines());
+      await deleteFinanceDisbursementEntry(removeEntryBtn);
       return;
     }
 
@@ -8138,7 +8206,10 @@ async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = '
   const canEditPhase = ['admin', 'financiero', 'gerencia', 'socios'].includes(myRole);
   if (!canEditPhase) {
     modal.querySelectorAll('input, select, textarea').forEach(control => { control.disabled = true; });
-    modal.querySelectorAll('[data-save-phase-overview], [data-copy-plan-to-real], #financeAddLoanLineBtn, [data-finance-add-entry], [data-finance-save-line], [data-finance-remove-line], [data-finance-remove-entry], [data-finance-manual-line], [data-remove-budget-row], [data-add-budget-row]').forEach(control => { control.hidden = true; });
+    modal.querySelectorAll('[data-save-phase-overview], [data-copy-plan-to-real], #financeAddLoanLineBtn, [data-finance-add-entry], [data-finance-save-line], [data-finance-remove-line], [data-finance-manual-line], [data-remove-budget-row], [data-add-budget-row]').forEach(control => { control.hidden = true; });
+    if (!['admin', 'promoter', 'bank'].includes(myRole)) {
+      modal.querySelectorAll('[data-finance-remove-entry]').forEach(control => { control.hidden = true; });
+    }
   }
   setTimeout(() => window.Chart?.getChart?.(document.getElementById('financeLoanLinesChart'))?.resize(), 30);
 }

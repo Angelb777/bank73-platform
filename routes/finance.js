@@ -20,6 +20,7 @@ const {
   buildFinanceControlAlerts: sharedBuildFinanceControlAlerts
 } = require('../services/financeReportContext');
 const { sanitizePromoterProfile } = require('../utils/promoterProfile');
+const { verifyPassword } = require('../utils/passwords');
 const audit = require('../utils/audit');
 const { renderInspectionReport } = require('../services/inspectionReport');
 const inspectionReportContext = require('../services/inspectionReportContext');
@@ -310,8 +311,9 @@ function validateLoanFunding(lines = []) {
     for (const entry of (line?.entries || [])) {
       if (entry?.entryType !== 'disbursement') continue;
       const party = ['bank', 'promoter', 'mixed'].includes(entry.fundingParty) ? entry.fundingParty : 'bank';
-      const bankAmount = Math.max(0, toNum(entry.disbursementAmount));
-      const promoterAmount = Math.max(0, toNum(entry.promoterContributionAmount));
+      const bankAmount = party === 'promoter' ? 0 : Math.max(0, toNum(entry.disbursementAmount));
+      const promoterAmount = party === 'mixed' ? Math.max(0, toNum(entry.promoterContributionAmount)) : 0;
+      if (party !== 'mixed') entry.promoterContributionAmount = 0;
       if (party === 'bank' && promoterAmount > 0) throw Object.assign(new Error('Una cuenta financiada solo por el banco no puede incluir aporte del promotor. Selecciona “Banco + promotor”.'), { status: 400 });
       if (party === 'promoter' && bankAmount > 0) throw Object.assign(new Error('Una cuenta financiada solo por el promotor no puede incluir importe del banco.'), { status: 400 });
       if (party === 'mixed' && (!bankAmount || !promoterAmount)) throw Object.assign(new Error('Una cuenta mixta debe indicar tanto el importe del banco como el aporte del promotor.'), { status: 400 });
@@ -933,6 +935,66 @@ router.put('/projects/:projectId/finance/loan-lines', async (req, res) => {
   }
 });
 
+router.delete('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId', async (req, res) => {
+  try {
+    const { projectId, lineId, entryId } = req.params;
+    if (![projectId, lineId, entryId].every(mongoose.isValidObjectId)) {
+      return res.status(400).json({ error: 'Identificador de desembolso inválido.' });
+    }
+
+    const role = String(req.user?.role || '').toLowerCase().trim();
+    if (!['admin', 'promoter', 'bank'].includes(role)) {
+      return res.status(403).json({ error: 'Solo Promotor, Admin o Banco pueden eliminar una partida de desembolso.' });
+    }
+
+    const password = String(req.body?.password || '');
+    if (!password) return res.status(400).json({ error: 'Introduce tu contraseña para confirmar la eliminación.' });
+
+    const actorId = req.user?.userId || req.user?._id || req.user?.id || null;
+    const actor = mongoose.isValidObjectId(actorId) ? await User.findById(actorId).select('password email role') : null;
+    if (!actor || !verifyPassword(password, actor.password)) {
+      return res.status(403).json({ error: 'La contraseña no es correcta. No se eliminó la partida.' });
+    }
+
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+    const doc = await getOrCreate(projectId, project.tenantKey);
+    const line = doc.loanLines.id(lineId);
+    const entry = line?.entries?.id(entryId);
+    if (!line || !entry || entry.entryType !== 'disbursement') {
+      return res.status(404).json({ error: 'Partida de desembolso no encontrada.' });
+    }
+
+    const deletedEntry = entry.toObject ? entry.toObject() : { ...entry };
+    line.entries.pull(entryId);
+    await doc.save();
+
+    await audit(req, 'finance.disbursement_deleted', {
+      tenantKey: project.tenantKey,
+      targetType: 'loanLineEntry',
+      targetId: entryId,
+      projectId: project._id,
+      message: `Partida de desembolso eliminada por ${role}`,
+      metadata: {
+        lineId: String(lineId),
+        lineName: String(line.name || ''),
+        advanceAccountNumber: Number(deletedEntry.advanceAccountNumber || 0) || null,
+        fundingParty: deletedEntry.fundingParty || 'bank',
+        amount: toNum(deletedEntry.disbursementAmount),
+        workflowStatus: loanEntryWorkflowStatus(deletedEntry),
+        requestDocumentId: deletedEntry.requestDocumentId ? String(deletedEntry.requestDocumentId) : null
+      }
+    });
+
+    const control = sharedBuildFinanceControlSummary(doc, project || {});
+    const commercialUnits = await getFinanceCommercialUnits(projectId, project.tenantKey);
+    res.json({ ok: true, financeControl: control, alerts: sharedBuildFinanceControlAlerts(control, commercialUnits) });
+  } catch (err) {
+    console.error('DELETE finance disbursement error', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'No se pudo eliminar la partida de desembolso.' });
+  }
+});
+
 router.patch('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId/status', async (req, res) => {
   try {
     const { projectId, lineId, entryId } = req.params;
@@ -1018,12 +1080,21 @@ router.patch('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId/s
       entry.returnAlertAcknowledgedBy = null;
       entry.returnAlertAcknowledgedByRole = '';
     } else if (action === 'contribute') {
+      if (entry.fundingParty === 'promoter') entry.promoterContributionAmount = toNum(entry.disbursementAmount);
       if (!['promoter', 'mixed'].includes(entry.fundingParty) || toNum(entry.promoterContributionAmount) <= 0) return res.status(400).json({ error: 'Esta cuenta no tiene aportación del promotor.' });
       if (entry.promoterContributionStatus === 'contributed') return res.status(409).json({ error: 'La aportación del promotor ya está confirmada.' });
       entry.promoterContributionStatus = 'contributed';
       entry.promoterContributedAt = cleanDate(req.body?.contributionDate) || now;
       entry.promoterContributedBy = actorId;
       entry.promoterContributedByRole = role;
+      if (entry.fundingParty === 'promoter') {
+        entry.workflowStatus = 'disbursed';
+        entry.paymentStatus = 'paid';
+        entry.disbursementDate = entry.promoterContributedAt;
+        entry.disbursedAt = now;
+        entry.disbursedBy = actorId;
+        entry.disbursedByRole = role;
+      }
     } else if (action === 'return') {
       if (currentStatus !== 'requested') return res.status(409).json({ error: 'Solo se puede devolver una solicitud pendiente.' });
       const comment = String(req.body?.comment || '').trim().slice(0, 500);
@@ -1744,7 +1815,9 @@ async function exportFinanceXlsx({ req, res, projectId, projectName, updatedAt, 
     sh4.addRow([phase.name, line.name, line.approvedAmount, disbursed, amortized, Math.max(0, disbursed - amortized), line.approvedAmountMode === 'auto' ? 'Automático' : 'Manual', line.notes]);
     (line.entries || []).forEach(entry => sh5.addRow([
       phase.name, line.name, entry.advanceAccountNumber, entry.entryType, entry.fundingParty, entry.date ? new Date(entry.date) : '', entry.loanNumber,
-      entry.disbursementAmount, entry.promoterContributionAmount, entry.maturityDate ? new Date(entry.maturityDate) : '', entry.amortizedAmount,
+      ['bank', 'mixed'].includes(entry.fundingParty || 'bank') ? entry.disbursementAmount : 0,
+      entry.fundingParty === 'promoter' ? entry.disbursementAmount : entry.promoterContributionAmount,
+      entry.maturityDate ? new Date(entry.maturityDate) : '', entry.amortizedAmount,
       entry.workflowStatus || entry.paymentStatus, entry.requestedAt ? new Date(entry.requestedAt) : '', entry.disbursedByRole,
       entry.transferReference, entry.inspectionId, entry.notes
     ]));
