@@ -5362,6 +5362,7 @@ if (isSoldLikeStatus(st)) U.sold++;
 
 const multer = require('multer');
 const XLSX = require('xlsx');
+const { summarizeDatoUnico, normalizeText: normalizeDatoUnicoText } = require('../services/datoUnicoPreview');
 const {
   MAX_EXCEL_IMPORT_FILE_SIZE,
   EXCEL_IMPORT_EXTENSIONS,
@@ -5376,22 +5377,109 @@ const upload = multer({
 });
 const uploadDatoUnicoFile = handleMulterUpload(upload.single('file'));
 
+function parseDatoUnicoModelSuggestions(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return sanitizeHousingModels(Array.isArray(parsed) ? parsed : []);
+  } catch (_error) {
+    const error = new Error('Las características sugeridas de los modelos no son válidas');
+    error.status = 400;
+    throw error;
+  }
+}
+
+function applyImportedHousingModels(project, units, rawSuggestions) {
+  const suggestions = parseDatoUnicoModelSuggestions(rawSuggestions);
+  const existing = Array.isArray(project.housingModels)
+    ? project.housingModels.map(model => model.toObject ? model.toObject() : { ...model })
+    : [];
+  const existingByName = new Map(existing.map(model => [normalizeDatoUnicoText(model.name), model]));
+  const suggestedByName = new Map(suggestions.map(model => [normalizeDatoUnicoText(model.name), model]));
+  const grouped = new Map();
+
+  (units || []).forEach(unit => {
+    const name = String(unit.modelo || '').trim();
+    if (!name) return;
+    const key = normalizeDatoUnicoText(name);
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        name,
+        unitIds: [],
+        initialStatuses: Object.fromEntries(UNIT_STATUS_FIELDS.map(status => [status, 0]))
+      });
+    }
+    const group = grouped.get(key);
+    group.unitIds.push(unit._id);
+    const status = normalizeUnitStatusKey(unit.estado || unit.status || 'disponible');
+    group.initialStatuses[status] = (group.initialStatuses[status] || 0) + 1;
+  });
+
+  const merged = [...grouped.entries()].map(([key, group]) => ({
+    ...(existingByName.get(key) || {}),
+    ...(suggestedByName.get(key) || {}),
+    name: suggestedByName.get(key)?.name || existingByName.get(key)?.name || group.name,
+    unitsCount: group.unitIds.length,
+    initialStatuses: group.initialStatuses
+  }));
+
+  existing.forEach(model => {
+    const key = normalizeDatoUnicoText(model.name);
+    if (key && !grouped.has(key)) merged.push(model);
+  });
+
+  project.housingModels = merged;
+  project.technicalData ||= {};
+  project.technicalData.totalUnits = (units || []).length;
+  return grouped;
+}
+
+async function linkImportedUnitsToHousingModels(project, grouped) {
+  const modelIdByName = new Map((project.housingModels || []).map(model => [normalizeDatoUnicoText(model.name), model._id]));
+  const writes = [];
+  grouped.forEach((group, key) => {
+    const modelId = modelIdByName.get(key);
+    if (!modelId || !group.unitIds.length) return;
+    writes.push(Unit.updateMany(
+      { _id: { $in: group.unitIds }, tenantKey: project.tenantKey, projectId: project._id },
+      { $set: { modelId } }
+    ));
+  });
+  await Promise.all(writes);
+}
+
+router.post(
+  '/import-dato-unico/preview',
+  requireRole('admin', 'bank', 'promoter'),
+  uploadDatoUnicoFile,
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'Falta archivo (file)' });
+      const preview = summarizeDatoUnico(req.file.buffer);
+      return res.json(preview);
+    } catch (error) {
+      return res.status(error.status || 400).json({ error: error.message || 'No se pudo analizar el Excel' });
+    }
+  }
+);
+
 async function requireDatoUnicoImportAccess(req, res, next) {
   try {
     const role = String(req.user?.role || '').toLowerCase();
     if (role === 'admin') return next();
-    if (role !== 'promoter') return res.status(403).json({ error: 'Acceso denegado' });
+    if (!['promoter', 'bank'].includes(role)) return res.status(403).json({ error: 'Acceso denegado' });
 
     const project = await Project.findOne({ _id: req.params.id, tenantKey: req.tenantKey }).lean();
     if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
 
     const userId = String(req.user?.userId || req.user?._id || '');
     const isCreator = userId && String(project.createdBy || '') === userId;
-    const isAssigned = Array.isArray(project.assignedPromoters) &&
-      project.assignedPromoters.some(id => String(id) === userId);
+    const assignedField = role === 'bank' ? 'assignedBanks' : 'assignedPromoters';
+    const isAssigned = Array.isArray(project[assignedField]) &&
+      project[assignedField].some(id => String(id) === userId);
 
     if (!isCreator && !isAssigned) {
-      return res.status(403).json({ error: 'Proyecto no asignado al promotor' });
+      return res.status(403).json({ error: 'Proyecto no asignado al usuario' });
     }
 
     req.project = project;
@@ -5405,7 +5493,7 @@ async function requireDatoUnicoImportAccess(req, res, next) {
 // POST /api/projects/:id/import-dato-unico
 router.post(
   '/:id/import-dato-unico',
-  requireRole('admin', 'promoter'),
+  requireRole('admin', 'bank', 'promoter'),
   requireDatoUnicoImportAccess,
   uploadDatoUnicoFile,
   async (req, res) => {
@@ -5415,6 +5503,14 @@ router.post(
 
       if (!req.file) {
         return res.status(400).json({ error: 'Falta archivo (file)' });
+      }
+
+      const importPreview = summarizeDatoUnico(req.file.buffer);
+      if (!importPreview.valid) {
+        return res.status(400).json({
+          error: importPreview.error || 'El Excel no contiene unidades válidas',
+          duplicates: importPreview.duplicates
+        });
       }
 
       const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
@@ -5544,6 +5640,12 @@ router.post(
         projectId: id,
         deletedAt: null
       }).lean();
+
+      if (req.body?.importMode === 'create' && existingUnits.length) {
+        return res.status(409).json({
+          error: 'El proyecto ya contiene unidades. La importación inicial no puede sumarse al inventario existente.'
+        });
+      }
 
       const unitMap = new Map(
         existingUnits.map(u => [unitKey(u.manzana, u.lote), u])
@@ -6150,7 +6252,9 @@ router.post(
         setNum('ticketPromedio', ticketPromedio);
         setNum('valorVentas', valorTotalVentas);
 
+        const groupedModels = applyImportedHousingModels(p, unitsForProject, req.body?.models);
         await p.save();
+        await linkImportedUnitsToHousingModels(p, groupedModels);
       }
 
       res.json({
@@ -6159,6 +6263,7 @@ router.post(
         rows: dataRows.length,
         unitsUpserted,
         ventasUpserted,
+        modelsDetected: importPreview.models.length,
         kpisProyecto: {
           unitsTotal,
           unitsSold,

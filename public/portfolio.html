@@ -680,6 +680,79 @@
       pointer-events:none;
       filter:grayscale(.25);
     }
+    .create-dato-import-actions {
+      position:relative;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .create-dato-import-actions .summary-file-input {
+      position:absolute;
+      width:1px;
+      height:1px;
+      opacity:0;
+      pointer-events:none;
+    }
+    .create-dato-import-actions .summary-file-picker {
+      display:flex;
+      align-items:center;
+      gap:10px;
+      min-width:min(100%,520px);
+      padding:11px 13px;
+      border:1px solid #cbd5e1;
+      border-radius:12px;
+      background:#fff;
+      cursor:pointer;
+    }
+    .create-dato-import-actions .summary-file-picker-label {
+      color:#1d4ed8;
+      font-weight:800;
+    }
+    .create-dato-import-actions .summary-file-picker-name {
+      color:#64748b;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .create-dato-preview {
+      margin:12px 0 16px;
+      padding:14px;
+      border:1px solid #bfdbfe;
+      border-radius:14px;
+      background:#f8fbff;
+    }
+    .create-dato-preview-summary {
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-bottom:12px;
+      color:#334155;
+    }
+    .create-dato-preview-summary span {
+      padding:5px 9px;
+      border-radius:999px;
+      background:#dbeafe;
+      font-size:12px;
+      font-weight:800;
+    }
+    .create-dato-model {
+      display:grid;
+      grid-template-columns:repeat(4,minmax(0,1fr));
+      gap:10px;
+      padding:13px;
+      margin-top:10px;
+      border:1px solid #dbe2ea;
+      border-radius:12px;
+      background:#fff;
+    }
+    .create-dato-model label { display:grid;gap:5px;color:#334155;font-weight:700; }
+    .create-dato-model input[readonly] { background:#f1f5f9;color:#475569; }
+    .create-dato-model-note { grid-column:1/-1;margin:0;color:#92400e;font-size:12px; }
+    .create-dato-preview-error { color:#b91c1c;font-weight:800; }
+    @media (max-width:900px) {
+      .create-dato-model { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    }
     .create-units-reconciliation,
     .create-funding-summary {
       display:grid;
@@ -1319,6 +1392,11 @@
           <span class="small muted">Se importara despues de crear el proyecto usando el importador Dato Unico existente.</span>
         </div>
         <div id="createDatoUnicoWarning" class="create-import-warning" style="display:none;">Has seleccionado un Excel. Si continúas con la importación, se crearán las unidades desde el archivo y no desde los modelos manuales.</div>
+        <div id="createDatoUnicoPreview" class="create-dato-preview" style="display:none;" aria-live="polite">
+          <div id="createDatoUnicoPreviewSummary" class="create-dato-preview-summary"></div>
+          <div id="createDatoUnicoPreviewMessage" class="small muted"></div>
+          <div id="createDatoUnicoModels"></div>
+        </div>
         <div id="createManualModelsPanel">
           <div id="createHousingModels"></div>
           <button id="addCreateHousingModel" class="btn ghost" type="button">+ Anadir modelo</button>

@@ -659,11 +659,18 @@
   const createDatoUnicoFileName = document.getElementById('createDatoUnicoFileName');
   const clearCreateDatoUnicoFileBtn = document.getElementById('clearCreateDatoUnicoFile');
   const createDatoUnicoWarning = document.getElementById('createDatoUnicoWarning');
+  const createDatoUnicoPreviewPanel = document.getElementById('createDatoUnicoPreview');
+  const createDatoUnicoPreviewSummary = document.getElementById('createDatoUnicoPreviewSummary');
+  const createDatoUnicoPreviewMessage = document.getElementById('createDatoUnicoPreviewMessage');
+  const createDatoUnicoModels = document.getElementById('createDatoUnicoModels');
   const createImportModeNotice = document.getElementById('createImportModeNotice');
   const createManualModelsPanel = document.getElementById('createManualModelsPanel');
   const CREATE_STEP_ORDER = ['general', 'legal', 'technical', 'progress', 'financial', 'team'];
   let activeCreateStep = 'general';
   let createDatoUnicoFileState = null;
+  let createDatoUnicoPreviewState = null;
+  let createDatoUnicoPreviewRequest = 0;
+  let createManualTotalUnitsSnapshot = '';
   let isCreatingProject = false;
   const BANK_REQUIREMENT_TITLES = [
     'Presupuesto del proyecto',
@@ -1306,6 +1313,130 @@
     return !!createDatoUnicoFileState;
   }
 
+  function hasManualInventoryData() {
+    return Array.from(document.querySelectorAll('[data-create-model-row]')).some(row =>
+      Array.from(row.querySelectorAll('input, textarea, select')).some(input => String(input.value || '').trim() !== '')
+    );
+  }
+
+  function excelModelField(model, field, label, options = {}) {
+    const raw = model?.[field];
+    const value = raw === null || raw === undefined ? '' : raw;
+    const conflict = model?.conflicts?.includes(field);
+    const formatted = options.money && value !== '' ? formatBankNumber(value) : value;
+    const attrs = options.readonly
+      ? 'readonly'
+      : (options.money ? 'data-bank-number type="text" inputmode="decimal"' : 'type="number" min="0" step="any"');
+    return `<label>${label}<input data-create-excel-model="${field}" ${attrs} value="${escapeHtml(formatted)}" ${conflict ? 'aria-describedby="excel-model-conflict"' : ''}></label>`;
+  }
+
+  function renderCreateDatoUnicoPreview(preview = null, { loading = false, error = '' } = {}) {
+    if (!createDatoUnicoPreviewPanel) return;
+    const visible = loading || !!error || !!preview;
+    createDatoUnicoPreviewPanel.style.display = visible ? '' : 'none';
+    if (createDatoUnicoPreviewSummary) createDatoUnicoPreviewSummary.innerHTML = '';
+    if (createDatoUnicoModels) createDatoUnicoModels.innerHTML = '';
+    if (loading) {
+      if (createDatoUnicoPreviewMessage) createDatoUnicoPreviewMessage.textContent = 'Analizando unidades y modelos del Excel...';
+      return;
+    }
+    if (error) {
+      if (createDatoUnicoPreviewMessage) {
+        createDatoUnicoPreviewMessage.className = 'create-dato-preview-error';
+        createDatoUnicoPreviewMessage.textContent = error;
+      }
+      return;
+    }
+    if (!preview) return;
+
+    if (createDatoUnicoPreviewSummary) {
+      createDatoUnicoPreviewSummary.innerHTML = `
+        <span>${escapeHtml(preview.sheet || 'Hoja detectada')}</span>
+        <span>${Number(preview.unitsTotal || 0)} unidades</span>
+        <span>${Number(preview.models?.length || 0)} modelos</span>
+      `;
+    }
+    if (createDatoUnicoPreviewMessage) {
+      createDatoUnicoPreviewMessage.className = preview.valid ? 'small muted' : 'create-dato-preview-error';
+      if (!preview.valid) {
+        const duplicateText = (preview.duplicates || []).slice(0, 5).map(item => `${item.manzana || '-'} / ${item.lote || '-'}`).join(', ');
+        createDatoUnicoPreviewMessage.textContent = duplicateText
+          ? `No se puede importar: hay unidades duplicadas (${duplicateText}).`
+          : (preview.error || 'No se encontraron unidades válidas en el Excel.');
+      } else if (preview.unnamedUnits) {
+        createDatoUnicoPreviewMessage.textContent = `${preview.unnamedUnits} unidades no tienen modelo. Se importarán sin modelo asignado.`;
+      } else {
+        createDatoUnicoPreviewMessage.textContent = 'Revisa y completa las características sugeridas. Las cantidades y estados proceden del Excel.';
+      }
+    }
+
+    if (createDatoUnicoModels) {
+      createDatoUnicoModels.innerHTML = (preview.models || []).map(model => {
+        const statusText = Object.entries(model.initialStatuses || {})
+          .filter(([, count]) => Number(count) > 0)
+          .map(([status, count]) => `${status.replaceAll('_', ' ')}: ${count}`)
+          .join(' · ');
+        const conflictLabels = {
+          bedrooms: 'recámaras', bathrooms: 'baños', openAreaM2: 'área abierta', closedAreaM2: 'área cerrada', price: 'precio'
+        };
+        const conflicts = (model.conflicts || []).map(field => conflictLabels[field] || field);
+        return `<div class="create-dato-model" data-create-excel-model-row>
+          <label>Modelo<input data-create-excel-model="name" value="${escapeHtml(model.name || '')}" readonly></label>
+          ${excelModelField(model, 'unitsCount', 'Cantidad de unidades', { readonly: true })}
+          ${excelModelField(model, 'bedrooms', 'Recámaras')}
+          ${excelModelField(model, 'bathrooms', 'Baños')}
+          ${excelModelField(model, 'openAreaM2', 'Área abierta m²', { money: true })}
+          ${excelModelField(model, 'closedAreaM2', 'Área cerrada m²', { money: true })}
+          ${excelModelField(model, 'price', 'Precio base', { money: true })}
+          <label>Observaciones<input data-create-excel-model="observations" value=""></label>
+          <input data-create-excel-model="initialStatuses" type="hidden" value="${escapeHtml(JSON.stringify(model.initialStatuses || {}))}">
+          <p class="create-dato-model-note">${escapeHtml(statusText || 'Sin estados detectados')}${conflicts.length ? `<br>El Excel contiene varios valores de ${escapeHtml(conflicts.join(', '))}; completa el valor base que corresponda.` : ''}</p>
+        </div>`;
+      }).join('') || '<p class="small muted">No se detectó ninguna columna MODELO con valores.</p>';
+      bindBankNumberFormatting(createDatoUnicoModels);
+    }
+  }
+
+  function collectCreateDatoUnicoModels() {
+    return Array.from(document.querySelectorAll('[data-create-excel-model-row]')).map(row => {
+      const get = field => row.querySelector(`[data-create-excel-model="${field}"]`)?.value ?? '';
+      let initialStatuses = {};
+      try { initialStatuses = JSON.parse(get('initialStatuses') || '{}'); } catch (_) {}
+      return {
+        name: String(get('name')).trim(),
+        unitsCount: numberFromCreate(get('unitsCount')),
+        bedrooms: numberFromCreate(get('bedrooms')),
+        bathrooms: numberFromCreate(get('bathrooms')),
+        openAreaM2: numberFromCreate(get('openAreaM2')),
+        closedAreaM2: numberFromCreate(get('closedAreaM2')),
+        price: numberFromCreate(get('price')),
+        observations: String(get('observations')).trim(),
+        initialStatuses
+      };
+    }).filter(model => model.name);
+  }
+
+  async function loadCreateDatoUnicoPreview(file) {
+    const requestId = ++createDatoUnicoPreviewRequest;
+    createDatoUnicoPreviewState = null;
+    renderCreateDatoUnicoPreview(null, { loading: true });
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      const preview = await API.upload('/api/projects/import-dato-unico/preview', form);
+      if (requestId !== createDatoUnicoPreviewRequest) return;
+      createDatoUnicoPreviewState = preview;
+      const total = document.getElementById('td-totalUnits');
+      if (total) total.value = String(preview.unitsTotal || 0);
+      renderCreateDatoUnicoPreview(preview);
+      updateCreateUnitsReconciliation();
+    } catch (error) {
+      if (requestId !== createDatoUnicoPreviewRequest) return;
+      createDatoUnicoPreviewState = { valid: false, error: error.message };
+      renderCreateDatoUnicoPreview(null, { error: error.message || 'No se pudo analizar el Excel.' });
+    }
+  }
+
   function updateCreateDatoUnicoMode() {
     const file = createDatoUnicoFileState;
     const fileName = file?.name || 'Ningun archivo seleccionado';
@@ -1323,11 +1454,18 @@
     createManualModelsPanel?.querySelectorAll('input, select, textarea, button').forEach(el => {
       el.disabled = !!file;
     });
+    const totalUnits = document.getElementById('td-totalUnits');
+    if (totalUnits) totalUnits.disabled = !!file;
   }
 
   function clearCreateDatoUnicoFile() {
+    createDatoUnicoPreviewRequest += 1;
     createDatoUnicoFileState = null;
+    createDatoUnicoPreviewState = null;
     if (createDatoUnicoFileInput) createDatoUnicoFileInput.value = '';
+    const total = document.getElementById('td-totalUnits');
+    if (total) total.value = createManualTotalUnitsSnapshot;
+    renderCreateDatoUnicoPreview();
     updateCreateDatoUnicoMode();
     syncTechnicalUnitsFromModels();
   }
@@ -2630,9 +2768,24 @@
   createFinanceLines?.addEventListener('input', syncCreatePhaseSources);
   createFinanceLines?.addEventListener('change', syncCreatePhaseSources);
   createFinanceLines?.addEventListener('keyup', syncCreatePhaseSources);
-  createDatoUnicoFileInput?.addEventListener('change', event => {
-    createDatoUnicoFileState = event.target.files?.[0] || null;
+  createDatoUnicoFileInput?.addEventListener('change', async event => {
+    const file = event.target.files?.[0] || null;
+    if (!file) {
+      clearCreateDatoUnicoFile();
+      return;
+    }
+    const wasExcelMode = !!createDatoUnicoFileState;
+    if (!wasExcelMode && hasManualInventoryData()) {
+      const proceed = confirm('Ya has rellenado datos del inventario manual. Al usar el Excel, esos modelos y unidades no se enviarán. ¿Quieres cambiar al modo Excel?');
+      if (!proceed) {
+        event.target.value = '';
+        return;
+      }
+    }
+    if (!wasExcelMode) createManualTotalUnitsSnapshot = String(document.getElementById('td-totalUnits')?.value || '');
+    createDatoUnicoFileState = file;
     updateCreateDatoUnicoMode();
+    await loadCreateDatoUnicoPreview(file);
   });
   clearCreateDatoUnicoFileBtn?.addEventListener('click', clearCreateDatoUnicoFile);
   document.addEventListener('input', event => {
@@ -2874,6 +3027,7 @@
         btnCreate.disabled = true;
         const originalCreateText = btnCreate.textContent;
         btnCreate.textContent = 'Creando...';
+        let creationWarning = '';
         try {
           const name = document.getElementById('pName')?.value?.trim() || '';
           const description = document.getElementById('pDesc')?.value?.trim() || '';
@@ -2935,6 +3089,10 @@
           });
           financialConditions.facilities = [];
           if (!name) return alert('El nombre es obligatorio.');
+          if (hasCreateDatoUnicoFile() && createDatoUnicoPreviewState?.valid !== true) {
+            setCreateStep('technical');
+            return alert(createDatoUnicoPreviewState?.error || 'Espera a que termine la validación del Excel y corrige los errores antes de crear el proyecto.');
+          }
           if (!hasCreateDatoUnicoFile() && String(document.getElementById('td-totalUnits')?.value || '').trim() !== '' && !updateCreateUnitsReconciliation()) {
             setCreateStep('technical');
             document.getElementById('td-totalUnits')?.focus();
@@ -3109,12 +3267,15 @@
           if (importFile && createdProject?._id) {
             const fd = new FormData();
             fd.append('file', importFile);
+            fd.append('importMode', 'create');
+            fd.append('models', JSON.stringify(collectCreateDatoUnicoModels()));
             try {
               await API.upload(`/api/projects/${createdProject._id}/import-dato-unico`, fd);
               createDatoUnicoFileState = null;
+              createDatoUnicoPreviewState = null;
             } catch (importErr) {
               console.error(importErr);
-              alert('Proyecto creado, pero no se pudo importar el Excel Dato Unico.');
+              creationWarning = 'El proyecto se creó, pero no se pudo importar el Excel Dato Único. Puedes reintentar la importación desde Comercial.';
             }
           }
 
@@ -3162,6 +3323,7 @@
           ['fc-otherRequirements','fc-trustee','fc-trustType','fc-technicalInspector','fc-financialInspector','ld-promoterLegalName','ld-trustName','td-phasesCount','td-totalUnits','td-notes'].forEach(fieldId => {
             const field = document.getElementById(fieldId); if (field) field.value = '';
           });
+          createManualTotalUnitsSnapshot = '';
           clearCreateDatoUnicoFile();
           const trustApplies = document.getElementById('ld-trustApplies');
           if (trustApplies) trustApplies.value = 'false';
@@ -3181,7 +3343,7 @@
             if (selCommercialsLegacy) selCommercialsLegacy.selectedIndex = -1;
           }
 
-          alert('Proyecto enviado a revisión del administrador. Aparecerá aquí cuando sea aprobado.');
+          alert(creationWarning || 'Proyecto enviado a revisión del administrador. Aparecerá aquí cuando sea aprobado.');
           await loadList();
         } catch (e) {
           alert('Error al crear proyecto: ' + (e.message || e));
