@@ -28,6 +28,33 @@ function normalizeHeader(value) {
   return normalizeText(value).replace(/[º°]/g, '°');
 }
 
+const UNIT_HEADER_NAMES = ['LOTE', 'UNIDAD APTO', 'APTO', 'APARTAMENTO'];
+const GROUP_HEADER_NAMES = ['MANZANA', 'NIVEL'];
+
+function findTable(workbook) {
+  const preferredNames = ['EXPEDIENTES-BANCO', 'BASE DATOS'];
+  const orderedNames = [
+    ...preferredNames.flatMap(preferred => (
+      workbook.SheetNames.filter(name => normalizeText(name) === preferred)
+    )),
+    ...workbook.SheetNames.filter(name => !preferredNames.includes(normalizeText(name)))
+  ];
+
+  for (const sheetName of orderedNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    const headerIndex = rows.slice(0, 12).findIndex(values => {
+      const names = new Set((values || []).map(normalizeHeader).filter(Boolean));
+      const hasUnit = UNIT_HEADER_NAMES.some(name => names.has(name));
+      const hasContext = GROUP_HEADER_NAMES.some(name => names.has(name)) ||
+        names.has('MODELO') || names.has('CLIENTE');
+      return hasUnit && hasContext;
+    });
+    if (headerIndex >= 0) return { sheetName, rows, headerIndex };
+  }
+  return null;
+}
+
 function numeric(value) {
   if (value === '' || value === null || value === undefined) return undefined;
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
@@ -54,33 +81,32 @@ function dateValue(value) {
 
 function readDatoUnicoTable(buffer) {
   const workbook = XLSX.read(buffer, { type: 'buffer' });
-  const sheetName = workbook.SheetNames.find(name => normalizeText(name) === 'EXPEDIENTES-BANCO') || workbook.SheetNames[0];
-  const worksheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-  if (rows.length < 3) {
-    const error = new Error('Excel vacío o formato inesperado');
+  const table = findTable(workbook);
+  if (!table) {
+    const error = new Error('No se encontró una hoja con unidades (LOTE o UNIDAD APTO)');
     error.status = 400;
     throw error;
   }
 
-  const header = rows[1].map(value => clean(value));
+  const { sheetName, rows, headerIndex } = table;
+  const header = rows[headerIndex].map(value => clean(value));
   const headerMap = new Map(header.map(value => [normalizeHeader(value), value]));
   const get = (row, names) => {
     for (const name of names) {
       const original = headerMap.get(normalizeHeader(name));
-      if (original && row[original] !== undefined) return row[original];
+      if (original && row[original] !== undefined && clean(row[original])) return row[original];
     }
     return '';
   };
 
-  const dataRows = rows.slice(2).map((values, sourceIndex) => {
+  const dataRows = rows.slice(headerIndex + 1).map((values, sourceIndex) => {
     const row = {};
     header.forEach((name, index) => { row[name] = values?.[index] ?? ''; });
-    return { row, values, sourceRow: sourceIndex + 3 };
+    return { row, values, sourceRow: sourceIndex + headerIndex + 2 };
   }).filter(({ row, values }) => {
     if (!Array.isArray(values) || !values.some(value => clean(value))) return false;
-    const lote = clean(get(row, ['LOTE']));
-    const manzana = clean(get(row, ['MANZANA']));
+    const lote = clean(get(row, UNIT_HEADER_NAMES));
+    const manzana = clean(get(row, GROUP_HEADER_NAMES));
     const loteNormalized = normalizeText(lote);
     const manzanaNormalized = normalizeText(manzana);
     if (!lote && !manzana) return false;
@@ -89,7 +115,13 @@ function readDatoUnicoTable(buffer) {
     return true;
   });
 
-  return { sheetName, header, get, dataRows };
+  if (!dataRows.length) {
+    const error = new Error('No se encontraron unidades válidas en el Excel');
+    error.status = 400;
+    throw error;
+  }
+
+  return { sheetName, header, headerIndex, get, dataRows };
 }
 
 function freeStatus(value) {
@@ -99,9 +131,10 @@ function freeStatus(value) {
   if (text.includes('INVENTARIO')) return 'inventario';
   if (text.includes('NOCPP/NOCLIENTE') || text.includes('NO CLIENTE') || text.includes('SIN CLIENTE') || text.includes('LIBRE') || text.includes('DISPON')) return 'disponible';
   if (text.includes('RESERV')) return 'reservado';
+  if (text.includes('VENDID')) return 'reservado';
   if (text.includes('CPP/CLIENTE') || text.includes('CON CPP') || text === 'CPP') return 'con_cpp';
   if ((text.includes('EN') && text.includes('ESCRIT')) || text.includes('ESCRITURACION') || text.includes('TRAMITE LEGAL')) return 'tramite_legal_activado';
-  if (text.includes('ESCRITURAD') || text.includes('TRASPAS')) return 'escriturado_traspasado';
+  if (text.includes('ESCRITURAD') || text.includes('INSCRIT') || text.includes('TRASPAS')) return 'escriturado_traspasado';
   if (text.includes('ENTREG')) return 'vivienda_entregada';
   return null;
 }
@@ -111,10 +144,18 @@ function inferStatus(row, get) {
   const bank = clean(get(row, ['BANCO']));
   const cpp = clean(get(row, ['N° CPP', 'Nº CPP', 'NUM CPP', 'NUMERO CPP']));
   const bankStatus = normalizeText(get(row, ['STATUS EN BANCO', 'STATUS  EN BANCO', 'ESTATUS BANCO']));
-  const lotStatus = normalizeText(get(row, ['ESTATUS LOTE', 'ESTADO LOTE']));
-  const contractStatus = normalizeText(get(row, ['ESTATUS CTTO', 'ESTATUS CTTO ', 'ESTATUS CTTO.', 'ESTATUS CONTRATO']));
-  const registered = dateValue(get(row, ['FECHA DE INSCRIPCION', 'FECHA INSCRIPCION']));
-  const registryEntry = boolValue(get(row, ['INGRESO AL RP', 'INGRESO RP']));
+  const lotStatus = normalizeText(get(row, [
+    'ESTATUS LOTE', 'ESTADO LOTE', 'RESERVADAS, VENDIDAS', 'RESERVAS, VENDIDAS',
+    'ESTATUS', 'ESTATUS2', 'ESTATUS6'
+  ]));
+  const contractStatus = normalizeText(get(row, [
+    'ESTATUS CTTO', 'ESTATUS CTTO ', 'ESTATUS CTTO.', 'ESTATUS CONTRATO',
+    'RESERVAS, VENDIDAS'
+  ]));
+  const registered = dateValue(get(row, [
+    'FECHA DE INSCRIPCION', 'FECHA INSCRIPCION', 'INSCRIPCIÓN REGISTRO'
+  ]));
+  const registryEntry = boolValue(get(row, ['INGRESO AL RP', 'INGRESO RP', 'INGRESO REGISTRO']));
   const delivered = boolValue(get(row, ['ENTREGA DE CASA', 'ENTREGA CASA'])) || boolValue(get(row, ['ENTREGA ANATI']));
 
   if (delivered) return 'vivienda_entregada';
@@ -123,7 +164,7 @@ function inferStatus(row, get) {
   const explicit = freeStatus(lotStatus) || freeStatus(contractStatus);
   if (explicit) return explicit;
   if (cpp || bank || /CPP|APROB|CON CPP|INC/.test(bankStatus)) return 'con_cpp';
-  return client ? 'reservado' : 'disponible';
+  return client ? 'reservado' : 'inventario';
 }
 
 function suggestedValue(values) {
@@ -145,8 +186,8 @@ function summarizeDatoUnico(buffer) {
   let unnamedUnits = 0;
 
   for (const { row, sourceRow } of dataRows) {
-    const manzana = clean(get(row, ['MANZANA']));
-    const lote = clean(get(row, ['LOTE']));
+    const manzana = clean(get(row, GROUP_HEADER_NAMES));
+    const lote = clean(get(row, UNIT_HEADER_NAMES));
     const unitKey = `${normalizeText(manzana)}|${normalizeText(lote)}`;
     if (seenUnits.has(unitKey)) {
       duplicates.push({ manzana, lote, rows: [seenUnits.get(unitKey), sourceRow] });
@@ -174,9 +215,9 @@ function summarizeDatoUnico(buffer) {
     model.initialStatuses[status] = (model.initialStatuses[status] || 0) + 1;
     model.raw.bedrooms.push(numeric(get(row, ['RECAMARAS', 'RECÁMARAS', 'HABITACIONES'])));
     model.raw.bathrooms.push(numeric(get(row, ['BANOS', 'BAÑOS'])));
-    model.raw.openAreaM2.push(numeric(get(row, ['AREA ABIERTA', 'ÁREA ABIERTA', 'AREA ABIERTA VIVIENDA', 'AREA ABIERTA VIVIENDA M2'])));
+    model.raw.openAreaM2.push(numeric(get(row, ['AREA ABIERTA', 'ÁREA ABIERTA', 'AREA ABIERTA VIVIENDA', 'AREA ABIERTA VIVIENDA M2', 'AREA BALCON'])));
     model.raw.closedAreaM2.push(numeric(get(row, ['AREA CERRADA', 'ÁREA CERRADA', 'AREA CERRADA VIVIENDA', 'AREA CERRADA VIVIENDA M2'])));
-    model.raw.price.push(numeric(get(row, ['PRECIO DE VENTA', 'PRECIO VENTA', 'PRECIO LISTA', 'PRECIO', 'VALOR'])));
+    model.raw.price.push(numeric(get(row, ['PRECIO DE VENTA', 'PRECIO VENTA', 'PRECIO LISTA', 'PRECIO', 'VALOR TOTAL', 'PRECIO DE CONTRATO DE COMPRA Y VENTA', 'VALOR'])));
   }
 
   const modelSummaries = [...models.values()].map(model => {
@@ -196,6 +237,15 @@ function summarizeDatoUnico(buffer) {
     };
   }).sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
 
+  const duplicateError = duplicates.length
+    ? `El Excel contiene unidades duplicadas: ${duplicates.slice(0, 3).map(item => {
+      const identity = [item.manzana && `nivel/manzana ${item.manzana}`, item.lote && `unidad ${item.lote}`]
+        .filter(Boolean)
+        .join(', ');
+      return `${identity} (filas ${item.rows.join(' y ')})`;
+    }).join('; ')}`
+    : '';
+
   return {
     sheet: table.sheetName,
     rows: dataRows.length,
@@ -206,7 +256,7 @@ function summarizeDatoUnico(buffer) {
     valid: dataRows.length > 0 && duplicates.length === 0,
     error: dataRows.length === 0
       ? 'No se encontraron unidades válidas en el Excel'
-      : (duplicates.length ? 'El Excel contiene unidades duplicadas' : '')
+      : duplicateError
   };
 }
 

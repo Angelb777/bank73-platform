@@ -5362,7 +5362,11 @@ if (isSoldLikeStatus(st)) U.sold++;
 
 const multer = require('multer');
 const XLSX = require('xlsx');
-const { summarizeDatoUnico, normalizeText: normalizeDatoUnicoText } = require('../services/datoUnicoPreview');
+const {
+  readDatoUnicoTable,
+  summarizeDatoUnico,
+  normalizeText: normalizeDatoUnicoText
+} = require('../services/datoUnicoPreview');
 const {
   MAX_EXCEL_IMPORT_FILE_SIZE,
   EXCEL_IMPORT_EXTENSIONS,
@@ -5513,20 +5517,9 @@ router.post(
         });
       }
 
-      const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
-
-      const sheetName =
-        wb.SheetNames.find(s => String(s).trim().toUpperCase() === 'EXPEDIENTES-BANCO') ||
-        wb.SheetNames[0];
-
-      const ws = wb.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-
-      if (rows.length < 3) {
-        return res.status(400).json({ error: 'Excel vacío o formato inesperado' });
-      }
-
-      const header = rows[1].map(h => String(h || '').trim());
+      const parsedTable = readDatoUnicoTable(req.file.buffer);
+      const { sheetName, header, get } = parsedTable;
+      const dataRows = parsedTable.dataRows.map(({ values }) => values);
 
       const normHeader = (s) => String(s || '')
         .normalize('NFD')
@@ -5535,17 +5528,6 @@ router.post(
         .replace(/\s+/g, ' ')
         .trim()
         .toUpperCase();
-
-      const headerMap = new Map();
-      for (const h of header) headerMap.set(normHeader(h), h);
-
-      const get = (rowObj, names) => {
-        for (const n of names) {
-          const key = headerMap.get(normHeader(n));
-          if (key && rowObj[key] !== undefined) return rowObj[key];
-        }
-        return '';
-      };
 
       const clean = (v) => String(v ?? '').trim();
 
@@ -5575,14 +5557,7 @@ router.post(
         const str = String(v).trim();
         if (!str || str.toUpperCase() === 'N/A' || str === '-') return undefined;
 
-        const n = Number(
-          str
-            .replace(/\$/g, '')
-            .replace(/%/g, '')
-            .replace(/\s/g, '')
-            .replace(/\./g, '')
-            .replace(',', '.')
-        );
+        const n = parsePanamaNumber(str.replace(/%/g, ''));
 
         return Number.isFinite(n) ? n : undefined;
       };
@@ -5611,26 +5586,6 @@ router.post(
       const idxDiasTrans = header
         .map((h, i) => normHeader(h) === 'DIAS TRANSCURRIDOS' ? i : -1)
         .filter(i => i >= 0);
-
-      const dataRows = rows
-        .slice(2)
-        .filter(r => Array.isArray(r) && r.some(v => String(v ?? '').trim() !== ''))
-        .filter(r => {
-          const rowObj = {};
-          header.forEach((h, i) => { rowObj[h] = r[i] ?? ''; });
-
-          const lote = clean(get(rowObj, ['LOTE']));
-          const manzana = clean(get(rowObj, ['MANZANA']));
-
-          const loteRaw = normTxt(lote);
-          const manzanaRaw = normTxt(manzana);
-
-          if (!lote && !manzana) return false;
-          if (loteRaw === 'TOTAL' || manzanaRaw === 'TOTAL') return false;
-          if (loteRaw.startsWith('ETAPA') || manzanaRaw.startsWith('ETAPA')) return false;
-
-          return !!(lote || manzana);
-        });
 
       const unitKey = (mz, lt) =>
         `${clean(mz).toUpperCase()}|${clean(lt).toUpperCase()}`;
@@ -5680,6 +5635,7 @@ router.post(
         if (t.includes('DISPON')) return 'disponible';
 
         if (t.includes('RESERV')) return 'reservado';
+        if (t.includes('VENDID')) return 'reservado';
 
         if (t.includes('CPP/CLIENTE')) return 'con_cpp';
         if (t.includes('CON CPP')) return 'con_cpp';
@@ -5691,6 +5647,7 @@ router.post(
 
         if (t.includes('TRAMITE LEGAL')) return 'tramite_legal_activado';
         if (t.includes('ESCRITURAD')) return 'escriturado_traspasado';
+        if (t.includes('INSCRIT')) return 'escriturado_traspasado';
         if (t.includes('TRASPAS')) return 'escriturado_traspasado';
         if (t.includes('ENTREG')) return 'vivienda_entregada';
 
@@ -5702,11 +5659,19 @@ router.post(
         const banco = clean(get(rowObj, ['BANCO']));
         const numCPP = clean(get(rowObj, ['N° CPP', 'Nº CPP', 'NUM CPP', 'NUMERO CPP']));
         const statusBanco = normTxt(get(rowObj, ['STATUS EN BANCO', 'STATUS  EN BANCO', 'ESTATUS BANCO']));
-        const estatusLote = normTxt(get(rowObj, ['ESTATUS LOTE', 'ESTADO LOTE']));
-        const estatusCtto = normTxt(get(rowObj, ['ESTATUS CTTO', 'ESTATUS CTTO ', 'ESTATUS CTTO.', 'ESTATUS CONTRATO']));
+        const estatusLote = normTxt(get(rowObj, [
+          'ESTATUS LOTE', 'ESTADO LOTE', 'RESERVADAS, VENDIDAS',
+          'RESERVAS, VENDIDAS', 'ESTATUS', 'ESTATUS2', 'ESTATUS6'
+        ]));
+        const estatusCtto = normTxt(get(rowObj, [
+          'ESTATUS CTTO', 'ESTATUS CTTO ', 'ESTATUS CTTO.', 'ESTATUS CONTRATO',
+          'RESERVAS, VENDIDAS'
+        ]));
 
-        const ingresoRP = parseBool(get(rowObj, ['INGRESO AL RP', 'INGRESO RP']));
-        const fechaInscripcion = asDate(get(rowObj, ['FECHA DE INSCRIPCION', 'FECHA INSCRIPCION']));
+        const ingresoRP = parseBool(get(rowObj, ['INGRESO AL RP', 'INGRESO RP', 'INGRESO REGISTRO']));
+        const fechaInscripcion = asDate(get(rowObj, [
+          'FECHA DE INSCRIPCION', 'FECHA INSCRIPCION', 'INSCRIPCIÓN REGISTRO'
+        ]));
         const entregaCasa = parseBool(get(rowObj, ['ENTREGA DE CASA', 'ENTREGA CASA']));
         const entregaANATI = parseBool(get(rowObj, ['ENTREGA ANATI']));
 
@@ -5763,7 +5728,7 @@ router.post(
           if (estadoAlLado) return estadoAlLado;
         }
 
-        if (!hasCliente) return 'disponible';
+        if (!hasCliente) return 'inventario';
 
         return 'reservado';
       }
@@ -5772,8 +5737,8 @@ router.post(
         const rowObj = {};
         header.forEach((h, i) => { rowObj[h] = r[i] ?? ''; });
 
-        const manzana = clean(get(rowObj, ['MANZANA']));
-        const lote = clean(get(rowObj, ['LOTE']));
+        const manzana = clean(get(rowObj, ['MANZANA', 'NIVEL']));
+        const lote = clean(get(rowObj, ['LOTE', 'UNIDAD APTO', 'APTO', 'APARTAMENTO']));
 
         if (!manzana && !lote) continue;
 
@@ -5786,7 +5751,9 @@ router.post(
           'PRECIO DE VENTA',
           'PRECIO VENTA',
           'PRECIO LISTA',
-          'PRECIO'
+          'PRECIO',
+          'PRECIO DE CONTRATO DE COMPRA Y VENTA',
+          'VALOR TOTAL'
         ]));
 
         const montoCppExcel = toNum0(get(rowObj, [
@@ -5795,7 +5762,8 @@ router.post(
           'MONTO CPP',
           'VALOR CPP',
           'MONTO A FINANCIAR',
-          'MONTO FINANCIAMIENTO'
+          'MONTO FINANCIAMIENTO',
+          'MONTO A MULTIBANK'
         ]));
 
         const valorLegacyExcel = toNum0(get(rowObj, [
@@ -5833,7 +5801,8 @@ router.post(
           'AREA ABIERTA',
           'ÁREA ABIERTA',
           'AREA ABIERTA VIVIENDA',
-          'AREA ABIERTA VIVIENDA M2'
+          'AREA ABIERTA VIVIENDA M2',
+          'AREA BALCON'
         ]));
 
         const areaCerradaExcel = toNum0(get(rowObj, [
@@ -5849,7 +5818,8 @@ router.post(
             'AREA TOTAL CONSTRUCCION',
             'ÁREA TOTAL CONSTRUCCIÓN',
             'AREA TOTAL DE CONSTRUCCION',
-            'AREA TOTAL CONSTRUCCIÓN'
+            'AREA TOTAL CONSTRUCCIÓN',
+            'AREA TOTAL CUANTIFICABLE'
           ]));
 
         const m2UnidadFinal = toNum0(get(rowObj, [
@@ -5858,7 +5828,8 @@ router.post(
           'M2',
           'METROS UNIDAD',
           'AREA UNIDAD',
-          'ÁREA UNIDAD'
+          'ÁREA UNIDAD',
+          'AREA TOTAL CUANTIFICABLE'
         ]));
 
         const entregaExpedienteBanco = asDate(get(rowObj, [
@@ -5919,7 +5890,7 @@ router.post(
           // Cliente 1
           // =========================
           clienteNombre: clean(get(rowObj, ['CLIENTE', 'CLIENTE ', 'NICKNAME', 'RESUMEN CLIENTE', 'CLIENTE RESUMEN'])),
-          cedula: clean(get(rowObj, ['CEDULA', 'CÉDULA'])),
+          cedula: clean(get(rowObj, ['CEDULA', 'CÉDULA', 'NÚMERO DE IDENTIDAD', 'NUMERO DE IDENTIDAD'])),
 
           primerNombre: clean(get(rowObj, ['PRIMER NOMBRE'])),
           segundoNombre: clean(get(rowObj, ['SEGUNDO NOMBRE'])),
@@ -5937,7 +5908,7 @@ router.post(
           celular: clean(get(rowObj, ['CELULAR', 'TELEFONO CELULAR', 'TELÉFONO CELULAR'])),
           correo: clean(get(rowObj, ['CORREO', 'EMAIL', 'E-MAIL'])),
 
-          perfilCliente: clean(get(rowObj, ['PERFIL CLIENTE', 'PERFIL'])),
+          perfilCliente: clean(get(rowObj, ['PERFIL CLIENTE', 'PERFIL', 'PERFIL DE INGRESOS'])),
           tipoEmpresa: clean(get(rowObj, ['TIPO EMPRESA', 'TIPO DE EMPRESA'])),
           sectorEmpresa: clean(get(rowObj, ['SECTOR EMPRESA', 'SECTOR EMPRESARIAL'])),
           ingresoMensual: asNum(get(rowObj, ['INGRESO MENSUAL', 'SALARIO', 'INGRESOS'])),
@@ -6007,7 +5978,7 @@ router.post(
           // Financiamiento / proforma
           // =========================
           banco: clean(get(rowObj, ['BANCO'])),
-          oficialBanco: clean(get(rowObj, ['OFICIAL DE BANCO', 'OFICIAL BANCO'])),
+          oficialBanco: clean(get(rowObj, ['OFICIAL DE BANCO', 'OFICIAL BANCO', 'OFICIAL DE TRÁMITE'])),
           statusBanco: clean(get(rowObj, ['STATUS EN BANCO', 'STATUS  EN BANCO', 'ESTATUS BANCO'])),
           estatusCPP: clean(get(rowObj, ['ESTATUS CPP', 'STATUS CPP'])),
           numCPP: clean(get(rowObj, ['N° CPP', 'Nº CPP', 'NUM CPP', 'NUMERO CPP'])),
@@ -6051,14 +6022,14 @@ router.post(
           // =========================
           // Contrato / protocolo / notaría / RP
           // =========================
-          fechaContratoCliente: asDate(get(rowObj, ['FECHA CONTRATO FIRMADO POR CLIENTE', 'FECHA CONTRATO CLIENTE'])),
-          estatusContrato: clean(get(rowObj, ['ESTATUS CTTO', 'ESTATUS CONTRATO'])),
-          montoContrato: asNum(get(rowObj, ['MONTO CONTRATO', 'MONTO DEL CONTRATO'])),
+          fechaContratoCliente: asDate(get(rowObj, ['FECHA CONTRATO FIRMADO POR CLIENTE', 'FECHA CONTRATO CLIENTE', 'FECHA DE CONTRATO'])),
+          estatusContrato: clean(get(rowObj, ['ESTATUS CTTO', 'ESTATUS CONTRATO', 'RESERVAS, VENDIDAS'])),
+          montoContrato: asNum(get(rowObj, ['MONTO CONTRATO', 'MONTO DEL CONTRATO', 'PRECIO DE CONTRATO DE COMPRA Y VENTA'])),
           pagare: clean(get(rowObj, ['PAGARE', 'PAGARÉ'])),
           fechaFirma: asDate(get(rowObj, ['FECHA FIRMA'])),
           contratoFirmado: parseBool(get(rowObj, ['CONTRATO FIRMADO'])),
 
-          fechaActivacionTramite: asDate(get(rowObj, ['FECHA ACTIVACION TRAMITE', 'FECHA ACTIVACIÓN TRÁMITE LEGAL'])),
+          fechaActivacionTramite: asDate(get(rowObj, ['FECHA ACTIVACION TRAMITE', 'FECHA ACTIVACIÓN TRÁMITE LEGAL', 'ACTIVACIÓN DE TRAMITE'])),
 
           protocoloFirmaCliente: parseBool(get(rowObj, ['PROTOCOLO FIRMA CLIENTE', 'PROTOCOLO FIRMA DE CLIENTE'])),
           fechaEntregaBanco: asDate(get(rowObj, ['FECHA DE ENTREGA A BANCO', 'FECHA ENTREGA BANCO'])),
@@ -6081,11 +6052,11 @@ router.post(
           cierreNotaria: parseBool(get(rowObj, ['CIERRE DE NOTARIA'])),
           fechaPagoImpuesto: asDate(get(rowObj, ['FECHA DE PAGO DE IMPUESTO', 'FECHA PAGO IMPUESTO'])),
           ingresoRP: parseBool(get(rowObj, ['INGRESO AL RP', 'INGRESO RP'])),
-          fechaIngresoRP: asDate(get(rowObj, ['FECHA INGRESO RP', 'FECHA DE INGRESO RP'])),
-          fechaInscripcion: asDate(get(rowObj, ['FECHA DE INSCRIPCION', 'FECHA INSCRIPCION'])),
+          fechaIngresoRP: asDate(get(rowObj, ['FECHA INGRESO RP', 'FECHA DE INGRESO RP', 'INGRESO REGISTRO'])),
+          fechaInscripcion: asDate(get(rowObj, ['FECHA DE INSCRIPCION', 'FECHA INSCRIPCION', 'INSCRIPCIÓN REGISTRO'])),
 
           solicitudDesembolso: parseBool(get(rowObj, ['SOLICITUD DE DESEMBOLSO'])),
-          fechaDesembolso: asDate(get(rowObj, ['FECHA DESEMBOLSO', 'FECHA DE DESEMBOLSO'])),
+          fechaDesembolso: asDate(get(rowObj, ['FECHA DESEMBOLSO', 'FECHA DE DESEMBOLSO', 'DESEMBOLSO'])),
           fechaRecibidoCheque: asDate(get(rowObj, ['FECHA DE RECIBIDO DE CK', 'FECHA RECIBIDO CHEQUE'])),
 
           // =========================
@@ -6133,12 +6104,12 @@ router.post(
           // =========================
           solicitudAvaluo: clean(get(rowObj, ['SOLICITUD DE AVALUO', 'SOLICITUD AVALUO', 'SOLICITUD DE AVALÚO'])),
           avaluoRealizado: clean(get(rowObj, ['AVALUO REALIZADO', 'AVALÚO REALIZADO'])),
-          fechaAvaluo: asDate(get(rowObj, ['FECHA AVALUO', 'FECHA AVALÚO'])),
-          empresaAvaluadora: clean(get(rowObj, ['EMPRESA AVALUADORA'])),
+          fechaAvaluo: asDate(get(rowObj, ['FECHA AVALUO', 'FECHA AVALÚO', 'FECHA DE INSPECCIÓN DE AVALUO'])),
+          empresaAvaluadora: clean(get(rowObj, ['EMPRESA AVALUADORA', 'ENCARGADO DE AVALUO'])),
 
-          mLiberacion: clean(get(rowObj, ['M. DE LIBERACION', 'MINUTA LIBERACION', 'MINUTA LIBERACIÓN'])),
+          mLiberacion: clean(get(rowObj, ['M. DE LIBERACION', 'MINUTA LIBERACION', 'MINUTA LIBERACIÓN', 'SOLICITUD DE MINUTA LIBERACIÓN'])),
           mSegregacion: clean(get(rowObj, ['M. SEGREGACION', 'MINUTA SEGREGACION', 'MINUTA SEGREGACIÓN'])),
-          mPrestamo: clean(get(rowObj, ['M. PRESTAMO', 'MINUTA PRESTAMO', 'MINUTA PRÉSTAMO'])),
+          mPrestamo: clean(get(rowObj, ['M. PRESTAMO', 'MINUTA PRESTAMO', 'MINUTA PRÉSTAMO', 'MINUTA DE PRESTAMO'])),
 
           pazSalvoGesproban: parseBool(get(rowObj, ['PAZ Y SALVO GESPROBAN'])),
           pazSalvoPromotora: parseBool(get(rowObj, ['PAZ Y SALVO PROMOTORA'])),
@@ -6148,7 +6119,7 @@ router.post(
           // =========================
           entregaCasa: clean(get(rowObj, ['ENTREGA DE CASA', 'ENTREGA CASA'])),
           entregaANATI: clean(get(rowObj, ['ENTREGA ANATI'])),
-          fechaEntregaVivienda: asDate(get(rowObj, ['FECHA ENTREGA VIVIENDA', 'FECHA DE ENTREGA VIVIENDA'])),
+          fechaEntregaVivienda: asDate(get(rowObj, ['FECHA ENTREGA VIVIENDA', 'FECHA DE ENTREGA VIVIENDA', 'FECHA DE ENTREGA'])),
 
           captadoAtencionOficina: parseBool(get(rowObj, ['CAPTADO ATENCION OFICINA', 'CAPTADO ATENCIÓN OFICINA'])),
           captadoMailInternet: parseBool(get(rowObj, ['CAPTADO MAIL INTERNET', 'CAPTADO MAIL / INTERNET'])),
@@ -6274,7 +6245,7 @@ router.post(
 
     } catch (e) {
       console.error('[IMPORT DATO UNICO]', e);
-      res.status(500).json({ error: e.message });
+      res.status(e.status || 500).json({ error: e.message });
     }
   }
 );

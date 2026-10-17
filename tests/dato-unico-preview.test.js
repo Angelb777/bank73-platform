@@ -41,6 +41,7 @@ test('Dato Único avisa de valores variables y unidades duplicadas', () => {
 
   assert.equal(preview.valid, false);
   assert.equal(preview.duplicates.length, 1);
+  assert.match(preview.error, /filas 3 y 4/);
   assert.ok(preview.models[0].conflicts.includes('bedrooms'));
   assert.ok(preview.models[0].conflicts.includes('price'));
   assert.equal(preview.models[0].bedrooms, null);
@@ -59,6 +60,32 @@ test('Dato Único cuenta unidades sin modelo sin inventar una tipología', () =>
 test('Dato Único rechaza un Excel sin unidades válidas', () => {
   assert.throws(
     () => summarizeDatoUnico(workbookBuffer([])),
-    /Excel vacío o formato inesperado/
+    /No se encontraron unidades válidas/
   );
+});
+
+test('Dato Único reconoce BASE DATOS con unidades de apartamentos', () => {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['Lista de precios'],
+    ['Ud.', 'Nivel', 'Modelo', 'Apartamento', 'Precio'],
+    [1, 100, 'A', 101, 'B/.220,862.25']
+  ]), 'LISTA PRECIOS');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['UNIDAD APTO', 'NIVEL', 'CLIENTE', 'RESERVADAS, VENDIDAS', 'MODELO', 'AREA CERRADA', 'AREA BALCON', 'VALOR TOTAL'],
+    ['L-501', '000', 'Cliente Uno', 'TRASPASADO', 'A', 65.93, 0, 'B/.168,121.50'],
+    ['L-502', '000', '', 'DISPONIBLE', 'B', 59.94, 0, 'B/.182,000.00'],
+    ['L-503', '000', '', '', 'C1', 73.09, 2, 'B/.205,107.09']
+  ]), 'BASE DATOS');
+
+  const preview = summarizeDatoUnico(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
+
+  assert.equal(preview.valid, true);
+  assert.equal(preview.sheet, 'BASE DATOS');
+  assert.equal(preview.unitsTotal, 3);
+  assert.equal(preview.models.length, 3);
+  assert.equal(preview.models[0].price, 168121.5);
+  assert.equal(preview.models[0].initialStatuses.escriturado_traspasado, 1);
+  assert.equal(preview.models[1].initialStatuses.disponible, 1);
+  assert.equal(preview.models[2].initialStatuses.inventario, 1);
 });

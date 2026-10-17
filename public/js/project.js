@@ -4224,7 +4224,9 @@ const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
     if (!resp3.ok) {
       const txt = await resp3.text().catch(() => '');
       console.error(txt);
-      alert('Error importando Dato Único (mira consola)');
+      let message = txt || 'Error importando Dato Único';
+      try { message = JSON.parse(txt)?.error || message; } catch {}
+      alert(message);
       return;
     }
 
@@ -4304,7 +4306,9 @@ function bindDatoUnicoImportControls() {
         if (!resp3.ok) {
           const txt = await resp3.text().catch(() => '');
           console.error(txt);
-          alert('Error importando Dato Unico (mira consola)');
+          let message = txt || 'Error importando Dato Unico';
+          try { message = JSON.parse(txt)?.error || message; } catch {}
+          alert(message);
           return;
         }
 
