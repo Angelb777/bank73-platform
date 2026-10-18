@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="/js/branding.js"></script>
   <link href="/css/base.css" rel="stylesheet" />
-  <link href="/css/theme.css?v=disbursement-review-v2" rel="stylesheet" />
+  <link href="/css/theme.css?v=palms-layout-v5" rel="stylesheet" />
   <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
 
   <style>
@@ -1761,6 +1761,29 @@ body.light-theme .provider-exclusive {
     <p id="projectTypeText" class="small muted"></p>
     <div class="kpi-row" id="kpis"></div>
 
+    <div id="projectExperience" class="project-experience">
+      <section id="project3dPanel" class="project-3d-panel" hidden aria-label="Modelo 3D del proyecto">
+        <header class="project-3d-header">
+          <div>
+            <span class="project-3d-eyebrow">ACTIVO DIGITAL</span>
+            <h2>Modelo 3D del proyecto</h2>
+          </div>
+          <div class="project-3d-header-actions">
+            <span id="project3dMode" class="project-3d-mode">Resumen</span>
+            <button id="project3dReset" class="btn btn-ghost btn-xs" type="button">Restablecer vista</button>
+            <button id="project3dExpand" class="btn btn-ghost btn-xs" type="button" aria-label="Ampliar modelo 3D" title="Ver el modelo 3D a pantalla completa">Pantalla completa</button>
+          </div>
+        </header>
+        <div id="project3dLegend" class="project-3d-legend" aria-live="polite"></div>
+        <div class="project-3d-stage">
+          <iframe id="project3dFrame" title="Visor 3D interactivo de El Palmar" loading="lazy" allow="fullscreen"></iframe>
+          <div id="project3dLoading" class="project-3d-loading">Preparando modelo 3D…</div>
+        </div>
+        <p id="project3dNote" class="project-3d-note"></p>
+      </section>
+
+      <div id="projectDataPanel" class="project-data-panel">
+
     <div class="tabs">
       <button type="button" class="tab active" data-tab="resumen" id="tabBtn-resumen">Resumen</button>
       <button type="button" class="tab" data-tab="proyecto" id="tabBtn-proyecto">Avances</button>
@@ -2938,6 +2961,9 @@ body.light-theme .provider-exclusive {
   </div>
 </div>
 
+      </div>
+    </div>
+
 
   <div id="modalBackdrop" class="modal-backdrop">
     <div class="modal">
@@ -2956,7 +2982,8 @@ body.light-theme .provider-exclusive {
   <script src="/js/banks.js"></script>
   <script src="/lib/chart.umd.min.js"></script>
   <script src="/js/theme-toggle.js"></script>
-  <script src="/js/project.js?v=disbursement-review-v2"><!-- ROLE-SEP: bump --></script>
+  <script src="/js/project-3d.js?v=palms-layout-v4"></script>
+  <script src="/js/project.js?v=palms-layout-v4"><!-- ROLE-SEP: bump --></script>
   <script src="/js/avaluadores.js?v=2"></script>
 
 </body>

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#071321" />
+    <title>Bank73 · Visor inmobiliario 3D</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&amp;family=Manrope:wght@600;700&amp;display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Bank73">
+          <span class="brand-mark">B73</span>
+          <span><strong>Bank73</strong><small>Real Estate Intelligence</small></span>
+        </a>
+        <div class="project-heading">
+          <span class="eyebrow">PROYECTO</span>
+          <h1>Residencial El Palmar</h1>
+          <span class="demo-badge">TORRE C · 57 UNIDADES VERIFICADAS</span>
+        </div>
+        <button id="resetView" class="icon-button" type="button" title="Restablecer vista" aria-label="Restablecer vista">↗</button>
+      </header>
+
+      <main>
+        <section id="viewport" aria-label="Visor 3D interactivo">
+          <canvas id="scene"></canvas>
+          <div class="scene-status">
+            <span class="pulse"></span>
+            <span>Modelo interactivo</span>
+          </div>
+          <div class="instructions"><strong>Arrastra</strong> para girar · <strong>Rueda</strong> para acercar · <strong>Clic</strong> selecciona · <strong>Doble clic</strong> abre interior</div>
+          <div class="provisional-note">Torre C: inventario oficial · geometría simplificada</div>
+          <div id="interiorBadge" class="interior-badge" hidden>
+            <span>VISTA INTERIOR · SIN TECHO</span>
+            <strong id="interiorUnitId"></strong>
+            <small>Distribución tipológica aproximada basada en planos y renders</small>
+          </div>
+          <button id="exitInterior" class="exit-interior" type="button" hidden>← Volver al conjunto</button>
+          <div id="tooltip" class="tooltip" hidden></div>
+        </section>
+
+        <aside class="control-panel" aria-label="Controles del visor">
+          <section class="panel-section mode-section">
+            <div class="section-heading"><span class="step">01</span><div><span class="eyebrow">CAPA DE DATOS</span><h2>Modo de análisis</h2></div></div>
+            <div id="modeSelector" class="segmented" role="group" aria-label="Modo de análisis">
+              <button type="button" data-mode="progress"><span>◫</span>Avances</button>
+              <button type="button" data-mode="finance"><span>€</span>Finanzas</button>
+              <button type="button" data-mode="commercial" class="active"><span>◇</span>Comercial</button>
+            </div>
+            <div id="legend" class="legend"></div>
+          </section>
+
+          <section class="panel-section filters-section">
+            <div class="section-heading"><span class="step">02</span><div><span class="eyebrow">NAVEGACIÓN</span><h2>Filtrar modelo</h2></div></div>
+            <label for="towerSelect">Torre</label>
+            <select id="towerSelect"></select>
+            <label for="floorSelect">Planta</label>
+            <select id="floorSelect"></select>
+            <button id="clearFilters" class="secondary-button" type="button">Ver conjunto completo</button>
+          </section>
+
+          <section class="panel-section unit-section">
+            <div class="section-heading"><span class="step">03</span><div><span class="eyebrow">UNIDAD</span><h2>Ficha de activo</h2></div></div>
+            <div id="emptyState" class="empty-state">
+              <span class="unit-cube">◇</span>
+              <p>Selecciona una unidad en el modelo para consultar su información.</p>
+            </div>
+            <div id="unitCard" class="unit-card" hidden>
+              <div class="unit-card-head"><div><span id="unitKicker" class="eyebrow"></span><button id="unitTitle" class="unit-title-link" type="button" title="Abrir ficha comercial"></button></div><span id="unitStatus" class="status-pill"></span></div>
+              <dl id="unitDetails"></dl>
+              <button id="viewInterior" class="primary-button" type="button"><span>⌂</span> Ver interior</button>
+              <p id="dataWarning" class="data-warning"></p>
+            </div>
+          </section>
+        </aside>
+      </main>
+    </div>
+    <script type="module" src="/src/app.js"></script>
+  </body>
+</html>

@@ -53,7 +53,9 @@ function modelPayloadFromProject(project, modelIdOrName) {
     recamaras: Number(model.bedrooms || 0),
     banos: Number(model.bathrooms || 0),
     precioLista: Number(model.price || 0),
-    price: Number(model.price || 0)
+    price: Number(model.price || 0),
+    costoUnidad: Number(model.cost || 0),
+    costoUnidadManual: false
   };
 }
 
@@ -73,6 +75,10 @@ function unitModelFieldsFromBody(project, body = {}) {
   if (body.precioLista !== undefined) {
     out.precioLista = Number(body.precioLista || 0);
     out.price = out.precioLista;
+  }
+  if (body.costoUnidad !== undefined) {
+    out.costoUnidad = Math.max(0, Number(body.costoUnidad || 0));
+    out.costoUnidadManual = body.costoUnidadManual !== undefined ? Boolean(body.costoUnidadManual) : true;
   }
   if (body.areaAbierta !== undefined) out.areaAbierta = Number(body.areaAbierta || 0);
   if (body.areaCerrada !== undefined) out.areaCerrada = Number(body.areaCerrada || 0);
@@ -313,6 +319,10 @@ router.patch(
       if (set.modelId || set.modelo) {
         Object.assign(set, unitModelFieldsFromBody(req.project, set));
       }
+      if (update.costoUnidad !== undefined) {
+        set.costoUnidad = Math.max(0, Number(update.costoUnidad || 0));
+        set.costoUnidadManual = update.costoUnidadManual !== undefined ? Boolean(update.costoUnidadManual) : true;
+      }
       if (set.precioLista != null) set.price = set.precioLista;
 
       let unitsAntes = [];
@@ -467,6 +477,10 @@ router.patch(
 
       if (update.modelId || update.modelo) {
         Object.assign(update, unitModelFieldsFromBody(req.project, update));
+      }
+      if (req.body.costoUnidad !== undefined) {
+        update.costoUnidad = Math.max(0, Number(req.body.costoUnidad || 0));
+        update.costoUnidadManual = req.body.costoUnidadManual !== undefined ? Boolean(req.body.costoUnidadManual) : true;
       }
       if (update.precioLista != null) update.price = update.precioLista;
 

@@ -266,12 +266,13 @@ function sanitizeHousingModels(raw = []) {
         openAreaM2: Math.max(0, parsePanamaNumber(item?.openAreaM2 ?? item?.areaAbiertaM2) || 0),
         closedAreaM2: Math.max(0, parsePanamaNumber(item?.closedAreaM2 ?? item?.areaCerradaM2) || 0),
         price: Math.max(0, parsePanamaNumber(item?.price ?? item?.precio) || 0),
+        cost: Math.max(0, parsePanamaNumber(item?.cost ?? item?.costo ?? item?.costoUnidad) || 0),
         unitsCount,
         initialStatuses: sanitizeInitialStatuses(item?.initialStatuses || item?.estadosIniciales || {}, unitsCount),
         observations: String(item?.observations || item?.observaciones || '').trim()
       };
     })
-    .filter(item => item.name || item.unitsCount || item.price || item.openAreaM2 || item.closedAreaM2);
+    .filter(item => item.name || item.unitsCount || item.price || item.cost || item.openAreaM2 || item.closedAreaM2);
 }
 
 function validateHousingModelStatuses(models = []) {
@@ -315,6 +316,8 @@ function sanitizeInitialUnits(raw = []) {
         ubicacion: String(item?.ubicacion || item?.location || '').trim(),
         m2: Math.max(0, parsePanamaNumber(item?.m2 ?? item?.m2Unidad) || 0),
         precioLista: Math.max(0, parsePanamaNumber(item?.precioLista ?? item?.precio) || 0),
+        costoUnidad: Math.max(0, parsePanamaNumber(item?.costoUnidad ?? item?.costo) || 0),
+        costoUnidadManual: Boolean(item?.costoUnidadManual),
         numeroFinca: String(item?.numeroFinca || '').trim(),
         codigoUbicacion: String(item?.codigoUbicacion || '').trim(),
         calle: String(item?.calle || '').trim(),
@@ -701,6 +704,8 @@ async function createInitialUnitsFromModels({ req, project, initialUnits = [] })
         ubicacion: unit.ubicacion || projectLocation,
         m2: unit.m2 || unit.areaTotalConstruccion || 0,
         precioLista: unit.precioLista || 0,
+        costoUnidad: unit.costoUnidad || 0,
+        costoUnidadManual: Boolean(unit.costoUnidadManual),
         numeroFinca: unit.numeroFinca || '',
         codigoUbicacion: unit.codigoUbicacion || '',
         calle: unit.calle || '',
@@ -752,6 +757,8 @@ async function createInitialUnitsFromModels({ req, project, initialUnits = [] })
         recamaras: model.bedrooms || 0,
         banos: model.bathrooms || 0,
         precioLista: model.price || 0,
+        costoUnidad: model.cost || 0,
+        costoUnidadManual: false,
         estado,
         deletedAt: null,
         code: `${String(model.name || 'Modelo').slice(0, 24)}-${lote}`,
@@ -1647,6 +1654,126 @@ router.get('/:id', requireProjectAccess(), async (req, res) => {
   }
 });
 
+// Datos consolidados y no sensibles para el visor 3D integrado. Esta ruta no
+// expone nombres de clientes, documentos ni datos bancarios: une únicamente
+// inventario, métricas técnicas y cifras de la propia unidad.
+router.get('/:id/viewer-3d', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenantKey = req.tenantKey;
+    if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Proyecto inválido' });
+
+    const project = await Project.findOne({ _id: id, tenantKey })
+      .select('name currency viewer3D updatedAt')
+      .lean();
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    if (!project.viewer3D?.enabled) return res.json({ enabled: false });
+
+    const [units, ventas] = await Promise.all([
+      Unit.find({ projectId: project._id, tenantKey, deletedAt: null })
+        .select('manzana lote modelo m2 areaAbierta areaCerrada areaTotalConstruccion recamaras banos precioLista costoUnidad estado viewer3D')
+        .sort({ manzana: 1, lote: 1 })
+        .lean(),
+      Venta.find({ projectId: project._id, tenantKey, deletedAt: null })
+        .select('unitId precioVenta valor abonoCliente abonoInicial estatusConstruccion faseConstruccion enConstruccion fechaEntregaVivienda estadoVenta')
+        .lean()
+    ]);
+
+    const ventaByUnit = new Map(ventas.map(venta => [String(venta.unitId), venta]));
+    const commercialStatus = status => ({
+      disponible: 'available',
+      reservado: 'reserved',
+      con_cpp: 'cpp',
+      tramite_legal_activado: 'sold',
+      escriturado_traspasado: 'transferred',
+      vivienda_entregada: 'transferred'
+    }[status] || 'unknown');
+
+    const rows = units.map(unit => {
+      const venta = ventaByUnit.get(String(unit._id)) || {};
+      const salePrice = Number(venta.precioVenta || venta.valor || unit.precioLista || 0);
+      const budgetCost = Number(unit.costoUnidad || unit.viewer3D?.budgetCost || 0);
+      const actualCost = Number(unit.viewer3D?.actualCost || 0);
+      const costRatio = budgetCost > 0 ? actualCost / budgetCost : null;
+      const financeStatus = costRatio == null
+        ? 'unknown'
+        : costRatio <= 1 ? 'onTrack' : costRatio <= 1.05 ? 'attention' : 'deviation';
+      const progressPct = Number.isFinite(Number(unit.viewer3D?.progressPct))
+        ? Number(unit.viewer3D.progressPct)
+        : null;
+      const progressStatus = unit.viewer3D?.progressStatus
+        || (progressPct == null ? 'unknown' : progressPct >= 100 ? 'completed' : progressPct > 0 ? 'inProgress' : 'pending');
+
+      return {
+        id: String(unit._id),
+        tower: unit.viewer3D?.tower || project.viewer3D.primaryTower || '',
+        level: unit.manzana,
+        unitId: unit.lote,
+        model: unit.modelo,
+        bedrooms: Number(unit.recamaras || 0) || null,
+        bathrooms: Number(unit.banos || 0) || null,
+        closedArea: Number(unit.areaCerrada || unit.m2 || 0) || null,
+        openArea: Number(unit.areaAbierta || 0) || 0,
+        totalArea: Number(unit.areaTotalConstruccion || unit.m2 || 0) || null,
+        progress: {
+          status: progressStatus,
+          percentage: progressPct,
+          phase: unit.viewer3D?.constructionPhase || venta.faseConstruccion || '',
+          label: venta.estatusConstruccion || ''
+        },
+        finance: {
+          status: financeStatus,
+          budgetCost,
+          actualCost,
+          variance: budgetCost > 0 ? actualCost - budgetCost : null,
+          salePrice,
+          collected: Number(venta.abonoCliente || venta.abonoInicial || 0),
+          estimatedMargin: salePrice > 0 && actualCost > 0 ? salePrice - actualCost : null,
+          currency: project.currency || 'PAB',
+          dataKind: unit.viewer3D?.dataKind || project.viewer3D.financialDataKind || ''
+        },
+        commercial: {
+          status: venta.estadoVenta === 'caida' ? 'unknown' : commercialStatus(unit.estado),
+          sourceStatus: unit.estado,
+          askingPrice: salePrice,
+          currency: project.currency || 'PAB'
+        },
+        sourceLabel: unit.viewer3D?.sourceLabel || project.viewer3D.inventorySource || ''
+      };
+    });
+
+    const countBy = (path, value) => rows.filter(row => path(row) === value).length;
+    res.json({
+      enabled: true,
+      project: {
+        id: String(project._id),
+        name: project.name,
+        currency: project.currency || 'PAB',
+        modelKey: project.viewer3D.modelKey,
+        primaryTower: project.viewer3D.primaryTower,
+        inventorySource: project.viewer3D.inventorySource,
+        financialDataKind: project.viewer3D.financialDataKind,
+        dataVersion: project.viewer3D.dataVersion,
+        note: project.viewer3D.note,
+        updatedAt: project.updatedAt
+      },
+      summary: {
+        units: rows.length,
+        available: countBy(row => row.commercial.status, 'available'),
+        sold: rows.filter(row => ['sold', 'cpp', 'transferred'].includes(row.commercial.status)).length,
+        completed: countBy(row => row.progress.status, 'completed'),
+        budgetCost: rows.reduce((sum, row) => sum + Number(row.finance.budgetCost || 0), 0),
+        actualCost: rows.reduce((sum, row) => sum + Number(row.finance.actualCost || 0), 0),
+        salesValue: rows.reduce((sum, row) => sum + Number(row.finance.salePrice || 0), 0)
+      },
+      units: rows
+    });
+  } catch (error) {
+    console.error('[GET /projects/:id/viewer-3d] error:', error);
+    res.status(500).json({ error: 'No se pudo cargar el visor 3D' });
+  }
+});
+
 router.post('/:id/expiry-alerts/resolve', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   try {
     const role = String(req.user?.role || '').toLowerCase();
@@ -1960,6 +2087,21 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
     }
     if (payload.housingModels) {
       await createMissingUnitsForNewModels({ req, project: updated });
+      const inheritedCostOps = payload.housingModels
+        .filter(model => String(model.name || '').trim())
+        .map(model => ({
+          updateMany: {
+            filter: {
+              tenantKey,
+              projectId: updated._id,
+              deletedAt: null,
+              modelo: String(model.name || '').trim(),
+              costoUnidadManual: { $ne: true }
+            },
+            update: { $set: { costoUnidad: Number(model.cost || 0), costoUnidadManual: false } }
+          }
+        }));
+      if (inheritedCostOps.length) await Unit.bulkWrite(inheritedCostOps, { ordered: false });
     }
     if (payload.location !== undefined || payload.address !== undefined) {
       await Unit.updateMany(

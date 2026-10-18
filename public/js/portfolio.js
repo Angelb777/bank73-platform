@@ -1245,6 +1245,7 @@
       <label>Area abierta m2<input data-create-model="openAreaM2" data-bank-number type="text" inputmode="decimal" value="${item.openAreaM2 ? formatBankNumber(item.openAreaM2) : ''}"></label>
       <label>Area cerrada m2<input data-create-model="closedAreaM2" data-bank-number type="text" inputmode="decimal" value="${item.closedAreaM2 ? formatBankNumber(item.closedAreaM2) : ''}"></label>
       <label>Precio<input data-create-model="price" data-bank-number type="text" inputmode="decimal" value="${item.price ? formatBankNumber(item.price) : ''}"></label>
+      <label>Coste por unidad<input data-create-model="cost" data-bank-number type="text" inputmode="decimal" value="${item.cost ? formatBankNumber(item.cost) : ''}"></label>
       <label>Observaciones<input data-create-model="observations" value="${escapeHtml(item.observations || '')}"></label>
       <div class="create-model-statuses" style="grid-column:1/-1;border:1px solid #dbeafe;background:#f8fbff;border-radius:14px;padding:12px;margin-top:4px;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
@@ -1480,6 +1481,7 @@
       openAreaM2: numberFromCreate(row.querySelector('[data-create-model="openAreaM2"]')?.value),
       closedAreaM2: numberFromCreate(row.querySelector('[data-create-model="closedAreaM2"]')?.value),
       price: numberFromCreate(row.querySelector('[data-create-model="price"]')?.value),
+      cost: numberFromCreate(row.querySelector('[data-create-model="cost"]')?.value),
       initialStatuses: Object.fromEntries(Array.from(row.querySelectorAll('[data-create-model-status]')).map(input => [
         input.dataset.createModelStatus,
         numberFromCreate(input.value)
@@ -1522,6 +1524,8 @@
       ubicacion: document.getElementById('pLocation')?.value?.trim() || '',
       m2: open + closed,
       precioLista: numberFromCreate(row.querySelector('[data-create-model="price"]')?.value),
+      costoUnidad: numberFromCreate(row.querySelector('[data-create-model="cost"]')?.value),
+      costoUnidadManual: false,
       areaAbierta: open,
       areaCerrada: closed,
       areaTotalConstruccion: open + closed,

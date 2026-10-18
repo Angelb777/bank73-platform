@@ -1871,6 +1871,7 @@ function shortProjectDescription(value, maxLength = 150) {
         <label class="small muted">Area abierta<input class="input" data-ep-model="openAreaM2" data-bank-number type="text" inputmode="decimal" value="${item.openAreaM2 ? formatBankNumber(item.openAreaM2) : ''}"></label>
         <label class="small muted">Area cerrada<input class="input" data-ep-model="closedAreaM2" data-bank-number type="text" inputmode="decimal" value="${item.closedAreaM2 ? formatBankNumber(item.closedAreaM2) : ''}"></label>
         <label class="small muted">Precio<input class="input" data-ep-model="price" data-bank-number type="text" inputmode="decimal" value="${item.price ? formatBankNumber(item.price) : ''}"></label>
+        <label class="small muted">Coste por unidad<input class="input" data-ep-model="cost" data-bank-number type="text" inputmode="decimal" value="${item.cost ? formatBankNumber(item.cost) : ''}"></label>
         <label class="small muted">Observaciones<input class="input" data-ep-model="observations" value="${escapeHtml(item.observations || '')}"></label>
       </div>
       <div style="border:1px solid #1d4ed8;background:#0b1730;border-radius:10px;padding:10px;margin-top:10px;">
@@ -1951,6 +1952,7 @@ function shortProjectDescription(value, maxLength = 150) {
       openAreaM2: dashNum(row.querySelector('[data-ep-model="openAreaM2"]')?.value),
       closedAreaM2: dashNum(row.querySelector('[data-ep-model="closedAreaM2"]')?.value),
       price: dashNum(row.querySelector('[data-ep-model="price"]')?.value),
+      cost: dashNum(row.querySelector('[data-ep-model="cost"]')?.value),
       observations: row.querySelector('[data-ep-model="observations"]')?.value.trim() || '',
       initialStatuses: Object.fromEntries(Array.from(row.querySelectorAll('[data-ep-model-status]')).map(input => [
         input.dataset.epModelStatus,

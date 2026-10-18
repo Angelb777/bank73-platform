@@ -235,6 +235,7 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
       if (refreshSummary || resumenActive) {
         await refreshSummaryFromServer();
       }
+      window.__PROJECT_3D?.refresh?.();
     } catch (e) {
       console.warn('[Project] No se pudo refrescar el resumen tras guardar cambios', e);
     }
@@ -451,6 +452,7 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
         console.warn('[Summary] No se pudo refrescar al abrir la pestana resumen', e);
       });
     }
+    window.__PROJECT_3D?.setModeFromTab?.(key);
   }
   document.addEventListener('click', (ev) => {
   const btn = ev.target.closest('.tab[data-tab]');
@@ -1815,7 +1817,7 @@ function isPartialProyectoRole() {
 
 function syncPartialProyectoUI() {
   const hideIt = isPartialProyectoRole();
-  const globalPhasePanel = document.querySelector('#tab-proyecto > .phase');
+  const globalPhasePanel = document.querySelector('#tab-proyecto .project-tab-lead > .phase, #tab-proyecto > .phase');
   const asideRoles       = document.querySelector('#tab-proyecto aside.roles-panel');
   const phaseActions     = globalPhasePanel?.querySelector('.phase-actions');
 
@@ -4629,6 +4631,7 @@ function semaphoreForRole(roleKey) {
   async function loadProject() {
     const p = await API.get('/api/projects/' + id);
     state.project = p;
+    window.__PROJECT_3D?.configure?.(p);
     currentProjectCurrency = normalizeProjectCurrency(p.currency);
     if (projectCurrencySel) {
       projectCurrencySel.value = currentProjectCurrency;
@@ -10179,6 +10182,7 @@ function estadoLabel(v) {
             <span>Abierta</span>
             <span>Cerrada</span>
             <span>Precio</span>
+            <span>Coste</span>
             <span></span>
           </div>
           ${models.map((model, idx) => `
@@ -10189,6 +10193,7 @@ function estadoLabel(v) {
               <input data-commercial-model="openAreaM2" type="number" min="0" step="any" placeholder="Área abierta" value="${attr(model.openAreaM2 ?? '')}">
               <input data-commercial-model="closedAreaM2" type="number" min="0" step="any" placeholder="Área cerrada" value="${attr(model.closedAreaM2 ?? '')}">
               <input data-commercial-model="price" type="number" min="0" step="any" placeholder="Precio" value="${attr(model.price ?? '')}">
+              <input data-commercial-model="cost" type="number" min="0" step="any" placeholder="Coste" value="${attr(model.cost ?? '')}">
               <button type="button" class="btn mini" data-delete-commercial-model="${idx}">Eliminar</button>
             </div>
           `).join('') || '<div class="small muted">Aún no hay modelos guardados.</div>'}
@@ -10199,6 +10204,7 @@ function estadoLabel(v) {
             <input id="cm-openAreaM2" type="number" min="0" step="any" placeholder="Área abierta">
             <input id="cm-closedAreaM2" type="number" min="0" step="any" placeholder="Área cerrada">
             <input id="cm-price" type="number" min="0" step="any" placeholder="Precio">
+            <input id="cm-cost" type="number" min="0" step="any" placeholder="Coste">
             <button type="button" class="btn mini primary" id="btnAddCommercialModel">Añadir</button>
           </div>
           <div class="commercial-model-actions">
@@ -10223,7 +10229,8 @@ function estadoLabel(v) {
       bathrooms: num('bathrooms'),
       openAreaM2: num('openAreaM2'),
       closedAreaM2: num('closedAreaM2'),
-      price: num('price')
+      price: num('price'),
+      cost: num('cost')
     };
   }
 
@@ -10307,6 +10314,10 @@ function estadoLabel(v) {
             <span>Precio lista</span>
             <input id="cl-precio" type="text" inputmode="decimal" value="100,000.00" />
           </label>
+          <label>
+            <span>Coste por unidad</span>
+            <input id="cl-costo" type="text" inputmode="decimal" value="0.00" />
+          </label>
           <label class="commercial-field-wide">
             <span>Ubicacion</span>
             <input id="cl-ubicacion" type="text" />
@@ -10358,6 +10369,7 @@ function estadoLabel(v) {
         openAreaM2: Number(document.getElementById('cm-openAreaM2')?.value || 0),
         closedAreaM2: Number(document.getElementById('cm-closedAreaM2')?.value || 0),
         price: Number(document.getElementById('cm-price')?.value || 0),
+        cost: Number(document.getElementById('cm-cost')?.value || 0),
         observations: 'Creado desde Comercial'
       });
       try {
@@ -10401,6 +10413,7 @@ function estadoLabel(v) {
       modelo: model.name || '',
       m2: Number(model.openAreaM2 || 0) + Number(model.closedAreaM2 || 0),
       precioLista: Number(model.price || 0),
+      costoUnidad: Number(model.cost || 0),
       areaAbierta: Number(model.openAreaM2 || 0),
       areaCerrada: Number(model.closedAreaM2 || 0),
       recamaras: Number(model.bedrooms || 0),
@@ -10419,6 +10432,7 @@ function estadoLabel(v) {
     setValue('cl-modelo', defaults.modelo);
     setValue('cl-m2', formatInputNumber('cl-m2', defaults.m2));
     setValue('cl-precio', formatInputNumber('cl-precio', defaults.precioLista));
+    setValue('cl-costo', formatInputNumber('cl-costo', defaults.costoUnidad));
     setValue('cl-areaAbierta', formatInputNumber('cl-areaAbierta', defaults.areaAbierta));
     setValue('cl-areaCerrada', formatInputNumber('cl-areaCerrada', defaults.areaCerrada));
     setValue('cl-recamaras', formatInputNumber('cl-recamaras', defaults.recamaras));
@@ -10438,6 +10452,9 @@ function estadoLabel(v) {
     setValue('fu-modelo', defaults.modelo);
     setValue('fu-m2', formatInputNumber('fu-m2', defaults.m2));
     setValue('fu-precio', formatInputNumber('fu-precio', defaults.precioLista));
+    setValue('fu-costo', formatInputNumber('fu-costo', defaults.costoUnidad));
+    const costInput = document.getElementById('fu-costo');
+    if (costInput) costInput.dataset.manual = 'false';
     setValue('fv-areaAbierta', formatInputNumber('fv-areaAbierta', defaults.areaAbierta));
     setValue('fv-areaCerrada', formatInputNumber('fv-areaCerrada', defaults.areaCerrada));
     setValue('fv-recamaras', formatInputNumber('fv-recamaras', defaults.recamaras));
@@ -12027,6 +12044,11 @@ async function aplicarImportWord(unitId) {
 }
 
   async function abrirFichaUnidad(unitId) {
+  // La ficha es global: fuera de pantalla completa vive en <body>; dentro del
+  // visor fullscreen debe ser hija del elemento fullscreen para poder mostrarse.
+  const viewerPanel = document.getElementById('project3dPanel');
+  const modalHost = document.fullscreenElement === viewerPanel ? viewerPanel : document.body;
+  if (modalFicha && modalFicha.parentElement !== modalHost) modalHost.appendChild(modalFicha);
   fichaUnitId = unitId;
 
   const u = unitsCache.find(x => String(x._id) === String(unitId)) || await apiGet(`/api/units/${unitId}`);
@@ -12096,6 +12118,7 @@ tituloUnidad.innerHTML = `
    ${input('fu-modelo', `Modelo ${info('Modelo de vivienda asignado. Según el modelo seleccionado deberían completarse automáticamente áreas, recámaras y baños definidos por administración.')}`, u.modelo || '')}
 ${inputNum('fu-m2', `m² unidad ${info('Área general de la unidad. Puede servir como referencia rápida, aunque el modelo Bank73 separa metraje de lote, área abierta, área cerrada y área total de construcción.')}`, u.m2 || 0)}
 ${inputNum('fu-precio', `Precio lista ${info('Precio comercial base de la unidad antes de ajustes, abonos o financiamiento.')}`, u.precioLista || 0)}
+${inputNum('fu-costo', `Coste de la unidad ${info('Coste base heredado del modelo. Puedes modificarlo solo para esta unidad sin cambiar las demÃ¡s.')}`, u.costoUnidad || 0)}
 
 ${input('fv-numeroFinca', `Número de finca ${info('Identificador registral del inmueble. Según el modelo, este dato debería ser gestionado principalmente por administración.')}`, v.numeroFinca || '')}
 ${input('fv-codigoUbicacion', `Código de ubicación ${info('Código de ubicación registral o catastral del inmueble. Dato administrativo/legal del bien.')}`, v.codigoUbicacion || '')}
@@ -12511,6 +12534,11 @@ document.getElementById('fv-porcentajeFinanciamiento')?.addEventListener('input'
 document.getElementById('fv-areaAbierta')?.addEventListener('input', refreshAreaTotalConstruccion);
 document.getElementById('fv-areaCerrada')?.addEventListener('input', refreshAreaTotalConstruccion);
 document.getElementById('fu-modeloSelect')?.addEventListener('change', (event) => applyProjectModelToFicha(event.target.value));
+const unitCostInput = document.getElementById('fu-costo');
+if (unitCostInput) {
+  unitCostInput.dataset.manual = u.costoUnidadManual ? 'true' : 'false';
+  unitCostInput.addEventListener('input', () => { unitCostInput.dataset.manual = 'true'; });
+}
 
 refreshFinanciamientoAuto('init');
 refreshAreaTotalConstruccion();
@@ -12627,6 +12655,8 @@ const uBody = {
   modelo: document.getElementById('fu-modelo').value,
   m2: parseInputNumber('fu-m2', document.getElementById('fu-m2').value),
   precioLista: parsePanamaNumber(document.getElementById('fu-precio').value),
+  costoUnidad: parsePanamaNumber(document.getElementById('fu-costo').value),
+  costoUnidadManual: document.getElementById('fu-costo')?.dataset.manual === 'true',
 };
 
     await apiPatch(`/api/units/${fichaUnitId}`, uBody);
@@ -13222,6 +13252,8 @@ if (btnExportarExcel) {
         recamaras: parseInputNumber('cl-recamaras', document.getElementById('cl-recamaras')?.value || 0),
         banos: parseInputNumber('cl-banos', document.getElementById('cl-banos')?.value || 0),
         precioLista: parsePanamaNumber(document.getElementById('cl-precio').value || 0),
+        costoUnidad: parsePanamaNumber(document.getElementById('cl-costo')?.value || 0),
+        costoUnidadManual: false,
         estado: document.getElementById('cl-estado').value || 'disponible'
       };
       try {

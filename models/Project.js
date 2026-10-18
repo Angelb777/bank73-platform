@@ -162,6 +162,22 @@ const projectSchema = new Schema({
     }
   },
 
+  // Visor inmobiliario integrado. La configuración vive en el proyecto para
+  // que la interfaz no dependa del nombre ni de reglas especiales del cliente.
+  viewer3D: {
+    enabled: { type: Boolean, default: false },
+    modelKey: { type: String, trim: true, default: '' },
+    primaryTower: { type: String, trim: true, default: '' },
+    inventorySource: { type: String, trim: true, default: '' },
+    financialDataKind: {
+      type: String,
+      enum: ['', 'actual', 'illustrative'],
+      default: ''
+    },
+    dataVersion: { type: String, trim: true, default: '' },
+    note: { type: String, trim: true, default: '' }
+  },
+
   housingModels: {
     type: [{
       name: { type: String, trim: true, default: '' },
@@ -170,6 +186,7 @@ const projectSchema = new Schema({
       openAreaM2: { type: Number, default: 0 },
       closedAreaM2: { type: Number, default: 0 },
       price: { type: Number, default: 0 },
+      cost: { type: Number, default: 0 },
       unitsCount: { type: Number, default: 0 },
       initialStatuses: {
         disponible: { type: Number, default: 0 },

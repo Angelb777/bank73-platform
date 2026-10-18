@@ -1,0 +1,1624 @@
+{
+  "project": {
+    "viewer3D": null,
+    "technicalData": {
+      "phasesCount": 0,
+      "totalUnits": 57,
+      "notes": "",
+      "insurancePolicies": [],
+      "assessment": {
+        "conceptualProject": null,
+        "preliminaryDesign": null,
+        "approvedPlans": null,
+        "executiveProject": null,
+        "constructionBudget": null,
+        "contractorDefined": null,
+        "technicalOpinionAttached": null
+      }
+    },
+    "financialConditions": {
+      "facilities": [],
+      "precedentConditions": {
+        "presalesMet": false,
+        "constructionPermitsApproved": false,
+        "plansApproved": false,
+        "insuranceDelivered": false,
+        "guaranteesConstituted": false,
+        "environmentalStudyApproved": false,
+        "trustConstituted": false,
+        "otherRequirementsMet": false,
+        "otherRequirements": ""
+      },
+      "operationStructure": {
+        "trustee": "",
+        "trustType": "",
+        "technicalInspector": "",
+        "financialInspector": ""
+      },
+      "projectTotal": 0,
+      "bankFinancedAmount": 0,
+      "bankFinancedPct": 0,
+      "promoterContribution": 0,
+      "promoterContributionPct": 0,
+      "interestRate": 0,
+      "term": "",
+      "paymentMethod": "",
+      "commission": "",
+      "disbursementMethod": "",
+      "disbursementConditions": "",
+      "amortizationConditions": "",
+      "requiredPresales": "",
+      "guarantees": "",
+      "insurance": ""
+    },
+    "financePhases": [],
+    "housingModels": [
+      {
+        "name": "C1",
+        "bedrooms": 0,
+        "bathrooms": 0,
+        "openAreaM2": 0,
+        "closedAreaM2": 0,
+        "price": 0,
+        "unitsCount": 18,
+        "initialStatuses": {
+          "disponible": 0,
+          "inventario": 0,
+          "reservado": 0,
+          "con_cpp": 2,
+          "tramite_legal_activado": 0,
+          "escriturado_traspasado": 16,
+          "vivienda_entregada": 0,
+          "cancelado": 0
+        },
+        "observations": "",
+        "_id": "6ad37ed12b8fa2c3ab45b5f0"
+      },
+      {
+        "name": "C",
+        "bedrooms": 0,
+        "bathrooms": 0,
+        "openAreaM2": 0,
+        "closedAreaM2": 0,
+        "price": 0,
+        "unitsCount": 16,
+        "initialStatuses": {
+          "disponible": 2,
+          "inventario": 0,
+          "reservado": 0,
+          "con_cpp": 0,
+          "tramite_legal_activado": 0,
+          "escriturado_traspasado": 14,
+          "vivienda_entregada": 0,
+          "cancelado": 0
+        },
+        "observations": "",
+        "_id": "6ad37ed12b8fa2c3ab45b5f1"
+      },
+      {
+        "name": "A",
+        "bedrooms": 0,
+        "bathrooms": 0,
+        "openAreaM2": 0,
+        "closedAreaM2": 0,
+        "price": 0,
+        "unitsCount": 9,
+        "initialStatuses": {
+          "disponible": 1,
+          "inventario": 0,
+          "reservado": 0,
+          "con_cpp": 0,
+          "tramite_legal_activado": 0,
+          "escriturado_traspasado": 8,
+          "vivienda_entregada": 0,
+          "cancelado": 0
+        },
+        "observations": "",
+        "_id": "6ad37ed12b8fa2c3ab45b5f2"
+      },
+      {
+        "name": "B",
+        "bedrooms": 0,
+        "bathrooms": 0,
+        "openAreaM2": 0,
+        "closedAreaM2": 0,
+        "price": 0,
+        "unitsCount": 10,
+        "initialStatuses": {
+          "disponible": 1,
+          "inventario": 0,
+          "reservado": 0,
+          "con_cpp": 0,
+          "tramite_legal_activado": 0,
+          "escriturado_traspasado": 9,
+          "vivienda_entregada": 0,
+          "cancelado": 0
+        },
+        "observations": "",
+        "_id": "6ad37ed12b8fa2c3ab45b5f3"
+      },
+      {
+        "name": "D",
+        "bedrooms": 0,
+        "bathrooms": 0,
+        "openAreaM2": 0,
+        "closedAreaM2": 0,
+        "price": 0,
+        "unitsCount": 4,
+        "initialStatuses": {
+          "disponible": 0,
+          "inventario": 0,
+          "reservado": 0,
+          "con_cpp": 0,
+          "tramite_legal_activado": 0,
+          "escriturado_traspasado": 4,
+          "vivienda_entregada": 0,
+          "cancelado": 0
+        },
+        "observations": "",
+        "_id": "6ad37ed12b8fa2c3ab45b5f4"
+      }
+    ],
+    "kpis": {
+      "unitsTotal": 57,
+      "unitsSold": 53,
+      "budgetApproved": 0,
+      "budgetSpent": 0,
+      "loanApproved": 0,
+      "loanDisbursed": 0,
+      "loanBalance": 0
+    }
+  },
+  "finance": {
+    "_id": "6ad3756058346b3260b8801c",
+    "tenantKey": "bancodemo",
+    "project": "6ad374d758346b3260b87fb3",
+    "plan": {
+      "uses": [],
+      "sources": []
+    },
+    "phases": [],
+    "disbursements": {
+      "planned": [],
+      "actual": []
+    },
+    "loanLines": [],
+    "unitAmortizations": [],
+    "createdAt": "2026-10-17T13:17:20.737Z",
+    "updatedAt": "2026-10-17T13:17:20.737Z",
+    "__v": 0
+  },
+  "units": [
+    {
+      "_id": "6ad37ec72b8fa2c3ab45b533",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec82b8fa2c3ab45b537",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec82b8fa2c3ab45b53b",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec82b8fa2c3ab45b53f",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec82b8fa2c3ab45b543",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec82b8fa2c3ab45b547",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec92b8fa2c3ab45b54b",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec92b8fa2c3ab45b54f",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec92b8fa2c3ab45b553",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec92b8fa2c3ab45b557",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec92b8fa2c3ab45b55b",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37eca2b8fa2c3ab45b55f",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37eca2b8fa2c3ab45b563",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37eca2b8fa2c3ab45b567",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37eca2b8fa2c3ab45b56b",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecb2b8fa2c3ab45b56f",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecb2b8fa2c3ab45b573",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecb2b8fa2c3ab45b577",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecb2b8fa2c3ab45b57b",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecb2b8fa2c3ab45b57f",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecc2b8fa2c3ab45b583",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecc2b8fa2c3ab45b587",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecc2b8fa2c3ab45b58b",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecc2b8fa2c3ab45b58f",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecc2b8fa2c3ab45b593",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecd2b8fa2c3ab45b597",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecd2b8fa2c3ab45b59b",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecd2b8fa2c3ab45b59f",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecd2b8fa2c3ab45b5a3",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecd2b8fa2c3ab45b5a7",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ece2b8fa2c3ab45b5ab",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ece2b8fa2c3ab45b5af",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ece2b8fa2c3ab45b5b3",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ece2b8fa2c3ab45b5b7",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ece2b8fa2c3ab45b5bb",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecf2b8fa2c3ab45b5bf",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecf2b8fa2c3ab45b5c3",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecf2b8fa2c3ab45b5c7",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecf2b8fa2c3ab45b5cb",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ecf2b8fa2c3ab45b5cf",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ed02b8fa2c3ab45b5d3",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ed02b8fa2c3ab45b5d7",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ed02b8fa2c3ab45b5db",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ed02b8fa2c3ab45b5df",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ed12b8fa2c3ab45b5e3",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ed12b8fa2c3ab45b5e7",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec52b8fa2c3ab45b507",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec52b8fa2c3ab45b50b",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec62b8fa2c3ab45b50f",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec62b8fa2c3ab45b513",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec62b8fa2c3ab45b517",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec62b8fa2c3ab45b51b",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec62b8fa2c3ab45b51f",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec72b8fa2c3ab45b523",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec72b8fa2c3ab45b527",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec72b8fa2c3ab45b52b",
+      "viewer3D": null
+    },
+    {
+      "_id": "6ad37ec72b8fa2c3ab45b52f",
+      "viewer3D": null
+    }
+  ],
+  "ventas": [
+    {
+      "_id": "6ad37ec577e584e013f69d1c",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec677e584e013f69d1d",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec677e584e013f69d1e",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec677e584e013f69d1f",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec677e584e013f69d20",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec677e584e013f69d21",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec777e584e013f69d22",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec777e584e013f69d23",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec777e584e013f69d25",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec777e584e013f69d26",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec777e584e013f69d28",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec877e584e013f69d29",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec877e584e013f69d2a",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec877e584e013f69d2c",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec877e584e013f69d2e",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec877e584e013f69d30",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec977e584e013f69d31",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec977e584e013f69d32",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec977e584e013f69d33",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec977e584e013f69d34",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ec977e584e013f69d35",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37eca77e584e013f69d36",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37eca77e584e013f69d37",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37eca77e584e013f69d39",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37eca77e584e013f69d3a",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37eca77e584e013f69d3c",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecb77e584e013f69d3e",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecb77e584e013f69d41",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecb77e584e013f69d42",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecb77e584e013f69d43",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecb77e584e013f69d44",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecc77e584e013f69d45",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecc77e584e013f69d47",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecc77e584e013f69d48",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecc77e584e013f69d4a",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecd77e584e013f69d4f",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecd77e584e013f69d53",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecd77e584e013f69d56",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecd77e584e013f69d59",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecd77e584e013f69d5c",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ece77e584e013f69d66",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ece77e584e013f69d69",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ece77e584e013f69d6c",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ece77e584e013f69d6d",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ece77e584e013f69d6e",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecf77e584e013f69d6f",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecf77e584e013f69d71",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecf77e584e013f69d74",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecf77e584e013f69d75",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ecf77e584e013f69d76",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ed077e584e013f69d77",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ed077e584e013f69d78",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ed077e584e013f69d79",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ed077e584e013f69d7a",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ed077e584e013f69d7c",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ed177e584e013f69d7f",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    },
+    {
+      "_id": "6ad37ed177e584e013f69d80",
+      "enConstruccion": false,
+      "estatusConstruccion": "",
+      "faseConstruccion": ""
+    }
+  ],
+  "checklists": [
+    {
+      "_id": "6ad3756458346b3260b8805e",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8805f",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88060",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88061",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88062",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88063",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88064",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88065",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88066",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88067",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88074",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": [
+        {
+          "title": "Propone precios de venta finales (Comercial)",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88075",
+          "createdAt": "2026-10-17T13:17:24.467Z",
+          "updatedAt": "2026-10-17T13:17:24.467Z"
+        },
+        {
+          "title": "Socios aprueban plan de viabilidad y lista de precios",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88076",
+          "createdAt": "2026-10-17T13:17:24.467Z",
+          "updatedAt": "2026-10-17T13:17:24.467Z"
+        }
+      ]
+    },
+    {
+      "_id": "6ad3756458346b3260b88077",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88078",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": [
+        {
+          "title": "Solicita a Legal contrato borrador promesa de venta",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88079",
+          "createdAt": "2026-10-17T13:17:24.467Z",
+          "updatedAt": "2026-10-17T13:17:24.467Z"
+        },
+        {
+          "title": "Define borradores tipo para la venta",
+          "completed": false,
+          "_id": "6ad3756458346b3260b8807a",
+          "createdAt": "2026-10-17T13:17:24.467Z",
+          "updatedAt": "2026-10-17T13:17:24.467Z"
+        },
+        {
+          "title": "Recibe borradores de promesa de venta",
+          "completed": false,
+          "_id": "6ad3756458346b3260b8807b",
+          "createdAt": "2026-10-17T13:17:24.467Z",
+          "updatedAt": "2026-10-17T13:17:24.467Z"
+        },
+        {
+          "title": "Recopila documentos del cliente para aplicar a la compra",
+          "completed": false,
+          "_id": "6ad3756458346b3260b8807c",
+          "createdAt": "2026-10-17T13:17:24.467Z",
+          "updatedAt": "2026-10-17T13:17:24.467Z"
+        },
+        {
+          "title": "Reserva del lote",
+          "completed": false,
+          "_id": "6ad3756458346b3260b8807d",
+          "createdAt": "2026-10-17T13:17:24.467Z",
+          "updatedAt": "2026-10-17T13:17:24.467Z"
+        }
+      ]
+    },
+    {
+      "_id": "6ad3756458346b3260b8807e",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8807f",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88080",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88081",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": [
+        {
+          "title": "Contabiliza pagos en modo Separación/Reserva",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88082",
+          "createdAt": "2026-10-17T13:17:24.467Z",
+          "updatedAt": "2026-10-17T13:17:24.467Z"
+        },
+        {
+          "title": "Introduce contrato promesa y pagos recibidos",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88083",
+          "createdAt": "2026-10-17T13:17:24.468Z",
+          "updatedAt": "2026-10-17T13:17:24.468Z"
+        },
+        {
+          "title": "Da seguimiento a cobros de clientes",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88084",
+          "createdAt": "2026-10-17T13:17:24.468Z",
+          "updatedAt": "2026-10-17T13:17:24.468Z"
+        }
+      ]
+    },
+    {
+      "_id": "6ad3756458346b3260b88085",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88086",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88087",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88088",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88089",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8808a",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8808b",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8808c",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8808d",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8809b",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8809c",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8809d",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8809e",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8809f",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b880a0",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b880a1",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b880a2",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": [
+        {
+          "title": "Firma protocolo por Promotora",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880a3",
+          "createdAt": "2026-10-17T13:17:24.470Z",
+          "updatedAt": "2026-10-17T13:17:24.470Z"
+        },
+        {
+          "title": "Firma protocolo por banco interino",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880a4",
+          "createdAt": "2026-10-17T13:17:24.470Z",
+          "updatedAt": "2026-10-17T13:17:24.470Z"
+        },
+        {
+          "title": "Firma protocolo por el cliente",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880a5",
+          "createdAt": "2026-10-17T13:17:24.470Z",
+          "updatedAt": "2026-10-17T13:17:24.470Z"
+        },
+        {
+          "title": "Firma protocolo por banco del cliente",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880a6",
+          "createdAt": "2026-10-17T13:17:24.470Z",
+          "updatedAt": "2026-10-17T13:17:24.470Z"
+        }
+      ]
+    },
+    {
+      "_id": "6ad3756458346b3260b880a7",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": [
+        {
+          "title": "Paz y Salvo IDAAN",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880a8",
+          "createdAt": "2026-10-17T13:17:24.470Z",
+          "updatedAt": "2026-10-17T13:17:24.470Z"
+        },
+        {
+          "title": "Paz y Salvo de Inmueble",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880a9",
+          "createdAt": "2026-10-17T13:17:24.470Z",
+          "updatedAt": "2026-10-17T13:17:24.470Z"
+        },
+        {
+          "title": "Gestionar pago de Impuesto de Ganancia de Capital",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880aa",
+          "createdAt": "2026-10-17T13:17:24.470Z",
+          "updatedAt": "2026-10-17T13:17:24.470Z"
+        }
+      ]
+    },
+    {
+      "_id": "6ad3756458346b3260b880ab",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": [
+        {
+          "title": "Tramitar cierre de protocolo en Notaría",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880ac",
+          "createdAt": "2026-10-17T13:17:24.470Z",
+          "updatedAt": "2026-10-17T13:17:24.470Z"
+        },
+        {
+          "title": "Inscripción en Registro Público (Protocolo)",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880ad",
+          "createdAt": "2026-10-17T13:17:24.470Z",
+          "updatedAt": "2026-10-17T13:17:24.470Z"
+        }
+      ]
+    },
+    {
+      "_id": "6ad3756458346b3260b880ae",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b880af",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b880b0",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b880b1",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": [
+        {
+          "title": "Retira carta cesión y la entrega a Legal",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880b2",
+          "createdAt": "2026-10-17T13:17:24.471Z",
+          "updatedAt": "2026-10-17T13:17:24.471Z"
+        },
+        {
+          "title": "Legal envía carta cesión a Banco Interino",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880b3",
+          "createdAt": "2026-10-17T13:17:24.471Z",
+          "updatedAt": "2026-10-17T13:17:24.471Z"
+        },
+        {
+          "title": "Minuta de cancelación por Banco Interino",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880b4",
+          "createdAt": "2026-10-17T13:17:24.471Z",
+          "updatedAt": "2026-10-17T13:17:24.471Z"
+        }
+      ]
+    },
+    {
+      "_id": "6ad3756458346b3260b880b5",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": [
+        {
+          "title": "Emite cheque para pago de gastos registrales",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880b6",
+          "createdAt": "2026-10-17T13:17:24.471Z",
+          "updatedAt": "2026-10-17T13:17:24.471Z"
+        },
+        {
+          "title": "Emite cheque para pago de gastos notariales",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880b7",
+          "createdAt": "2026-10-17T13:17:24.471Z",
+          "updatedAt": "2026-10-17T13:17:24.471Z"
+        }
+      ]
+    },
+    {
+      "_id": "6ad3756458346b3260b880b8",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b880b9",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": [
+        {
+          "title": "Acta de entrega de residencia",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880ba",
+          "createdAt": "2026-10-17T13:17:24.471Z",
+          "updatedAt": "2026-10-17T13:17:24.471Z"
+        },
+        {
+          "title": "Actualización catastral en ANATI",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880bb",
+          "createdAt": "2026-10-17T13:17:24.471Z",
+          "updatedAt": "2026-10-17T13:17:24.471Z"
+        }
+      ]
+    },
+    {
+      "_id": "6ad3756458346b3260b880bc",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": [
+        {
+          "title": "Legal recibe propuesta de escritura de préstamo (desde Gerencia/Finanzas)",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880bd",
+          "createdAt": "2026-10-17T13:17:24.471Z",
+          "updatedAt": "2026-10-17T13:17:24.471Z"
+        },
+        {
+          "title": "Legal archiva contratos originales y envía copia a Contabilidad",
+          "completed": false,
+          "_id": "6ad3756458346b3260b880be",
+          "createdAt": "2026-10-17T13:17:24.471Z",
+          "updatedAt": "2026-10-17T13:17:24.471Z"
+        }
+      ]
+    },
+    {
+      "_id": "6ad3756458346b3260b88054",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88055",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88056",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88059",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8805a",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8805b",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8805c",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8808e",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8808f",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88090",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": [
+        {
+          "title": "Tesorería informa a socios de liquidez disponible",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88091",
+          "createdAt": "2026-10-17T13:17:24.468Z",
+          "updatedAt": "2026-10-17T13:17:24.468Z"
+        },
+        {
+          "title": "Tesorería solicita prefactura y emite cheque (envía a socios para firma)",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88092",
+          "createdAt": "2026-10-17T13:17:24.469Z",
+          "updatedAt": "2026-10-17T13:17:24.469Z"
+        },
+        {
+          "title": "Contabilidad registra certificación pagada por el banco",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88093",
+          "createdAt": "2026-10-17T13:17:24.469Z",
+          "updatedAt": "2026-10-17T13:17:24.469Z"
+        },
+        {
+          "title": "Entrega cheque a proveedor contra factura fiscal",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88094",
+          "createdAt": "2026-10-17T13:17:24.469Z",
+          "updatedAt": "2026-10-17T13:17:24.469Z"
+        }
+      ]
+    },
+    {
+      "_id": "6ad3756458346b3260b88095",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88096",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": [
+        {
+          "title": "Gerencia aprueba facturas y cheques de pago",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88097",
+          "createdAt": "2026-10-17T13:17:24.469Z",
+          "updatedAt": "2026-10-17T13:17:24.469Z"
+        },
+        {
+          "title": "Socios firman cheques de pago",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88098",
+          "createdAt": "2026-10-17T13:17:24.469Z",
+          "updatedAt": "2026-10-17T13:17:24.469Z"
+        }
+      ]
+    },
+    {
+      "_id": "6ad3756458346b3260b88099",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8809a",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88068",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88069",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8806a",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": [
+        {
+          "title": "Solicitud aceptación de calles MOP",
+          "completed": false,
+          "_id": "6ad3756458346b3260b8806b",
+          "createdAt": "2026-10-17T13:17:24.466Z",
+          "updatedAt": "2026-10-17T13:17:24.466Z"
+        },
+        {
+          "title": "Solicitud aceptación de calles IDAAN",
+          "completed": false,
+          "_id": "6ad3756458346b3260b8806c",
+          "createdAt": "2026-10-17T13:17:24.466Z",
+          "updatedAt": "2026-10-17T13:17:24.466Z"
+        }
+      ]
+    },
+    {
+      "_id": "6ad3756458346b3260b8806d",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8806e",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": [
+        {
+          "title": "Comprueba cumplimiento de cronograma y contrato",
+          "completed": false,
+          "_id": "6ad3756458346b3260b8806f",
+          "createdAt": "2026-10-17T13:17:24.466Z",
+          "updatedAt": "2026-10-17T13:17:24.466Z"
+        },
+        {
+          "title": "Avisa al constructor ante incumplimientos",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88070",
+          "createdAt": "2026-10-17T13:17:24.466Z",
+          "updatedAt": "2026-10-17T13:17:24.466Z"
+        },
+        {
+          "title": "Escala a Legal si no se resuelve",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88071",
+          "createdAt": "2026-10-17T13:17:24.466Z",
+          "updatedAt": "2026-10-17T13:17:24.466Z"
+        }
+      ]
+    },
+    {
+      "_id": "6ad3756458346b3260b88072",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88073",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88042",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88043",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": [
+        {
+          "title": "Redacta documentos de puesta en marcha (figura jurídica) y envía a Contabilidad para ingreso",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88044",
+          "createdAt": "2026-10-17T13:17:24.462Z",
+          "updatedAt": "2026-10-17T13:17:24.462Z"
+        },
+        {
+          "title": "Informe Geotécnico",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88045",
+          "createdAt": "2026-10-17T13:17:24.462Z",
+          "updatedAt": "2026-10-17T13:17:24.462Z"
+        },
+        {
+          "title": "Informe Topográfico",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88046",
+          "createdAt": "2026-10-17T13:17:24.462Z",
+          "updatedAt": "2026-10-17T13:17:24.462Z"
+        }
+      ]
+    },
+    {
+      "_id": "6ad3756458346b3260b88047",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": [
+        {
+          "title": "Recopila dossier por departamentos y genera dossier general",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88048",
+          "createdAt": "2026-10-17T13:17:24.463Z",
+          "updatedAt": "2026-10-17T13:17:24.463Z"
+        },
+        {
+          "title": "Presenta carpetas del dossier general a los socios",
+          "completed": false,
+          "_id": "6ad3756458346b3260b88049",
+          "createdAt": "2026-10-17T13:17:24.463Z",
+          "updatedAt": "2026-10-17T13:17:24.463Z"
+        },
+        {
+          "title": "Obtiene propuestas de financiación (mínimo 3)",
+          "completed": false,
+          "_id": "6ad3756458346b3260b8804a",
+          "createdAt": "2026-10-17T13:17:24.463Z",
+          "updatedAt": "2026-10-17T13:17:24.463Z"
+        },
+        {
+          "title": "Somete el anteproyecto a aprobación de gerencia",
+          "completed": false,
+          "_id": "6ad3756458346b3260b8804b",
+          "createdAt": "2026-10-17T13:17:24.463Z",
+          "updatedAt": "2026-10-17T13:17:24.463Z"
+        },
+        {
+          "title": "Prepara dossier financiero del proyecto",
+          "completed": false,
+          "_id": "6ad3756458346b3260b8804c",
+          "createdAt": "2026-10-17T13:17:24.463Z",
+          "updatedAt": "2026-10-17T13:17:24.463Z"
+        },
+        {
+          "title": "Ofrece datos para dossier técnico y supervisa anteproyecto",
+          "completed": false,
+          "_id": "6ad3756458346b3260b8804d",
+          "createdAt": "2026-10-17T13:17:24.463Z",
+          "updatedAt": "2026-10-17T13:17:24.463Z"
+        },
+        {
+          "title": "Prepara dossier para pre-venta del proyecto",
+          "completed": false,
+          "_id": "6ad3756458346b3260b8804e",
+          "createdAt": "2026-10-17T13:17:24.463Z",
+          "updatedAt": "2026-10-17T13:17:24.463Z"
+        }
+      ]
+    },
+    {
+      "_id": "6ad3756458346b3260b8804f",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88050",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88051",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88052",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88053",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88057",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88058",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8805d",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8803b",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8803c",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8803d",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8803e",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b8803f",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88040",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    },
+    {
+      "_id": "6ad3756458346b3260b88041",
+      "status": "PENDIENTE",
+      "validated": false,
+      "subtasks": []
+    }
+  ]
+}

@@ -31,6 +31,9 @@ const UnitSchema = new mongoose.Schema({
   ubicacion: { type: String, default: '' },
   m2:      { type: Number, default: 0 },
   precioLista: { type: Number, default: 0 },
+  // Coste base heredado del modelo. Puede sobrescribirse en la ficha de la unidad.
+  costoUnidad: { type: Number, min: 0, default: 0 },
+  costoUnidadManual: { type: Boolean, default: false },
   numeroFinca: { type: String, default: '' },
   codigoUbicacion: { type: String, default: '' },
   calle: { type: String, default: '' },
@@ -45,6 +48,28 @@ const UnitSchema = new mongoose.Schema({
   banos: { type: Number, default: 0 },
   valorMejoras: { type: Number, default: 0 },
   valorTerreno: { type: Number, default: 0 },
+
+  // Métricas no comerciales para capas del visor 3D. Precio y estado siguen
+  // leyendo los campos canónicos de Unit/Venta; aquí solo se guarda avance y
+  // coste imputado para no duplicar la fuente de verdad comercial.
+  viewer3D: {
+    tower: { type: String, trim: true, default: '' },
+    progressPct: { type: Number, min: 0, max: 100, default: null },
+    progressStatus: {
+      type: String,
+      enum: ['', 'completed', 'inProgress', 'pending', 'unknown'],
+      default: ''
+    },
+    constructionPhase: { type: String, trim: true, default: '' },
+    budgetCost: { type: Number, min: 0, default: null },
+    actualCost: { type: Number, min: 0, default: null },
+    dataKind: {
+      type: String,
+      enum: ['', 'actual', 'illustrative'],
+      default: ''
+    },
+    sourceLabel: { type: String, trim: true, default: '' }
+  },
 
   estado: {
     type: String,

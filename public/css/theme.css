@@ -6168,7 +6168,7 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
 #modalCrearLote .commercial-models-head,
 #modalCrearLote .commercial-model-row {
   display: grid;
-  grid-template-columns: minmax(150px, 1.3fr) minmax(66px, .55fr) minmax(72px, .6fr) minmax(92px, .8fr) minmax(92px, .8fr) minmax(108px, .9fr) minmax(82px, auto);
+  grid-template-columns: minmax(140px, 1.2fr) minmax(60px, .5fr) minmax(66px, .55fr) minmax(84px, .7fr) minmax(84px, .7fr) minmax(100px, .85fr) minmax(100px, .85fr) minmax(78px, auto);
   gap: 8px;
   align-items: center;
   min-width: 0;
@@ -7038,6 +7038,348 @@ body {
     height:auto !important;
   }
 
+}
+
+/* ===== Visor 3D integrado en proyecto ===== */
+.project-experience {
+  display: block;
+  min-width: 0;
+}
+.project-experience.viewer-active {
+  display: grid;
+  grid-template-columns: minmax(430px, .82fr) minmax(680px, 1.18fr);
+  grid-template-rows: max-content auto auto;
+  gap: 16px;
+  align-items: stretch;
+}
+/* Salvaguarda visual: Docs y Chat nunca comparten pantalla con el visor. */
+.project-experience[data-viewer-tab="docs"] > .project-3d-panel,
+.project-experience[data-viewer-tab="chat"] > .project-3d-panel,
+.project-experience[data-viewer-tab="proveedores"] > .project-3d-panel,
+.project-experience[data-viewer-tab="avaluadores"] > .project-3d-panel {
+  display: none !important;
+}
+.project-data-panel { min-width: 0; }
+.project-experience.viewer-active .project-data-panel { display: contents; }
+.project-experience.viewer-active .project-data-panel > .tabs {
+  grid-column: 2;
+  grid-row: 1;
+  margin-top: 0;
+  align-self: start;
+  height: max-content;
+}
+.project-experience.viewer-active .project-data-panel > .tabs .tab { min-height: 42px; height: 42px; padding-block: 10px; }
+.project-experience.viewer-active .project-data-panel > .tabpane.active {
+  display: contents !important;
+}
+.project-experience.viewer-active .project-tab-lead {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  align-self: stretch;
+}
+.project-experience.viewer-active .project-tab-detail {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  min-width: 0;
+  margin-top: 4px;
+}
+.project-experience.viewer-active #tab-proyecto .project-tab-lead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  align-content: start;
+}
+.project-experience.viewer-active #tab-proyecto .project-tab-lead > .phase { margin: 0 !important; }
+.project-experience.viewer-active #tab-proyecto .roles-panel { position: relative; top: auto; }
+.project-3d-panel {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  position: relative;
+  top: auto;
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  overflow: hidden;
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, .2);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #0b1d2b, #071724);
+  box-shadow: 0 18px 44px rgba(2, 8, 23, .2);
+}
+.project-3d-panel[hidden] { display: none !important; }
+.project-3d-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 16px 11px;
+  border-bottom: 1px solid rgba(148, 163, 184, .16);
+}
+.project-3d-header h2 {
+  margin: 3px 0 0;
+  color: #e9f6f8;
+  font-size: 16px;
+}
+.project-3d-eyebrow {
+  color: #68cfdd;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.25px;
+}
+.project-3d-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.project-3d-mode {
+  padding: 6px 9px;
+  border: 1px solid rgba(99, 226, 230, .28);
+  border-radius: 999px;
+  color: #bceef2;
+  background: rgba(32, 126, 142, .13);
+  font-size: 10px;
+  font-weight: 800;
+}
+.project-3d-panel .btn-ghost {
+  color: #e7f7fa !important;
+  border-color: rgba(148, 163, 184, .25);
+  background: rgba(15, 38, 54, .75);
+}
+.project-3d-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 13px;
+  min-height: 35px;
+  padding: 9px 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, .13);
+}
+.project-3d-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #91aab5;
+  font-size: 10px;
+}
+.project-3d-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--viewer-color, #728496);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--viewer-color), transparent 45%);
+}
+.project-3d-stage {
+  position: relative;
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 520px;
+  background: radial-gradient(circle at 50% 38%, #24596b 0, #092033 64%);
+}
+.project-3d-stage iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
+.project-3d-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #a9c2cc;
+  background: radial-gradient(circle at 50% 38%, #24596b 0, #092033 64%);
+  font-size: 12px;
+  transition: opacity .2s ease, visibility .2s ease;
+}
+.project-3d-panel.is-ready .project-3d-loading {
+  opacity: 0;
+  visibility: hidden;
+}
+.project-3d-note {
+  margin: 0;
+  padding: 10px 16px 12px;
+  border-top: 1px solid rgba(148, 163, 184, .13);
+  color: #b49550;
+  font-size: 10px;
+  line-height: 1.45;
+}
+body.light-theme .project-3d-panel {
+  border-color: #d7e1ec;
+  background: linear-gradient(180deg, #0e2a3d, #092033);
+  box-shadow: 0 14px 35px rgba(15, 23, 42, .12);
+}
+
+/* Cabeceras compactas del visor: el contenido debe caber en la columna derecha. */
+.project-experience.viewer-active #tab-resumen #summaryHeader.summary-header {
+  grid-template-columns: minmax(150px, .72fr) minmax(0, 2.28fr);
+  grid-template-areas:
+    "title period"
+    "export period";
+  gap: 10px;
+}
+.project-experience.viewer-active #tab-resumen #summaryHeader .summary-title-block,
+.project-experience.viewer-active #tab-resumen #summaryHeader .summary-export-actions,
+.project-experience.viewer-active #tab-resumen #summaryHeader .summary-date-filter {
+  width: 100%;
+  min-width: 0;
+  justify-self: stretch;
+}
+.project-experience.viewer-active #tab-resumen #summaryHeader .summary-export-actions {
+  justify-content: flex-start;
+  min-width: 0;
+}
+.project-experience.viewer-active #tab-resumen #summaryHeader .summary-date-filter {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(86px, .34fr);
+  align-content: center;
+  align-items: stretch;
+  gap: 12px;
+  margin-left: 0;
+  padding: 42px 16px 16px;
+}
+.project-experience.viewer-active #tab-resumen #summaryHeader .summary-date-group {
+  align-content: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, .16);
+  border-radius: 11px;
+  background: rgba(2, 6, 23, .18);
+}
+.project-experience.viewer-active #tab-resumen #summaryHeader .summary-date-group-compare {
+  padding-left: 12px;
+  border-left: 1px solid rgba(148, 163, 184, .16);
+}
+.project-experience.viewer-active #tab-resumen #summaryHeader .summary-date-filter-title {
+  font-size: 13px;
+  line-height: 1.2;
+}
+.project-experience.viewer-active #tab-resumen #summaryHeader .summary-date-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.project-experience.viewer-active #tab-resumen #summaryHeader .summary-date-field {
+  gap: 5px;
+  font-size: 11px;
+}
+.project-experience.viewer-active #tab-resumen #summaryHeader .summary-date-field input {
+  width: 100%;
+  height: 36px;
+  padding-inline: 10px;
+  border-radius: 9px;
+  font-size: 12px;
+}
+.project-experience.viewer-active #tab-resumen #summaryHeader .summary-date-buttons {
+  align-self: stretch;
+  align-content: center;
+  gap: 8px;
+}
+.project-experience.viewer-active #tab-resumen #summaryHeader .summary-date-apply,
+.project-experience.viewer-active #tab-resumen #summaryHeader .summary-date-clear {
+  width: 100%;
+  height: 38px;
+  border-radius: 9px;
+  font-size: 12px;
+}
+body.light-theme .project-experience.viewer-active #tab-resumen #summaryHeader .summary-date-group {
+  border-color: #dbe3ef;
+  background: #f7f9fc;
+}
+.project-experience.viewer-active #tab-resumen #summaryKpis.kpis-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.project-experience.viewer-active #tab-resumen .summary-resume-box {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: start;
+}
+.project-experience.viewer-active #tab-resumen .summary-resume-box .project-profile-kpi {
+  grid-column: 1 / -1;
+}
+
+/* En Comercial, Importar ocupa su propia fila y nunca ensancha la pagina. */
+.project-experience.viewer-active #tab-comercial .commercial-actions-bar {
+  grid-template-columns: minmax(145px, .7fr) minmax(330px, 1.5fr) minmax(165px, .7fr);
+}
+.project-experience.viewer-active #tab-comercial #commercialImportDatoUnicoSlot {
+  grid-column: 1 / -1;
+}
+.project-experience.viewer-active #tab-comercial #commercialImportDatoUnicoSlot .summary-import-actions {
+  max-width: 100%;
+}
+
+/* Tras dividir el Resumen en cabecera y detalle, conserva el modo informe por periodo. */
+#tab-resumen.is-period-report .project-tab-lead > #summaryKpis,
+#tab-resumen.is-period-report .project-tab-lead > #summaryResumeBox,
+#tab-resumen.is-period-report .project-tab-lead > .phase,
+#tab-resumen.is-period-report .project-tab-detail > .summary-global-only,
+#tab-resumen.is-period-report .project-tab-detail > .summary-block:not(.summary-period-activity) {
+  display: none;
+}
+.project-3d-panel:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+}
+.project-3d-panel:fullscreen .project-3d-stage { min-height: 0; }
+.project-3d-panel:fullscreen .project-3d-header { padding: 20px 24px 16px; }
+.project-3d-panel:fullscreen .project-3d-header h2 { font-size: 22px; }
+.project-3d-panel:fullscreen .project-3d-eyebrow { font-size: 12px; }
+.project-3d-panel:fullscreen .project-3d-mode,
+.project-3d-panel:fullscreen .project-3d-header-actions .btn { font-size: 14px; }
+.project-3d-panel:fullscreen .project-3d-legend { gap: 12px 20px; padding: 12px 24px; }
+.project-3d-panel:fullscreen .project-3d-legend span,
+.project-3d-panel:fullscreen .project-3d-note { font-size: 13px; }
+.project-3d-panel:fullscreen .project-3d-note { padding: 12px 24px 15px; }
+
+/* Las tarjetas comerciales usan fondos intensos: el texto debe conservar contraste en ambos temas. */
+#tab-comercial .commercial-folder-head,
+#tab-comercial .commercial-folder-head h3,
+#tab-comercial .commercial-folder-head .folder-title,
+#tab-comercial .unit-card,
+#tab-comercial .unit-card .title,
+#tab-comercial .unit-card .price { color: #fff !important; }
+#tab-comercial .unit-card .meta { color: #dbe7f3 !important; }
+@media (max-width: 1280px) {
+  .project-experience.viewer-active { grid-template-columns: 1fr; grid-template-rows: auto auto auto auto; }
+  .project-experience.viewer-active .project-data-panel > .tabs { grid-column: 1; grid-row: 2; }
+  .project-experience.viewer-active .project-tab-lead { grid-column: 1; grid-row: 3; }
+  .project-experience.viewer-active .project-tab-detail { grid-column: 1; grid-row: 4; }
+  .project-3d-panel { grid-column: 1; grid-row: 1; position: relative; top: auto; }
+  .project-3d-stage { height: min(68vh, 680px); }
+}
+@media (max-width: 680px) {
+  .project-3d-header { align-items: flex-start; }
+  .project-3d-header-actions { justify-content: flex-start; }
+  .project-3d-stage { height: 58vh; min-height: 420px; }
+  .project-experience.viewer-active #tab-proyecto .project-tab-lead { grid-template-columns: 1fr; }
+  .project-experience.viewer-active #tab-resumen #summaryHeader .summary-date-filter {
+    grid-template-columns: 1fr;
+  }
+  .project-experience.viewer-active #tab-resumen #summaryHeader .summary-date-buttons {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* A 100% de zoom esta distribucion cabe hasta el mismo punto en que el visor
+   pasa a una sola columna. Evita el salto prematuro que antes ocurria a 1500px. */
+@media (max-width: 1280px) {
+  .project-experience.viewer-active #tab-resumen #summaryHeader.summary-header {
+    grid-template-columns: 1fr;
+    grid-template-areas: "title" "period" "export";
+  }
+  .project-experience.viewer-active #tab-resumen #summaryKpis.kpis-grid,
+  .project-experience.viewer-active #tab-resumen .summary-resume-box {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .project-experience.viewer-active #tab-comercial .commercial-actions-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .project-experience.viewer-active #tab-comercial #commercialImportDatoUnicoSlot { grid-column: 1 / -1; }
 }
 /* =========================================
    MOBILE FIX COMERCIAL
