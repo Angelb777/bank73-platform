@@ -4,19 +4,39 @@ import { buildProject } from '../model/project-builder.js';
 import { buildInteriorForUnit } from '../model/interior-builder.js';
 
 const MODE_COLORS = {
-  progress: { completed: 0x35d49a, inProgress: 0xffc857, pending: 0xff6b72, unknown: 0x728496 },
+  progress: { completed: 0x35d49a, inProgress: 0xffc857, finishing: 0xab7ee8, pending: 0xff6b72, unknown: 0x728496 },
   finance: { onTrack: 0x48cde3, attention: 0xffb84d, deviation: 0xe86b9a, unknown: 0x728496 },
-  commercial: { available: 0x32d6a0, reserved: 0xffbe55, sold: 0xeab308, transferred: 0xef4444, cpp: 0xab7ee8, unknown: 0x728496 }
+  commercial: {
+    available: 0x32d6a0,
+    inventory: 0x22c7d6,
+    reserved: 0xffbe55,
+    sold: 0xeab308,
+    transferred: 0xef4444,
+    delivered: 0x3b82f6,
+    cpp: 0xab7ee8,
+    unknown: 0x728496
+  }
+};
+const TOWER_PROGRESS_COLORS = {
+  unknown: 0x728496,
+  projected: 0x6b8fa3,
+  pending: 0xff6b72,
+  inProgress: 0xffc857,
+  finishing: 0xab7ee8,
+  completed: 0x35d49a
 };
 
 export class RealEstateViewer {
-  constructor(canvas, project, onSelect, onInteriorChange) {
+  constructor(canvas, project, onSelect, onInteriorChange, onTowerSelect) {
     this.canvas = canvas;
     this.project = project;
     this.onSelect = onSelect;
     this.onInteriorChange = onInteriorChange;
+    this.onTowerSelect = onTowerSelect;
     this.mode = 'commercial';
     this.selectedUnit = null;
+    this.selectedTower = null;
+    this.towerEditMode = false;
     this.pointer = new THREE.Vector2();
     this.raycaster = new THREE.Raycaster();
     this.scene = new THREE.Scene();
@@ -49,6 +69,7 @@ export class RealEstateViewer {
     this.projectRoot = built.root;
     this.towers = built.towers;
     this.units = built.units;
+    this.prepareTowerMaterials();
     this.scene.add(this.projectRoot);
     this.addEnvironment();
     this.setMode(this.mode);
@@ -113,7 +134,7 @@ export class RealEstateViewer {
       this.pick(event);
     });
     this.canvas.addEventListener('dblclick', (event) => {
-      if (this.interiorMode) return;
+      if (this.interiorMode || this.towerEditMode) return;
       this.pick(event);
       if (this.selectedUnit) this.enterInterior();
     });
@@ -131,7 +152,17 @@ export class RealEstateViewer {
     this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const candidates = [...this.units.values()].filter((unit) => unit.visible).map((unit) => unit.userData.selectableMesh);
+    if (this.towerEditMode) {
+      const editableTowers = [...this.towers.values()].filter(tower => tower.userData.editable && tower.visible);
+      const hit = this.raycaster.intersectObjects(editableTowers, true)[0];
+      let tower = hit?.object || null;
+      while (tower && tower.userData?.kind !== 'tower') tower = tower.parent;
+      this.selectTower(tower?.userData?.editable ? tower : null);
+      return;
+    }
+    const candidates = [...this.units.values()]
+      .filter((unit) => unit.visible && unit.userData.bank73UnitId)
+      .map((unit) => unit.userData.selectableMesh);
     const hit = this.raycaster.intersectObjects(candidates, false)[0];
     this.selectUnit(hit?.object?.userData?.unitRoot || null);
   }
@@ -150,10 +181,124 @@ export class RealEstateViewer {
     this.onSelect?.(unit?.userData || null);
   }
 
+  prepareTowerMaterials() {
+    this.towers.forEach(tower => {
+      tower.traverse(object => {
+        if (!object.isMesh || !object.material) return;
+        if (Array.isArray(object.material)) object.material = object.material.map(material => material.clone());
+        else object.material = object.material.clone();
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        object.userData.viewerBaseMaterials = materials.map(material => ({
+          color: material.color?.getHex?.(),
+          emissive: material.emissive?.getHex?.(),
+          emissiveIntensity: material.emissiveIntensity,
+          transparent: material.transparent,
+          opacity: material.opacity,
+          depthWrite: material.depthWrite
+        }));
+      });
+    });
+  }
+
+  restoreTowerMaterials(tower) {
+    tower.traverse(object => {
+      const base = object.userData?.viewerBaseMaterials;
+      if (!object.isMesh || !base) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      materials.forEach((material, index) => {
+        const state = base[index];
+        if (!state) return;
+        if (state.color != null && material.color) material.color.setHex(state.color);
+        if (state.emissive != null && material.emissive) material.emissive.setHex(state.emissive);
+        if (state.emissiveIntensity != null) material.emissiveIntensity = state.emissiveIntensity;
+        material.transparent = state.transparent;
+        material.opacity = state.opacity;
+        material.depthWrite = state.depthWrite;
+      });
+    });
+  }
+
+  towerPayload(tower) {
+    if (!tower) return null;
+    return {
+      towerId: tower.userData.towerId,
+      name: tower.userData.name || tower.name,
+      constructionStatus: tower.userData.constructionStatus || 'unknown',
+      visible: tower.userData.visible !== false,
+      appearance: tower.userData.appearance || 'solid',
+      editable: tower.userData.editable === true
+    };
+  }
+
+  applyTowerPresentation(tower) {
+    this.restoreTowerMaterials(tower);
+    const selected = this.towerEditMode && this.selectedTower === tower;
+    tower.visible = tower.userData.visible !== false || selected;
+    const tint = this.mode === 'progress' && tower.userData.editable
+      ? TOWER_PROGRESS_COLORS[tower.userData.constructionStatus] || TOWER_PROGRESS_COLORS.unknown
+      : null;
+    tower.traverse(object => {
+      if (!object.isMesh || !object.material) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      materials.forEach(material => {
+        if (tint != null && material.color) material.color.setHex(tint);
+        if (tower.userData.appearance === 'translucent' || (selected && tower.userData.visible === false)) {
+          material.transparent = true;
+          material.opacity = selected && tower.userData.visible === false ? 0.24 : 0.38;
+          material.depthWrite = false;
+        }
+        if (selected && material.emissive) {
+          material.emissive.setHex(tint ?? 0xffffff);
+          material.emissiveIntensity = 0.12;
+        }
+      });
+    });
+  }
+
+  selectTower(tower) {
+    this.selectedTower = tower || null;
+    this.towers.forEach(item => {
+      if (item.userData.editable) this.applyTowerPresentation(item);
+    });
+    this.onTowerSelect?.(this.towerPayload(this.selectedTower));
+  }
+
+  selectTowerById(towerId) {
+    const tower = this.towers.get(String(towerId || ''));
+    this.selectTower(tower?.userData?.editable ? tower : null);
+  }
+
+  setTowerEditMode(active) {
+    this.towerEditMode = Boolean(active);
+    if (this.towerEditMode) {
+      this.selectUnit(null);
+      this.selectTowerById(this.selectedTower?.userData?.towerId || 'A');
+    } else {
+      this.selectTower(null);
+      this.setMode(this.mode);
+    }
+  }
+
+  updateTower(data = {}) {
+    const tower = this.towers.get(String(data.towerId || ''));
+    if (!tower || !tower.userData.editable) return;
+    tower.userData.name = data.name || tower.userData.name;
+    tower.name = tower.userData.name;
+    tower.userData.constructionStatus = data.constructionStatus || 'unknown';
+    tower.userData.visible = data.visible !== false;
+    tower.userData.appearance = data.appearance || 'solid';
+    this.selectTower(tower);
+  }
+
   setMode(mode) {
     this.mode = mode;
+    this.towers.forEach(tower => {
+      if (tower.userData.editable) this.applyTowerPresentation(tower);
+    });
     this.units.forEach((unit) => {
       const data = unit.userData;
+      const tower = this.towers.get(data.towerId);
+      if (mode === 'progress' && tower?.userData?.editable) return;
       const state = data[mode].status;
       const color = MODE_COLORS[mode][state] || MODE_COLORS[mode].unknown;
       unit.userData.selectableMesh.material.color.setHex(color);
@@ -166,7 +311,10 @@ export class RealEstateViewer {
 
   filter(towerId = 'all', floor = 'all') {
     if (this.interiorMode) this.exitInterior();
-    this.towers.forEach((tower, id) => { tower.visible = towerId === 'all' || id === towerId; });
+    this.towers.forEach((tower, id) => {
+      const configuredVisible = tower.userData.visible !== false || (this.towerEditMode && this.selectedTower === tower);
+      tower.visible = configuredVisible && (towerId === 'all' || id === towerId);
+    });
     this.units.forEach((unit) => {
       unit.visible = (towerId === 'all' || unit.userData.towerId === towerId) && (floor === 'all' || String(unit.userData.floor) === String(floor));
     });

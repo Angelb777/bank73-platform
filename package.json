@@ -8,7 +8,8 @@
     "dev": "node server.js",
     "seed": "node seed.js",
     "test:security": "node --test tests/security-smoke.test.js",
-    "test:funding": "node --test tests/funding-scoring.test.js"
+    "test:funding": "node --test tests/funding-scoring.test.js",
+    "test:viewer3d": "node --test tests/viewer3d-unit-record.test.js"
   },
   "keywords": [],
   "author": "",

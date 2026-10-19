@@ -54,6 +54,9 @@ const UnitSchema = new mongoose.Schema({
   // coste imputado para no duplicar la fuente de verdad comercial.
   viewer3D: {
     tower: { type: String, trim: true, default: '' },
+    // Identificador estable del elemento geométrico. No contiene información
+    // comercial: solo conserva el enlace aunque se renombre la unidad.
+    geometryKey: { type: String, trim: true, default: '' },
     progressPct: { type: Number, min: 0, max: 100, default: null },
     progressStatus: {
       type: String,

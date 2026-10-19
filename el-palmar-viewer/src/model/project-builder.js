@@ -92,7 +92,15 @@ function addFloorBand(group, width, depth, y) {
 function buildHighRise(tower, unitRegistry) {
   const group = new THREE.Group();
   group.name = tower.name;
-  group.userData = { kind: 'tower', towerId: tower.id };
+  group.userData = {
+    kind: 'tower',
+    towerId: tower.id,
+    name: tower.name,
+    constructionStatus: tower.constructionStatus || 'unknown',
+    visible: tower.visible !== false,
+    appearance: tower.appearance || 'solid',
+    editable: tower.editable === true
+  };
   group.position.set(...tower.position);
   group.rotation.y = tower.rotationY;
   const { width, depth } = tower.footprint;
@@ -159,7 +167,15 @@ function buildHighRise(tower, unitRegistry) {
 function buildTerracedBar(tower, unitRegistry) {
   const group = new THREE.Group();
   group.name = tower.name;
-  group.userData = { kind: 'tower', towerId: tower.id };
+  group.userData = {
+    kind: 'tower',
+    towerId: tower.id,
+    name: tower.name,
+    constructionStatus: tower.constructionStatus || 'unknown',
+    visible: tower.visible !== false,
+    appearance: tower.appearance || 'solid',
+    editable: tower.editable === true
+  };
   group.position.set(...tower.position);
   const { width, depth } = tower.footprint;
 
@@ -286,6 +302,7 @@ export function buildProject(project) {
       ? buildTerracedBar(towerConfig, units)
       : buildHighRise(towerConfig, units);
     towers.set(towerConfig.id, tower);
+    tower.visible = towerConfig.visible !== false;
     root.add(tower);
   });
   addApprovedSiteElements(root);

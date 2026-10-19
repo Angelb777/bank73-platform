@@ -489,11 +489,16 @@ router.patch(
         update.status = update.estado.toUpperCase();
       }
 
-      if (update.manzana || update.lote) {
+      if (update.manzana !== undefined || update.lote !== undefined) {
         const curr = await Unit.findOne({ _id: req.params.id, tenantKey: req.tenantKey, projectId: req.project._id }).select('manzana lote');
         const m = update.manzana ?? curr?.manzana ?? '';
         const l = update.lote ?? curr?.lote ?? '';
         update.code = `${m}-${l}`;
+        // El nombre comercial puede cambiar, pero la pieza del modelo 3D debe
+        // seguir enlazada a la misma unidad de MongoDB.
+        if (!req._unit?.viewer3D?.geometryKey && req._unit?.lote) {
+          update['viewer3D.geometryKey'] = String(req._unit.lote).trim();
+        }
       }
 
       const u = await Unit.findOneAndUpdate(

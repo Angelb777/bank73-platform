@@ -15,6 +15,7 @@ const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment
 const ProjectFinance    = require('../models/ProjectFinance');
 const ProjectFunding    = require('../models/ProjectFunding');
 const { calculateFundingScore } = require('../services/fundingScoring');
+const { buildViewer3DUnitRecord } = require('../services/viewer3d_unit_record');
 const { normalizePhaseRequirements } = require('../services/phaseRequirements');
 const { dateInReportPeriod, anyDateInReportPeriod, buildPeriodActivity } = require('../services/reportActivity');
 const audit             = require('../utils/audit');
@@ -1675,72 +1676,17 @@ router.get('/:id/viewer-3d', requireProjectAccess({ commercialOnlySales: false }
         .sort({ manzana: 1, lote: 1 })
         .lean(),
       Venta.find({ projectId: project._id, tenantKey, deletedAt: null })
-        .select('unitId precioVenta valor abonoCliente abonoInicial estatusConstruccion faseConstruccion enConstruccion fechaEntregaVivienda estadoVenta')
+        .select('unitId precioVenta abonoCliente estatusConstruccion faseConstruccion enConstruccion fechaEntregaVivienda estadoVenta areaAbierta areaCerrada areaTotalConstruccion recamaras banos')
         .lean()
     ]);
 
     const ventaByUnit = new Map(ventas.map(venta => [String(venta.unitId), venta]));
-    const commercialStatus = status => ({
-      disponible: 'available',
-      reservado: 'reserved',
-      con_cpp: 'cpp',
-      tramite_legal_activado: 'sold',
-      escriturado_traspasado: 'transferred',
-      vivienda_entregada: 'transferred'
-    }[status] || 'unknown');
-
-    const rows = units.map(unit => {
-      const venta = ventaByUnit.get(String(unit._id)) || {};
-      const salePrice = Number(venta.precioVenta || venta.valor || unit.precioLista || 0);
-      const budgetCost = Number(unit.costoUnidad || unit.viewer3D?.budgetCost || 0);
-      const actualCost = Number(unit.viewer3D?.actualCost || 0);
-      const costRatio = budgetCost > 0 ? actualCost / budgetCost : null;
-      const financeStatus = costRatio == null
-        ? 'unknown'
-        : costRatio <= 1 ? 'onTrack' : costRatio <= 1.05 ? 'attention' : 'deviation';
-      const progressPct = Number.isFinite(Number(unit.viewer3D?.progressPct))
-        ? Number(unit.viewer3D.progressPct)
-        : null;
-      const progressStatus = unit.viewer3D?.progressStatus
-        || (progressPct == null ? 'unknown' : progressPct >= 100 ? 'completed' : progressPct > 0 ? 'inProgress' : 'pending');
-
-      return {
-        id: String(unit._id),
-        tower: unit.viewer3D?.tower || project.viewer3D.primaryTower || '',
-        level: unit.manzana,
-        unitId: unit.lote,
-        model: unit.modelo,
-        bedrooms: Number(unit.recamaras || 0) || null,
-        bathrooms: Number(unit.banos || 0) || null,
-        closedArea: Number(unit.areaCerrada || unit.m2 || 0) || null,
-        openArea: Number(unit.areaAbierta || 0) || 0,
-        totalArea: Number(unit.areaTotalConstruccion || unit.m2 || 0) || null,
-        progress: {
-          status: progressStatus,
-          percentage: progressPct,
-          phase: unit.viewer3D?.constructionPhase || venta.faseConstruccion || '',
-          label: venta.estatusConstruccion || ''
-        },
-        finance: {
-          status: financeStatus,
-          budgetCost,
-          actualCost,
-          variance: budgetCost > 0 ? actualCost - budgetCost : null,
-          salePrice,
-          collected: Number(venta.abonoCliente || venta.abonoInicial || 0),
-          estimatedMargin: salePrice > 0 && actualCost > 0 ? salePrice - actualCost : null,
-          currency: project.currency || 'PAB',
-          dataKind: unit.viewer3D?.dataKind || project.viewer3D.financialDataKind || ''
-        },
-        commercial: {
-          status: venta.estadoVenta === 'caida' ? 'unknown' : commercialStatus(unit.estado),
-          sourceStatus: unit.estado,
-          askingPrice: salePrice,
-          currency: project.currency || 'PAB'
-        },
-        sourceLabel: unit.viewer3D?.sourceLabel || project.viewer3D.inventorySource || ''
-      };
-    });
+    const rows = units.map(unit => buildViewer3DUnitRecord({
+      unit,
+      venta: ventaByUnit.get(String(unit._id)) || {},
+      project
+    }));
+    const linkedTowerIds = new Set(rows.map(row => String(row.tower || '').toUpperCase()).filter(Boolean));
 
     const countBy = (path, value) => rows.filter(row => path(row) === value).length;
     res.json({
@@ -1755,15 +1701,23 @@ router.get('/:id/viewer-3d', requireProjectAccess({ commercialOnlySales: false }
         financialDataKind: project.viewer3D.financialDataKind,
         dataVersion: project.viewer3D.dataVersion,
         note: project.viewer3D.note,
+        towers: (project.viewer3D.towers || []).map(tower => ({
+          towerId: tower.towerId,
+          name: tower.name,
+          constructionStatus: tower.constructionStatus || 'unknown',
+          visible: tower.visible !== false,
+          appearance: tower.appearance || 'solid',
+          editable: !linkedTowerIds.has(String(tower.towerId || '').toUpperCase())
+        })),
         updatedAt: project.updatedAt
       },
       summary: {
         units: rows.length,
         available: countBy(row => row.commercial.status, 'available'),
-        sold: rows.filter(row => ['sold', 'cpp', 'transferred'].includes(row.commercial.status)).length,
+        sold: rows.filter(row => ['sold', 'cpp', 'transferred', 'delivered'].includes(row.commercial.status)).length,
         completed: countBy(row => row.progress.status, 'completed'),
         budgetCost: rows.reduce((sum, row) => sum + Number(row.finance.budgetCost || 0), 0),
-        actualCost: rows.reduce((sum, row) => sum + Number(row.finance.actualCost || 0), 0),
+        actualCost: null,
         salesValue: rows.reduce((sum, row) => sum + Number(row.finance.salePrice || 0), 0)
       },
       units: rows
@@ -1771,6 +1725,69 @@ router.get('/:id/viewer-3d', requireProjectAccess({ commercialOnlySales: false }
   } catch (error) {
     console.error('[GET /projects/:id/viewer-3d] error:', error);
     res.status(500).json({ error: 'No se pudo cargar el visor 3D' });
+  }
+});
+
+router.patch('/:id/viewer-3d/towers/:towerId', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
+  try {
+    const allowedRoles = new Set(['admin', 'bank', 'promoter', 'gerencia', 'tecnico']);
+    const role = String(req.user?.role || '').toLowerCase();
+    if (!allowedRoles.has(role)) return res.status(403).json({ error: 'No puedes editar el modelo 3D' });
+
+    const { id, towerId: rawTowerId } = req.params;
+    const towerId = String(rawTowerId || '').trim().toUpperCase();
+    if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Proyecto inválido' });
+    const project = await Project.findOne({ _id: id, tenantKey: req.tenantKey });
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    if (!project.viewer3D?.enabled) {
+      return res.status(400).json({ error: 'El proyecto no tiene un modelo 3D editable' });
+    }
+    const statuses = new Set(['unknown', 'projected', 'pending', 'inProgress', 'finishing', 'completed']);
+    const appearances = new Set(['solid', 'translucent']);
+    const body = req.body || {};
+    const next = {
+      towerId,
+      name: String(body.name || `Torre ${towerId}`).trim().slice(0, 80),
+      constructionStatus: statuses.has(body.constructionStatus) ? body.constructionStatus : 'unknown',
+      visible: body.visible !== false,
+      appearance: appearances.has(body.appearance) ? body.appearance : 'solid'
+    };
+    const towers = Array.isArray(project.viewer3D.towers)
+      ? project.viewer3D.towers.map(item => item.toObject ? item.toObject() : { ...item })
+      : [];
+    const index = towers.findIndex(item => String(item.towerId || '').toUpperCase() === towerId);
+    if (index < 0) return res.status(404).json({ error: 'La torre no está configurada en este modelo 3D' });
+
+    const linkFilters = [{ 'viewer3D.tower': towerId }];
+    if (String(project.viewer3D.primaryTower || '').toUpperCase() === towerId) {
+      linkFilters.push({ 'viewer3D.tower': { $in: ['', null] } });
+    }
+    const linkedUnits = await Unit.exists({
+      tenantKey: req.tenantKey,
+      projectId: project._id,
+      deletedAt: null,
+      $or: linkFilters
+    });
+    if (linkedUnits) {
+      return res.status(400).json({ error: 'Esta torre tiene unidades comerciales y se edita desde sus fichas' });
+    }
+
+    towers[index] = next;
+    project.viewer3D.towers = towers;
+    project.markModified('viewer3D.towers');
+    await project.save();
+
+    await audit(req, 'project.viewer3d.tower.updated', {
+      targetType: 'project',
+      targetId: project._id,
+      projectId: project._id,
+      message: `Torre ${towerId} actualizada en el visor 3D`,
+      metadata: next
+    });
+    res.json({ ...next, editable: true });
+  } catch (error) {
+    console.error('[PATCH /projects/:id/viewer-3d/towers/:towerId] error:', error);
+    res.status(500).json({ error: 'No se pudo actualizar la torre' });
   }
 });
 

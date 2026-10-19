@@ -23,6 +23,8 @@ export function createUnitData(technicalId, tower, floor, spec) {
     commercial: {
       status: commercialStatus,
       askingPrice: spec.price ?? null,
+      listPrice: spec.listPrice ?? spec.price ?? null,
+      salePrice: spec.salePrice ?? null,
       currency: spec.currency || 'PAB'
     },
     sourceLabel: spec.sourceLabel || ''

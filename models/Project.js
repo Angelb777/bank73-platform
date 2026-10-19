@@ -167,6 +167,9 @@ const projectSchema = new Schema({
   viewer3D: {
     enabled: { type: Boolean, default: false },
     modelKey: { type: String, trim: true, default: '' },
+    // Ruta del proveedor geométrico. Permite activar otros visores sin ligar
+    // el editor a un nombre o identificador concreto de proyecto.
+    viewerPath: { type: String, trim: true, default: '' },
     primaryTower: { type: String, trim: true, default: '' },
     inventorySource: { type: String, trim: true, default: '' },
     financialDataKind: {
@@ -175,7 +178,25 @@ const projectSchema = new Schema({
       default: ''
     },
     dataVersion: { type: String, trim: true, default: '' },
-    note: { type: String, trim: true, default: '' }
+    note: { type: String, trim: true, default: '' },
+    towers: {
+      type: [{
+        towerId: { type: String, trim: true, required: true },
+        name: { type: String, trim: true, default: '' },
+        constructionStatus: {
+          type: String,
+          enum: ['unknown', 'projected', 'pending', 'inProgress', 'finishing', 'completed'],
+          default: 'unknown'
+        },
+        visible: { type: Boolean, default: true },
+        appearance: {
+          type: String,
+          enum: ['solid', 'translucent'],
+          default: 'solid'
+        }
+      }],
+      default: []
+    }
   },
 
   housingModels: {

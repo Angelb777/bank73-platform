@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="/js/branding.js"></script>
   <link href="/css/base.css" rel="stylesheet" />
-  <link href="/css/theme.css?v=palms-layout-v5" rel="stylesheet" />
+  <link href="/css/theme.css?v=viewer-editor-v3" rel="stylesheet" />
   <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
 
   <style>
@@ -1770,13 +1770,53 @@ body.light-theme .provider-exclusive {
           </div>
           <div class="project-3d-header-actions">
             <span id="project3dMode" class="project-3d-mode">Resumen</span>
+            <div id="project3dFullscreenModes" class="project-3d-fullscreen-modes" role="group" aria-label="Capa de datos del modelo">
+              <button class="btn btn-ghost btn-xs" type="button" data-viewer-mode="progress">Avances</button>
+              <button class="btn btn-ghost btn-xs" type="button" data-viewer-mode="finance">Finanzas</button>
+              <button class="btn btn-ghost btn-xs" type="button" data-viewer-mode="commercial">Comercial</button>
+            </div>
+            <button id="project3dEditTowers" class="btn btn-ghost btn-xs project-3d-edit-button" type="button">Editar torres</button>
             <button id="project3dReset" class="btn btn-ghost btn-xs" type="button">Restablecer vista</button>
             <button id="project3dExpand" class="btn btn-ghost btn-xs" type="button" aria-label="Ampliar modelo 3D" title="Ver el modelo 3D a pantalla completa">Pantalla completa</button>
           </div>
         </header>
         <div id="project3dLegend" class="project-3d-legend" aria-live="polite"></div>
         <div class="project-3d-stage">
-          <iframe id="project3dFrame" title="Visor 3D interactivo de El Palmar" loading="lazy" allow="fullscreen"></iframe>
+          <iframe id="project3dFrame" title="Visor 3D interactivo del proyecto" loading="lazy" allow="fullscreen"></iframe>
+          <aside id="project3dTowerEditor" class="project-3d-tower-editor" hidden aria-label="Editor de torre">
+            <div class="project-3d-tower-editor-head">
+              <div><span class="project-3d-eyebrow">EDITOR 3D</span><h3>Geometría sin unidades</h3></div>
+              <button id="project3dTowerEditorClose" class="btn btn-ghost btn-xs" type="button" aria-label="Cerrar editor">X</button>
+            </div>
+            <p id="project3dTowerEditorEmpty" class="project-3d-tower-editor-empty">Selecciona directamente en el modelo una torre que todavía no tenga unidades comerciales.</p>
+            <form id="project3dTowerEditorForm" hidden>
+              <label>Torre
+                <select id="project3dTowerId"></select>
+              </label>
+              <label>Nombre<input id="project3dTowerName" type="text" maxlength="80"></label>
+              <label>Estado constructivo
+                <select id="project3dTowerStatus">
+                  <option value="unknown">Sin definir</option>
+                  <option value="projected">Proyectada</option>
+                  <option value="pending">Sin empezar</option>
+                  <option value="inProgress">En construcción</option>
+                  <option value="finishing">Acabados</option>
+                  <option value="completed">Culminada</option>
+                </select>
+              </label>
+              <label>Representación
+                <select id="project3dTowerAppearance">
+                  <option value="solid">Sólida</option>
+                  <option value="translucent">Translúcida</option>
+                </select>
+              </label>
+              <label class="project-3d-tower-visible"><input id="project3dTowerVisible" type="checkbox" checked> Mostrar torre</label>
+              <div class="project-3d-tower-editor-actions">
+                <button id="project3dTowerCancel" class="btn btn-ghost btn-xs" type="button">Cancelar</button>
+                <button id="project3dTowerSave" class="btn btn-primary btn-xs" type="submit">Guardar</button>
+              </div>
+            </form>
+          </aside>
           <div id="project3dLoading" class="project-3d-loading">Preparando modelo 3D…</div>
         </div>
         <p id="project3dNote" class="project-3d-note"></p>
@@ -2982,8 +3022,8 @@ body.light-theme .provider-exclusive {
   <script src="/js/banks.js"></script>
   <script src="/lib/chart.umd.min.js"></script>
   <script src="/js/theme-toggle.js"></script>
-  <script src="/js/project-3d.js?v=palms-layout-v4"></script>
-  <script src="/js/project.js?v=palms-layout-v4"><!-- ROLE-SEP: bump --></script>
+  <script src="/js/project-3d.js?v=viewer-editor-v3"></script>
+  <script src="/js/project.js?v=palms-unit-record-v6"><!-- ROLE-SEP: bump --></script>
   <script src="/js/avaluadores.js?v=2"></script>
 
 </body>

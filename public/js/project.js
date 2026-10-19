@@ -12120,27 +12120,27 @@ ${inputNum('fu-m2', `m² unidad ${info('Área general de la unidad. Puede servir
 ${inputNum('fu-precio', `Precio lista ${info('Precio comercial base de la unidad antes de ajustes, abonos o financiamiento.')}`, u.precioLista || 0)}
 ${inputNum('fu-costo', `Coste de la unidad ${info('Coste base heredado del modelo. Puedes modificarlo solo para esta unidad sin cambiar las demÃ¡s.')}`, u.costoUnidad || 0)}
 
-${input('fv-numeroFinca', `Número de finca ${info('Identificador registral del inmueble. Según el modelo, este dato debería ser gestionado principalmente por administración.')}`, v.numeroFinca || '')}
-${input('fv-codigoUbicacion', `Código de ubicación ${info('Código de ubicación registral o catastral del inmueble. Dato administrativo/legal del bien.')}`, v.codigoUbicacion || '')}
-${input('fv-calle', `Calle ${info('Calle o vial interno donde se encuentra la unidad dentro del proyecto.')}`, v.calle || '')}
+${input('fv-numeroFinca', `Número de finca ${info('Identificador registral del inmueble. Según el modelo, este dato debería ser gestionado principalmente por administración.')}`, u.numeroFinca || '')}
+${input('fv-codigoUbicacion', `Código de ubicación ${info('Código de ubicación registral o catastral del inmueble. Dato administrativo/legal del bien.')}`, u.codigoUbicacion || '')}
+${input('fv-calle', `Calle ${info('Calle o vial interno donde se encuentra la unidad dentro del proyecto.')}`, u.calle || '')}
 
 ${selectCustom('fv-loteEsquina', `Lote esquina ${info('Indica si el lote es esquinero. Puede afectar precio, metraje adicional o condiciones comerciales.')}`, [
   { v: '', l: '—' },
   { v: 'SI', l: 'Sí' },
   { v: 'NO', l: 'No' }
-], v.loteEsquina || '')}
-${inputNum('fv-metrosExtra', `M² extra ${info('Metros adicionales asociados al lote o a condiciones especiales del inmueble.')}`, v.metrosExtra || 0)}
-${inputNum('fv-precioLoteEsquina', `Precio lote esquinero ${info('Importe adicional aplicable si la unidad corresponde a lote de esquina.')}`, v.precioLoteEsquina || 0)}
-${inputNum('fv-precioM2Extra', `Precio m² extra ${info('Precio aplicado por cada metro cuadrado adicional.')}`, v.precioM2Extra || 0)}
+], u.loteEsquina || '')}
+${inputNum('fv-metrosExtra', `M² extra ${info('Metros adicionales asociados al lote o a condiciones especiales del inmueble.')}`, u.metrosExtra || 0)}
+${inputNum('fv-precioLoteEsquina', `Precio lote esquinero ${info('Importe adicional aplicable si la unidad corresponde a lote de esquina.')}`, u.precioLoteEsquina || 0)}
+${inputNum('fv-precioM2Extra', `Precio m² extra ${info('Precio aplicado por cada metro cuadrado adicional.')}`, u.precioM2Extra || 0)}
 
-${inputNum('fv-areaAbierta', `Área abierta vivienda (m²) ${info('Área abierta de la vivienda. Según el modelo, debería completarse automáticamente al seleccionar el modelo definido por administración.')}`, v.areaAbierta || 0)}
-${inputNum('fv-areaCerrada', `Área cerrada vivienda (m²) ${info('Área cerrada de la vivienda. Según el modelo, debería venir asociada al modelo de vivienda seleccionado.')}`, v.areaCerrada || 0)}
-${inputNum('fv-areaTotalConstruccion', `Área total construcción (m²) ${info('Se calcula automáticamente como área abierta + área cerrada.')}`, (parseDecimalMeasureNumber(v.areaAbierta || 0) + parseDecimalMeasureNumber(v.areaCerrada || 0)), { readonly: true })}
-${inputNum('fv-recamaras', `Recámaras ${info('Cantidad de recámaras. Según el modelo, debería completarse automáticamente según la tipología de vivienda.')}`, v.recamaras || 0)}
-${inputNum('fv-banos', `Baños ${info('Cantidad de baños. Según el modelo, debería completarse automáticamente según la tipología de vivienda.')}`, v.banos || 0)}
+${inputNum('fv-areaAbierta', `Área abierta vivienda (m²) ${info('Área abierta de la vivienda. Según el modelo, debería completarse automáticamente al seleccionar el modelo definido por administración.')}`, u.areaAbierta || 0)}
+${inputNum('fv-areaCerrada', `Área cerrada vivienda (m²) ${info('Área cerrada de la vivienda. Según el modelo, debería venir asociada al modelo de vivienda seleccionado.')}`, u.areaCerrada || 0)}
+${inputNum('fv-areaTotalConstruccion', `Área total construcción (m²) ${info('Se calcula automáticamente como área abierta + área cerrada.')}`, (parseDecimalMeasureNumber(u.areaAbierta || 0) + parseDecimalMeasureNumber(u.areaCerrada || 0)), { readonly: true })}
+${inputNum('fv-recamaras', `Recámaras ${info('Cantidad de recámaras. Según el modelo, debería completarse automáticamente según la tipología de vivienda.')}`, u.recamaras || 0)}
+${inputNum('fv-banos', `Baños ${info('Cantidad de baños. Según el modelo, debería completarse automáticamente según la tipología de vivienda.')}`, u.banos || 0)}
 
-${inputNum('fv-valorMejoras', `Valor mejoras ${info('Valor de las mejoras/construcción. En el modelo se calcula como precio de venta menos valor del terreno.')}`, v.valorMejoras || 0)}
-${inputNum('fv-valorTerreno', `Valor terreno ${info('Valor asignado al terreno dentro del precio total de la unidad.')}`, v.valorTerreno || 0)}
+${inputNum('fv-valorMejoras', `Valor mejoras ${info('Valor de las mejoras/construcción. En el modelo se calcula como precio de venta menos valor del terreno.')}`, u.valorMejoras || 0)}
+${inputNum('fv-valorTerreno', `Valor terreno ${info('Valor asignado al terreno dentro del precio total de la unidad.')}`, u.valorTerreno || 0)}
 `);
 
   const htmlInsurance = seccion('Póliza CAR / incendio aplicable', `
@@ -12635,16 +12635,21 @@ if (btnImportWord && importWordInput) {
     // 1) Actualizar la unidad
     const nombreUnidad = (document.getElementById('fu-nombreUnidad')?.value || '').trim();
 
-let manzana = '';
+let manzana = nombreUnidad;
 let lote = '';
 
-if (nombreUnidad.includes('-')) {
-  const parts = nombreUnidad.split('-');
-  manzana = parts[0].trim();
-  lote = parts.slice(1).join('-').trim();
+// Conserva correctamente niveles negativos y lotes con guion:
+// "-100-L-408" => manzana "-100", lote "L-408".
+const loteConPrefijo = nombreUnidad.match(/^(.*?)-(L-.+)$/i);
+if (loteConPrefijo) {
+  manzana = loteConPrefijo[1].trim();
+  lote = loteConPrefijo[2].trim();
 } else {
-  manzana = nombreUnidad.trim();
-  lote = '';
+  const separator = nombreUnidad.lastIndexOf('-');
+  if (separator > 0) {
+    manzana = nombreUnidad.slice(0, separator).trim();
+    lote = nombreUnidad.slice(separator + 1).trim();
+  }
 }
 
 const uBody = {
@@ -12657,6 +12662,19 @@ const uBody = {
   precioLista: parsePanamaNumber(document.getElementById('fu-precio').value),
   costoUnidad: parsePanamaNumber(document.getElementById('fu-costo').value),
   costoUnidadManual: document.getElementById('fu-costo')?.dataset.manual === 'true',
+  numeroFinca: vVal('fv-numeroFinca'),
+  codigoUbicacion: vVal('fv-codigoUbicacion'),
+  calle: vVal('fv-calle'),
+  loteEsquina: vVal('fv-loteEsquina'),
+  metrosExtra: vNum('fv-metrosExtra'),
+  precioLoteEsquina: vNum('fv-precioLoteEsquina'),
+  precioM2Extra: vNum('fv-precioM2Extra'),
+  areaAbierta: vNum('fv-areaAbierta'),
+  areaCerrada: vNum('fv-areaCerrada'),
+  recamaras: vNum('fv-recamaras'),
+  banos: vNum('fv-banos'),
+  valorMejoras: vNum('fv-valorMejoras'),
+  valorTerreno: vNum('fv-valorTerreno')
 };
 
     await apiPatch(`/api/units/${fichaUnitId}`, uBody);

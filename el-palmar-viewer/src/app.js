@@ -1,22 +1,24 @@
 import './styles.css';
 import { elPalmarProject } from './data/el-palmar.project.js';
-import { loadBank73Project } from './data/bank73-project.js';
+import { loadBank73Project, withoutBank73UnitData } from './data/bank73-project.js';
 import { RealEstateViewer } from './viewer/viewer.js';
 
 const LABELS = {
-  completed: 'Finalizado', inProgress: 'En ejecución', pending: 'Pendiente',
-  onTrack: 'En objetivo', attention: 'Atención', deviation: 'Desviación',
-  available: 'Disponible', reserved: 'Reservada', sold: 'Vendida', transferred: 'Traspasada', cpp: 'Con CPP', unknown: 'Sin datos'
+  completed: 'Finalizado', inProgress: 'En ejecución', finishing: 'Acabados', pending: 'Pendiente',
+  onTrack: 'Margen positivo', attention: 'Sin margen', deviation: 'Venta bajo coste',
+  available: 'Disponible', inventory: 'Inventario', reserved: 'Reservado', sold: 'Trámite legal activado',
+  transferred: 'Escriturado / Traspasado', delivered: 'Vivienda entregada', cpp: 'Con CPP o venta al contado', unknown: 'Sin datos'
 };
 const LEGENDS = {
-  progress: [['completed', 'Finalizada'], ['inProgress', 'En ejecución'], ['pending', 'Pendiente'], ['unknown', 'Sin datos']],
-  finance: [['onTrack', 'En presupuesto'], ['attention', 'Atención'], ['deviation', 'Desviación'], ['unknown', 'Sin datos']],
-  commercial: [['available', 'Disponible'], ['reserved', 'Reservada'], ['cpp', 'Con CPP'], ['sold', 'Vendida'], ['transferred', 'Traspasada'], ['unknown', 'Sin datos']]
+  progress: [['completed', 'Finalizada'], ['inProgress', 'En ejecución'], ['finishing', 'Acabados'], ['pending', 'Pendiente']],
+  finance: [['onTrack', 'Margen positivo'], ['attention', 'Sin margen'], ['deviation', 'Venta bajo coste']],
+  commercial: [['available', 'Disponible'], ['inventory', 'Inventario'], ['reserved', 'Reservado'], ['cpp', 'Con CPP o venta al contado'], ['sold', 'Trámite legal activado'], ['transferred', 'Escriturado / Traspasado'], ['delivered', 'Vivienda entregada']]
 };
 const COLORS = {
-  completed: '#39ca78', inProgress: '#f2c94c', pending: '#ef5b63',
+  completed: '#39ca78', inProgress: '#f2c94c', finishing: '#ab7ee8', pending: '#ef5b63',
   onTrack: '#46c7a1', attention: '#f0b84b', deviation: '#d95c76',
-  available: '#35c58a', reserved: '#f0b74a', sold: '#eab308', transferred: '#ef4444', cpp: '#9b74d1', unknown: '#728496'
+  available: '#35c58a', inventory: '#22c7d6', reserved: '#f0b74a', sold: '#eab308',
+  transferred: '#ef4444', delivered: '#3b82f6', cpp: '#9b74d1', unknown: '#728496'
 };
 
 const ui = {
@@ -40,9 +42,15 @@ try {
   project = await loadBank73Project(elPalmarProject, projectId);
 } catch (error) {
   console.error('[Visor 3D] No se pudieron cargar los datos integrados', error);
+  if (projectId) project = withoutBank73UnitData(elPalmarProject);
 }
 
-const viewer = new RealEstateViewer(ui.canvas, project, renderUnit, renderInteriorState);
+const viewer = new RealEstateViewer(ui.canvas, project, renderUnit, renderInteriorState, renderTowerSelection);
+
+function renderTowerSelection(tower) {
+  if (!embedMode) return;
+  window.parent.postMessage({ type: 'BANK73_VIEWER_TOWER_SELECTED', tower }, window.location.origin);
+}
 
 ui.tower.innerHTML = '<option value="all">Todas las torres</option>' + project.towers.map((tower) => `<option value="${tower.id}">${tower.name}</option>`).join('');
 function availableFloors() {
@@ -67,7 +75,10 @@ function formatMoney(amount, currency = 'PAB') {
   return new Intl.NumberFormat('es-PA', { style: 'currency', currency, maximumFractionDigits: 2 }).format(amount);
 }
 function formatArea(area) { return area == null ? 'Sin dato' : `${new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(area)} m²`; }
-function row(label, value) { return `<div><dt>${label}</dt><dd>${value}</dd></div>`; }
+function row(label, value) {
+  if (value == null || value === '') return '';
+  return `<div><dt>${label}</dt><dd>${value}</dd></div>`;
+}
 
 function renderUnit(data) {
   ui.empty.hidden = Boolean(data);
@@ -76,33 +87,35 @@ function renderUnit(data) {
   const modeData = data[activeMode];
   ui.kicker.textContent = `Torre ${data.towerId} · ${data.floorLabel || `Nivel ${data.floor}`}`;
   ui.title.textContent = data.unitId;
-  ui.status.textContent = LABELS[modeData.status] || LABELS.unknown;
+  const hasStatus = Boolean(modeData?.status && modeData.status !== 'unknown');
+  ui.status.hidden = !hasStatus;
+  ui.status.textContent = hasStatus ? (LABELS[modeData.status] || '') : '';
   ui.status.style.setProperty('--status-color', COLORS[modeData.status] || COLORS.unknown);
   const sourceLabel = data.sourceKind === 'bank73-integrated'
     ? (data.sourceLabel || 'Bank73 · Dato Único')
     : data.sourceKind === 'official-single-source' ? 'Dato Único oficial' : 'Planos históricos';
-  const base = row('Modelo', data.apartmentModel || 'Sin dato')
-    + row('Identificador comercial', data.externalId || 'No asociado')
-    + row('Área cerrada', formatArea(data.closedArea))
-    + row('Área total', formatArea(data.totalArea))
+  const base = row('Modelo', data.apartmentModel)
+    + row('Identificador comercial', data.externalId)
+    + row('Recámaras', data.bedrooms)
+    + row('Baños', data.bathrooms)
+    + row('Área cerrada', data.closedArea == null ? null : formatArea(data.closedArea))
+    + row('Área total', data.totalArea == null ? null : formatArea(data.totalArea))
     + row('Fuente', sourceLabel);
   const modeRows = activeMode === 'progress'
-    ? row('Estado de obra', modeData.label || LABELS[modeData.status] || LABELS.unknown)
-      + row('Avance', modeData.percentage == null ? 'Sin dato' : `${modeData.percentage}%`)
-      + row('Fase', modeData.phase || 'Sin dato')
+    ? row('Estado de obra', modeData.label || (modeData.status !== 'unknown' ? LABELS[modeData.status] : null))
+      + row('Fase', modeData.phase)
     : activeMode === 'finance'
-      ? row('Coste previsto', formatMoney(modeData.budgetCost, modeData.currency))
-        + row('Coste ejecutado', formatMoney(modeData.actualCost, modeData.currency))
-        + row('Precio de venta', formatMoney(modeData.salePrice, modeData.currency))
-        + row('Margen estimado', formatMoney(modeData.estimatedMargin, modeData.currency))
-      : row('Estado comercial', LABELS[modeData.status] || LABELS.unknown)
-        + row('Precio', formatMoney(modeData.askingPrice, modeData.currency));
+      ? row('Coste de la unidad', modeData.budgetCost == null ? null : formatMoney(modeData.budgetCost, modeData.currency))
+        + row('Precio de venta', modeData.salePrice == null ? null : formatMoney(modeData.salePrice, modeData.currency))
+        + row('Abonado por cliente', modeData.collected == null ? null : formatMoney(modeData.collected, modeData.currency))
+        + row('Margen', modeData.estimatedMargin == null ? null : formatMoney(modeData.estimatedMargin, modeData.currency))
+      : row('Estado comercial', hasStatus ? LABELS[modeData.status] : null)
+        + row('Precio lista', modeData.listPrice == null ? null : formatMoney(modeData.listPrice, modeData.currency))
+        + row('Precio de venta', modeData.salePrice == null ? null : formatMoney(modeData.salePrice, modeData.currency));
   ui.details.innerHTML = base + modeRows;
   ui.viewInterior.hidden = data.interiorAvailable === false;
   ui.dataWarning.textContent = data.sourceKind === 'bank73-integrated'
-    ? (activeMode === 'finance'
-      ? 'Precio y estado proceden del Dato Único. Los costes son una estimación ilustrativa para este ejemplo.'
-      : 'Información enlazada con la ficha del proyecto en Bank73. Geometría 3D simplificada.')
+    ? 'Todos los datos proceden de la ficha única de esta unidad en Bank73. Geometría 3D simplificada.'
     : data.sourceKind === 'official-single-source'
       ? 'Inventario, modelo, superficies, precio y estado proceden del Dato Único oficial. La posición 3D es una reconstrucción simplificada.'
       : 'Volumetría documental sin enlace comercial. No se infiere disponibilidad ni precio.';
@@ -169,9 +182,25 @@ window.addEventListener('message', event => {
     document.body.classList.toggle('host-fullscreen', Boolean(event.data?.active));
     viewer.resize();
   }
+  if (type === 'BANK73_VIEWER_TOWER_EDIT') viewer.setTowerEditMode(Boolean(event.data?.active));
+  if (type === 'BANK73_VIEWER_SELECT_TOWER') viewer.selectTowerById(event.data?.towerId);
+  if (type === 'BANK73_VIEWER_TOWER_UPDATED' && event.data?.tower) {
+    viewer.updateTower(event.data.tower);
+    const option = [...ui.tower.options].find(item => item.value === event.data.tower.towerId);
+    if (option) option.textContent = event.data.tower.name || `Torre ${event.data.tower.towerId}`;
+  }
   if (type === 'BANK73_VIEWER_REFRESH') window.location.reload();
 });
-if (embedMode) window.parent.postMessage({ type: 'BANK73_VIEWER_READY' }, window.location.origin);
+if (embedMode) {
+  window.parent.postMessage({
+    type: 'BANK73_VIEWER_READY',
+    towers: project.towers.map(tower => ({
+      towerId: tower.id,
+      name: tower.name,
+      editable: tower.editable === true
+    }))
+  }, window.location.origin);
+}
 
 // Deep link opcional, útil para futuras integraciones con identificadores externos.
 const initialInteriorUnit = new URLSearchParams(window.location.search).get('interior');

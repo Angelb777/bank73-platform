@@ -62,3 +62,26 @@ test('builds a roofless interior while preserving the selected unitId', () => {
     assert.ok(interior.children.length > 5);
   });
 });
+
+test('preserves editable tower metadata without inventing commercial units', () => {
+  const project = structuredClone(elPalmarProject);
+  const towerA = project.towers.find((tower) => tower.id === 'A');
+  towerA.name = 'Torre proyectada';
+  towerA.editable = true;
+  towerA.constructionStatus = 'projected';
+  towerA.appearance = 'translucent';
+  towerA.visible = false;
+
+  const built = buildProject(project);
+  const renderedTower = built.towers.get('A');
+  assert.equal(renderedTower.userData.editable, true);
+  assert.equal(renderedTower.userData.name, 'Torre proyectada');
+  assert.equal(renderedTower.userData.constructionStatus, 'projected');
+  assert.equal(renderedTower.userData.appearance, 'translucent');
+  assert.equal(renderedTower.userData.visible, false);
+  assert.equal(renderedTower.visible, false);
+  assert.equal(
+    [...built.units.values()].filter((unit) => unit.userData.towerId === 'A' && unit.userData.bank73UnitId).length,
+    0
+  );
+});
