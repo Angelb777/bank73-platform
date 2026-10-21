@@ -962,13 +962,16 @@ router.delete('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId'
       return res.status(403).json({ error: 'Solo Promotor, Admin o Banco pueden eliminar una partida de desembolso.' });
     }
 
-    const password = String(req.body?.password || '');
-    if (!password) return res.status(400).json({ error: 'Introduce tu contraseña para confirmar la eliminación.' });
+    const credential = String(req.body?.credential || req.body?.password || req.body?.pin || '').trim();
+    if (!credential) return res.status(400).json({ error: 'Introduce tu contraseña o el PIN de eliminación para confirmar.' });
 
     const actorId = req.user?.userId || req.user?._id || req.user?.id || null;
     const actor = mongoose.isValidObjectId(actorId) ? await User.findById(actorId).select('password email role') : null;
-    if (!actor || !verifyPassword(password, actor.password)) {
-      return res.status(403).json({ error: 'La contraseña no es correcta. No se eliminó la partida.' });
+    const expectedPin = String(process.env.FINANCE_DELETE_PIN || process.env.PROCESS_DELETE_PIN || '2580').trim();
+    const validAccountPassword = Boolean(actor && verifyPassword(credential, actor.password));
+    const validDeletePin = Boolean(expectedPin && credential === expectedPin);
+    if (!validAccountPassword && !validDeletePin) {
+      return res.status(403).json({ error: 'La contraseña o el PIN no son correctos. No se eliminó la partida.' });
     }
 
     const project = await loadTenantProject(req, res);
@@ -997,6 +1000,7 @@ router.delete('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId'
         fundingParty: deletedEntry.fundingParty || 'bank',
         amount: toNum(deletedEntry.disbursementAmount),
         workflowStatus: loanEntryWorkflowStatus(deletedEntry),
+        confirmationMethod: validAccountPassword ? 'account_password' : 'delete_pin',
         requestDocumentId: deletedEntry.requestDocumentId ? String(deletedEntry.requestDocumentId) : null
       }
     });

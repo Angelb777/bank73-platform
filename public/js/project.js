@@ -5341,6 +5341,13 @@ let FINANCE_PROJECT = null;
 let FINANCE_COMMERCIAL_UNITS = [];
 let FINANCE_LOAN_LINES_SAVE_IN_PROGRESS = false;
 let FINANCE_LOAN_LINES_RENDER_TIMER = null;
+let FINANCE_LOAN_LINES_AUTOSAVE_TIMER = null;
+let FINANCE_LOAN_LINES_DIRTY = false;
+let FINANCE_LOAN_LINES_SAVE_QUEUE = Promise.resolve();
+let FINANCE_UNIT_AUTOSAVE_TIMER = null;
+let FINANCE_UNIT_DIRTY = false;
+let FINANCE_UNIT_SAVE_QUEUE = Promise.resolve();
+let FINANCE_CONTROL_SAVE_QUEUE = Promise.resolve();
 let FINANCE_LOAN_LINE_EXPANDED = new Set();
 let FINANCE_LOAN_LINE_COLLAPSED = new Set();
 let FINANCE_ALL_LOAN_LINES = [];
@@ -5350,6 +5357,7 @@ let FINANCE_AVALUATION_CONTEXT = { hasAssignedAvaluator: false, reports: [] };
 let FINANCE_PHASE_MODAL_TAB = 'overview';
 let FINANCE_MODAL_HOME = null;
 let FINANCE_MODAL_NEXT = null;
+let FINANCE_PHASE_AUTOSAVE_FLUSH = null;
 
 const fmt = (n) => formatPanamaNumber(n);
 const sumItems = (arr = []) => (arr || []).reduce((a, it) => a + parsePanamaNumber(it?.amount || 0), 0);
@@ -5649,7 +5657,16 @@ function renderFinanceCoherence(phases = FINANCE?.phases || []) {
   alertsBox.innerHTML = notices.map(([tone, message]) => `<div class="finance-coherence-notice is-${tone}">${escapeHtml(message)}</div>`).join('');
 }
 
-function closeFinancePhaseModal() {
+async function closeFinancePhaseModal() {
+  const flushAutosave = FINANCE_PHASE_AUTOSAVE_FLUSH;
+  try {
+    if (flushAutosave) await flushAutosave();
+    await flushFinanceLoanLinesAutosave({ showAlert: true });
+    await flushFinanceUnitAutosave({ showAlert: true });
+  } catch {
+    return;
+  }
+  FINANCE_PHASE_AUTOSAVE_FLUSH = null;
   const modal = document.getElementById('financePhaseLinesModal');
   if (modal) {
     modal.hidden = true;
@@ -5666,10 +5683,26 @@ function closeFinancePhaseModal() {
   }
   if (page) page.id = 'tab-finanzas';
   portal?.remove();
+  if (flushAutosave) {
+    await loadFinance();
+    await markProjectDataChanged();
+  }
 }
 
-function setFinancePhaseModalTab(tab = 'overview') {
+async function setFinancePhaseModalTab(tab = 'overview') {
   const selected = ['overview', 'lines', 'charts'].includes(tab) ? tab : 'overview';
+  const previous = FINANCE_PHASE_MODAL_TAB;
+  if (selected !== previous) {
+    try {
+      if (previous === 'overview' && FINANCE_PHASE_AUTOSAVE_FLUSH) await FINANCE_PHASE_AUTOSAVE_FLUSH();
+      if (previous === 'lines') {
+        await flushFinanceLoanLinesAutosave({ showAlert: true });
+        await flushFinanceUnitAutosave({ showAlert: true });
+      }
+    } catch {
+      return;
+    }
+  }
   FINANCE_PHASE_MODAL_TAB = selected;
   document.querySelectorAll('[data-finance-phase-panel]').forEach(panel => { panel.hidden = panel.dataset.financePhasePanel !== selected; });
   document.querySelectorAll('[data-finance-phase-tab]').forEach(button => {
@@ -6606,10 +6639,10 @@ async function deleteFinanceDisbursementEntry(button) {
     return;
   }
 
-  const password = prompt('Introduce tu contraseña para eliminar definitivamente esta partida de desembolso:');
-  if (password === null) return;
-  if (!password) {
-    alert('Debes introducir tu contraseña.');
+  const credential = prompt('Introduce tu contraseña de acceso o el PIN de eliminación para borrar definitivamente esta partida:');
+  if (credential === null) return;
+  if (!credential.trim()) {
+    alert('Debes introducir tu contraseña o el PIN de eliminación.');
     return;
   }
 
@@ -6617,7 +6650,7 @@ async function deleteFinanceDisbursementEntry(button) {
   try {
     setFinanceButtonState(button, 'Eliminando...', true);
     await API.del(`/api/projects/${id}/finance/loan-lines/${encodeURIComponent(lineId)}/entries/${encodeURIComponent(entryId)}`, {
-      body: JSON.stringify({ password })
+      body: JSON.stringify({ credential: credential.trim() })
     });
     await loadFinance();
     const phase = (FINANCE?.phases || []).find(item => String(item._id) === String(FINANCE_SELECTED_PHASE_ID));
@@ -6755,8 +6788,6 @@ function renderFinanceLoanLines(lines = []) {
           <div class="finance-loan-line-metrics">
             <span>Aprobado <b>${financeMoney(line.approvedAmount)}</b></span>
             <span>Desembolsado <b>${financeMoney(totals.disbursed)}</b></span>
-            <span>Manual <b>${financeMoney(totals.amortized)}</b></span>
-            <span>Ventas <b>${financeMoney(totals.allocated)}</b></span>
             <span>Total amort. <b>${financeMoney(totals.recovered)} · ${recoveredPct}</b></span>
             <span>Saldo por pagar <b>${financeMoney(totals.balance)} · ${balancePct}</b></span>
             <span class="finance-status is-${status.key}">${status.label}</span>
@@ -6768,7 +6799,7 @@ function renderFinanceLoanLines(lines = []) {
             <button class="btn btn-ghost btn-xs" type="button" data-finance-toggle-entries data-count="${rowsCount}" aria-expanded="${isCollapsed ? 'false' : 'true'}">${isCollapsed ? 'Ver detalle' : 'Ocultar detalle'} (${rowsCount})</button>
             <button class="btn btn-xs" type="button" data-finance-add-entry="disbursement">+ Desembolso</button>
             <button class="btn btn-ghost btn-xs" type="button" data-finance-add-entry="manual_amortization">+ Amortización manual</button>
-            <button class="btn btn-xs" type="button" data-finance-save-line>Guardar</button>
+            <button class="btn btn-xs" type="button" data-finance-save-line>Guardar ahora</button>
             <button class="btn btn-danger btn-xs" type="button" data-finance-remove-line>Eliminar</button>
           </div>
         </div>
@@ -6990,7 +7021,7 @@ function renderFinanceUnitAmortizations() {
         <div class="finance-unit-footer">
           <span>Total distribuido: <b data-unit-distributed>${financeMoney(state.distributed)}</b></span>
           <span>Diferencia: <b data-unit-difference>${financeMoney(state.diff)}</b></span>
-          <button class="btn btn-xs" type="button" data-finance-save-unit>Guardar</button>
+          <button class="btn btn-xs" type="button" data-finance-save-unit>Guardar ahora</button>
           <button class="btn btn-ghost btn-xs" type="button" data-finance-reset-unit>Limpiar</button>
         </div>
       </details>
@@ -7037,83 +7068,170 @@ function refreshFinanceDerivedUI() {
   renderFinanceControlKpis();
 }
 
-async function saveFinanceLoanLines(btn = null) {
-  const originalLabel = btn?.textContent || 'Guardar';
-  FINANCE_LOAN_LINES_SAVE_IN_PROGRESS = true;
-  if (FINANCE_LOAN_LINES_RENDER_TIMER) {
-    clearTimeout(FINANCE_LOAN_LINES_RENDER_TIMER);
-    FINANCE_LOAN_LINES_RENDER_TIMER = null;
-  }
-  try {
-    setFinanceButtonState(btn, 'Guardando...', true);
-    const visibleLines = collectFinanceLoanLines();
-    const visibleIds = new Set(visibleLines.map(line => String(line._id || '')).filter(Boolean));
-    const loanLines = [
-      ...FINANCE_ALL_LOAN_LINES.filter(line => {
-        if (visibleIds.has(String(line._id || ''))) return false;
-        return String(line.phaseId || '') !== String(FINANCE_SELECTED_PHASE_ID || '');
-      }),
-      ...visibleLines
-    ];
-    await API.put(`/api/projects/${id}/finance/loan-lines`, { loanLines });
-    setFinanceButtonState(btn, 'Guardado', true);
-    if (btn) await waitFinanceFeedback();
-    await loadFinance();
-    const updatedPhase = (FINANCE?.phases || []).find(item => String(item._id) === String(FINANCE_SELECTED_PHASE_ID));
-    if (updatedPhase && !document.getElementById('financePhaseLinesModal')?.hidden) {
-      const phaseView = document.querySelector('[data-phase-view].is-active')?.dataset.phaseView || 'plan';
-      await openFinancePhaseLines(updatedPhase, phaseView, FINANCE_PHASE_MODAL_TAB);
-    }
-    await markProjectDataChanged();
-  } catch (e) {
-    setFinanceButtonState(btn, originalLabel, false);
-    console.error('[Finance] error guardando lineas', e);
-    alert(e.message || 'No se pudieron guardar las líneas bancarias');
-  } finally {
-    FINANCE_LOAN_LINES_SAVE_IN_PROGRESS = false;
-  }
+function setFinanceAutosaveStatus(elementId, label, tone = '') {
+  const status = document.getElementById(elementId);
+  if (!status) return;
+  status.textContent = label;
+  status.className = `finance-autosave-status${tone ? ` is-${tone}` : ''}`;
 }
 
-async function saveFinanceUnitAmortizations() {
-  try {
-    const unitAmortizations = collectFinanceUnitAmortizations();
-    await API.put(`/api/projects/${id}/finance/unit-amortizations`, { unitAmortizations });
-    await loadFinance();
-    await markProjectDataChanged();
-  } catch (e) {
-    console.error('[Finance] error guardando amortizaciones', e);
-    alert('No se pudieron guardar las amortizaciones');
-  }
+function applyFinanceControlSaveResponse(response = {}) {
+  if (!response.financeControl) return;
+  FINANCE_CONTROL = response.financeControl;
+  FINANCE_ALL_LOAN_LINES = (FINANCE_CONTROL.loanLines || []).map(line => ({ ...line }));
+}
+
+function reconcileSavedFinanceLines(savedLines = []) {
+  const phaseLines = savedLines.filter(line => String(line.phaseId || '') === String(FINANCE_SELECTED_PHASE_ID || ''));
+  const claimed = new Set();
+  document.querySelectorAll('#financeLoanLinesBody [data-line-card]').forEach((card, index) => {
+    const oldId = String(card.dataset.id || '');
+    let savedIndex = phaseLines.findIndex((line, idx) => !claimed.has(idx) && isMongoIdLike(oldId) && String(line._id || '') === oldId);
+    if (savedIndex < 0) savedIndex = phaseLines.findIndex((line, idx) => !claimed.has(idx) && card.dataset.sourceUseId && String(line.sourceUseId || '') === String(card.dataset.sourceUseId));
+    if (savedIndex < 0) savedIndex = phaseLines.findIndex((line, idx) => !claimed.has(idx) && String(line.name || '') === String(card.querySelector('[data-line-field="name"]')?.value || ''));
+    if (savedIndex < 0 && phaseLines[index] && !claimed.has(index)) savedIndex = index;
+    if (savedIndex < 0) return;
+    claimed.add(savedIndex);
+    const saved = phaseLines[savedIndex];
+    card.dataset.id = String(saved._id || oldId);
+    card.querySelectorAll('[data-entry-row]').forEach((row, entryIndex) => {
+      const savedEntry = saved.entries?.[entryIndex];
+      if (savedEntry?._id) row.dataset.entryId = String(savedEntry._id);
+    });
+    if (saved._id && oldId && oldId !== String(saved._id)) {
+      document.querySelectorAll('#financeUnitAmortizations [data-allocation-line]').forEach(row => {
+        if (String(row.dataset.loanLineId || '') === oldId || (!isMongoIdLike(row.dataset.loanLineId) && String(row.dataset.loanLineName || '') === String(saved.name || ''))) {
+          row.dataset.loanLineId = String(saved._id);
+          row.dataset.loanLineName = saved.name || row.dataset.loanLineName || '';
+        }
+      });
+    }
+  });
+}
+
+function saveFinanceLoanLines(btn = null, { showAlert = !!btn, force = !!btn } = {}) {
+  if (force) FINANCE_LOAN_LINES_DIRTY = true;
+  clearTimeout(FINANCE_LOAN_LINES_AUTOSAVE_TIMER);
+  FINANCE_LOAN_LINES_AUTOSAVE_TIMER = null;
+  if (!FINANCE_LOAN_LINES_DIRTY) return FINANCE_LOAN_LINES_SAVE_QUEUE;
+  const originalLabel = btn?.textContent || 'Guardar ahora';
+  const visibleLines = collectFinanceLoanLines();
+  const visibleIds = new Set(visibleLines.map(line => String(line._id || '')).filter(isMongoIdLike));
+  const loanLines = [
+    ...FINANCE_ALL_LOAN_LINES.filter(line => {
+      if (visibleIds.has(String(line._id || ''))) return false;
+      return String(line.phaseId || '') !== String(FINANCE_SELECTED_PHASE_ID || '');
+    }),
+    ...visibleLines
+  ];
+  FINANCE_LOAN_LINES_DIRTY = false;
+  FINANCE_LOAN_LINES_SAVE_IN_PROGRESS = true;
+  setFinanceButtonState(btn, 'Guardando...', true);
+  setFinanceAutosaveStatus('financeLoanLinesSaveStatus', 'Guardando...', 'saving');
+  FINANCE_LOAN_LINES_SAVE_QUEUE = FINANCE_CONTROL_SAVE_QUEUE.catch(() => {}).then(async () => {
+    const response = await API.put(`/api/projects/${id}/finance/loan-lines`, { loanLines });
+    applyFinanceControlSaveResponse(response);
+    reconcileSavedFinanceLines(FINANCE_CONTROL?.loanLines || []);
+    setFinanceButtonState(btn, 'Guardado', true);
+    setFinanceAutosaveStatus('financeLoanLinesSaveStatus', FINANCE_LOAN_LINES_DIRTY ? 'Cambios pendientes' : 'Guardado', FINANCE_LOAN_LINES_DIRTY ? 'pending' : 'saved');
+    renderFinanceLoanGlobalSummary(collectFinanceLoanLines());
+    renderFinanceControlKpis();
+    await markProjectDataChanged({ refreshHeader: false });
+    if (btn) {
+      await waitFinanceFeedback();
+      setFinanceButtonState(btn, originalLabel, false);
+    }
+    return response;
+  }).catch(error => {
+    FINANCE_LOAN_LINES_DIRTY = true;
+    setFinanceButtonState(btn, originalLabel, false);
+    setFinanceAutosaveStatus('financeLoanLinesSaveStatus', 'No se pudo guardar', 'error');
+    console.error('[Finance] error guardando lineas', error);
+    if (showAlert) alert(error.message || 'No se pudieron guardar las líneas bancarias');
+    throw error;
+  }).finally(() => {
+    FINANCE_LOAN_LINES_SAVE_IN_PROGRESS = false;
+  });
+  FINANCE_CONTROL_SAVE_QUEUE = FINANCE_LOAN_LINES_SAVE_QUEUE;
+  return FINANCE_LOAN_LINES_SAVE_QUEUE;
+}
+
+function scheduleFinanceLoanLinesAutosave() {
+  FINANCE_LOAN_LINES_DIRTY = true;
+  setFinanceAutosaveStatus('financeLoanLinesSaveStatus', 'Cambios pendientes', 'pending');
+  clearTimeout(FINANCE_LOAN_LINES_AUTOSAVE_TIMER);
+  FINANCE_LOAN_LINES_AUTOSAVE_TIMER = setTimeout(() => {
+    saveFinanceLoanLines().catch(() => {});
+  }, 800);
+}
+
+async function flushFinanceLoanLinesAutosave({ showAlert = true } = {}) {
+  clearTimeout(FINANCE_LOAN_LINES_AUTOSAVE_TIMER);
+  FINANCE_LOAN_LINES_AUTOSAVE_TIMER = null;
+  try { await FINANCE_LOAN_LINES_SAVE_QUEUE; } catch {}
+  if (FINANCE_LOAN_LINES_DIRTY) await saveFinanceLoanLines(null, { showAlert });
+}
+
+function saveFinanceUnitAmortizations(btn = null, { showAlert = !!btn, force = !!btn } = {}) {
+  if (force) FINANCE_UNIT_DIRTY = true;
+  clearTimeout(FINANCE_UNIT_AUTOSAVE_TIMER);
+  FINANCE_UNIT_AUTOSAVE_TIMER = null;
+  if (!FINANCE_UNIT_DIRTY) return FINANCE_UNIT_SAVE_QUEUE;
+  const originalLabel = btn?.textContent || 'Guardar ahora';
+  const unitAmortizations = collectFinanceUnitAmortizations();
+  FINANCE_UNIT_DIRTY = false;
+  setFinanceButtonState(btn, 'Guardando...', true);
+  setFinanceAutosaveStatus('financeUnitSaveStatus', 'Guardando...', 'saving');
+  FINANCE_UNIT_SAVE_QUEUE = FINANCE_CONTROL_SAVE_QUEUE.catch(() => {}).then(async () => {
+    const response = await API.put(`/api/projects/${id}/finance/unit-amortizations`, { unitAmortizations });
+    applyFinanceControlSaveResponse(response);
+    const savedByUnit = new Map((FINANCE_CONTROL?.unitAmortizations || []).map(item => [String(item.unitId || ''), item]));
+    document.querySelectorAll('#financeUnitAmortizations [data-unit-card]').forEach(card => {
+      const saved = savedByUnit.get(String(card.dataset.unitId || ''));
+      if (saved?._id) card.dataset.financeId = String(saved._id);
+    });
+    setFinanceButtonState(btn, 'Guardado', true);
+    setFinanceAutosaveStatus('financeUnitSaveStatus', FINANCE_UNIT_DIRTY ? 'Cambios pendientes' : 'Guardado', FINANCE_UNIT_DIRTY ? 'pending' : 'saved');
+    renderFinanceLoanGlobalSummary(collectFinanceLoanLines());
+    renderFinanceUnitGlobalSummary(readFinanceUnitCards());
+    renderFinanceControlKpis();
+    await markProjectDataChanged({ refreshHeader: false });
+    if (btn) {
+      await waitFinanceFeedback();
+      setFinanceButtonState(btn, originalLabel, false);
+    }
+    return response;
+  }).catch(error => {
+    FINANCE_UNIT_DIRTY = true;
+    setFinanceButtonState(btn, originalLabel, false);
+    setFinanceAutosaveStatus('financeUnitSaveStatus', 'No se pudo guardar', 'error');
+    console.error('[Finance] error guardando amortizaciones', error);
+    if (showAlert) alert(error.message || 'No se pudieron guardar las amortizaciones');
+    throw error;
+  });
+  FINANCE_CONTROL_SAVE_QUEUE = FINANCE_UNIT_SAVE_QUEUE;
+  return FINANCE_UNIT_SAVE_QUEUE;
+}
+
+function scheduleFinanceUnitAutosave() {
+  FINANCE_UNIT_DIRTY = true;
+  setFinanceAutosaveStatus('financeUnitSaveStatus', 'Cambios pendientes', 'pending');
+  clearTimeout(FINANCE_UNIT_AUTOSAVE_TIMER);
+  FINANCE_UNIT_AUTOSAVE_TIMER = setTimeout(() => {
+    saveFinanceUnitAmortizations().catch(() => {});
+  }, 800);
+}
+
+async function flushFinanceUnitAutosave({ showAlert = true } = {}) {
+  clearTimeout(FINANCE_UNIT_AUTOSAVE_TIMER);
+  FINANCE_UNIT_AUTOSAVE_TIMER = null;
+  try { await FINANCE_UNIT_SAVE_QUEUE; } catch {}
+  if (FINANCE_UNIT_DIRTY) await saveFinanceUnitAmortizations(null, { showAlert });
 }
 
 async function saveFinanceSingleUnit(card, btn = null) {
-  if (!card) return saveFinanceUnitAmortizations();
-  const originalLabel = btn?.textContent || 'Guardar';
-  const targetUnitId = String(card.dataset.unitId || '');
-  const targetFinanceId = String(card.dataset.financeId || '');
-  const current = collectFinanceUnitAmortizations();
-  const incoming = readFinanceUnitCards().find(item =>
-    String(item.unitId || '') === targetUnitId ||
-    (targetFinanceId && String(item._id || '') === targetFinanceId)
-  );
-  if (!incoming) return saveFinanceUnitAmortizations();
-  const next = current.filter(item => {
-    if (targetUnitId) return String(item.unitId || '') !== targetUnitId;
-    return String(item._id || '') !== targetFinanceId;
-  });
-  next.push(incoming);
-  try {
-    setFinanceButtonState(btn, 'Guardando...', true);
-    await API.put(`/api/projects/${id}/finance/unit-amortizations`, { unitAmortizations: next });
-    setFinanceButtonState(btn, 'Guardado', true);
-    if (btn) await waitFinanceFeedback();
-    await loadFinance();
-    await markProjectDataChanged();
-  } catch (e) {
-    setFinanceButtonState(btn, originalLabel, false);
-    console.error('[Finance] error guardando unidad', e);
-    alert('No se pudo guardar esta unidad');
-  }
+  if (!card) return saveFinanceUnitAmortizations(btn, { force: true, showAlert: true });
+  return saveFinanceUnitAmortizations(btn, { force: true, showAlert: true });
 }
 
 // -------------------------
@@ -7278,7 +7396,7 @@ function bindFinanceOnce() {
   document.getElementById('addPhaseUnifiedBtn')?.addEventListener('click', () => openPhaseEditor(null, 'plan'));
   document.querySelectorAll('[data-close-finance-phase]').forEach(el => el.addEventListener('click', closeFinancePhaseModal));
   document.getElementById('financePhaseFullscreenBtn')?.addEventListener('click', toggleFinancePhaseFullscreen);
-  document.querySelectorAll('[data-finance-phase-tab]').forEach(button => button.addEventListener('click', () => setFinancePhaseModalTab(button.dataset.financePhaseTab)));
+  document.querySelectorAll('[data-finance-phase-tab]').forEach(button => button.addEventListener('click', async () => { await setFinancePhaseModalTab(button.dataset.financePhaseTab); }));
   document.getElementById('financeExportPhasePdf')?.addEventListener('click', () => downloadFinanceExport('pdf', FINANCE_SELECTED_PHASE_ID));
   document.getElementById('financeExportPhaseXlsx')?.addEventListener('click', () => downloadFinanceExport('xlsx', FINANCE_SELECTED_PHASE_ID));
   document.addEventListener('keydown', ev => {
@@ -7298,12 +7416,15 @@ function bindFinanceOnce() {
       entries: [],
     });
     renderFinanceLoanLines(lines);
+    scheduleFinanceLoanLinesAutosave();
   });
 
   document.getElementById('financeLoanLinesBody')?.addEventListener('input', () => {
     renderFinanceControlKpis();
+    scheduleFinanceLoanLinesAutosave();
   });
   document.getElementById('financeLoanLinesBody')?.addEventListener('change', () => {
+    scheduleFinanceLoanLinesAutosave();
     if (FINANCE_LOAN_LINES_RENDER_TIMER) clearTimeout(FINANCE_LOAN_LINES_RENDER_TIMER);
     FINANCE_LOAN_LINES_RENDER_TIMER = setTimeout(() => {
       FINANCE_LOAN_LINES_RENDER_TIMER = null;
@@ -7326,6 +7447,7 @@ function bindFinanceOnce() {
       card.querySelector('[data-line-field="approvedAmount"]')?.removeAttribute('readonly');
       manualLineBtn.remove();
       card.querySelector('.finance-auto-line-badge')?.remove();
+      scheduleFinanceLoanLinesAutosave();
       return;
     }
     const toggleEntriesBtn = ev.target.closest('[data-finance-toggle-entries]');
@@ -7353,7 +7475,7 @@ function bindFinanceOnce() {
 
     const saveBtn = ev.target.closest('[data-finance-save-line]');
     if (saveBtn) {
-      await saveFinanceLoanLines(saveBtn);
+      try { await saveFinanceLoanLines(saveBtn, { force: true, showAlert: true }); } catch {}
       return;
     }
 
@@ -7438,11 +7560,13 @@ function bindFinanceOnce() {
     if (removeLineBtn) {
       removeLineBtn.closest('.finance-loan-line-card')?.remove();
       renderFinanceLoanLines(collectFinanceLoanLines());
+      scheduleFinanceLoanLinesAutosave();
     }
   });
 
   document.getElementById('financeUnitAmortizations')?.addEventListener('input', () => {
     renderFinanceControlKpis();
+    scheduleFinanceUnitAutosave();
   });
   document.getElementById('financeUnitAmortizations')?.addEventListener('change', (ev) => {
     const source = ev.target.closest('[data-field="checkAmountSource"]');
@@ -7457,11 +7581,12 @@ function bindFinanceOnce() {
       }
     }
     refreshFinanceDerivedUI();
+    scheduleFinanceUnitAutosave();
   });
-  document.getElementById('financeUnitAmortizations')?.addEventListener('click', (ev) => {
+  document.getElementById('financeUnitAmortizations')?.addEventListener('click', async (ev) => {
     const saveUnitBtn = ev.target.closest('[data-finance-save-unit]');
     if (saveUnitBtn) {
-      saveFinanceSingleUnit(saveUnitBtn.closest('.finance-unit-card'), saveUnitBtn);
+      try { await saveFinanceSingleUnit(saveUnitBtn.closest('.finance-unit-card'), saveUnitBtn); } catch {}
       return;
     }
 
@@ -7473,6 +7598,7 @@ function bindFinanceOnce() {
       input.value = '';
     });
     refreshFinanceDerivedUI();
+    scheduleFinanceUnitAutosave();
   });
 
   document.getElementById('exportXlsx')?.addEventListener('click', async (e) => {
@@ -8053,7 +8179,7 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
   host.innerHTML = `
     <div class="finance-phase-overview-head">
       <div><h3>Resumen de la fase</h3><p>Planifica una vez y registra después únicamente los cambios reales.</p></div>
-      <button class="btn btn-xs" type="button" data-save-phase-overview>Guardar fase</button>
+      <div class="finance-phase-save-actions"><span data-phase-save-status>Guardado</span><button class="btn btn-xs" type="button" data-save-phase-overview>Guardar ahora</button></div>
     </div>
     <div class="finance-phase-core-fields">
       <label><span>Nombre</span><input class="input" data-phase-overview="name" value="${escapeHtml(phase?.name || '')}"></label>
@@ -8230,6 +8356,99 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
     }
   };
 
+  const saveStatus = host.querySelector('[data-phase-save-status]');
+  let autosaveTimer = null;
+  let dirty = false;
+  let requestedSaveVersion = 0;
+  let savedVersion = 0;
+  let saveQueue = Promise.resolve();
+  const setSaveStatus = (label, tone = '') => {
+    if (!saveStatus) return;
+    saveStatus.textContent = label;
+    saveStatus.className = tone ? `is-${tone}` : '';
+  };
+  const buildPhaseOverviewPayload = () => {
+    const planUses = collectPlanUses();
+    const planSourcesList = financeAggregateUseSources(planUses);
+    const plannedBuckets = financeSourceBuckets(planSourcesList);
+    const realBank = sourceValue('real-bank');
+    const realPromoter = sourceValue('real-promoter');
+    const realPresales = sourceValue('real-presales');
+    const planTotal = sumItems(planUses);
+    return {
+      name: host.querySelector('[data-phase-overview="name"]')?.value.trim() || 'Fase',
+      startDate: host.querySelector('[data-phase-overview="startDate"]')?.value,
+      endDate: host.querySelector('[data-phase-overview="endDate"]')?.value,
+      actualStartDate: host.querySelector('[data-phase-overview="actualStartDate"]')?.value || null,
+      actualEndDate: host.querySelector('[data-phase-overview="actualEndDate"]')?.value || null,
+      planUses,
+      planSources: planSourcesList,
+      uses: collectRows('realUses'),
+      sources: [
+        { name: 'Banco', amount: realBank },
+        { name: 'Promotor', amount: realPromoter },
+        { name: 'Preventas', amount: realPresales },
+        ...collectRows('realOther')
+      ],
+      financialConditions: {
+        ...(phase?.financialConditions || {}),
+        phaseTotal: planTotal,
+        bankFinancedAmount: plannedBuckets.bank,
+        bankFinancedPct: planTotal ? plannedBuckets.bank / planTotal * 100 : 0,
+        promoterContribution: plannedBuckets.promoter,
+        promoterContributionPct: planTotal ? plannedBuckets.promoter / planTotal * 100 : 0
+      }
+    };
+  };
+  const persistPhaseOverview = ({ showAlert = false } = {}) => {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+    if (!dirty) return saveQueue;
+    const payload = buildPhaseOverviewPayload();
+    if (!payload.startDate || !payload.endDate) {
+      const error = new Error('Las fechas estimadas de inicio y fin son obligatorias.');
+      setSaveStatus('Pendiente: faltan fechas', 'error');
+      if (showAlert) alert(error.message);
+      return Promise.reject(error);
+    }
+    dirty = false;
+    const version = ++requestedSaveVersion;
+    setSaveStatus('Guardando...', 'saving');
+    saveQueue = saveQueue.catch(() => {}).then(async () => {
+      const response = await API.put(`/api/projects/${id}/finance/phases/${phase._id}`, payload);
+      if (response?.phase) {
+        phase = response.phase;
+        const phaseIndex = (FINANCE?.phases || []).findIndex(item => String(item?._id) === String(response.phase._id));
+        if (phaseIndex >= 0) FINANCE.phases[phaseIndex] = response.phase;
+      }
+      savedVersion = Math.max(savedVersion, version);
+      if (!dirty && savedVersion === requestedSaveVersion) setSaveStatus('Guardado', 'saved');
+      await markProjectDataChanged({ refreshHeader: false });
+      return response;
+    }).catch(error => {
+      dirty = true;
+      setSaveStatus('No se pudo guardar', 'error');
+      console.error(error);
+      if (showAlert) alert(error.message || 'No se pudo guardar la fase.');
+      throw error;
+    });
+    return saveQueue;
+  };
+  const schedulePhaseAutosave = () => {
+    dirty = true;
+    setSaveStatus('Cambios pendientes', 'pending');
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(() => {
+      persistPhaseOverview().catch(() => {});
+    }, 800);
+  };
+  FINANCE_PHASE_AUTOSAVE_FLUSH = async () => {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+    try { await saveQueue; } catch {}
+    if (dirty) await persistPhaseOverview({ showAlert: true });
+  };
+
   host.onclick = async event => {
     const viewButton = event.target.closest('[data-phase-view]');
     if (viewButton) return setPhaseView(viewButton.dataset.phaseView);
@@ -8237,7 +8456,9 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
     if (remove) {
       remove.closest('[data-phase-budget-row]')?.remove();
       recalculatePlanSources();
-      return updateRealComparison();
+      updateRealComparison();
+      schedulePhaseAutosave();
+      return;
     }
     const add = event.target.closest('[data-add-budget-row]');
     if (add) {
@@ -8248,12 +8469,16 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
     const removeUse = event.target.closest('[data-remove-plan-use]');
     if (removeUse) {
       removeUse.closest('[data-plan-use]')?.remove();
-      return recalculatePlanSources();
+      recalculatePlanSources();
+      schedulePhaseAutosave();
+      return;
     }
     const removeSource = event.target.closest('[data-remove-use-source]');
     if (removeSource) {
       removeSource.closest('[data-use-source]')?.remove();
-      return recalculatePlanSources();
+      recalculatePlanSources();
+      schedulePhaseAutosave();
+      return;
     }
     const addUse = event.target.closest('[data-add-plan-use]');
     if (addUse) {
@@ -8264,7 +8489,9 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
     if (addSource) {
       const useRow = addSource.closest('[data-plan-use]');
       useRow?.querySelector('[data-use-sources]')?.insertAdjacentHTML('beforeend', financeUseSourceRow({ name: 'Otra fuente', amount: 0 }, numOr0(useRow?.querySelector('[data-plan-use-amount]')?.value)));
-      return recalculatePlanSources();
+      recalculatePlanSources();
+      schedulePhaseAutosave();
+      return;
     }
     const copy = event.target.closest('[data-copy-plan-to-real]');
     if (copy) {
@@ -8286,55 +8513,17 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
       if (actualEnd) actualEnd.value = host.querySelector('[data-phase-overview="endDate"]')?.value || '';
       updateRealComparison();
       setPhaseView('real');
+      schedulePhaseAutosave();
       return;
     }
     const save = event.target.closest('[data-save-phase-overview]');
     if (!save) return;
-    const planUses = collectPlanUses();
-    const planSourcesList = financeAggregateUseSources(planUses);
-    const plannedBuckets = financeSourceBuckets(planSourcesList);
-    const planBank = plannedBuckets.bank;
-    const planPromoter = plannedBuckets.promoter;
-    const realBank = sourceValue('real-bank');
-    const realPromoter = sourceValue('real-promoter');
-    const realPresales = sourceValue('real-presales');
-    const payload = {
-      name: host.querySelector('[data-phase-overview="name"]')?.value.trim() || 'Fase',
-      startDate: host.querySelector('[data-phase-overview="startDate"]')?.value,
-      endDate: host.querySelector('[data-phase-overview="endDate"]')?.value,
-      actualStartDate: host.querySelector('[data-phase-overview="actualStartDate"]')?.value || null,
-      actualEndDate: host.querySelector('[data-phase-overview="actualEndDate"]')?.value || null,
-      planUses,
-      planSources: planSourcesList,
-      uses: collectRows('realUses'),
-      sources: [
-        { name: 'Banco', amount: realBank },
-        { name: 'Promotor', amount: realPromoter },
-        { name: 'Preventas', amount: realPresales },
-        ...collectRows('realOther')
-      ],
-      financialConditions: {
-        ...(phase?.financialConditions || {}),
-        phaseTotal: sumItems(planUses),
-        bankFinancedAmount: planBank,
-        bankFinancedPct: sumItems(planUses) ? planBank / sumItems(planUses) * 100 : 0,
-        promoterContribution: planPromoter,
-        promoterContributionPct: sumItems(planUses) ? planPromoter / sumItems(planUses) * 100 : 0
-      }
-    };
-    if (!payload.startDate || !payload.endDate) return alert('Las fechas estimadas de inicio y fin son obligatorias.');
     save.disabled = true;
     try {
-      const currentView = host.querySelector('[data-phase-view].is-active')?.dataset.phaseView || 'plan';
-      const currentModalTab = FINANCE_PHASE_MODAL_TAB;
-      await API.put(`/api/projects/${id}/finance/phases/${phase._id}`, payload);
-      await loadFinance();
-      const updated = (FINANCE?.phases || []).find(item => String(item._id) === String(phase._id));
-      if (updated) await openFinancePhaseLines(updated, currentView, currentModalTab);
-      await markProjectDataChanged();
-    } catch (error) {
-      console.error(error);
-      alert(error.message || 'No se pudo guardar la fase.');
+      if (!dirty) schedulePhaseAutosave();
+      await persistPhaseOverview({ showAlert: true });
+    } catch {
+      // El estado y el mensaje ya se gestionan en persistPhaseOverview.
     } finally {
       save.disabled = false;
     }
@@ -8345,14 +8534,26 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
       recalculatePlanSources();
     }
     else if (event.target.closest('[data-phase-panel="real"]')) updateRealComparison();
+    schedulePhaseAutosave();
   };
   recalculatePlanSources();
   setPhaseView(initialView === 'real' ? 'real' : 'plan');
 }
 
 async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = 'overview') {
+  const existingModal = document.getElementById('financePhaseLinesModal');
+  if (existingModal && !existingModal.hidden) {
+    if (FINANCE_PHASE_AUTOSAVE_FLUSH) await FINANCE_PHASE_AUTOSAVE_FLUSH();
+    await flushFinanceLoanLinesAutosave({ showAlert: true });
+    await flushFinanceUnitAutosave({ showAlert: true });
+    FINANCE_PHASE_AUTOSAVE_FLUSH = null;
+  }
   FINANCE_SELECTED_PHASE_ID = String(phase?._id || '');
   FINANCE_SELECTED_PHASE_NAME = phase?.name || '';
+  FINANCE_LOAN_LINES_DIRTY = false;
+  FINANCE_UNIT_DIRTY = false;
+  setFinanceAutosaveStatus('financeLoanLinesSaveStatus', 'Guardado', 'saved');
+  setFinanceAutosaveStatus('financeUnitSaveStatus', 'Guardado', 'saved');
   const modal = mountFinancePhaseModal();
   if (!modal) return;
   modal.classList.remove('is-fullscreen');
@@ -8385,7 +8586,7 @@ async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = '
   renderFinancePhaseOverview(phase, lines, initialView);
   renderFinanceLoanLines(lines);
   renderFinanceUnitAmortizations();
-  setFinancePhaseModalTab(initialTab);
+  await setFinancePhaseModalTab(initialTab);
   const canEditPhase = ['admin', 'financiero', 'gerencia', 'socios'].includes(myRole);
   if (!canEditPhase) {
     modal.querySelectorAll('input, select, textarea').forEach(control => { control.disabled = true; });

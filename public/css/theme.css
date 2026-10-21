@@ -4085,6 +4085,17 @@ body.finance-modal-open { overflow: hidden; }
 .finance-phase-overview-head { justify-content: space-between; }
 .finance-phase-overview-head h3 { margin: 0; }
 .finance-phase-overview-head p { margin: 4px 0 0; color: var(--muted, #94a3b8); }
+.finance-phase-save-actions { display: flex; align-items: center; gap: 9px; }
+.finance-phase-save-actions > span { color: var(--muted, #94a3b8); font-size: .74rem; font-weight: 800; }
+.finance-phase-save-actions > span.is-saving { color: #7dd3fc; }
+.finance-phase-save-actions > span.is-saved { color: #86efac; }
+.finance-phase-save-actions > span.is-pending { color: #fbbf24; }
+.finance-phase-save-actions > span.is-error { color: #fecaca; }
+.finance-autosave-status { display: block; margin-top: 4px; color: var(--muted, #94a3b8); font-size: .72rem; font-weight: 800; }
+.finance-autosave-status.is-saving { color: #7dd3fc; }
+.finance-autosave-status.is-saved { color: #86efac; }
+.finance-autosave-status.is-pending { color: #fbbf24; }
+.finance-autosave-status.is-error { color: #fecaca; }
 .finance-phase-core-fields { margin-top: 14px; }
 .finance-phase-core-fields label { flex: 1 1 170px; }
 .finance-phase-core-fields label:first-child { flex-basis: 260px; }
@@ -4316,6 +4327,14 @@ body.light-theme .finance-phase-view-tabs { background: #e9eff8; border-color: #
 body.light-theme .finance-source-inputs input[readonly] { background: #edf2f7; }
 body.light-theme .finance-source-balance { color: #166534; }
 body.light-theme .finance-source-balance.is-danger { color: #b91c1c; }
+body.light-theme .finance-phase-save-actions > span.is-saving { color: #0369a1; }
+body.light-theme .finance-phase-save-actions > span.is-saved { color: #166534; }
+body.light-theme .finance-phase-save-actions > span.is-pending { color: #a16207; }
+body.light-theme .finance-phase-save-actions > span.is-error { color: #b91c1c; }
+body.light-theme .finance-autosave-status.is-saving { color: #0369a1; }
+body.light-theme .finance-autosave-status.is-saved { color: #166534; }
+body.light-theme .finance-autosave-status.is-pending { color: #a16207; }
+body.light-theme .finance-autosave-status.is-error { color: #b91c1c; }
 body.light-theme .finance-plan-use-card { background: #f8fafc; border-color: #d7dfec; }
 body.light-theme .finance-plan-global-total p.is-danger { color: #b91c1c; }
 body.light-theme .finance-entry-kind.is-disbursement,
