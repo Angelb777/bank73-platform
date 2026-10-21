@@ -60,7 +60,7 @@ function loanEntryStatus(entry, today = new Date()) {
 }
 
 function normalizeLoanEntry(raw = {}) {
-  const entryType = ['disbursement', 'manual_amortization'].includes(raw.entryType) ? raw.entryType : 'legacy';
+  const entryType = ['disbursement', 'manual_amortization', 'interest_payment'].includes(raw.entryType) ? raw.entryType : 'legacy';
   const paymentStatus = entryType === 'disbursement' ? (raw.paymentStatus === 'pending' ? 'pending' : 'paid') : 'legacy';
   const fundingParty = ['bank', 'promoter', 'mixed'].includes(raw.fundingParty) ? raw.fundingParty : 'bank';
   const promoterContributionStatus = raw.promoterContributionStatus === 'contributed' ? 'contributed' : 'pending';
@@ -117,6 +117,7 @@ function normalizeLoanEntry(raw = {}) {
     promoterDisbursementAmount,
     maturityDate: raw.maturityDate || null,
     amortizedAmount: toNum(raw.amortizedAmount),
+    interestAmount: Math.max(0, toNum(raw.interestAmount)),
     inspectionId: raw.inspectionId || null,
     notes: String(raw.notes || '').trim()
   };
@@ -138,12 +139,13 @@ function buildFinanceControlSummary(doc = {}, project = {}) {
     const promoterDisbursementAmount = entries.reduce((sum, entry) => sum + entry.promoterDisbursementAmount, 0);
     const disbursementAmount = bankDisbursementAmount + promoterDisbursementAmount;
     const amortizedAmount = entries.reduce((sum, entry) => sum + entry.amortizedAmount, 0);
+    const interestPaid = entries.reduce((sum, entry) => sum + entry.interestAmount, 0);
     let status = entries.some(entry => entry.status === 'Vencido') ? 'Vencido'
       : entries.some(entry => entry.status === 'Proximo a vencer') ? 'Proximo a vencer'
         : entries.some(entry => entry.status === 'Sin vencimiento') ? 'Sin vencimiento'
           : entries.some(entry => entry.status === 'Pendiente de pago') ? 'Pendiente de pago'
           : (disbursementAmount - amortizedAmount <= 0 ? 'Amortizado' : 'OK');
-    return { ...plain, name: plain.name || `Linea ${index + 1}`, entries, disbursementAmount, bankDisbursementAmount, promoterDisbursementAmount, amortizedAmount, balance: Math.max(0, bankDisbursementAmount - amortizedAmount), status };
+    return { ...plain, name: plain.name || `Linea ${index + 1}`, entries, disbursementAmount, bankDisbursementAmount, promoterDisbursementAmount, amortizedAmount, interestPaid, balance: Math.max(0, bankDisbursementAmount - amortizedAmount), status };
   });
 
   const unitAmortizations = (doc.unitAmortizations || []).map(item => {
@@ -185,6 +187,8 @@ function buildFinanceControlSummary(doc = {}, project = {}) {
   const totalManualAmortized = loanLines.reduce((sum, line) => sum + toNum(line.amortizedAmount), 0);
   const totalAllocatedAmortized = loanLines.reduce((sum, line) => sum + toNum(line.allocatedAmortized), 0);
   const totalAmortized = totalManualAmortized + totalAllocatedAmortized;
+  const totalInterestPaid = loanLines.reduce((sum, line) => sum + toNum(line.interestPaid), 0);
+  const totalPaidToBank = totalAmortized + totalInterestPaid;
   const approved = financeApprovedTotals(doc, project);
   const plan = typeof doc.phasesPlanAccumTotals === 'function' ? doc.phasesPlanAccumTotals() : { uses: sumItems((doc.phases || []).flatMap(phase => phase.planUses || [])) };
   const real = typeof doc.phasesAccumTotals === 'function' ? doc.phasesAccumTotals() : { uses: sumItems((doc.phases || []).flatMap(phase => phase.uses || [])) };
@@ -203,6 +207,8 @@ function buildFinanceControlSummary(doc = {}, project = {}) {
       totalAmortized,
       totalManualAmortized,
       totalAllocatedAmortized,
+      totalInterestPaid,
+      totalPaidToBank,
       currentDebtBalance: totalBankDisbursed - totalAmortized,
       amortizationPct: totalBankDisbursed > 0 ? totalAmortized / totalBankDisbursed : 0,
       upcomingMaturities: loanLines.filter(line => line.status === 'Proximo a vencer').length,

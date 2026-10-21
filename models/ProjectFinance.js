@@ -124,7 +124,7 @@ const DisbursementSchema = new Schema({
 }, { _id: true });
 
 const LoanLineItemSchema = new Schema({
-  entryType: { type: String, enum: ['legacy', 'disbursement', 'manual_amortization'], default: 'legacy' },
+  entryType: { type: String, enum: ['legacy', 'disbursement', 'manual_amortization', 'interest_payment'], default: 'legacy' },
   paymentStatus: { type: String, enum: ['legacy', 'pending', 'paid'], default: 'legacy' },
   workflowStatus: { type: String, enum: ['prepared', 'requested', 'returned', 'disbursed'], default: 'prepared', index: true },
   advanceAccountNumber: { type: Number, min: 1, default: null, index: true },
@@ -161,6 +161,7 @@ const LoanLineItemSchema = new Schema({
   disbursementAmount: { type: Number, default: 0 },
   maturityDate: { type: Date, default: null },
   amortizedAmount: { type: Number, default: 0 },
+  interestAmount: { type: Number, min: 0, default: 0 },
   inspectionId: { type: Schema.Types.ObjectId, ref: 'Inspection', default: null, index: true },
   notes: { type: String, default: '' },
 }, { _id: true, timestamps: true });

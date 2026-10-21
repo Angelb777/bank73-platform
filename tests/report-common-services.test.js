@@ -35,7 +35,10 @@ test('shared Finance context preserves approved, disbursed and amortized totals'
     }],
     loanLines: [{
       _id: 'line-1', name: 'Linea 1',
-      entries: [{ disbursementAmount: 350000, amortizedAmount: 50000, maturityDate: '2099-01-01' }]
+      entries: [
+        { disbursementAmount: 350000, amortizedAmount: 50000, maturityDate: '2099-01-01' },
+        { entryType: 'interest_payment', movementDate: '2026-10-01', interestAmount: 1250 }
+      ]
     }],
     unitAmortizations: [{
       unitId: 'unit-1', checkAmount: 25000,
@@ -53,6 +56,8 @@ test('shared Finance context preserves approved, disbursed and amortized totals'
   assert.equal(control.totals.totalPromoterDisbursed, 0);
   assert.equal(control.totals.totalManualAmortized, 50000);
   assert.equal(control.totals.totalAllocatedAmortized, 20000);
+  assert.equal(control.totals.totalInterestPaid, 1250);
+  assert.equal(control.totals.totalPaidToBank, 71250);
   assert.equal(control.totals.currentDebtBalance, 280000);
   assert.equal(control.totals.planVsRealDifference, -600000);
 });

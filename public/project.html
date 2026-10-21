@@ -2291,7 +2291,7 @@ body.light-theme .provider-exclusive {
     <div id="financeControlKpis" class="finance-control-kpis"></div>
     <div class="row gap finance-secondary-kpis">
       <div class="card kpi"><div class="label">% Ejecución (real vs plan)</div><div class="value" id="kpiExec">—</div></div>
-      <div class="card kpi"><div class="label">Intereses acumulados</div><div class="value" id="kpiIntereses">—</div></div>
+      <div class="card kpi"><div class="label">Intereses pagados</div><div class="value" id="kpiIntereses">—</div></div>
       <div class="card kpi"><div class="label">Preventas acumuladas</div><div class="value" id="kpiPreventas">—</div></div>
     </div>
   </section>
@@ -2331,7 +2331,7 @@ body.light-theme .provider-exclusive {
       </header>
       <div class="finance-phase-modal-body">
   <div class="finance-phase-guide">
-    <b>Cómo se organiza:</b> el resumen define el presupuesto global; las líneas distribuyen el préstamo y los movimientos registran desembolsos y amortizaciones.
+    <b>Cómo se organiza:</b> el resumen define el presupuesto global; las líneas distribuyen el préstamo y los movimientos registran desembolsos, amortizaciones e intereses pagados.
   </div>
   <div class="finance-phase-modal-toolbar">
     <nav class="finance-phase-main-tabs" aria-label="Secciones de la fase">
@@ -2561,6 +2561,7 @@ body.light-theme .provider-exclusive {
         <span class="commercial-action-label">Gestión</span>
         <div class="commercial-action-controls">
           <button id="btnCrearLote" class="btn commercial-btn commercial-btn-primary" type="button">Crear en lote</button>
+          <button id="btnCrearModelo" class="btn commercial-btn commercial-btn-soft" type="button">Crear modelo</button>
         </div>
       </div>
       <div class="commercial-action-group commercial-action-selection">
@@ -2615,7 +2616,6 @@ body.light-theme .provider-exclusive {
         </select>
         <label>Modelo</label>
         <input id="cl-modelo" placeholder="Modelo" />
-        <div id="cl-modelsManager"></div>
         <label>m²</label>
         <input id="cl-m2" type="number" min="0" value="60" />
         <label>Area abierta m2</label>
@@ -2643,6 +2643,28 @@ body.light-theme .provider-exclusive {
       </div>
       <div class="commercial-create-footer">
         <button class="btn" id="cl-crear">Crear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal independiente para la biblioteca de modelos -->
+  <div id="modalCrearModelo" class="modal-backdrop" style="display:none;">
+    <div class="modal commercial-models-modal">
+      <div class="modal-head">
+        <div>
+          <b>Modelos de vivienda</b>
+          <div class="small muted">Crea y administra modelos sin generar lotes.</div>
+        </div>
+        <button class="btn btn-ghost btn-xs" id="modalModeloCerrar" type="button">Cerrar</button>
+      </div>
+      <div class="modal-body">
+        <section class="commercial-modal-section commercial-library-section">
+          <div class="commercial-modal-section-head">
+            <h3>BIBLIOTECA DE MODELOS</h3>
+            <p>Estos modelos podrán seleccionarse después al crear lotes.</p>
+          </div>
+          <div id="commercialModelsManager"></div>
+        </section>
       </div>
     </div>
   </div>

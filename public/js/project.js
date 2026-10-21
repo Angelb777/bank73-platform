@@ -3630,6 +3630,15 @@ renderChartSummary(
       sub: `${formatMoney(financeTotals.manualAmortized || 0)} manual · ${formatMoney(financeTotals.allocatedAmortized || 0)} ventas`
     },
     {
+      title: 'Intereses pagados',
+      value: formatMoney(financeTotals.interestPaid || 0)
+    },
+    {
+      title: 'Total pagado al banco',
+      value: formatMoney(financeTotals.totalPaidToBank || 0),
+      sub: 'Amortizaciones + intereses'
+    },
+    {
       title: 'Saldo por pagar',
       value: formatMoney(financeTotals.debt || 0)
     },
@@ -3668,6 +3677,11 @@ renderChartSummary(
       title: 'Recuperacion del banco',
       value: formatMoney(financeTotals.amortized || 0),
       sub: `Manual: ${formatMoney(financeTotals.manualAmortized || 0)} · Ventas: ${formatMoney(financeTotals.allocatedAmortized || 0)}`
+    },
+    {
+      title: 'Intereses pagados',
+      value: formatMoney(financeTotals.interestPaid || 0),
+      sub: `Total pagado al banco: ${formatMoney(financeTotals.totalPaidToBank || 0)}`
     },
     {
       title: 'Ventas / cheques',
@@ -5430,6 +5444,7 @@ function financeSeedLoanLinesFromApprovedPhaseLines(phase = {}) {
           disbursementAmount: 0,
           maturityDate: '',
           amortizedAmount: 0,
+          interestAmount: 0,
           notes: ''
         }]
       };
@@ -5446,6 +5461,7 @@ function financeLoanLineHasMeaningfulData(line = {}, idx = 0) {
     numOr0(entry?.disbursementAmount) ||
     entry?.maturityDate ||
     numOr0(entry?.amortizedAmount) ||
+    numOr0(entry?.interestAmount) ||
     String(entry?.notes || '').trim()
   );
   return hasCustomName || String(line.notes || '').trim() || numOr0(line.approvedAmount) || hasEntries || numOr0(line.disbursementAmount) || numOr0(line.amortizedAmount);
@@ -6065,11 +6081,12 @@ function collectFinanceLoanLines() {
       disbursementAmount: numOr0(row.querySelector('[data-field="disbursementAmount"]')?.value),
       maturityDate: row.querySelector('[data-field="maturityDate"]')?.value || null,
       amortizedAmount: numOr0(row.querySelector('[data-field="amortizedAmount"]')?.value),
+      interestAmount: numOr0(row.querySelector('[data-field="interestAmount"]')?.value),
       inspectionId: row.querySelector('[data-field="inspectionId"]')?.value || null,
       notes: row.querySelector('[data-field="notes"]')?.value || '',
     })).filter(entry =>
       entry.disbursementDate || entry.movementDate || entry.loanNumber || entry.disbursementAmount ||
-      entry.maturityDate || entry.amortizedAmount || entry.inspectionId || entry.notes
+      entry.maturityDate || entry.amortizedAmount || entry.interestAmount || entry.inspectionId || entry.notes
     ),
   }));
 }
@@ -6132,6 +6149,7 @@ function computeFinanceControlTotals() {
   const totalAllocatedAmortized = unitAmortizations.reduce((a, u) =>
     a + (u.allocations || []).reduce((acc, allocation) => acc + numOr0(allocation.amount), 0), 0);
   const totalAmortized = totalManualAmortized + totalAllocatedAmortized;
+  const totalInterestPaid = loanLines.reduce((a, l) => a + financeLoanLineTotals(l).interestPaid, 0);
   const loanApproved = numOr0(document.getElementById('finLoanApproved')?.value || FINANCE_CONTROL?.totals?.loanApproved);
   const budgetApproved = numOr0(document.getElementById('finBudgetApproved')?.value || FINANCE_CONTROL?.totals?.budgetApproved);
   const planUses = (FINANCE?.phases || []).reduce((a, ph) => a + sumItems(ph.planUses), 0);
@@ -6145,6 +6163,8 @@ function computeFinanceControlTotals() {
     totalPromoterDisbursed,
     availableToDisburse: loanApproved - totalBankDisbursed,
     totalAmortized,
+    totalInterestPaid,
+    totalPaidToBank: totalAmortized + totalInterestPaid,
     currentDebtBalance: totalBankDisbursed - totalAmortized,
     amortizationPct: totalBankDisbursed > 0 ? totalAmortized / totalBankDisbursed : 0,
     upcomingMaturities: loanLines.filter(l => financeLineStatus(l).key === 'upcoming').length,
@@ -6171,6 +6191,7 @@ function financeLoanLineTotals(line = {}) {
   }, 0);
   const disbursed = bankDisbursed + promoterDisbursed;
   const amortized = entries.reduce((a, entry) => a + numOr0(entry.amortizedAmount), 0);
+  const interestPaid = entries.reduce((a, entry) => a + numOr0(entry.interestAmount), 0);
   const allocated = financeAllocatedToLine(line);
   const recovered = amortized + allocated;
   return {
@@ -6180,6 +6201,8 @@ function financeLoanLineTotals(line = {}) {
     amortized,
     allocated,
     recovered,
+    interestPaid,
+    totalPaidToBank: recovered + interestPaid,
     balance: Math.max(0, bankDisbursed - recovered),
   };
 }
@@ -6375,9 +6398,10 @@ function renderFinanceLoanGlobalSummary(lines = collectFinanceLoanLines()) {
     const t = financeLoanLineTotals(line);
     acc.disbursed += t.disbursed;
     acc.amortized += t.amortized;
+    acc.interestPaid += t.interestPaid;
     acc.balance += t.balance;
     return acc;
-  }, { disbursed: 0, amortized: 0, balance: 0 });
+  }, { disbursed: 0, amortized: 0, interestPaid: 0, balance: 0 });
   const allocated = lines.reduce((a, l) => a + financeLoanLineTotals(l).allocated, 0);
   const totalAmortized = totals.amortized + allocated;
   box.innerHTML = [
@@ -6385,6 +6409,8 @@ function renderFinanceLoanGlobalSummary(lines = collectFinanceLoanLines()) {
     ['Amortizado manual', financeMoney(totals.amortized), `${financePct(totals.amortized, totals.disbursed)} del desembolsado`],
     ['Amortizado por ventas', financeMoney(allocated), `${financePct(allocated, totals.disbursed)} del desembolsado`],
     ['Amortización total', financeMoney(totalAmortized), `${financePct(totalAmortized, totals.disbursed)} del desembolsado`],
+    ['Intereses pagados', financeMoney(totals.interestPaid), 'Coste financiero pagado'],
+    ['Total pagado al banco', financeMoney(totalAmortized + totals.interestPaid), 'Amortizaciones + intereses'],
     ['Saldo por pagar', financeMoney(totals.balance), `${financePct(totals.balance, totals.disbursed)} pendiente`],
   ].map(([label, value, percent]) => `
     <article class="finance-loan-summary-card">
@@ -6408,6 +6434,8 @@ function renderFinanceControlKpis(totals = null) {
     ['Desembolsado total', financeMoney(totals.totalDisbursed), 'disbursed'],
     ['Disponible por desembolsar', financeMoney(totals.availableToDisburse), totals.availableToDisburse < 0 ? 'danger' : 'ok'],
     ['Amortización total', financeMoney(totals.totalAmortized), 'ok'],
+    ['Intereses pagados', financeMoney(totals.totalInterestPaid), 'warn'],
+    ['Total pagado al banco', financeMoney(totals.totalPaidToBank), 'loan'],
     ['Saldo por pagar', financeMoney(totals.currentDebtBalance), 'debt'],
     ['% amortizacion', `${((totals.amortizationPct || 0) * 100).toFixed(1)}%`, 'ok'],
     ['Vencimientos proximos', fmt(totals.upcomingMaturities), totals.upcomingMaturities ? 'warn' : 'ok'],
@@ -6630,6 +6658,7 @@ async function deleteFinanceDisbursementEntry(button) {
   if (row?.dataset.entryType !== 'disbursement') {
     row?.remove();
     renderFinanceLoanLines(collectFinanceLoanLines());
+    scheduleFinanceLoanLinesAutosave();
     return;
   }
 
@@ -6789,6 +6818,7 @@ function renderFinanceLoanLines(lines = []) {
             <span>Aprobado <b>${financeMoney(line.approvedAmount)}</b></span>
             <span>Desembolsado <b>${financeMoney(totals.disbursed)}</b></span>
             <span>Total amort. <b>${financeMoney(totals.recovered)} · ${recoveredPct}</b></span>
+            <span>Intereses pagados <b>${financeMoney(totals.interestPaid)}</b></span>
             <span>Saldo por pagar <b>${financeMoney(totals.balance)} · ${balancePct}</b></span>
             <span class="finance-status is-${status.key}">${status.label}</span>
             <div class="finance-line-progress" title="${recoveredPct} amortizado">
@@ -6799,6 +6829,7 @@ function renderFinanceLoanLines(lines = []) {
             <button class="btn btn-ghost btn-xs" type="button" data-finance-toggle-entries data-count="${rowsCount}" aria-expanded="${isCollapsed ? 'false' : 'true'}">${isCollapsed ? 'Ver detalle' : 'Ocultar detalle'} (${rowsCount})</button>
             <button class="btn btn-xs" type="button" data-finance-add-entry="disbursement">+ Desembolso</button>
             <button class="btn btn-ghost btn-xs" type="button" data-finance-add-entry="manual_amortization">+ Amortización manual</button>
+            <button class="btn btn-ghost btn-xs" type="button" data-finance-add-entry="interest_payment">+ Interés pagado</button>
             <button class="btn btn-xs" type="button" data-finance-save-line>Guardar ahora</button>
             <button class="btn btn-danger btn-xs" type="button" data-finance-remove-line>Eliminar</button>
           </div>
@@ -6817,7 +6848,7 @@ function renderFinanceLoanLines(lines = []) {
                 <th>No. préstamo</th>
                 <th>Importe banco</th>
                 <th>Vencimiento</th>
-                <th>Amortización manual</th>
+                <th>Amortización / interés</th>
                 <th>Informe de avalúo</th>
                 <th>Pago</th>
                 <th>Saldo</th>
@@ -6848,9 +6879,10 @@ function renderFinanceLoanLines(lines = []) {
                 }
                 const entry = row.entry;
                 const entryIdx = row.entryIdx;
-                const entryType = ['disbursement', 'manual_amortization'].includes(entry.entryType) ? entry.entryType : 'legacy';
+                const entryType = ['disbursement', 'manual_amortization', 'interest_payment'].includes(entry.entryType) ? entry.entryType : 'legacy';
                 const isDisbursement = entryType === 'disbursement';
                 const isManualAmortization = entryType === 'manual_amortization';
+                const isInterestPayment = entryType === 'interest_payment';
                 const workflowStatus = isDisbursement ? financeDisbursementWorkflowStatus(entry) : '';
                 const workflowLocked = isDisbursement && (['requested', 'disbursed'].includes(workflowStatus) || entry.promoterContributionStatus === 'contributed');
                 const savedEntry = isMongoIdLike(entry._id);
@@ -6860,16 +6892,16 @@ function renderFinanceLoanLines(lines = []) {
                 const report = financeInspectionReport(entry.inspectionId);
                 return `
                   <tr data-entry-row data-entry-id="${escapeHtml(entry._id || `new-entry-${Date.now()}-${entryIdx}`)}" data-entry-type="${entryType}" data-payment-status="${escapeHtml(entry.paymentStatus || 'legacy')}" data-workflow-status="${escapeHtml(workflowStatus)}" data-advance-account-number="${escapeHtml(entry.advanceAccountNumber || '')}" data-funding-party="${escapeHtml(entry.fundingParty || 'bank')}" data-promoter-contribution-amount="${escapeHtml(entry.promoterContributionAmount || '')}" data-promoter-contribution-status="${escapeHtml(entry.promoterContributionStatus || 'pending')}" data-requirement-issues="${(entry.requirementsSnapshot || []).some(item => item?.reviewStatus !== 'compliant') ? '1' : '0'}" data-requested-at="${escapeHtml(entry.requestedAt || '')}" data-requested-by="${escapeHtml(entry.requestedBy || '')}" data-requested-by-role="${escapeHtml(entry.requestedByRole || '')}" data-disbursed-at="${escapeHtml(entry.disbursedAt || '')}" data-disbursed-by="${escapeHtml(entry.disbursedBy || '')}" data-disbursed-by-role="${escapeHtml(entry.disbursedByRole || '')}" data-transfer-reference="${escapeHtml(entry.transferReference || '')}" data-workflow-note="${escapeHtml(entry.workflowNote || '')}">
-                    <td><span class="finance-entry-kind is-${entryType}">${isDisbursement ? 'Desembolso' : isManualAmortization ? 'Amortización' : 'Histórica'}</span></td>
+                    <td><span class="finance-entry-kind is-${entryType}">${isDisbursement ? 'Desembolso' : isManualAmortization ? 'Amortización' : isInterestPayment ? 'Interés' : 'Histórica'}</span></td>
                     <td>${isDisbursement ? `<div class="finance-account-source"><b>Cuenta ${escapeHtml(String(entry.advanceAccountNumber || 'Nueva'))}</b><select data-field="fundingParty" ${workflowLocked ? 'disabled' : ''}><option value="bank" ${(entry.fundingParty || 'bank') === 'bank' ? 'selected' : ''}>Banco</option><option value="promoter" ${entry.fundingParty === 'promoter' ? 'selected' : ''}>Promotor</option>${entry.fundingParty === 'mixed' ? '<option value="mixed" selected>Banco + promotor (histórico)</option>' : ''}</select>${entry.promoterContributionStatus === 'contributed' ? '<small class="finance-status is-ok">Desembolsado</small>' : ''}</div>` : '<span class="small muted">—</span>'}</td>
-                    <td><input data-field="${isManualAmortization ? 'movementDate' : 'disbursementDate'}" type="date" value="${financeDateInput(isManualAmortization ? entry.movementDate : entry.disbursementDate)}" ${workflowLocked ? 'disabled' : ''}></td>
-                    <td><input data-field="loanNumber" value="${escapeHtml(entry.loanNumber || '')}" ${isManualAmortization || workflowLocked ? 'disabled' : ''}></td>
-                    <td><input data-field="disbursementAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.disbursementAmount)}" ${isManualAmortization || workflowLocked ? 'disabled' : ''}></td>
-                    <td><input data-field="maturityDate" type="date" value="${financeDateInput(entry.maturityDate)}" ${isManualAmortization || workflowLocked ? 'disabled' : ''}></td>
-                    <td><input data-field="amortizedAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.amortizedAmount)}" ${isDisbursement ? 'disabled' : ''}></td>
+                    <td><input data-field="${isDisbursement ? 'disbursementDate' : 'movementDate'}" type="date" value="${financeDateInput(isDisbursement ? entry.disbursementDate : entry.movementDate)}" ${workflowLocked ? 'disabled' : ''}></td>
+                    <td><input data-field="loanNumber" value="${escapeHtml(entry.loanNumber || '')}" ${!isDisbursement || workflowLocked ? 'disabled' : ''}></td>
+                    <td><input data-field="disbursementAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.disbursementAmount)}" ${!isDisbursement || workflowLocked ? 'disabled' : ''}></td>
+                    <td><input data-field="maturityDate" type="date" value="${financeDateInput(entry.maturityDate)}" ${!isDisbursement || workflowLocked ? 'disabled' : ''}></td>
+                    <td><input data-field="${isInterestPayment ? 'interestAmount' : 'amortizedAmount'}" type="text" inputmode="decimal" value="${formatPanamaNumber(isInterestPayment ? entry.interestAmount : entry.amortizedAmount)}" ${isDisbursement ? 'disabled' : ''}></td>
                     <td>${isDisbursement ? `<select data-field="inspectionId" ${workflowLocked || (entry.inspectionId && savedEntry) || (FINANCE_AVALUATION_CONTEXT.hasAssignedAvaluator && !(FINANCE_AVALUATION_CONTEXT.reports || []).length) ? 'disabled' : ''}>${financeInspectionOptions(entry.inspectionId, usedReportIds)}</select>${report ? `<button class="finance-report-link" type="button" data-open-inspection="${escapeHtml(report.id)}">Ver PDF</button>` : ''}` : '<span class="small muted">—</span>'}</td>
-                    <td>${isDisbursement ? financeDisbursementWorkflowCell(entry, savedEntry) : `<span class="finance-status is-${entryStatus.key}">${isManualAmortization ? 'Manual' : entryStatus.label}</span>`}</td>
-                    <td class="finance-balance">${financeMoney(entryBalance)}</td>
+                    <td>${isDisbursement ? financeDisbursementWorkflowCell(entry, savedEntry) : `<span class="finance-status is-${entryStatus.key}">${isManualAmortization ? 'Manual' : isInterestPayment ? 'Pagado' : entryStatus.label}</span>`}</td>
+                    <td class="finance-balance">${isInterestPayment ? '—' : financeMoney(entryBalance)}</td>
                     <td><input data-field="notes" value="${escapeHtml(entry.notes || '')}" ${workflowLocked ? 'disabled' : ''}></td>
                     <td>${['admin', 'promoter', 'bank'].includes(myRole) ? `<button class="btn btn-danger btn-xs" type="button" data-finance-remove-entry>${workflowLocked ? 'Eliminar' : 'Quitar'}</button>` : '<span class="small muted">Bloqueado</span>'}</td>
                   </tr>
@@ -7326,7 +7358,7 @@ async function loadFinance({ force = true } = {}) {
 
     // KPIs tiles
     document.getElementById('kpiExec').textContent      = `${((FINANCE_KPIS?.percentExecution || 0) * 100).toFixed(1)}%`;
-    document.getElementById('kpiIntereses').textContent = fmt(FINANCE_KPIS?.totalIntereses || 0);
+    document.getElementById('kpiIntereses').textContent = financeMoney(FINANCE_CONTROL?.totals?.totalInterestPaid || 0);
     document.getElementById('kpiPreventas').textContent = fmt(FINANCE_KPIS?.totalPreventas || 0);
 
     // Alertas (por fechas de fin, como ya tienes)
@@ -7376,7 +7408,7 @@ function bindFinanceOnce() {
 
   document.addEventListener('focusout', (ev) => {
     const input = ev.target.closest?.(
-      '.amount, [data-field="disbursementAmount"], [data-field="amortizedAmount"], [data-field="allocationAmount"], [data-field="checkAmount"], [data-field="promoterAmount"], [data-line-field="approvedAmount"], [data-budget-amount], [data-fixed-source], #finLoanApproved, #finLoanDisbursed, #finBudgetApproved'
+      '.amount, [data-field="disbursementAmount"], [data-field="amortizedAmount"], [data-field="interestAmount"], [data-field="allocationAmount"], [data-field="checkAmount"], [data-field="promoterAmount"], [data-line-field="approvedAmount"], [data-budget-amount], [data-fixed-source], #finLoanApproved, #finLoanDisbursed, #finBudgetApproved'
     );
     if (input) formatFinanceMoneyInput(input);
   });
@@ -7514,6 +7546,7 @@ function bindFinanceOnce() {
           disbursementAmount: 0,
           maturityDate: '',
           amortizedAmount: 0,
+          interestAmount: 0,
           inspectionId: '',
           notes: '',
         });
@@ -10004,6 +10037,7 @@ function normalizeUnitEstadoFrontend(v) {
   const filtroEstado = document.getElementById('filtroEstado');
   const buscarInput = document.getElementById('buscarUnidad');
   const btnCrear = document.getElementById('btnCrearLote');
+  const btnCrearModelo = document.getElementById('btnCrearModelo');
   const btnExportarCsv = document.getElementById('btnExportarCsv');
   const btnExportarExcel = document.getElementById('btnExportarExcel');
   const btnBatch = document.getElementById('btnEditarSel');
@@ -10014,6 +10048,8 @@ function normalizeUnitEstadoFrontend(v) {
   const modalCrear = document.getElementById('modalCrearLote');
   const modalCrearCerrar = document.getElementById('modalCrearCerrar');
   const btnCrearSubmit = document.getElementById('cl-crear');
+  const modalCrearModelo = document.getElementById('modalCrearModelo');
+  const modalModeloCerrar = document.getElementById('modalModeloCerrar');
 
   const modalFicha = document.getElementById('fichaUnidadModal');
   const fichaCerrarX = document.getElementById('fichaCerrarX');
@@ -10619,8 +10655,8 @@ function estadoLabel(v) {
   }
 
   async function saveProjectHousingModels(models) {
-    await apiPatch(`/api/projects/${id}`, { housingModels: models });
-    state.project.housingModels = models;
+    const result = await API.put(`/api/projects/${id}/housing-models`, { housingModels: models });
+    state.project.housingModels = result?.housingModels || models;
     const modelSelect = document.getElementById('cl-modeloSelect');
     if (modelSelect) modelSelect.innerHTML = projectModelOptions(modelSelect.value, { includeEmpty: true });
   }
@@ -10632,8 +10668,8 @@ function estadoLabel(v) {
     msg.style.color = color;
   }
 
-  function renderCommercialModelsManagerInCreateModal() {
-    const wrap = document.getElementById('cl-modelsManager');
+  function renderCommercialModelsManager() {
+    const wrap = document.getElementById('commercialModelsManager');
     if (!wrap) return;
     wrap.innerHTML = commercialModelsHtml();
     bindCommercialModelsManager();
@@ -10714,13 +10750,6 @@ function estadoLabel(v) {
         </div>
       </section>
 
-      <section class="commercial-modal-section commercial-library-section">
-        <div class="commercial-modal-section-head">
-          <h3>BIBLIOTECA DE MODELOS</h3>
-          <p>Guarda tipologias para reutilizarlas al crear nuevos lotes.</p>
-        </div>
-        <div id="cl-modelsManager"></div>
-      </section>
     `;
     document.getElementById('cl-modeloSelect')?.addEventListener('change', (event) => applyProjectModelToOpenUnitForm(event.target.value));
   }
@@ -10751,7 +10780,7 @@ function estadoLabel(v) {
       });
       try {
         await saveProjectHousingModels(models);
-        renderCommercialModelsManagerInCreateModal();
+        renderCommercialModelsManager();
         setCommercialModelsMsg('Modelo anadido.', '#166534');
         await loadUnits();
       } catch (e) {
@@ -10773,7 +10802,7 @@ function estadoLabel(v) {
         try {
           const models = currentCommercialModelsFromUi().filter((_, i) => i !== idx);
           await saveProjectHousingModels(models);
-          renderCommercialModelsManagerInCreateModal();
+          renderCommercialModelsManager();
           setCommercialModelsMsg('Modelo eliminado.', '#166534');
           await loadUnits();
         } catch (e) {
@@ -13612,12 +13641,16 @@ if (btnExportarExcel) {
     renderCreateBatchModalLayout();
     const modelSelect = document.getElementById('cl-modeloSelect');
     if (modelSelect) modelSelect.innerHTML = projectModelOptions('', { includeEmpty: true });
-    renderCommercialModelsManagerInCreateModal();
     const loc = document.getElementById('cl-ubicacion');
     if (loc) loc.value = state?.project?.location || state?.project?.address || '';
     modalCrear.style.display='flex';
   });
+  if (btnCrearModelo) btnCrearModelo.addEventListener('click', () => {
+    renderCommercialModelsManager();
+    modalCrearModelo.style.display = 'flex';
+  });
   if (modalCrearCerrar) modalCrearCerrar.addEventListener('click', () => modalCrear.style.display='none');
+  if (modalModeloCerrar) modalModeloCerrar.addEventListener('click', () => modalCrearModelo.style.display='none');
   if (btnBatch) btnBatch.addEventListener('click', openBatch);
   if (batchCerrar) batchCerrar.addEventListener('click', () => modalBatch.style.display='none');
   if (batchAplicar) batchAplicar.addEventListener('click', aplicarBatch);

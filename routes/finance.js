@@ -148,7 +148,7 @@ const cleanDate = (v) => {
 };
 
 function normalizeLoanEntry(raw = {}) {
-  const entryType = ['disbursement', 'manual_amortization'].includes(raw.entryType) ? raw.entryType : 'legacy';
+  const entryType = ['disbursement', 'manual_amortization', 'interest_payment'].includes(raw.entryType) ? raw.entryType : 'legacy';
   const paymentStatus = entryType === 'disbursement'
     ? (raw.paymentStatus === 'pending' ? 'pending' : 'paid')
     : 'legacy';
@@ -198,6 +198,7 @@ function normalizeLoanEntry(raw = {}) {
     disbursementAmount: toNum(raw.disbursementAmount),
     maturityDate: cleanDate(raw.maturityDate),
     amortizedAmount: toNum(raw.amortizedAmount),
+    interestAmount: Math.max(0, toNum(raw.interestAmount)),
     inspectionId: mongoose.isValidObjectId(raw.inspectionId) ? raw.inspectionId : null,
     notes: String(raw.notes || '').trim(),
   };
@@ -325,7 +326,7 @@ function normalizeLoanLine(raw = {}, idx = 0) {
   const entries = Array.isArray(raw.entries) && raw.entries.length
     ? raw.entries.map(normalizeLoanEntry)
     : [normalizeLoanEntry(raw)].filter(e =>
-        e.disbursementDate || e.loanNumber || e.disbursementAmount || e.maturityDate || e.amortizedAmount || e.notes
+        e.disbursementDate || e.movementDate || e.loanNumber || e.disbursementAmount || e.maturityDate || e.amortizedAmount || e.interestAmount || e.notes
       );
   return {
     _id: mongoose.isValidObjectId(raw._id) ? raw._id : undefined,
@@ -360,7 +361,7 @@ function loanLineEffectiveDisbursed(line = {}) {
 function loanLineHasMovements(line = {}) {
   return (line.entries || []).some(entry => (
     entry?.disbursementDate || entry?.movementDate || entry?.loanNumber || entry?.maturityDate ||
-    entry?.inspectionId || toNum(entry?.disbursementAmount) || toNum(entry?.amortizedAmount) || String(entry?.notes || '').trim()
+    entry?.inspectionId || toNum(entry?.disbursementAmount) || toNum(entry?.amortizedAmount) || toNum(entry?.interestAmount) || String(entry?.notes || '').trim()
   )) || toNum(line.disbursementAmount) || toNum(line.amortizedAmount);
 }
 
@@ -1605,6 +1606,7 @@ function buildFinanceSnapshot(doc, phaseId = '') {
         disbursementAmount: toNum(entry.disbursementAmount),
         maturityDate: entry.maturityDate || null,
         amortizedAmount: toNum(entry.amortizedAmount),
+        interestAmount: toNum(entry.interestAmount),
         inspectionId: entry.inspectionId ? String(entry.inspectionId) : '',
         notes: entry.notes || ''
       }));
@@ -1618,6 +1620,7 @@ function buildFinanceSnapshot(doc, phaseId = '') {
           disbursementAmount: 0,
           maturityDate: null,
           amortizedAmount: toNum(allocation.amount),
+          interestAmount: 0,
           inspectionId: '',
           notes: [unit.lot, unit.clientName].filter(Boolean).join(' · ')
         })));
@@ -1668,14 +1671,22 @@ function buildFinanceSnapshot(doc, phaseId = '') {
     acc.intereses += p.intereses;
     acc.aportes += p.aportes;
     acc.preventas += p.preventas;
+    for (const line of (p.loanLines || [])) {
+      for (const entry of (line.entries || [])) {
+        acc.totalAmortized += toNum(entry.amortizedAmount);
+        acc.totalInterestPaid += toNum(entry.interestAmount);
+      }
+    }
 
     if (p.disbRequested) acc.disbRequestedCount += 1;
     return acc;
   }, {
     planUses:0, planSources:0, realUses:0, realSources:0,
     disbExpected:0, disbActual:0, disbRequestedCount:0,
-    intereses:0, aportes:0, preventas:0
+    intereses:0, aportes:0, preventas:0,
+    totalAmortized:0, totalInterestPaid:0
   });
+  totals.totalPaidToBank = totals.totalAmortized + totals.totalInterestPaid;
 
   const percentExecution = totals.planUses > 0 ? (totals.realUses / totals.planUses) : 0;
 
@@ -1725,6 +1736,8 @@ async function exportFinanceXlsx({ req, res, projectId, projectName, updatedAt, 
 
   sh0.addRow(['% Ejecución (Real/Plan usos)', `${(snap.percentExecution * 100).toFixed(1)}%`]);
   sh0.addRow(['Intereses acumulados', snap.totals.intereses]);
+  sh0.addRow(['Intereses pagados', snap.totals.totalInterestPaid]);
+  sh0.addRow(['Total pagado al banco', snap.totals.totalPaidToBank]);
   sh0.addRow(['Preventas acumuladas', snap.totals.preventas]);
   sh0.addRow(['Aportes propios acumulados', snap.totals.aportes]);
 
@@ -1823,33 +1836,37 @@ async function exportFinanceXlsx({ req, res, projectId, projectName, updatedAt, 
 
   // ===== Líneas y movimientos =====
   const sh4 = wb.addWorksheet('Líneas');
-  sh4.addRow(['Fase', 'Línea', 'Aprobado', 'Desembolsado pagado', 'Amortizado', 'Saldo', 'Cálculo', 'Notas']);
+  sh4.addRow(['Fase', 'Línea', 'Aprobado', 'Desembolsado pagado', 'Amortizado', 'Intereses pagados', 'Total pagado al banco', 'Saldo', 'Cálculo', 'Notas']);
   styleSheetHeaderRow(sh4.getRow(1));
   const sh5 = wb.addWorksheet('Movimientos');
-  sh5.addRow(['Fase', 'Línea', 'Cuenta de avance', 'Tipo', 'Quién aporta', 'Fecha', 'No. préstamo', 'Banco', 'Aporte promotor', 'Vencimiento', 'Amortización', 'Estado', 'Solicitado', 'Confirmado por', 'Referencia', 'Informe de avalúo', 'Notas']);
+  sh5.addRow(['Fase', 'Línea', 'Cuenta de avance', 'Tipo', 'Quién aporta', 'Fecha', 'No. préstamo', 'Banco', 'Aporte promotor', 'Vencimiento', 'Amortización', 'Interés pagado', 'Estado', 'Solicitado', 'Confirmado por', 'Referencia', 'Informe de avalúo', 'Notas']);
   styleSheetHeaderRow(sh5.getRow(1));
   snap.phases.forEach(phase => (phase.loanLines || []).forEach(line => {
     const disbursed = (line.entries || []).reduce((sum, entry) => sum + (entry.entryType === 'disbursement' && entry.paymentStatus === 'pending' ? 0 : toNum(entry.disbursementAmount)), 0);
     const amortized = (line.entries || []).reduce((sum, entry) => sum + toNum(entry.amortizedAmount), 0);
-    sh4.addRow([phase.name, line.name, line.approvedAmount, disbursed, amortized, Math.max(0, disbursed - amortized), line.approvedAmountMode === 'auto' ? 'Automático' : 'Manual', line.notes]);
+    const interestPaid = (line.entries || []).reduce((sum, entry) => sum + toNum(entry.interestAmount), 0);
+    sh4.addRow([phase.name, line.name, line.approvedAmount, disbursed, amortized, interestPaid, amortized + interestPaid, Math.max(0, disbursed - amortized), line.approvedAmountMode === 'auto' ? 'Automático' : 'Manual', line.notes]);
     (line.entries || []).forEach(entry => sh5.addRow([
-      phase.name, line.name, entry.advanceAccountNumber, entry.entryType, entry.fundingParty, entry.date ? new Date(entry.date) : '', entry.loanNumber,
+      phase.name, line.name, entry.advanceAccountNumber,
+      entry.entryType === 'interest_payment' ? 'Interés pagado' : entry.entryType === 'manual_amortization' ? 'Amortización manual' : entry.entryType === 'sale_amortization' ? 'Amortización por venta' : entry.entryType === 'disbursement' ? 'Desembolso' : 'Histórico',
+      entry.fundingParty, entry.date ? new Date(entry.date) : '', entry.loanNumber,
       ['bank', 'mixed'].includes(entry.fundingParty || 'bank') ? entry.disbursementAmount : 0,
       entry.fundingParty === 'promoter' ? entry.disbursementAmount : entry.promoterContributionAmount,
-      entry.maturityDate ? new Date(entry.maturityDate) : '', entry.amortizedAmount,
+      entry.maturityDate ? new Date(entry.maturityDate) : '', entry.amortizedAmount, entry.interestAmount,
       entry.workflowStatus || entry.paymentStatus, entry.requestedAt ? new Date(entry.requestedAt) : '', entry.disbursedByRole,
       entry.transferReference, entry.inspectionId, entry.notes
     ]));
   }));
   [sh4, sh5].forEach(sheet => autoFitColumns(sheet, 46));
-  for (let row = 2; row <= sh4.rowCount; row++) [3, 4, 5, 6].forEach(column => { sh4.getRow(row).getCell(column).numFmt = '#,##0.00'; });
+  for (let row = 2; row <= sh4.rowCount; row++) [3, 4, 5, 6, 7, 8].forEach(column => { sh4.getRow(row).getCell(column).numFmt = '#,##0.00'; });
   for (let row = 2; row <= sh5.rowCount; row++) {
     sh5.getRow(row).getCell(6).numFmt = 'yyyy-mm-dd';
     sh5.getRow(row).getCell(8).numFmt = '#,##0.00';
     sh5.getRow(row).getCell(9).numFmt = '#,##0.00';
     sh5.getRow(row).getCell(10).numFmt = 'yyyy-mm-dd';
     sh5.getRow(row).getCell(11).numFmt = '#,##0.00';
-    sh5.getRow(row).getCell(13).numFmt = 'yyyy-mm-dd';
+    sh5.getRow(row).getCell(12).numFmt = '#,##0.00';
+    sh5.getRow(row).getCell(14).numFmt = 'yyyy-mm-dd';
   }
 
   // ===== Hoja Gráficas (si llegan) =====
@@ -1965,8 +1982,8 @@ function financePdfKpiCards(doc, snap, projectCurrency = 'PAB') {
 
   const kpis = [
     { label: 'Ejecución (Real/Plan usos)', value: `${(snap.percentExecution * 100).toFixed(1)}%` },
-    { label: 'Intereses acumulados', value: moneyES(snap.totals.intereses, projectCurrency) },
-    { label: 'Preventas acumuladas', value: moneyES(snap.totals.preventas, projectCurrency) },
+    { label: 'Intereses pagados', value: moneyES(snap.totals.totalInterestPaid, projectCurrency) },
+    { label: 'Total pagado al banco', value: moneyES(snap.totals.totalPaidToBank, projectCurrency) },
     { label: 'Desembolso real (total)', value: moneyES(snap.totals.disbActual, projectCurrency) },
   ];
 
@@ -2223,31 +2240,36 @@ async function exportFinancePdf({ req, res, projectId, projectName, projectCurre
     const lineRows = (p.loanLines || []).map(line => {
       const disbursed = (line.entries || []).reduce((sum, entry) => sum + (entry.entryType === 'disbursement' && entry.paymentStatus === 'pending' ? 0 : toNum(entry.disbursementAmount)), 0);
       const amortized = (line.entries || []).reduce((sum, entry) => sum + toNum(entry.amortizedAmount), 0);
-      return { name: line.name, approved: money(line.approvedAmount), disbursed: money(disbursed), amortized: money(amortized), balance: money(Math.max(0, disbursed - amortized)) };
+      const interestPaid = (line.entries || []).reduce((sum, entry) => sum + toNum(entry.interestAmount), 0);
+      return { name: line.name, approved: money(line.approvedAmount), disbursed: money(disbursed), amortized: money(amortized), interestPaid: money(interestPaid), totalPaid: money(amortized + interestPaid), balance: money(Math.max(0, disbursed - amortized)) };
     });
     financePdfTable(pdf, lineRows, [
-      { key:'name', label:'Línea', wPct:0.28, align:'left' },
-      { key:'approved', label:'Aprobado', wPct:0.18, align:'right' },
-      { key:'disbursed', label:'Desemb.', wPct:0.18, align:'right' },
-      { key:'amortized', label:'Amort.', wPct:0.18, align:'right' },
-      { key:'balance', label:'Saldo', wPct:0.18, align:'right' },
+      { key:'name', label:'Línea', wPct:0.22, align:'left' },
+      { key:'approved', label:'Aprobado', wPct:0.13, align:'right' },
+      { key:'disbursed', label:'Desemb.', wPct:0.13, align:'right' },
+      { key:'amortized', label:'Amort.', wPct:0.13, align:'right' },
+      { key:'interestPaid', label:'Intereses', wPct:0.13, align:'right' },
+      { key:'totalPaid', label:'Total pagado', wPct:0.13, align:'right' },
+      { key:'balance', label:'Saldo', wPct:0.13, align:'right' },
     ]);
 
     for (const line of (p.loanLines || [])) {
       if (!(line.entries || []).length) continue;
       financePdfSection(pdf, `Movimientos — ${line.name}`);
       financePdfTable(pdf, line.entries.map(entry => ({
-        type: entry.entryType === 'sale_amortization' ? 'Venta' : entry.entryType === 'manual_amortization' ? 'Amortización' : entry.entryType === 'disbursement' ? `Cuenta ${entry.advanceAccountNumber || '—'} · ${entry.fundingParty === 'mixed' ? 'Mixta' : entry.fundingParty === 'promoter' ? 'Promotor' : 'Banco'}` : 'Histórico',
+        type: entry.entryType === 'sale_amortization' ? 'Venta' : entry.entryType === 'manual_amortization' ? 'Amortización' : entry.entryType === 'interest_payment' ? 'Interés pagado' : entry.entryType === 'disbursement' ? `Cuenta ${entry.advanceAccountNumber || '—'} · ${entry.fundingParty === 'mixed' ? 'Mixta' : entry.fundingParty === 'promoter' ? 'Promotor' : 'Banco'}` : 'Histórico',
         date: fmtDate(entry.date),
         disbursed: money(entry.disbursementAmount),
         amortized: money(entry.amortizedAmount),
-        status: entry.workflowStatus === 'requested' ? 'Solicitado' : entry.workflowStatus === 'returned' ? 'Devuelto' : entry.workflowStatus === 'prepared' ? 'Preparado' : entry.paymentStatus === 'automatic' ? 'Automática' : 'Desembolsado'
+        interestPaid: money(entry.interestAmount),
+        status: entry.entryType === 'interest_payment' ? 'Pagado' : entry.workflowStatus === 'requested' ? 'Solicitado' : entry.workflowStatus === 'returned' ? 'Devuelto' : entry.workflowStatus === 'prepared' ? 'Preparado' : entry.paymentStatus === 'automatic' ? 'Automática' : 'Desembolsado'
       })), [
-        { key:'type', label:'Tipo', wPct:0.24, align:'left' },
-        { key:'date', label:'Fecha', wPct:0.18, align:'left' },
-        { key:'disbursed', label:'Desembolso', wPct:0.22, align:'right' },
-        { key:'amortized', label:'Amortización', wPct:0.22, align:'right' },
-        { key:'status', label:'Estado', wPct:0.14, align:'left' },
+        { key:'type', label:'Tipo', wPct:0.22, align:'left' },
+        { key:'date', label:'Fecha', wPct:0.14, align:'left' },
+        { key:'disbursed', label:'Desembolso', wPct:0.16, align:'right' },
+        { key:'amortized', label:'Amortización', wPct:0.16, align:'right' },
+        { key:'interestPaid', label:'Interés', wPct:0.16, align:'right' },
+        { key:'status', label:'Estado', wPct:0.16, align:'left' },
       ]);
     }
   }

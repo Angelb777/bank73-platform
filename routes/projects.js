@@ -1959,6 +1959,50 @@ router.put('/:id/insurance-policies', requireProjectAccess({ commercialOnlySales
   }
 });
 
+// PUT /api/projects/:id/housing-models
+// Administra la biblioteca de modelos sin crear ni eliminar unidades comerciales.
+router.put('/:id/housing-models', requireProjectAccess({ commercialOnlySales: false, promoterCanEditAssigned: true }), async (req, res) => {
+  try {
+    if (!Array.isArray(req.body?.housingModels)) {
+      return res.status(400).json({ error: 'housingModels debe ser una lista' });
+    }
+
+    const project = await Project.findOne({ _id: req.params.id, tenantKey: req.tenantKey });
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+    const models = sanitizeHousingModels(req.body.housingModels);
+    validateHousingModelStatuses(models);
+
+    // Mantener los ids de los modelos existentes evita romper la relación
+    // modelId de las unidades cuando solo se edita la biblioteca.
+    const existingIds = new Map((project.housingModels || []).map(model => [
+      String(model.name || '').trim().toLowerCase(),
+      model._id
+    ]));
+    models.forEach(model => {
+      const existingId = existingIds.get(String(model.name || '').trim().toLowerCase());
+      if (existingId) model._id = existingId;
+    });
+
+    project.housingModels = models;
+    project.updatedBy = req.user?.userId || req.user?._id;
+    await project.save();
+
+    await audit(req, 'project.housing_models.updated', {
+      targetType: 'project',
+      targetId: project._id,
+      projectId: project._id,
+      message: 'Biblioteca de modelos actualizada',
+      metadata: { models: models.length }
+    });
+
+    res.json({ ok: true, housingModels: project.housingModels });
+  } catch (err) {
+    console.error('[PUT /projects/:id/housing-models]', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'No se pudieron guardar los modelos' });
+  }
+});
+
 router.put('/:id', requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -3159,6 +3203,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
               ? 0
               : requestedDisbursementAmount;
             const amortizedAmount = toNum(entry.amortizedAmount);
+            const interestAmount = toNum(entry.interestAmount);
             return {
               id: String(entry._id || `${line._id || idx}-${entryIdx}`),
               disbursementDate: entry.disbursementDate || null,
@@ -3167,12 +3212,14 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
               requestedDisbursementAmount,
               maturityDate: entry.maturityDate || null,
               amortizedAmount,
+              interestAmount,
               balance: Math.max(0, disbursementAmount - amortizedAmount),
               notes: clean(entry.notes) || ''
             };
           });
           const disbursementAmount = entries.reduce((a, e) => a + toNum(e.disbursementAmount), 0);
           const manualAmortized = entries.reduce((a, e) => a + toNum(e.amortizedAmount), 0);
+          const interestPaid = entries.reduce((a, e) => a + toNum(e.interestAmount), 0);
           return {
             id: String(line._id || idx),
             name: clean(line.name) || `Linea ${idx + 1}`,
@@ -3181,9 +3228,11 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
             entries,
             disbursementAmount,
             manualAmortized,
+            interestPaid,
             allocatedAmortized: 0,
             amortizedAmount: manualAmortized,
             totalRecovered: manualAmortized,
+            totalPaidToBank: manualAmortized + interestPaid,
             debt: Math.max(0, disbursementAmount - manualAmortized),
             balanceAfterSales: Math.max(0, disbursementAmount - manualAmortized)
           };
@@ -3222,6 +3271,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
 
       line.allocatedAmortized = allocatedAmortized;
       line.totalRecovered = toNum(line.manualAmortized) + allocatedAmortized;
+      line.totalPaidToBank = line.totalRecovered + toNum(line.interestPaid);
       line.amortizedAmount = line.totalRecovered;
       line.debt = Math.max(0, toNum(line.disbursementAmount) - line.totalRecovered);
       line.balanceAfterSales = line.debt;
@@ -3235,6 +3285,8 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
           manualAmortized: summaryFinanceLoanLines.reduce((a, x) => a + toNum(x.manualAmortized), 0),
           allocatedAmortized: summaryFinanceLoanLines.reduce((a, x) => a + toNum(x.allocatedAmortized), 0),
           amortized: summaryFinanceLoanLines.reduce((a, x) => a + toNum(x.totalRecovered), 0),
+          interestPaid: summaryFinanceLoanLines.reduce((a, x) => a + toNum(x.interestPaid), 0),
+          totalPaidToBank: summaryFinanceLoanLines.reduce((a, x) => a + toNum(x.totalPaidToBank), 0),
           debt: totalDebt,
           checkAmountTotal: summaryUnitAmortizations.reduce((a, x) => a + toNum(x.checkAmount), 0),
           promoterTotal: summaryUnitAmortizations.reduce((a, x) => a + toNum(x.promoterAmount), 0)
@@ -3244,6 +3296,8 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
           manualAmortized: normalizedCreditLines.reduce((a, x) => a + toNum(x.amortizedAmount), 0),
           allocatedAmortized: 0,
           amortized: normalizedCreditLines.reduce((a, x) => a + toNum(x.amortizedAmount), 0),
+          interestPaid: 0,
+          totalPaidToBank: normalizedCreditLines.reduce((a, x) => a + toNum(x.amortizedAmount), 0),
           debt: totalDebt,
           checkAmountTotal: 0,
           promoterTotal: 0
