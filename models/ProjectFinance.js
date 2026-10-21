@@ -2,9 +2,17 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
+const FundingSourceSchema = new Schema({
+  name:   { type: String, required: true, trim: true },
+  amount: { type: Number, required: true, default: 0 },
+}, { _id: true });
+
 const LineItemSchema = new Schema({
   name:   { type: String, required: true },
   amount: { type: Number, required: true, default: 0 },
+  // Solo se utiliza en los usos previstos. Se deja opcional para conservar
+  // intactos los usos/fuentes historicos y poder detectar fases sin reparto.
+  fundingSources: { type: [FundingSourceSchema], default: undefined },
 }, { _id: true });
 
 const PhaseFinancingLineSchema = new Schema({

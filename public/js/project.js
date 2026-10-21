@@ -5494,13 +5494,25 @@ function financeLoanLinesWithUseSeeds(savedLines = [], phase = {}) {
   const manualApproved = baseLines.filter(line => !autoLines.includes(line)).reduce((sum, line) => sum + numOr0(line.approvedAmount), 0);
   const available = Math.max(0, financePhaseApprovedBank(phase) - manualApproved);
   const useById = new Map(uses.map(use => [String(use?._id || ''), use]));
-  const totalUse = autoLines.reduce((sum, line) => sum + numOr0(useById.get(String(line.sourceUseId))?.amount), 0);
+  const plannedBankForUse = use => {
+    if (!Array.isArray(use?.fundingSources)) return null;
+    return use.fundingSources.reduce((sum, source) => (
+      financeSourceKind(source?.name) === 'bank' ? sum + numOr0(source?.amount) : sum
+    ), 0);
+  };
+  const hasFundingByUse = autoLines.some(line => plannedBankForUse(useById.get(String(line.sourceUseId))) !== null);
+  const allocationBasis = autoLines.map(line => {
+    const use = useById.get(String(line.sourceUseId));
+    const plannedBank = plannedBankForUse(use);
+    return hasFundingByUse ? Math.max(0, plannedBank || 0) : Math.max(0, numOr0(use?.amount));
+  });
+  const allocationBasisTotal = allocationBasis.reduce((sum, amount) => sum + amount, 0);
   const floors = autoLines.map(line => (line.entries || []).reduce((sum, entry) => (
     sum + (entry.entryType === 'disbursement' && entry.paymentStatus === 'pending' ? 0 : numOr0(entry.disbursementAmount))
   ), 0));
   const floorTotal = floors.reduce((sum, amount) => sum + amount, 0);
   let remaining = Math.max(0, available - floorTotal);
-  const desired = autoLines.map(line => totalUse > 0 ? available * numOr0(useById.get(String(line.sourceUseId))?.amount) / totalUse : available / autoLines.length);
+  const desired = autoLines.map((line, index) => allocationBasisTotal > 0 ? available * allocationBasis[index] / allocationBasisTotal : available / autoLines.length);
   const gaps = desired.map((amount, index) => Math.max(0, amount - floors[index]));
   const gapTotal = gaps.reduce((sum, amount) => sum + amount, 0);
   const allocations = floors.slice();
@@ -5510,7 +5522,7 @@ function financeLoanLinesWithUseSeeds(savedLines = [], phase = {}) {
     remaining -= used;
   }
   if (remaining > 0) autoLines.forEach((line, index) => {
-    const weight = totalUse > 0 ? numOr0(useById.get(String(line.sourceUseId))?.amount) / totalUse : 1 / autoLines.length;
+    const weight = allocationBasisTotal > 0 ? allocationBasis[index] / allocationBasisTotal : 1 / autoLines.length;
     allocations[index] += remaining * weight;
   });
   autoLines.forEach((line, index) => { line.approvedAmount = Math.round(allocations[index] * 100) / 100; });
@@ -7921,17 +7933,120 @@ function financePhaseBudgetRows(items = [], scope = '') {
     </div>`).join('');
 }
 
+function financeDefaultUseSources() {
+  return [
+    { name: 'Banco', amount: 0 },
+    { name: 'Promotor', amount: 0 },
+    { name: 'Preventas', amount: 0 }
+  ];
+}
+
+function financePlanUsesWithSources(phase = {}) {
+  const uses = (phase?.planUses || []).map(use => ({ ...use }));
+  if (uses.some(use => Array.isArray(use?.fundingSources))) {
+    return uses.map(use => ({
+      ...use,
+      fundingSources: Array.isArray(use?.fundingSources)
+        ? use.fundingSources.map(source => ({ ...source }))
+        : financeDefaultUseSources()
+    }));
+  }
+
+  const totalUses = sumItems(uses);
+  const existingSources = (phase?.planSources || []).map(source => ({
+    name: source?.name || '',
+    amount: numOr0(source?.amount)
+  })).filter(source => source.name || source.amount);
+  const initialBank = financePhaseApprovedBank(phase);
+  const sourceTemplates = existingSources.length
+    ? existingSources
+    : [
+        { name: 'Banco', amount: initialBank },
+        { name: 'Promotor', amount: Math.max(0, totalUses - initialBank) },
+        { name: 'Preventas', amount: 0 }
+      ];
+  ['Banco', 'Promotor', 'Preventas'].forEach(name => {
+    if (!sourceTemplates.some(source => financeSourceKind(source.name) === financeSourceKind(name))) {
+      sourceTemplates.push({ name, amount: 0 });
+    }
+  });
+
+  const allocations = uses.map(() => []);
+  sourceTemplates.forEach(source => {
+    const totalCents = Math.round(numOr0(source.amount) * 100);
+    let allocatedCents = 0;
+    uses.forEach((use, index) => {
+      const isLast = index === uses.length - 1;
+      const cents = isLast
+        ? totalCents - allocatedCents
+        : Math.round(totalUses > 0 ? totalCents * numOr0(use.amount) / totalUses : 0);
+      allocatedCents += cents;
+      allocations[index].push({ name: source.name, amount: cents / 100 });
+    });
+  });
+  return uses.map((use, index) => ({ ...use, fundingSources: allocations[index] || financeDefaultUseSources() }));
+}
+
+function financeUseSourceRow(source = {}, useAmount = 0) {
+  const amount = numOr0(source?.amount);
+  const pct = useAmount ? amount / useAmount * 100 : 0;
+  return `
+    <div class="finance-use-source-row" data-use-source data-source-id="${escapeHtml(source?._id || '')}">
+      <input class="input" data-funding-name value="${escapeHtml(source?.name || '')}" placeholder="Otra fuente">
+      <div class="finance-use-source-pct"><input class="input" data-funding-pct type="number" step="0.01" value="${pct.toFixed(2)}"><em>%</em></div>
+      <input class="input" data-funding-amount type="text" inputmode="decimal" value="${formatPanamaNumber(amount)}">
+      <button class="btn btn-danger btn-xs" type="button" data-remove-use-source>Quitar</button>
+    </div>`;
+}
+
+function financePhasePlanUseRows(items = []) {
+  return (items || []).map(item => {
+    const amount = numOr0(item?.amount);
+    const sources = Array.isArray(item?.fundingSources) ? item.fundingSources : financeDefaultUseSources();
+    return `
+      <article class="finance-plan-use-card" data-plan-use data-budget-id="${escapeHtml(item?._id || '')}">
+        <div class="finance-plan-use-head">
+          <label><span>Uso</span><input class="input" data-plan-use-name value="${escapeHtml(item?.name || '')}" placeholder="Infraestructura"></label>
+          <label><span>Importe del uso</span><input class="input" data-plan-use-amount type="text" inputmode="decimal" value="${formatPanamaNumber(amount)}"></label>
+          <button class="btn btn-danger btn-xs" type="button" data-remove-plan-use>Quitar</button>
+        </div>
+        <div class="finance-use-sources-head"><span>Fuentes</span><span>Porcentaje</span><span>Importe</span><span></span></div>
+        <div data-use-sources>${sources.map(source => financeUseSourceRow(source, amount)).join('')}</div>
+        <button class="btn btn-ghost btn-xs" type="button" data-add-use-source>+ Fuente</button>
+        <div class="finance-source-balance" data-use-source-balance></div>
+      </article>`;
+  }).join('');
+}
+
+function financeAggregateUseSources(uses = []) {
+  const grouped = new Map();
+  uses.forEach(use => (use.fundingSources || []).forEach(source => {
+    const name = String(source?.name || '').trim();
+    if (!name) return;
+    const key = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const current = grouped.get(key) || { name, amount: 0 };
+    current.amount += numOr0(source?.amount);
+    grouped.set(key, current);
+  }));
+  return Array.from(grouped.values()).map(source => ({
+    ...source,
+    amount: Math.round(source.amount * 100) / 100
+  }));
+}
+
 function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'plan') {
   const host = document.getElementById('financePhaseOverview');
   if (!host) return;
-  const planSources = financeSourceBuckets(phase?.planSources || []);
+  const initialPlanUses = financePlanUsesWithSources(phase);
+  const initialPlanSourcesList = financeAggregateUseSources(initialPlanUses);
+  const planSources = financeSourceBuckets(initialPlanSourcesList);
   const realSources = financeSourceBuckets(phase?.sources || []);
   const phaseLines = Array.isArray(visibleLines) ? visibleLines : financeLinesForPhase(phase?._id);
   const approvedForLines = phaseLines.reduce((sum, line) => sum + numOr0(line?.approvedAmount), 0);
   const approvedBank = financePhaseApprovedBank(phase);
   const unassigned = approvedBank - approvedForLines;
-  const initialPlanTotal = sumItems(phase?.planUses);
-  const initialPlanBank = planSources.hasBank ? planSources.bank : approvedBank;
+  const initialPlanTotal = sumItems(initialPlanUses);
+  const initialPlanBank = planSources.bank;
   const initialBankPct = initialPlanTotal > 0
     ? initialPlanBank / initialPlanTotal * 100
     : numOr0(phase?.financialConditions?.bankFinancedPct);
@@ -7956,18 +8071,10 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
       <button type="button" data-phase-view="real" aria-pressed="false">Realidad</button>
     </div>
     <section class="finance-phase-budget-panel" data-phase-panel="plan">
-        <div class="finance-phase-section-head"><div><h4>Usos previstos</h4><p>El total se calcula automáticamente con estos conceptos.</p></div></div>
-        <div data-budget-list="planUses">${financePhaseBudgetRows(phase?.planUses, 'planUses')}</div>
-        <button class="btn btn-ghost btn-xs" type="button" data-add-budget-row="planUses">+ Uso</button>
-        <div class="finance-phase-section-head finance-phase-financing-head"><div><h4>Financiación prevista</h4><p>Indica el porcentaje del banco; el aporte del promotor se calcula como el importe restante.</p></div></div>
-        <div class="finance-source-split">
-          <label><span>Banco</span><div class="finance-source-inputs"><input class="input" data-plan-bank-pct type="number" min="0" max="100" step="0.01" value="${initialBankPct.toFixed(2)}"><em>%</em><input class="input" data-fixed-source="plan-bank" type="text" readonly value="${formatPanamaNumber(initialPlanBank)}"></div></label>
-          <label><span>Promotor / fondos propios</span><div class="finance-source-inputs"><input class="input" data-plan-promoter-pct type="text" readonly value="0.00"><em>%</em><input class="input" data-fixed-source="plan-promoter" type="text" readonly value="${formatPanamaNumber(planSources.promoter)}"></div></label>
-          <label><span>Preventas</span><div class="finance-source-inputs is-amount-only"><input class="input" data-fixed-source="plan-presales" type="text" inputmode="decimal" value="${formatPanamaNumber(planSources.presales)}"></div></label>
-        </div>
-        <div data-budget-list="planOther">${financePhaseBudgetRows(planSources.other, 'planOther')}</div>
-        <button class="btn btn-ghost btn-xs" type="button" data-add-budget-row="planOther">+ Otra fuente</button>
-        <div class="finance-source-balance" data-plan-source-balance></div>
+        <div class="finance-phase-section-head"><div><h4>Usos y fuentes previstas</h4><p>Cada uso puede tener un reparto diferente. Puedes escribir el porcentaje o el importe.</p></div></div>
+        <div data-plan-uses-list>${financePhasePlanUseRows(initialPlanUses)}</div>
+        <button class="btn btn-ghost btn-xs" type="button" data-add-plan-use>+ Uso</button>
+        <div class="finance-plan-global" data-plan-global-summary></div>
     </section>
     <section class="finance-phase-budget-panel" data-phase-panel="real" hidden>
         <div class="finance-phase-section-head">
@@ -8006,6 +8113,19 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
     name: row.querySelector('[data-budget-name]')?.value.trim() || '',
     amount: numOr0(row.querySelector('[data-budget-amount]')?.value)
   })).filter(item => item.name || item.amount);
+  const collectPlanUses = () => Array.from(host.querySelectorAll('[data-plan-use]')).map(row => ({
+    _id: isMongoIdLike(row.dataset.budgetId) ? row.dataset.budgetId : undefined,
+    name: row.querySelector('[data-plan-use-name]')?.value.trim() || '',
+    amount: numOr0(row.querySelector('[data-plan-use-amount]')?.value),
+    fundingSources: Array.from(row.querySelectorAll('[data-use-source]')).map(sourceRow => {
+      const amount = numOr0(sourceRow.querySelector('[data-funding-amount]')?.value);
+      return {
+        _id: isMongoIdLike(sourceRow.dataset.sourceId) ? sourceRow.dataset.sourceId : undefined,
+        name: sourceRow.querySelector('[data-funding-name]')?.value.trim() || (amount ? 'Otra fuente' : ''),
+        amount
+      };
+    }).filter(source => source.name || source.amount)
+  })).filter(item => item.name || item.amount);
   const sourceValue = key => numOr0(host.querySelector(`[data-fixed-source="${key}"]`)?.value);
   const setSourceValue = (key, value) => {
     const input = host.querySelector(`[data-fixed-source="${key}"]`);
@@ -8020,7 +8140,7 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
     });
   };
   const updateRealComparison = () => {
-    const planTotal = sumItems(collectRows('planUses'));
+    const planTotal = sumItems(collectPlanUses());
     const realTotal = sumItems(collectRows('realUses'));
     const values = { plan: planTotal, real: realTotal, difference: realTotal - planTotal };
     Object.entries(values).forEach(([key, value]) => {
@@ -8029,20 +8149,15 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
     });
   };
   const recalculatePlanSources = () => {
-    const total = sumItems(collectRows('planUses'));
-    const bankPctInput = host.querySelector('[data-plan-bank-pct]');
-    const rawBankPct = numOr0(bankPctInput?.value);
-    const bankPct = Math.min(100, Math.max(0, rawBankPct));
-    if (bankPctInput && rawBankPct !== bankPct) bankPctInput.value = bankPct.toFixed(2);
-    const bank = total * bankPct / 100;
-    const presales = sourceValue('plan-presales');
-    const other = sumItems(collectRows('planOther'));
-    const promoter = Math.max(0, total - bank - presales - other);
+    const uses = collectPlanUses();
+    const total = sumItems(uses);
+    const sources = financeAggregateUseSources(uses);
+    const buckets = financeSourceBuckets(sources);
+    const bank = buckets.bank;
+    const promoter = buckets.promoter;
+    const presales = buckets.presales;
+    const bankPct = total > 0 ? bank / total * 100 : 0;
     const promoterPct = total > 0 ? promoter / total * 100 : 0;
-    setSourceValue('plan-bank', bank);
-    setSourceValue('plan-promoter', promoter);
-    const promoterPctInput = host.querySelector('[data-plan-promoter-pct]');
-    if (promoterPctInput) promoterPctInput.value = promoterPct.toFixed(2);
     const summary = {
       'plan-total': financeMoney(total),
       'plan-bank': financeMoney(bank),
@@ -8055,13 +8170,33 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
       const output = host.querySelector(`[data-phase-summary="${key}"]`);
       if (output) output.textContent = value;
     });
-    const excess = bank + presales + other - total;
-    const balance = host.querySelector('[data-plan-source-balance]');
-    if (balance) {
-      balance.classList.toggle('is-danger', excess > 0.01);
-      balance.textContent = excess > 0.01
-        ? `Las fuentes indicadas superan los usos en ${financeMoney(excess)}.`
-        : `Fuentes equilibradas: Banco ${financeMoney(bank)} + Promotor ${financeMoney(promoter)}${presales ? ` + Preventas ${financeMoney(presales)}` : ''}${other ? ` + Otras ${financeMoney(other)}` : ''}.`;
+    host.querySelectorAll('[data-plan-use]').forEach(row => {
+      const useAmount = numOr0(row.querySelector('[data-plan-use-amount]')?.value);
+      const sourceTotal = Array.from(row.querySelectorAll('[data-funding-amount]')).reduce((sum, input) => sum + numOr0(input.value), 0);
+      const difference = useAmount - sourceTotal;
+      const balance = row.querySelector('[data-use-source-balance]');
+      if (!balance) return;
+      balance.classList.toggle('is-danger', Math.abs(difference) > 0.01);
+      balance.textContent = Math.abs(difference) <= 0.01
+        ? 'Fuentes equilibradas: 100%.'
+        : difference > 0
+          ? `Faltan ${financeMoney(difference)} para cubrir este uso (${useAmount ? (sourceTotal / useAmount * 100).toFixed(2) : '0.00'}%).`
+          : `Exceso de ${financeMoney(Math.abs(difference))} (${useAmount ? (sourceTotal / useAmount * 100).toFixed(2) : '0.00'}%).`;
+    });
+    const globalSummary = host.querySelector('[data-plan-global-summary]');
+    if (globalSummary) {
+      const useRows = uses.map(use => {
+        const sourceText = (use.fundingSources || []).filter(source => source.name || source.amount).map(source => {
+          const pct = use.amount ? numOr0(source.amount) / use.amount * 100 : 0;
+          return `${escapeHtml(source.name || 'Fuente')} ${financeMoney(source.amount)} (${pct.toFixed(2)}%)`;
+        }).join(' · ');
+        return `<article><div><strong>Uso: ${escapeHtml(use.name || 'Sin nombre')}</strong><span>${financeMoney(use.amount)}</span></div><small>${sourceText || 'Sin fuentes indicadas'}</small></article>`;
+      }).join('');
+      const globalSourceText = sources.filter(source => source.name || source.amount).map(source => (
+        `${escapeHtml(source.name || 'Fuente')} ${financeMoney(source.amount)} (${total ? (numOr0(source.amount) / total * 100).toFixed(2) : '0.00'}%)`
+      )).join(' · ');
+      const globalDifference = total - sumItems(sources);
+      globalSummary.innerHTML = `<h4>Resumen global</h4>${useRows}<article class="finance-plan-global-total"><div><strong>Total de la fase</strong><span>${financeMoney(total)}</span></div><small>${globalSourceText || 'Sin fuentes indicadas'}</small><p class="${Math.abs(globalDifference) > 0.01 ? 'is-danger' : ''}">${Math.abs(globalDifference) <= 0.01 ? 'Fuentes globales equilibradas.' : globalDifference > 0 ? `Faltan ${financeMoney(globalDifference)}.` : `Exceso de ${financeMoney(Math.abs(globalDifference))}.`}</p></article>`;
     }
     const lineDifference = bank - approvedForLines;
     const allocation = host.querySelector('[data-line-allocation]');
@@ -8073,6 +8208,26 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
     if (lineDifferenceLabel) lineDifferenceLabel.textContent = lineDifference >= 0 ? 'Pendiente de asignar' : 'Exceso asignado';
     if (lineDifferenceValue) lineDifferenceValue.textContent = financeMoney(Math.abs(lineDifference));
     updateRealComparison();
+  };
+
+  const syncEditedFundingField = target => {
+    const useRow = target.closest('[data-plan-use]');
+    const sourceRow = target.closest('[data-use-source]');
+    if (!useRow) return;
+    const useAmount = numOr0(useRow.querySelector('[data-plan-use-amount]')?.value);
+    if (target.matches('[data-plan-use-amount]')) {
+      useRow.querySelectorAll('[data-use-source]').forEach(row => {
+        const pct = numOr0(row.querySelector('[data-funding-pct]')?.value);
+        const amountInput = row.querySelector('[data-funding-amount]');
+        if (amountInput) amountInput.value = formatPanamaNumber(useAmount * pct / 100);
+      });
+    } else if (sourceRow && target.matches('[data-funding-pct]')) {
+      const amountInput = sourceRow.querySelector('[data-funding-amount]');
+      if (amountInput) amountInput.value = formatPanamaNumber(useAmount * numOr0(target.value) / 100);
+    } else if (sourceRow && target.matches('[data-funding-amount]')) {
+      const pctInput = sourceRow.querySelector('[data-funding-pct]');
+      if (pctInput) pctInput.value = (useAmount ? numOr0(target.value) / useAmount * 100 : 0).toFixed(2);
+    }
   };
 
   host.onclick = async event => {
@@ -8090,6 +8245,27 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
       list?.insertAdjacentHTML('beforeend', financePhaseBudgetRows([{ name: '', amount: 0 }], add.dataset.addBudgetRow));
       return;
     }
+    const removeUse = event.target.closest('[data-remove-plan-use]');
+    if (removeUse) {
+      removeUse.closest('[data-plan-use]')?.remove();
+      return recalculatePlanSources();
+    }
+    const removeSource = event.target.closest('[data-remove-use-source]');
+    if (removeSource) {
+      removeSource.closest('[data-use-source]')?.remove();
+      return recalculatePlanSources();
+    }
+    const addUse = event.target.closest('[data-add-plan-use]');
+    if (addUse) {
+      host.querySelector('[data-plan-uses-list]')?.insertAdjacentHTML('beforeend', financePhasePlanUseRows([{ name: '', amount: 0, fundingSources: financeDefaultUseSources() }]));
+      return recalculatePlanSources();
+    }
+    const addSource = event.target.closest('[data-add-use-source]');
+    if (addSource) {
+      const useRow = addSource.closest('[data-plan-use]');
+      useRow?.querySelector('[data-use-sources]')?.insertAdjacentHTML('beforeend', financeUseSourceRow({ name: 'Otra fuente', amount: 0 }, numOr0(useRow?.querySelector('[data-plan-use-amount]')?.value)));
+      return recalculatePlanSources();
+    }
     const copy = event.target.closest('[data-copy-plan-to-real]');
     if (copy) {
       const actualStart = host.querySelector('[data-phase-overview="actualStartDate"]');
@@ -8098,11 +8274,14 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
       if (existingReal && !confirm('Esto reemplazará las fechas, usos y fuentes reales actuales por la estimación. ¿Continuar?')) return;
       const realUses = host.querySelector('[data-budget-list="realUses"]');
       const realOther = host.querySelector('[data-budget-list="realOther"]');
-      if (realUses) realUses.innerHTML = financePhaseBudgetRows(collectRows('planUses').map(({ _id, ...item }) => item), 'realUses');
-      if (realOther) realOther.innerHTML = financePhaseBudgetRows(collectRows('planOther').map(({ _id, ...item }) => item), 'realOther');
-      setSourceValue('real-bank', sourceValue('plan-bank'));
-      setSourceValue('real-promoter', sourceValue('plan-promoter'));
-      setSourceValue('real-presales', sourceValue('plan-presales'));
+      const plannedUses = collectPlanUses();
+      const plannedSources = financeAggregateUseSources(plannedUses);
+      const plannedBuckets = financeSourceBuckets(plannedSources);
+      if (realUses) realUses.innerHTML = financePhaseBudgetRows(plannedUses.map(({ _id, fundingSources, ...item }) => item), 'realUses');
+      if (realOther) realOther.innerHTML = financePhaseBudgetRows(plannedBuckets.other, 'realOther');
+      setSourceValue('real-bank', plannedBuckets.bank);
+      setSourceValue('real-promoter', plannedBuckets.promoter);
+      setSourceValue('real-presales', plannedBuckets.presales);
       if (actualStart) actualStart.value = host.querySelector('[data-phase-overview="startDate"]')?.value || '';
       if (actualEnd) actualEnd.value = host.querySelector('[data-phase-overview="endDate"]')?.value || '';
       updateRealComparison();
@@ -8111,15 +8290,14 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
     }
     const save = event.target.closest('[data-save-phase-overview]');
     if (!save) return;
-    const planBank = sourceValue('plan-bank');
-    const planPromoter = sourceValue('plan-promoter');
-    const planPresales = sourceValue('plan-presales');
+    const planUses = collectPlanUses();
+    const planSourcesList = financeAggregateUseSources(planUses);
+    const plannedBuckets = financeSourceBuckets(planSourcesList);
+    const planBank = plannedBuckets.bank;
+    const planPromoter = plannedBuckets.promoter;
     const realBank = sourceValue('real-bank');
     const realPromoter = sourceValue('real-promoter');
     const realPresales = sourceValue('real-presales');
-    const planUses = collectRows('planUses');
-    const excessSources = planBank + planPresales + sumItems(collectRows('planOther')) - sumItems(planUses);
-    if (excessSources > 0.01) return alert(`Las fuentes previstas superan los usos en ${financeMoney(excessSources)}. Revisa el porcentaje del banco, las preventas u otras fuentes.`);
     const payload = {
       name: host.querySelector('[data-phase-overview="name"]')?.value.trim() || 'Fase',
       startDate: host.querySelector('[data-phase-overview="startDate"]')?.value,
@@ -8127,12 +8305,7 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
       actualStartDate: host.querySelector('[data-phase-overview="actualStartDate"]')?.value || null,
       actualEndDate: host.querySelector('[data-phase-overview="actualEndDate"]')?.value || null,
       planUses,
-      planSources: [
-        { name: 'Banco', amount: planBank },
-        { name: 'Promotor', amount: planPromoter },
-        { name: 'Preventas', amount: planPresales },
-        ...collectRows('planOther')
-      ],
+      planSources: planSourcesList,
       uses: collectRows('realUses'),
       sources: [
         { name: 'Banco', amount: realBank },
@@ -8144,9 +8317,9 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
         ...(phase?.financialConditions || {}),
         phaseTotal: sumItems(planUses),
         bankFinancedAmount: planBank,
-        bankFinancedPct: numOr0(host.querySelector('[data-plan-bank-pct]')?.value),
+        bankFinancedPct: sumItems(planUses) ? planBank / sumItems(planUses) * 100 : 0,
         promoterContribution: planPromoter,
-        promoterContributionPct: numOr0(host.querySelector('[data-plan-promoter-pct]')?.value)
+        promoterContributionPct: sumItems(planUses) ? planPromoter / sumItems(planUses) * 100 : 0
       }
     };
     if (!payload.startDate || !payload.endDate) return alert('Las fechas estimadas de inicio y fin son obligatorias.');
@@ -8167,7 +8340,10 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
     }
   };
   host.oninput = event => {
-    if (event.target.closest('[data-phase-panel="plan"]')) recalculatePlanSources();
+    if (event.target.closest('[data-phase-panel="plan"]')) {
+      syncEditedFundingField(event.target);
+      recalculatePlanSources();
+    }
     else if (event.target.closest('[data-phase-panel="real"]')) updateRealComparison();
   };
   recalculatePlanSources();

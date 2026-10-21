@@ -371,6 +371,15 @@ function phaseBankApproved(phase = {}) {
     : Math.max(0, toNum(phase?.financialConditions?.bankFinancedAmount));
 }
 
+function plannedBankForUse(use = {}) {
+  if (!Array.isArray(use?.fundingSources)) return null;
+  return use.fundingSources.reduce((sum, source) => (
+    /banco|financiacion bancaria|prestamo/.test(normalizedFinanceName(source?.name))
+      ? sum + Math.max(0, toNum(source?.amount))
+      : sum
+  ), 0);
+}
+
 function syncLoanLinesFromPhaseUses(doc, phase, { createAll = false, createForUseIds = new Set() } = {}) {
   const phaseId = String(phase?._id || '');
   if (!phaseId) return;
@@ -435,12 +444,18 @@ function syncLoanLinesFromPhaseUses(doc, phase, { createAll = false, createForUs
     .reduce((sum, line) => sum + Math.max(0, toNum(line?.approvedAmount)), 0);
   const available = Math.max(0, phaseBankApproved(phase) - manualApproved);
   const useById = new Map(uses.map(use => [String(use?._id || ''), use]));
-  const totalUse = autoLines.reduce((sum, line) => sum + Math.max(0, toNum(useById.get(String(line.sourceUseId))?.amount)), 0);
+  const hasFundingByUse = autoLines.some(line => plannedBankForUse(useById.get(String(line.sourceUseId))) !== null);
+  const allocationBasis = autoLines.map(line => {
+    const use = useById.get(String(line.sourceUseId));
+    const plannedBank = plannedBankForUse(use);
+    return hasFundingByUse ? Math.max(0, plannedBank || 0) : Math.max(0, toNum(use?.amount));
+  });
+  const allocationBasisTotal = allocationBasis.reduce((sum, amount) => sum + amount, 0);
   const floors = autoLines.map(line => loanLineEffectiveDisbursed(line));
   const floorTotal = floors.reduce((sum, amount) => sum + amount, 0);
   let remaining = Math.max(0, available - floorTotal);
-  const desired = autoLines.map(line => totalUse > 0
-    ? available * Math.max(0, toNum(useById.get(String(line.sourceUseId))?.amount)) / totalUse
+  const desired = autoLines.map((line, index) => allocationBasisTotal > 0
+    ? available * allocationBasis[index] / allocationBasisTotal
     : available / autoLines.length);
   const gaps = desired.map((amount, index) => Math.max(0, amount - floors[index]));
   const gapTotal = gaps.reduce((sum, amount) => sum + amount, 0);
@@ -452,8 +467,8 @@ function syncLoanLinesFromPhaseUses(doc, phase, { createAll = false, createForUs
   }
   if (remaining > 0) {
     autoLines.forEach((line, index) => {
-      const weight = totalUse > 0
-        ? Math.max(0, toNum(useById.get(String(line.sourceUseId))?.amount)) / totalUse
+      const weight = allocationBasisTotal > 0
+        ? allocationBasis[index] / allocationBasisTotal
         : 1 / autoLines.length;
       allocations[index] += remaining * weight;
     });

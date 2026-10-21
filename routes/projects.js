@@ -363,10 +363,19 @@ function sanitizeProjectLocation(raw = {}) {
 }
 
 function sanitizeLineItems(items = []) {
-  return (Array.isArray(items) ? items : []).slice(0, 50).map(item => ({
-    name: String(item?.name || item?.label || item?.concepto || '').trim(),
-    amount: parsePanamaNumber(item?.amount ?? item?.monto) || 0
-  })).filter(item => item.name || item.amount);
+  return (Array.isArray(items) ? items : []).slice(0, 50).map(item => {
+    const sanitized = {
+      name: String(item?.name || item?.label || item?.concepto || '').trim(),
+      amount: parsePanamaNumber(item?.amount ?? item?.monto) || 0
+    };
+    if (Array.isArray(item?.fundingSources)) {
+      sanitized.fundingSources = item.fundingSources.slice(0, 25).map(source => ({
+        name: String(source?.name || source?.label || source?.fuente || '').trim(),
+        amount: parsePanamaNumber(source?.amount ?? source?.monto) || 0
+      })).filter(source => source.name || source.amount);
+    }
+    return sanitized;
+  }).filter(item => item.name || item.amount);
 }
 
 function sanitizePhaseFinancialConditions(raw = {}) {
@@ -506,9 +515,21 @@ function applyAutomaticPhaseSources(phases = [], conditions = {}) {
       Number(phaseConditions.promoterContribution || 0) ||
       (promoterPct > 0 ? usesTotal * promoterPct / 100 : Math.max(0, usesTotal - bankAmount))
     );
+    const nestedSources = new Map();
+    (phase.planUses || []).forEach(use => (use.fundingSources || []).forEach(source => {
+      const name = String(source?.name || '').trim();
+      if (!name) return;
+      const key = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const current = nestedSources.get(key) || { name, amount: 0 };
+      current.amount += Number(source?.amount || 0);
+      nestedSources.set(key, current);
+    }));
     return {
       ...phase,
-      planSources: [
+      planSources: nestedSources.size ? Array.from(nestedSources.values()).map(source => ({
+        ...source,
+        amount: roundMoney(source.amount)
+      })) : [
         { name: 'Banco', amount: bankAmount },
         { name: 'Promotor', amount: promoterAmount }
       ]
