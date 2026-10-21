@@ -5933,7 +5933,8 @@ router.post(
           'PRECIO LISTA',
           'PRECIO',
           'PRECIO DE CONTRATO DE COMPRA Y VENTA',
-          'VALOR TOTAL'
+          'VALOR TOTAL',
+          'PRECIO TOTAL'
         ]));
 
         const montoCppExcel = toNum0(get(rowObj, [
