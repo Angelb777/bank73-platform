@@ -6260,7 +6260,8 @@ router.post(
           fechaVencimientoCPP: asDate(get(rowObj, [
             'FECHA DE VENCIMIENTO CPP',
             'FECHA DE VENCIMIENTO CCP',
-            'VENCIMIENTO CPP'
+            'VENCIMIENTO CPP',
+            'VENCIMIENTO CCP'
           ])),
           vencimientoCPPBnMivi: asDate(get(rowObj, ['VENCIMIENTO CPP BN-MIVI'])),
 
