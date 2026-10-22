@@ -4642,8 +4642,14 @@ function semaphoreForRole(roleKey) {
   }
 
   // ====== Carga de datos ======
+  function normalizeProjectStatus(status) {
+    const normalized = String(status || 'EN_CURSO').trim().toUpperCase();
+    return normalized === 'EN_MARCHA' ? 'EN_CURSO' : normalized;
+  }
+
   async function loadProject() {
     const p = await API.get('/api/projects/' + id);
+    p.status = normalizeProjectStatus(p.status);
     state.project = p;
     window.__PROJECT_3D?.configure?.(p);
     currentProjectCurrency = normalizeProjectCurrency(p.currency);
@@ -4654,7 +4660,7 @@ function semaphoreForRole(roleKey) {
     if (pname)  pname.textContent  = p.name || 'Proyecto';
     if (pdesc)  pdesc.textContent  = p.description || '';
     if (pdesc2) pdesc2.textContent = p.description || '';
-    if (statusSel) statusSel.value = (p.status || 'EN_CURSO');
+    if (statusSel) statusSel.value = p.status;
     if (projectTypeText) projectTypeText.textContent = `Tipo de proyecto: ${p.projectType || p.tipoProyecto || 'No definido'}`;
     renderProjectCover(p);
 
@@ -11247,7 +11253,7 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
                 ${a.periodicityMonths ? ` · Periodicidad: <b>${escapeHtml(a.periodicityMonths)} meses</b>` : ''}
                 ${a.balance ? ` · Saldo: <b>${financeMoney(a.balance)}</b>` : ''}
               </div>
-              ${canResolveExpiryAlerts && a.days < 0 && a.alertKey && a.sourceId ? `
+              ${canResolveExpiryAlerts && a.alertKey && a.sourceId ? `
                 <button type="button" class="btn btn-xs js-resolve-expiry-alert" data-alert-key="${escapeHtml(a.alertKey)}" style="margin-top:10px;">
                   Marcar como resuelto
                 </button>

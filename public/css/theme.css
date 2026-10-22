@@ -983,11 +983,6 @@ button.danger { background: var(--danger); color: #fff; }
    ESTADOS DE PROYECTO (UNIFICADO EN TODO EL SITIO)
    ========================================== */
 .card.status-EN_CURSO {
-  border-left: 6px solid #6c757d;
-  background: #1e1e2d;
-  color: #ffffff;
-}
-.card.status-EN_MARCHA {
   border-left: 6px solid #22a745;
   background: #9d1978;
   color: #e6ffe6;
@@ -3029,11 +3024,6 @@ button.small.danger{ color:#fff !important; }
 }
 
 body.light-theme #cards .card.status-EN_CURSO {
-  border-left: 8px solid #6c757d;
-  background: linear-gradient(90deg, rgba(108, 117, 125, .10) 0%, #ffffff 22%);
-}
-
-body.light-theme #cards .card.status-EN_MARCHA {
   border-left: 8px solid #22c55e;
   background: linear-gradient(90deg, rgba(34, 197, 94, .12) 0%, #ffffff 22%);
 }
@@ -3049,12 +3039,6 @@ body.light-theme #cards .card.status-FINALIZADO {
 }
 
 body.light-theme #cards .card.status-EN_CURSO .badge {
-  background: rgba(108, 117, 125, .10);
-  border-color: rgba(108, 117, 125, .24);
-  color: #475569;
-}
-
-body.light-theme #cards .card.status-EN_MARCHA .badge {
   background: rgba(34, 197, 94, .12);
   border-color: rgba(34, 197, 94, .30);
   color: #047857;
@@ -3168,7 +3152,7 @@ body.light-theme #cards .card.status-FINALIZADO .badge {
   box-shadow: 0 10px 26px rgba(2, 6, 23, .2);
 }
 
-#cards .portfolio-project-card.status-EN_MARCHA { --project-accent: #22c55e; }
+#cards .portfolio-project-card.status-EN_CURSO { --project-accent: #22c55e; }
 #cards .portfolio-project-card.status-PAUSADO { --project-accent: #f97316; }
 #cards .portfolio-project-card.status-FINALIZADO { --project-accent: #3b82f6; }
 
@@ -4371,6 +4355,13 @@ body.light-theme .finance-entry-kind.is-interest_payment { color: #a16207; }
 .finance-modal-funding-summary span { display:block; color:#94a3b8; font-size:.72rem; }
 .finance-modal-funding-summary strong { display:block; margin-top:4px; }
 
+body.light-theme .finance-modal-funding-summary > div {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+body.light-theme .finance-modal-funding-summary span { color: #64748b; }
+body.light-theme .finance-modal-funding-summary strong { color: #172033; }
+
 @media (max-width: 1100px) {
   #tab-finanzas #phasesUnifiedList { grid-template-columns: 1fr; }
 }
@@ -5169,9 +5160,10 @@ body.light-theme .finance-entry-kind.is-interest_payment { color: #a16207; }
 
 #tab-finanzas .finance-loan-line-head {
   display: grid;
-  grid-template-columns: minmax(180px, 280px) 1fr auto;
+  grid-template-columns: minmax(180px, 280px) minmax(0, 1fr);
   align-items: end;
-  gap: 12px;
+  column-gap: 14px;
+  row-gap: 10px;
   min-width: 0;
 }
 
@@ -5224,6 +5216,7 @@ body.light-theme .finance-entry-kind.is-interest_payment { color: #a16207; }
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  align-content: center;
   min-width: 0;
 }
 
@@ -5252,6 +5245,7 @@ body.light-theme .finance-entry-kind.is-interest_payment { color: #a16207; }
   flex-wrap: wrap;
   gap: 6px;
   justify-content: flex-end;
+  grid-column: 1 / -1;
 }
 
 #tab-finanzas .finance-loan-line-notes {

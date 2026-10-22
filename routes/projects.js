@@ -1815,27 +1815,29 @@ router.patch('/:id/viewer-3d/towers/:towerId', requireProjectAccess({ commercial
 router.post('/:id/expiry-alerts/resolve', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   try {
     const role = String(req.user?.role || '').toLowerCase();
-    if (!['admin', 'bank', 'promoter'].includes(role)) return res.status(403).json({ error: 'No tienes permisos para atender alertas.' });
+    if (!['admin', 'bank', 'promoter', 'gerencia', 'socios', 'financiero', 'contable', 'commercial'].includes(role)) {
+      return res.status(403).json({ error: 'No tienes permisos para atender alertas.' });
+    }
     const { id } = req.params;
     const key = String(req.body?.key || '').trim();
     const kind = String(req.body?.kind || '').trim();
     const sourceId = String(req.body?.sourceId || '').trim();
     const due = String(req.body?.due || '').trim();
 
-    if (!['cpp', 'credit_line', 'insurance_policy'].includes(kind)) {
+    if (![
+      'cpp',
+      'credit_line',
+      'insurance_policy',
+      'performance_bond',
+      'payment_bond',
+      'engineering_inspection_follow_up',
+      'account_advance_follow_up'
+    ].includes(kind)) {
       return res.status(400).json({ error: 'Tipo de alerta no válido' });
     }
     if (!sourceId || sourceId.length > 80 || !/^\d{4}-\d{2}-\d{2}$/.test(due)) {
       return res.status(400).json({ error: 'Datos de vencimiento no válidos' });
     }
-    const [dueYear, dueMonth, dueDate] = due.split('-').map(Number);
-    const dueDay = Date.UTC(dueYear, dueMonth - 1, dueDate);
-    const now = new Date();
-    const todayDay = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-    if (!Number.isFinite(dueDay) || dueDay >= todayDay) {
-      return res.status(400).json({ error: 'Solo se pueden resolver vencimientos ya superados' });
-    }
-
     const expectedKey = `${kind}:${sourceId}:${due}`;
     if (key !== expectedKey || key.length > 180) {
       return res.status(400).json({ error: 'Clave de alerta no válida' });
@@ -2010,7 +2012,11 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
     const myRole = String(req.user?.role || '').toLowerCase();
 
     // ===== Validación de status permitido =====
-    const VALID_STATUS = ['EN_CURSO','EN_MARCHA','PAUSADO','FINALIZADO'];
+    const VALID_STATUS = ['EN_CURSO','PAUSADO','FINALIZADO'];
+    const normalizeProjectStatus = value => {
+      const status = String(value || '').trim().toUpperCase();
+      return status === 'EN_MARCHA' ? 'EN_CURSO' : status;
+    };
 
     // ---- WHITELIST ----
     const payload = {};
@@ -2092,7 +2098,7 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
       }
 
       if (typeof req.body.status === 'string') {
-        const st = req.body.status.trim().toUpperCase();
+        const st = normalizeProjectStatus(req.body.status);
         if (!VALID_STATUS.includes(st)) {
           return res.status(400).json({ error: `status inválido. Usa: ${VALID_STATUS.join(', ')}` });
         }
@@ -2115,7 +2121,7 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
 
   // ✅ status (opcional, no obligatorio)
   if (typeof req.body.status === 'string' && req.body.status.trim()) {
-    const st = req.body.status.trim().toUpperCase();
+    const st = normalizeProjectStatus(req.body.status);
     if (!VALID_STATUS.includes(st)) {
       return res.status(400).json({ error: `status inválido. Usa: ${VALID_STATUS.join(', ')}` });
     }

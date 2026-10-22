@@ -337,6 +337,11 @@
     });
   }
 
+  function normalizeProjectStatus(status) {
+    const normalized = String(status || 'EN_CURSO').trim().toUpperCase();
+    return normalized === 'EN_MARCHA' ? 'EN_CURSO' : normalized;
+  }
+
   function filterProjects(list) {
     if (!Array.isArray(list)) return [];
 
@@ -362,7 +367,7 @@
     }
 
     if (status) {
-      filtered = filtered.filter(p => String(p.status || '') === status);
+      filtered = filtered.filter(p => normalizeProjectStatus(p.status) === status);
     }
 
     if (soldOnly) {
@@ -378,12 +383,12 @@
 
   // ===== UI Cards =====
   function statusBadge(status) {
-    const s = status || 'EN_CURSO';
+    const s = normalizeProjectStatus(status);
     return `<span class="badge portfolio-status-pill">${escapeHtml(s.replaceAll('_', ' '))}</span>`;
   }
 
   function statusClass(status) {
-    const s = (status || 'EN_CURSO').toUpperCase();
+    const s = normalizeProjectStatus(status);
     return `status-${escapeHtml(s)}`;
   }
 

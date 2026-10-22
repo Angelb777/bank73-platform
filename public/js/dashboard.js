@@ -1917,6 +1917,10 @@ function shortProjectDescription(value, maxLength = 150) {
   };
 
   function collectEditLegalData() {
+    let assessment = {};
+    try {
+      assessment = JSON.parse(document.getElementById('editProjectModal')?.dataset.legalAssessment || '{}');
+    } catch (_) {}
     return {
       promoterLegalName: document.getElementById('ep-ld-promoterLegalName')?.value?.trim() || '',
       interimBank: document.getElementById('ep-ld-interimBank')?.value?.trim() || '',
@@ -1931,7 +1935,8 @@ function shortProjectDescription(value, maxLength = 150) {
         name: row.querySelector('[data-ep-shareholder="name"]')?.value.trim() || '',
         cedula: row.querySelector('[data-ep-shareholder="cedula"]')?.value.trim() || '',
         percentage: dashNum(row.querySelector('[data-ep-shareholder="percentage"]')?.value)
-      }))
+      })),
+      assessment
     };
   }
 
@@ -2236,59 +2241,6 @@ function shortProjectDescription(value, maxLength = 150) {
       <input id="editProjLocation" class="input" type="text" />
     </div>
 
-    <!-- NUEVO: KPIs -->
-    <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-      <div>
-        <div class="small muted" style="margin-bottom:6px;">KPIs iniciales</div>
-
-        <label class="small muted">Loan aprobado</label>
-        <input id="ep-loanApproved" class="input" type="number" step="any" />
-
-        <label class="small muted" style="margin-top:8px;">Desembolsado</label>
-        <input id="ep-loanDisbursed" class="input" type="number" step="any" />
-
-        <label class="small muted" style="margin-top:8px;">Saldo loan</label>
-        <input id="ep-loanBalance" class="input" type="number" step="any" />
-      </div>
-
-      <div>
-        <label class="small muted">Budget aprobado</label>
-        <input id="ep-budgetApproved" class="input" type="number" step="any" />
-
-        <label class="small muted" style="margin-top:8px;">Gasto</label>
-        <input id="ep-budgetSpent" class="input" type="number" step="any" />
-
-        <label class="small muted" style="margin-top:8px;">Unidades totales</label>
-        <input id="ep-unitsTotal" class="input" type="number" step="1" />
-
-        <label class="small muted" style="margin-top:8px;">Unidades vendidas</label>
-        <input id="ep-unitsSold" class="input" type="number" step="1" />
-      </div>
-    </div>
-
-    <details style="margin-top:14px;">
-      <summary class="small muted">Condiciones financieras</summary>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;max-height:260px;overflow:auto;">
-        ${[
-          ['projectTotal','Total del proyecto','number'],['bankFinancedAmount','Monto banco','number'],['bankFinancedPct','% banco','number'],
-          ['promoterContribution','Aporte promotor','number'],['promoterContributionPct','% promotor','number'],['interestRate','Tasa de interés','number'],
-          ['term','Plazo','text'],['paymentMethod','Forma de pago','text'],['commission','Comisión','text'],
-          ['disbursementMethod','Forma de desembolso','text'],['disbursementConditions','Condiciones desembolso','text'],
-          ['amortizationConditions','Condiciones amortización','text'],['requiredPresales','Preventa requerida','text'],
-          ['guarantees','Garantías','text'],['insurance','Seguros','text']
-        ].map(([key,label,type]) => `<label class="small muted">${label}<input id="ep-fc-${key}" class="input" type="${type === 'number' ? 'text' : type}" ${['projectTotal','bankFinancedAmount','promoterContribution'].includes(key) ? 'data-bank-number inputmode="decimal"' : (type === 'number' ? 'inputmode="decimal"' : '')}></label>`).join('')}
-      </div>
-      <h4 style="margin:12px 0 8px;">Condiciones precedentes</h4>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;">
-        ${[['presalesMet','Preventa cumplida'],['constructionPermitsApproved','Permisos construcción'],['plansApproved','Planos aprobados'],['insuranceDelivered','Seguros entregados'],['guaranteesConstituted','Garantías constituidas'],['environmentalStudyApproved','Estudio ambiental'],['trustConstituted','Fideicomiso constituido'],['otherRequirementsMet','Otros requisitos']].map(([key,label]) => `<label class="small muted"><input type="checkbox" data-ep-precedent="${key}"> ${label}</label>`).join('')}
-      </div>
-      <label class="small muted">Detalle otros requisitos<textarea id="ep-fc-otherRequirements" class="input" rows="2"></textarea></label>
-      <h4 style="margin:12px 0 8px;">Estructura de la operación</h4>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        ${[['trustee','Fiduciaria'],['trustType','Tipo de fideicomiso'],['technicalInspector','Inspector técnico'],['financialInspector','Inspector financiero']].map(([key,label]) => `<label class="small muted">${label}<input id="ep-op-${key}" class="input"></label>`).join('')}
-      </div>
-    </details>
-
     <details style="margin-top:14px;">
       <summary class="small muted">Datos legales</summary>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
@@ -2305,23 +2257,6 @@ function shortProjectDescription(value, maxLength = 150) {
       <button id="ep-add-shareholder" class="btn small" type="button">+ Anadir accionista</button>
     </details>
 
-    <details style="margin-top:14px;">
-      <summary class="small muted">Datos tecnicos, modelos y estados</summary>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
-        <label class="small muted">Numero de fases<input id="ep-td-phasesCount" class="input" type="number" step="1"></label>
-        <label class="small muted">Total unidades<input id="ep-td-totalUnits" class="input" type="number" step="1"></label>
-        <label class="small muted" style="grid-column:1/-1">Notas tecnicas<textarea id="ep-td-notes" class="input" rows="2"></textarea></label>
-      </div>
-      <h4 style="margin:12px 0 8px;">Modelos</h4>
-      <div id="ep-housingModels"></div>
-      <button id="ep-add-model" class="btn small" type="button">+ Anadir modelo</button>
-    </details>
-
-    <details style="margin-top:14px;">
-      <summary class="small muted">Fases, usos y fuentes</summary>
-      <div id="ep-financePhases" style="margin-top:10px;"></div>
-    </details>
-
     <div style="margin-top:14px;display:flex;gap:10px;justify-content:flex-end;">
       <button id="editProjCancel" class="btn">Cancelar</button>
       <button id="editProjSave" class="btn small">Guardar</button>
@@ -2334,45 +2269,13 @@ function shortProjectDescription(value, maxLength = 150) {
     // Handlers básicos
     document.getElementById('editProjClose').addEventListener('click', () => { wrap.style.display = 'none'; });
     document.getElementById('editProjCancel').addEventListener('click', () => { wrap.style.display = 'none'; });
-    bindBankNumberFormatting(wrap);
-    ['ep-fc-projectTotal','ep-fc-bankFinancedAmount','ep-fc-bankFinancedPct','ep-fc-promoterContribution','ep-fc-promoterContributionPct'].forEach(fieldId => {
-      document.getElementById(fieldId)?.addEventListener('input', () => syncEditFinancialTriplet(fieldId));
-    });
     document.getElementById('ep-add-board')?.addEventListener('click', () => document.getElementById('ep-boardMembers')?.insertAdjacentHTML('beforeend', dashboardRepeatRow('board')));
     document.getElementById('ep-add-shareholder')?.addEventListener('click', () => document.getElementById('ep-shareholders')?.insertAdjacentHTML('beforeend', dashboardRepeatRow('shareholder')));
-    document.getElementById('ep-add-model')?.addEventListener('click', () => {
-      document.getElementById('ep-housingModels')?.insertAdjacentHTML('beforeend', dashboardModelRow());
-      bindBankNumberFormatting(document.getElementById('ep-housingModels') || document);
-    });
-    document.getElementById('ep-td-phasesCount')?.addEventListener('input', syncEditFinancePhases);
-    ['ep-boardMembers','ep-shareholders','ep-housingModels'].forEach(id => {
+    ['ep-boardMembers','ep-shareholders'].forEach(id => {
       document.getElementById(id)?.addEventListener('click', event => {
         event.target.closest('[data-remove-ep-row]')?.closest('.create-repeat-row')?.remove();
-        event.target.closest('[data-remove-ep-model]')?.closest('[data-ep-model-row]')?.remove();
-        validateEditModelStatuses();
-      });
-      document.getElementById(id)?.addEventListener('input', () => {
-        document.getElementById('ep-housingModels')?.querySelectorAll('[data-ep-model-row]').forEach(row => syncEditModelStatusRow(row, { autoFill: true }));
       });
     });
-    document.getElementById('ep-financePhases')?.addEventListener('click', event => {
-      const btn = event.target.closest('[data-add-ep-phase-line]');
-      if (!btn) return;
-      const kind = btn.dataset.addEpPhaseLine;
-      btn.closest('[data-ep-phase-row]')?.querySelector(`[data-ep-phase-box="${kind}"]`)?.insertAdjacentHTML('beforeend', `
-        <div data-ep-phase-line="${kind}" style="display:grid;grid-template-columns:1fr 130px;gap:8px;margin-bottom:6px;">
-          <input class="input" data-ep-phase-line-name placeholder="Concepto">
-          <input class="input" data-ep-phase-line-amount data-bank-number type="text" inputmode="decimal" placeholder="Monto">
-        </div>`);
-      bindBankNumberFormatting(document.getElementById('ep-financePhases') || document);
-      syncEditPhaseSources();
-    });
-    document.getElementById('ep-financePhases')?.addEventListener('input', syncEditPhaseSources);
-    document.getElementById('ep-financePhases')?.addEventListener('change', syncEditPhaseSources);
-    document.getElementById('ep-financePhases')?.addEventListener('keyup', syncEditPhaseSources);
-    document.addEventListener('input', event => {
-      if (event.target?.matches?.('[data-ep-phase-line-amount], [data-ep-phase-line-name]')) syncEditPhaseSources();
-    }, true);
 
     // Guardar
     document.getElementById('editProjSave').addEventListener('click', async () => {
@@ -2387,57 +2290,18 @@ function shortProjectDescription(value, maxLength = 150) {
       if (!name) { alert('El nombre no puede estar vacío'); return; }
 
       try {
+  let locationContext = {};
+  try {
+    locationContext = JSON.parse(wrap.dataset.locationContext || '{}');
+  } catch (_) {}
+  const locationText = document.getElementById('editProjLocation')?.value?.trim() || '';
   const payload = {
     name,
     description,
     projectType,
-    location: document.getElementById('editProjLocation')?.value?.trim() || ''
-  };
-
-  // helper para añadir números sólo si hay valor
-  const num = (id) => {
-    const v = document.getElementById(id)?.value;
-    return (v === '' || v === null || v === undefined) ? null : parseBankNumber(v);
-  };
-  const add = (key, id) => {
-    const v = num(id);
-    if (v !== null && !Number.isNaN(v)) payload[key] = v;
-  };
-
-  add('loanApproved',    'ep-loanApproved');
-  add('loanDisbursed',   'ep-loanDisbursed');
-  add('loanBalance',     'ep-loanBalance');
-  add('budgetApproved',  'ep-budgetApproved');
-  add('budgetSpent',     'ep-budgetSpent');
-  add('unitsTotal',      'ep-unitsTotal');
-  add('unitsSold',       'ep-unitsSold');
-
-  if (!validateBankNumberInputs(wrap)) return;
-  syncEditFinancialTriplet('ep-fc-projectTotal');
-  const conditionNumbers = ['projectTotal','bankFinancedAmount','bankFinancedPct','promoterContribution','promoterContributionPct','interestRate'];
-  const conditionTexts = ['term','paymentMethod','commission','disbursementMethod','disbursementConditions','amortizationConditions','requiredPresales','guarantees','insurance'];
-  payload.financialConditions = {};
-  conditionNumbers.forEach(key => {
-    const value = num(`ep-fc-${key}`);
-    if (value !== null && !Number.isNaN(value)) payload.financialConditions[key] = value;
-  });
-  conditionTexts.forEach(key => { payload.financialConditions[key] = document.getElementById(`ep-fc-${key}`)?.value?.trim() || ''; });
-  payload.financialConditions.facilities = [];
-  payload.financialConditions.precedentConditions = {};
-  document.querySelectorAll('[data-ep-precedent]').forEach(input => { payload.financialConditions.precedentConditions[input.dataset.epPrecedent] = input.checked; });
-  payload.financialConditions.precedentConditions.otherRequirements = document.getElementById('ep-fc-otherRequirements')?.value?.trim() || '';
-  payload.financialConditions.operationStructure = {
-    trustee: document.getElementById('ep-op-trustee')?.value?.trim() || '',
-    trustType: document.getElementById('ep-op-trustType')?.value?.trim() || '',
-    technicalInspector: document.getElementById('ep-op-technicalInspector')?.value?.trim() || '',
-    financialInspector: document.getElementById('ep-op-financialInspector')?.value?.trim() || ''
+    location: { ...locationContext, text: locationText }
   };
   payload.legalData = collectEditLegalData();
-  payload.technicalData = collectEditTechnicalData();
-  payload.housingModels = collectEditHousingModels();
-  if (!validateEditModelStatuses(true)) return;
-  if (!validateEditFinancePhases(true)) return;
-  payload.financePhases = collectEditFinancePhases();
 
   await apiUpdateProject(id, payload);
   wrap.style.display = 'none';
@@ -3544,46 +3408,20 @@ if (pEdit) {
     document.getElementById('editProjDesc').value = proj.description || '';
     document.getElementById('editProjType').value = proj.projectType || proj.tipoProyecto || '';
     document.getElementById('editProjLocation').value = proj.location || proj.address || '';
-    // Rellenar KPIs
-document.getElementById('ep-loanApproved').value   = proj.loanApproved ?? '';
-document.getElementById('ep-loanDisbursed').value  = proj.loanDisbursed ?? '';
-document.getElementById('ep-loanBalance').value    = proj.loanBalance ?? '';
-document.getElementById('ep-budgetApproved').value = proj.budgetApproved ?? '';
-document.getElementById('ep-budgetSpent').value    = proj.budgetSpent ?? '';
-document.getElementById('ep-unitsTotal').value     = proj.unitsTotal ?? '';
-document.getElementById('ep-unitsSold').value      = proj.unitsSold ?? '';
-    const conditions = proj.financialConditions || {};
-    ['projectTotal','bankFinancedAmount','bankFinancedPct','promoterContribution','promoterContributionPct','interestRate','term','paymentMethod','commission','disbursementMethod','disbursementConditions','amortizationConditions','requiredPresales','guarantees','insurance'].forEach(key => {
-      const input = document.getElementById(`ep-fc-${key}`);
-      if (input) input.value = input.matches('[data-bank-number]') && conditions[key] ? formatBankNumber(conditions[key]) : (conditions[key] ?? '');
-    });
-    const precedent = conditions.precedentConditions || {};
-    document.querySelectorAll('[data-ep-precedent]').forEach(input => { input.checked = !!precedent[input.dataset.epPrecedent]; });
-    document.getElementById('ep-fc-otherRequirements').value = precedent.otherRequirements || '';
-    const operation = conditions.operationStructure || {};
-    ['trustee','trustType','technicalInspector','financialInspector'].forEach(key => {
-      const input = document.getElementById(`ep-op-${key}`); if (input) input.value = operation[key] || '';
+    modal.dataset.locationContext = JSON.stringify({
+      address: proj.address || '',
+      city: proj.city || '',
+      province: proj.province || '',
+      coordinates: proj.coordinates || { lat: null, lng: null }
     });
     const legal = proj.legalData || {};
+    modal.dataset.legalAssessment = JSON.stringify(legal.assessment || {});
     document.getElementById('ep-ld-promoterLegalName').value = legal.promoterLegalName || '';
     document.getElementById('ep-ld-interimBank').value = legal.interimBank || '';
     document.getElementById('ep-ld-trustApplies').value = legal.trustApplies ? 'true' : 'false';
     document.getElementById('ep-ld-trustName').value = legal.trustName || '';
     document.getElementById('ep-boardMembers').innerHTML = (legal.boardMembers || []).map(item => dashboardRepeatRow('board', item)).join('');
     document.getElementById('ep-shareholders').innerHTML = (legal.shareholders || []).map(item => dashboardRepeatRow('shareholder', item)).join('');
-    const tech = proj.technicalData || {};
-    document.getElementById('ep-td-phasesCount').value = tech.phasesCount ?? '';
-    document.getElementById('ep-td-totalUnits').value = tech.totalUnits ?? '';
-    document.getElementById('ep-td-notes').value = tech.notes || '';
-    document.getElementById('ep-housingModels').innerHTML = (proj.housingModels || []).map(dashboardModelRow).join('');
-    bindBankNumberFormatting(modal);
-    validateEditModelStatuses();
-    let financePhases = proj.financePhases || [];
-    try {
-      const finance = await xfetch(`/api/projects/${id}/finance`);
-      if (Array.isArray(finance?.phases) && finance.phases.length) financePhases = finance.phases;
-    } catch (_) {}
-    syncEditFinancePhases(financePhases);
 
     modal.style.display = 'flex';
   } catch (err) {

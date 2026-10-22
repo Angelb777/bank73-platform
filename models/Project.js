@@ -38,7 +38,19 @@ const projectSchema = new Schema({
   expiryAlertResolutions: {
     type: [{
       key: { type: String, required: true, trim: true },
-      kind: { type: String, enum: ['cpp', 'credit_line'], required: true },
+      kind: {
+        type: String,
+        enum: [
+          'cpp',
+          'credit_line',
+          'insurance_policy',
+          'performance_bond',
+          'payment_bond',
+          'engineering_inspection_follow_up',
+          'account_advance_follow_up'
+        ],
+        required: true
+      },
       sourceId: { type: String, required: true, trim: true },
       due: { type: String, required: true, trim: true },
       resolvedAt: { type: Date, default: Date.now },
