@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="/js/branding.js"></script>
   <link href="/css/base.css" rel="stylesheet" />
-  <link href="/css/theme.css?v=viewer-editor-v3" rel="stylesheet" />
+  <link href="/css/theme.css?v=commercial-units-v4" rel="stylesheet" />
   <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
 
   <style>
@@ -475,6 +475,15 @@ body.light-theme .provider-exclusive {
 #tab-comercial .unit-card .alert-ribbon{
   position:absolute; top:10px; right:12px; background:#ef4444; color:#fff;
   border-radius:8px; font-size:.72rem; font-weight:800; padding:2px 8px; box-shadow:0 2px 10px rgba(239,68,68,.45);
+}
+#tab-comercial .unit-card .unit-card-expiry-alerts{
+  position:absolute; right:12px; bottom:12px; display:flex; flex-direction:column; align-items:flex-end; gap:4px; z-index:2;
+}
+#tab-comercial .unit-card .unit-card-expiry-alerts .alert-ribbon{
+  position:static; display:inline-flex;
+}
+#tab-comercial .unit-card .unit-card-expiry-alerts .insurance-alert{
+  background:#ea580c; box-shadow:0 2px 10px rgba(234,88,12,.42);
 }
 
 /* selección: checkbox bonito + glow */
@@ -2434,122 +2443,6 @@ body.light-theme .provider-exclusive {
 
   <!-- (Fallback / compat) Mantengo tu contenedor original por si tu JS lo usa todavía -->
   <div id="phasesList" class="accordion" style="display:none;"></div>
-
-  <!-- =========================================================
-       3) ALERTAS + KPIs (resumen rápido)
-       ========================================================= -->
-  <div id="financeAlertsSection" style="margin-top:26px;" hidden>
-    <h3>Alertas</h3>
-    <div id="financeAlerts" class="alert-list"></div>
-  </div>
-
-  <!-- =========================================================
-       4) GRÁFICO (Plan vs Real por fase)
-       ========================================================= -->
-  <section class="finance-deviation-section is-economic" style="margin-top:28px;">
-    <h3>Desviación económica</h3>
-    <p class="small muted">Comparación del PLAN frente a la ejecución REAL en usos y fuentes.</p>
-    <div class="grid-2 finance-charts-grid">
-      <div class="card finance-chart-card">
-        <div class="label">Comparacion por fase - Usos (no acumulado)</div>
-        <div class="finance-chart-box">
-          <canvas id="phaseChart"></canvas>
-        </div>
-      </div>
-      <div class="card finance-chart-card">
-        <div class="label">Comparacion por fase - Fuentes (no acumulado)</div>
-        <div class="finance-chart-box">
-          <canvas id="phaseSourceChart"></canvas>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="finance-deviation-section is-temporal" style="margin-top:28px;">
-    <h3>Desviación temporal</h3>
-    <p class="small muted">Comparación de la duración prevista, la duración real y el adelanto o retraso de cada fase.</p>
-    <div class="grid-2 finance-charts-grid">
-      <div class="card finance-chart-card">
-        <div class="label">Duración estimada vs real (días)</div>
-        <div class="small muted">Compara cuántos días se planificaron para cada fase frente a los días realmente transcurridos.</div>
-        <div class="finance-chart-box"><canvas id="phaseTimeDurationChart"></canvas></div>
-      </div>
-      <div class="card finance-chart-card">
-        <div class="label">Desviación de la fecha final (días)</div>
-        <div class="small muted">Rojo (+): retraso · Verde (−): adelanto · Azul sobre 0: fase activa y dentro de plazo · Gris sobre 0: sin iniciar.</div>
-        <div class="finance-chart-box"><canvas id="phaseTimeDelayChart"></canvas></div>
-        <div id="phaseTimeDelaySummary" class="finance-time-status-grid"></div>
-      </div>
-    </div>
-  </section>
-
-  <section class="finance-deviation-section is-line-charts" style="margin-top:28px;">
-    <h3>Gráficas de líneas por fase</h3>
-    <p class="small muted">Cada fase muestra sus propias líneas de préstamo, desembolsos, amortizaciones y saldo.</p>
-    <div id="financePhaseLineCharts" class="grid-2 finance-charts-grid"></div>
-  </section>
-
-  <!-- =========================================================
-       5) ACUMULADOS (REAL) + RESUMEN ACUMULADO
-       ========================================================= -->
-  <div style="margin-top:22px;">
-    <h3>Ejecución real acumulada</h3>
-    <div class="grid-2">
-      <div class="card">
-        <div class="label">Usos acumulados</div>
-        <table class="table" id="realUsesTable">
-          <thead><tr><th>Concepto</th><th class="right">Monto</th></tr></thead>
-          <tbody></tbody>
-          <tfoot><tr><td>Total</td><td class="right" id="realUsesTotal">0</td></tr></tfoot>
-        </table>
-      </div>
-      <div class="card">
-        <div class="label">Fuentes acumuladas</div>
-        <table class="table" id="realSourcesTable">
-          <thead><tr><th>Concepto</th><th class="right">Monto</th></tr></thead>
-          <tbody></tbody>
-          <tfoot><tr><td>Total</td><td class="right" id="realSourcesTotal">0</td></tr></tfoot>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <div style="margin-top:22px;">
-    <h3>Resumen acumulado (Plan por fases vs Real)</h3>
-    <div class="grid-2">
-      <div class="card">
-        <div class="label">Plan acumulado por fases</div>
-        <div class="row gap">
-          <div class="kpi">
-            <div class="label">Usos plan</div>
-            <div class="value" id="accPlanUses">0</div>
-            <div class="finance-percent-note" id="accPlanUsesPct">100% del plan</div>
-          </div>
-          <div class="kpi">
-            <div class="label">Fuentes plan</div>
-            <div class="value" id="accPlanSources">0</div>
-            <div class="finance-percent-note" id="accPlanSourcesPct">0% de cobertura</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="label">Real acumulado (sum de fases)</div>
-        <div class="row gap">
-          <div class="kpi">
-            <div class="label">Usos real</div>
-            <div class="value" id="accRealUses">0</div>
-            <div class="finance-percent-note" id="accRealUsesPct">0% ejecutado</div>
-          </div>
-          <div class="kpi">
-            <div class="label">Fuentes real</div>
-            <div class="value" id="accRealSources">0</div>
-            <div class="finance-percent-note" id="accRealSourcesPct">0% ejecutado</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
 </div>
 
 
@@ -2576,6 +2469,10 @@ body.light-theme .provider-exclusive {
       </div>
       <div class="commercial-action-group commercial-action-export" id="commercialImportDatoUnicoSlot">
         <span class="commercial-action-label">Importar</span>
+      </div>
+      <div class="commercial-action-group commercial-action-template">
+        <span class="commercial-action-label">Plantilla</span>
+        <button id="downloadDatoUnicoTemplate" class="btn commercial-btn commercial-btn-soft" type="button" disabled>Descargar archivo</button>
       </div>
     </div>
 
@@ -3046,7 +2943,7 @@ body.light-theme .provider-exclusive {
   <script src="/lib/chart.umd.min.js"></script>
   <script src="/js/theme-toggle.js"></script>
   <script src="/js/project-3d.js?v=viewer-editor-v3"></script>
-  <script src="/js/project.js?v=palms-unit-record-v6"><!-- ROLE-SEP: bump --></script>
+  <script src="/js/project.js?v=commercial-units-v5"><!-- ROLE-SEP: bump --></script>
   <script src="/js/avaluadores.js?v=2"></script>
 
 </body>

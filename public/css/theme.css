@@ -571,6 +571,21 @@ body.light-theme #summaryHeader .summary-file-picker:hover {
   border-color: #5aa2ff;
 }
 
+body.light-theme #tab-comercial #commercialImportDatoUnicoSlot .summary-file-picker {
+  background: #ffffff;
+  border-color: #cfd8e8;
+}
+
+body.light-theme #tab-comercial #commercialImportDatoUnicoSlot .summary-file-picker-label {
+  background: #dcecff;
+  border-right-color: #cfd8e8;
+  color: #1d4ed8;
+}
+
+body.light-theme #tab-comercial #commercialImportDatoUnicoSlot .summary-file-picker-name {
+  color: #526078;
+}
+
 body.light-theme #summaryHeader.summary-header {
   background: #ffffff;
   border-color: #d7dfec;
@@ -4663,6 +4678,9 @@ body.light-theme .finance-modal-funding-summary strong { color: #172033; }
 .insurance-policy-card-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:8px; }
 .insurance-policy-card-grid span { display:block; color:#64748b; font-size:.74rem; }
 .insurance-policy-card-grid strong { color:#0f172a; font-size:.85rem; }
+.insurance-policy-card-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; padding-top:10px; border-top:1px solid #dbe2ea; }
+.insurance-policy-editor-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
+[data-unit-policy-editor] .insurance-policy-remove { display:none; }
 .insurance-endorsement { display:inline-flex; align-items:center; gap:5px; border-radius:999px; padding:4px 9px; font-size:.75rem; font-weight:800; }
 .insurance-endorsement.yes { background:#dcfce7; color:#166534; }
 .insurance-endorsement.no { background:#fee2e2; color:#991b1b; }
@@ -5904,7 +5922,7 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
 
 #tab-comercial .commercial-actions-bar {
   display: grid;
-  grid-template-columns: minmax(170px, .7fr) minmax(430px, 1.4fr) minmax(190px, .65fr) minmax(420px, 1.1fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.65fr) minmax(0, .7fr) minmax(0, 1.7fr) minmax(0, .75fr);
   gap: 12px;
   align-items: stretch;
 }
@@ -5915,9 +5933,9 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
   grid-template-rows: auto 1fr;
   align-items: stretch;
   justify-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  padding: 28px 10px 10px;
+  padding: 26px 8px 8px;
   border: 1px solid rgba(148, 163, 184, .18);
   border-radius: 14px;
   background: rgba(15, 23, 42, .26);
@@ -5925,7 +5943,7 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
 
 #tab-comercial .commercial-action-controls {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   align-items: center;
   justify-content: center;
@@ -5944,6 +5962,10 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
   justify-content: center;
 }
 
+#tab-comercial .commercial-action-main .commercial-btn {
+  padding-inline: 12px;
+}
+
 #tab-comercial .commercial-action-selection {
   justify-content: center;
 }
@@ -5952,12 +5974,22 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
   justify-content: center;
 }
 
+#tab-comercial .commercial-action-template {
+  justify-content: center;
+}
+
+#tab-comercial .commercial-action-template .commercial-btn {
+  width: 100%;
+  white-space: nowrap;
+}
+
 #tab-comercial #commercialImportDatoUnicoSlot {
   justify-content: center;
 }
 
 #tab-comercial #commercialImportDatoUnicoSlot .summary-import-actions {
   display: flex;
+  grid-row: 2;
   align-items: center;
   justify-content: center;
   align-self: end;
@@ -6026,7 +6058,7 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
 
 #tab-comercial .commercial-action-label {
   position: absolute;
-  top: 10px;
+  top: 8px;
   left: 0;
   right: 0;
   padding: 0;

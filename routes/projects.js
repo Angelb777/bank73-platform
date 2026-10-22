@@ -11,6 +11,7 @@ const Document          = require('../models/Document');
 const Venta             = require('../models/Venta');
 const Unit              = require('../models/Unit');
 const User              = require('../models/User');
+const Tenant            = require('../models/Tenant');
 const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment');
 const ProjectFinance    = require('../models/ProjectFinance');
 const ProjectFunding    = require('../models/ProjectFunding');
@@ -224,6 +225,61 @@ function assertInsurancePolicies(policies = []) {
     const error = new Error('Indica el banco cuando la póliza está marcada como endosada');
     error.status = 400;
     throw error;
+  }
+
+  const policyNumbers = new Set();
+  const coverageByType = new Map();
+  for (const policy of (policies || [])) {
+    const type = String(policy.type || 'CAR').toUpperCase();
+    const number = String(policy.policyNumber || '').trim().toLowerCase();
+    if (number) {
+      const numberKey = `${type}:${number}`;
+      if (policyNumbers.has(numberKey)) {
+        const error = new Error(`La póliza ${policy.policyNumber} está duplicada. Edita la existente y asígnale todas las unidades necesarias.`);
+        error.status = 400;
+        throw error;
+      }
+      policyNumbers.add(numberKey);
+    }
+
+    const coverage = coverageByType.get(type) || { all: false, units: new Set(), refs: new Set(), count: 0 };
+    if (policy.appliesToAllUnits !== false) {
+      if (coverage.count > 0) {
+        const error = new Error(`Ya existe una póliza ${type} que cubre estas unidades.`);
+        error.status = 400;
+        throw error;
+      }
+      coverage.all = true;
+    } else {
+      if (!(policy.unitIds || []).length && !(policy.unitRefs || []).length) {
+        const error = new Error(`Selecciona al menos una unidad para la póliza ${type}.`);
+        error.status = 400;
+        throw error;
+      }
+      if (coverage.all) {
+        const error = new Error(`Ya existe una póliza ${type} para todas las unidades.`);
+        error.status = 400;
+        throw error;
+      }
+      for (const unitId of (policy.unitIds || []).map(String)) {
+        if (coverage.units.has(unitId)) {
+          const error = new Error(`Una unidad no puede tener más de una póliza ${type}.`);
+          error.status = 400;
+          throw error;
+        }
+        coverage.units.add(unitId);
+      }
+      for (const unitRef of (policy.unitRefs || []).map(value => String(value).trim()).filter(Boolean)) {
+        if (coverage.refs.has(unitRef)) {
+          const error = new Error(`La unidad ${unitRef} ya tiene una póliza ${type}.`);
+          error.status = 400;
+          throw error;
+        }
+        coverage.refs.add(unitRef);
+      }
+    }
+    coverage.count += 1;
+    coverageByType.set(type, coverage);
   }
 }
 
@@ -1692,6 +1748,56 @@ router.get('/:id', requireProjectAccess(), async (req, res) => {
   }
 });
 
+router.get('/:id/commercial-template/info', requireProjectAccess(), async (req, res) => {
+  try {
+    const project = await Project.findOne({ _id: req.params.id, tenantKey: req.tenantKey })
+      .select('commercialTemplate')
+      .lean();
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+    if (project.commercialTemplate?.path) {
+      return res.json({ commercialTemplate: project.commercialTemplate, scope: 'project' });
+    }
+
+    const tenant = await Tenant.findOne({ tenantKey: req.tenantKey }).select('commercialTemplate').lean();
+    return res.json({
+      commercialTemplate: tenant?.commercialTemplate?.path ? tenant.commercialTemplate : null,
+      scope: tenant?.commercialTemplate?.path ? 'all' : null
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'No se pudo consultar la plantilla.' });
+  }
+});
+
+// Descarga autenticada de la plantilla publicada por el administrador.
+router.get('/:id/commercial-template/download', requireProjectAccess(), async (req, res) => {
+  try {
+    const project = await Project.findOne({ _id: req.params.id, tenantKey: req.tenantKey })
+      .select('commercialTemplate')
+      .lean();
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+    let template = project.commercialTemplate || {};
+    if (!template.path) {
+      const tenant = await Tenant.findOne({ tenantKey: req.tenantKey }).select('commercialTemplate').lean();
+      template = tenant?.commercialTemplate || {};
+    }
+    if (!template.path) return res.status(404).json({ error: 'Este proyecto todavia no tiene una plantilla disponible.' });
+
+    const templatesRoot = path.resolve(__dirname, '..', 'uploads', 'commercial-templates');
+    const absolutePath = path.resolve(__dirname, '..', template.path);
+    const relativeToRoot = path.relative(templatesRoot, absolutePath);
+    if (!relativeToRoot || relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
+      return res.status(400).json({ error: 'Ruta de plantilla no valida.' });
+    }
+    if (!fs.existsSync(absolutePath)) return res.status(404).json({ error: 'El archivo de plantilla ya no esta disponible.' });
+
+    return res.download(absolutePath, template.originalname || 'plantilla-dato-unico.xlsx');
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'No se pudo descargar la plantilla.' });
+  }
+});
+
 // Datos consolidados y no sensibles para el visor 3D integrado. Esta ruta no
 // expone nombres de clientes, documentos ni datos bancarios: une únicamente
 // inventario, métricas técnicas y cifras de la propia unidad.
@@ -1973,7 +2079,7 @@ router.put('/:id/insurance-policies', requireProjectAccess({ commercialOnlySales
     res.json({ insurancePolicies: project.technicalData.insurancePolicies });
   } catch (error) {
     console.error('[PUT /projects/:id/insurance-policies] error:', error);
-    res.status(500).json({ error: 'No se pudieron guardar las pólizas' });
+    res.status(error.status || 500).json({ error: error.message || 'No se pudieron guardar las pólizas' });
   }
 });
 

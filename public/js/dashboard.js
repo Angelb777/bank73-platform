@@ -154,6 +154,11 @@ if (roleSelectDefault) {
   const allProjectsPagerInfo = document.getElementById('allProjectsPagerInfo');
   const allProjectsPrev = document.getElementById('allProjectsPrev');
   const allProjectsNext = document.getElementById('allProjectsNext');
+  const commercialTemplateAdmin = document.getElementById('commercialTemplateAdmin');
+  const commercialTemplateProject = document.getElementById('commercialTemplateProject');
+  const commercialTemplateFile = document.getElementById('commercialTemplateFile');
+  const saveCommercialTemplateBtn = document.getElementById('saveCommercialTemplate');
+  const commercialTemplateStatus = document.getElementById('commercialTemplateStatus');
   const fundingAdminList = document.getElementById('fundingAdminList');
   const fundingAdminDetail = document.getElementById('fundingAdminDetail');
   const fundingAdminMessage = document.getElementById('fundingAdminMessage');
@@ -188,6 +193,7 @@ if (roleSelectDefault) {
 
   // Caché de proyectos (última carga)
   let allProjectsCache = [];
+  let globalCommercialTemplate = null;
   let usersCache = [];
   let usersPage = 1;
   let usersLastTotal = 0;
@@ -201,6 +207,8 @@ if (roleSelectDefault) {
   let fundingModuleEnabled = false;
   const usersPageSize = 10;
   const allProjectsPageSize = 10;
+
+  if (commercialTemplateAdmin && roleL === 'admin') commercialTemplateAdmin.hidden = false;
 
   // Modal asignación (si existe en el HTML)
   const assignModal = document.getElementById('assignModal');
@@ -550,6 +558,10 @@ if (roleSelectDefault) {
   async function apiGetAllProjects(publishStatus) {
     const qs = publishStatus ? `?publishStatus=${encodeURIComponent(publishStatus)}` : '';
     return xfetch(`/api/projects${qs}`);
+  }
+  async function apiGetGlobalCommercialTemplate() {
+    const data = await xfetch('/api/admin/commercial-template');
+    return data.commercialTemplate || null;
   }
   async function apiGetAssignees(role) {
     const data = await xfetch(`/api/projects/assignees?role=${encodeURIComponent(role)}`);
@@ -1321,6 +1333,21 @@ function applyProjectsFilters(list) {
     `;
     allProjectsTbody.appendChild(tr);
   });
+
+  if (commercialTemplateProject) {
+    const selected = commercialTemplateProject.value;
+    const templateProjects = allProjectsCache.length ? allProjectsCache : list;
+    commercialTemplateProject.innerHTML = '<option value="__all__">Todos los proyectos (plantilla general)</option>' + templateProjects.map(project => {
+      const templateName = project.commercialTemplate?.originalname;
+      return `<option value="${escapeHtml(project._id)}">${escapeHtml(project.name || 'Proyecto sin nombre')}${templateName ? ` · ${escapeHtml(templateName)}` : ''}</option>`;
+    }).join('');
+    if (selected === '__all__' || templateProjects.some(project => String(project._id) === selected)) commercialTemplateProject.value = selected;
+    if (commercialTemplateProject.value === '__all__' && commercialTemplateStatus) {
+      commercialTemplateStatus.textContent = globalCommercialTemplate?.originalname
+        ? `Plantilla general actual: ${globalCommercialTemplate.originalname}`
+        : 'Todavía no hay una plantilla general publicada.';
+    }
+  }
 }
 
 function shortProjectDescription(value, maxLength = 150) {
@@ -1620,7 +1647,11 @@ function shortProjectDescription(value, maxLength = 150) {
   if (!allProjectsTbody) return;
   try {
     await refreshAssigneesCaches(); // precarga nombres de equipo
-    const list = await apiGetAllProjects('');
+    const [list, generalTemplate] = await Promise.all([
+      apiGetAllProjects(''),
+      roleL === 'admin' ? apiGetGlobalCommercialTemplate() : Promise.resolve(null)
+    ]);
+    globalCommercialTemplate = generalTemplate;
     allProjectsCache = Array.isArray(list) ? list : []; // guardamos la última carga
     renderAllProjects(applyProjectsFilters(allProjectsCache)); // render con filtros (incluye búsqueda)
   } catch (e) {
@@ -2673,6 +2704,59 @@ function shortProjectDescription(value, maxLength = 150) {
 
   // Proyectos (admin)
   refreshAllProjectsBtn?.addEventListener('click', loadAllProjects);
+  commercialTemplateProject?.addEventListener('change', () => {
+    if (commercialTemplateProject.value === '__all__') {
+      if (commercialTemplateStatus) {
+        commercialTemplateStatus.textContent = globalCommercialTemplate?.originalname
+          ? `Plantilla general actual: ${globalCommercialTemplate.originalname}`
+          : 'Todavía no hay una plantilla general publicada.';
+      }
+      return;
+    }
+    const project = allProjectsCache.find(item => String(item._id) === commercialTemplateProject.value);
+    if (!commercialTemplateStatus) return;
+    commercialTemplateStatus.textContent = project?.commercialTemplate?.originalname
+      ? `Plantilla actual: ${project.commercialTemplate.originalname}`
+      : globalCommercialTemplate?.originalname
+        ? `Sin plantilla específica. Usará la general: ${globalCommercialTemplate.originalname}`
+        : 'Este proyecto todavía no tiene una plantilla publicada.';
+  });
+  saveCommercialTemplateBtn?.addEventListener('click', async () => {
+    const projectId = commercialTemplateProject?.value;
+    const file = commercialTemplateFile?.files?.[0];
+    if (!projectId) return alert('Selecciona un proyecto o la opción Todos los proyectos.');
+    if (!file) return alert('Selecciona el archivo Excel.');
+
+    saveCommercialTemplateBtn.disabled = true;
+    const originalText = saveCommercialTemplateBtn.textContent;
+    saveCommercialTemplateBtn.textContent = 'Guardando...';
+    if (commercialTemplateStatus) commercialTemplateStatus.textContent = 'Subiendo plantilla...';
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const uploadUrl = projectId === '__all__'
+        ? '/api/admin/commercial-template'
+        : `/api/admin/projects/${encodeURIComponent(projectId)}/commercial-template`;
+      const response = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'X-Tenant': tenant },
+        body: form
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `Error ${response.status}`);
+      if (commercialTemplateStatus) commercialTemplateStatus.textContent = `Plantilla guardada: ${payload.commercialTemplate?.originalname || file.name}`;
+      if (projectId === '__all__') globalCommercialTemplate = payload.commercialTemplate || null;
+      commercialTemplateFile.value = '';
+      await loadAllProjects();
+      commercialTemplateProject.value = projectId;
+    } catch (error) {
+      if (commercialTemplateStatus) commercialTemplateStatus.textContent = error.message || 'No se pudo guardar la plantilla.';
+      alert(error.message || 'No se pudo guardar la plantilla.');
+    } finally {
+      saveCommercialTemplateBtn.disabled = false;
+      saveCommercialTemplateBtn.textContent = originalText;
+    }
+  });
   document.getElementById('refreshFunding')?.addEventListener('click', loadFundingAdmin);
 
   const FUNDING_STATUS_LABELS = {

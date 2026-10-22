@@ -1115,6 +1115,23 @@
               <button id="allProjectsNext" class="btn ghost small" type="button">Siguiente</button>
             </div>
           </div>
+
+          <section id="commercialTemplateAdmin" class="admin-subcard" style="margin-top:18px;" hidden>
+            <div class="section-head">
+              <div>
+                <h3>Plantilla Dato Único</h3>
+                <p class="muted">Publica el Excel que podrán descargar los usuarios desde la pestaña Comercial del proyecto.</p>
+              </div>
+            </div>
+            <div class="toolbar" style="align-items:center;">
+              <select id="commercialTemplateProject" class="input" aria-label="Proyecto de la plantilla">
+                <option value="__all__">Todos los proyectos (plantilla general)</option>
+              </select>
+              <input id="commercialTemplateFile" class="input" type="file" accept=".xlsx,.xls" />
+              <button id="saveCommercialTemplate" class="btn small" type="button">Subir y guardar</button>
+            </div>
+            <div id="commercialTemplateStatus" class="muted" style="margin-top:10px;">La plantilla general se utilizará en todos los proyectos que no tengan una plantilla específica.</div>
+          </section>
         </section>
       </section>
 
@@ -1706,6 +1723,6 @@
 
   <script src="/js/api.js"></script>
   <script src="/js/banks.js"></script>
-  <script src="/js/dashboard.js?v=avaluador-project-assignment-v1"></script>
+  <script src="/js/dashboard.js?v=commercial-template-v2"></script>
 </body>
 </html>

@@ -108,6 +108,17 @@ const projectSchema = new Schema({
     default: '#0f172a'
   },
 
+  // Excel de referencia que el administrador publica para la importacion
+  // de Dato Unico de este proyecto.
+  commercialTemplate: {
+    path: { type: String, trim: true, default: '' },
+    originalname: { type: String, trim: true, default: '' },
+    mimetype: { type: String, trim: true, default: '' },
+    size: { type: Number, default: 0 },
+    uploadedAt: { type: Date, default: null },
+    uploadedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null }
+  },
+
   legalData: {
     promoterLegalName: { type: String, trim: true, default: '' },
     boardMembers: {

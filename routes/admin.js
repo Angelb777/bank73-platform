@@ -19,7 +19,32 @@ const audit = require('../utils/audit');
 const { moduleEnabled, setModuleEnabled } = require('../services/moduleSettings');
 const { tenantKeyFromBankName: sharedTenantKeyFromBankName } = require('../utils/tenants');
 const { sanitizePromoterProfile: sanitizePromoterProfileShared } = require('../utils/promoterProfile');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const multer = require('multer');
+const {
+  MAX_EXCEL_IMPORT_FILE_SIZE,
+  EXCEL_IMPORT_EXTENSIONS,
+  fileFilterFor,
+  handleMulterUpload
+} = require('../utils/uploadSecurity');
 const router = express.Router();
+
+const commercialTemplateUpload = handleMulterUpload(multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_EXCEL_IMPORT_FILE_SIZE },
+  fileFilter: fileFilterFor(EXCEL_IMPORT_EXTENSIONS)
+}).single('file'));
+
+const commercialTemplatesRoot = path.resolve(__dirname, '..', 'uploads', 'commercial-templates');
+
+function absoluteCommercialTemplatePath(relativePath = '') {
+  const absolutePath = path.resolve(__dirname, '..', String(relativePath || ''));
+  const relativeToRoot = path.relative(commercialTemplatesRoot, absolutePath);
+  if (!relativeToRoot || relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) return '';
+  return absolutePath;
+}
 
 const { ROLES: VALID_ROLES } = require('../models/User'); // usa la misma fuente que el modelo
 const { promoterProfileCompletion } = require('../models/User');
@@ -970,6 +995,114 @@ router.get('/projects', async (req, res) => {
     res.json({ projects: projects.map(p => ({ ...p, tipoProyecto: p.projectType || '' })) });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/commercial-template', async (req, res) => {
+  try {
+    const tenant = await Tenant.findOne({ tenantKey: req.tenantKey }).select('commercialTemplate').lean();
+    res.json({ commercialTemplate: tenant?.commercialTemplate || null });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Publica una sola plantilla predeterminada para todos los proyectos del tenant.
+router.post('/commercial-template', commercialTemplateUpload, async (req, res) => {
+  let newAbsolutePath = '';
+  let templateSaved = false;
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Selecciona un archivo Excel.' });
+
+    await fs.promises.mkdir(commercialTemplatesRoot, { recursive: true });
+    const extension = path.extname(req.file.originalname).toLowerCase();
+    const storedName = `all-${crypto.randomBytes(12).toString('hex')}${extension}`;
+    newAbsolutePath = path.join(commercialTemplatesRoot, storedName);
+    await fs.promises.writeFile(newAbsolutePath, req.file.buffer, { flag: 'wx' });
+
+    const currentTenant = await Tenant.findOne({ tenantKey: req.tenantKey }).select('commercialTemplate').lean();
+    const previousPath = absoluteCommercialTemplatePath(currentTenant?.commercialTemplate?.path);
+    const commercialTemplate = {
+      path: path.posix.join('uploads', 'commercial-templates', storedName),
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      uploadedAt: new Date(),
+      uploadedBy: req.user.userId
+    };
+    await Tenant.findOneAndUpdate(
+      { tenantKey: req.tenantKey },
+      { $set: { commercialTemplate }, $setOnInsert: { tenantKey: req.tenantKey } },
+      { new: true, upsert: true }
+    );
+    templateSaved = true;
+
+    if (previousPath && previousPath !== newAbsolutePath) {
+      await fs.promises.unlink(previousPath).catch(error => {
+        if (error?.code !== 'ENOENT') console.warn('[commercial-template] No se pudo borrar la plantilla general anterior', error);
+      });
+    }
+
+    await audit(req, 'tenant.commercial_template_updated', {
+      targetType: 'tenant',
+      targetId: req.tenantKey,
+      message: 'Plantilla general de Dato Unico actualizada',
+      metadata: { originalname: req.file.originalname, size: req.file.size }
+    }).catch(error => console.warn('[commercial-template] No se pudo registrar la auditoria', error));
+
+    res.json({ ok: true, commercialTemplate });
+  } catch (error) {
+    if (newAbsolutePath && !templateSaved) await fs.promises.unlink(newAbsolutePath).catch(() => {});
+    res.status(error.status || 500).json({ error: error.message || 'No se pudo guardar la plantilla general.' });
+  }
+});
+
+// Publica o reemplaza la plantilla Excel de Dato Unico de un proyecto.
+router.post('/projects/:id/commercial-template', commercialTemplateUpload, async (req, res) => {
+  let newAbsolutePath = '';
+  let templateSaved = false;
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Selecciona un archivo Excel.' });
+
+    const project = await Project.findOne({ _id: req.params.id, tenantKey: req.tenantKey });
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+    await fs.promises.mkdir(commercialTemplatesRoot, { recursive: true });
+    const extension = path.extname(req.file.originalname).toLowerCase();
+    const storedName = `${project._id}-${Date.now()}-${crypto.randomBytes(6).toString('hex')}${extension}`;
+    newAbsolutePath = path.join(commercialTemplatesRoot, storedName);
+    await fs.promises.writeFile(newAbsolutePath, req.file.buffer, { flag: 'wx' });
+
+    const previousPath = absoluteCommercialTemplatePath(project.commercialTemplate?.path);
+    project.commercialTemplate = {
+      path: path.posix.join('uploads', 'commercial-templates', storedName),
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      uploadedAt: new Date(),
+      uploadedBy: req.user.userId
+    };
+    await project.save();
+    templateSaved = true;
+
+    if (previousPath && previousPath !== newAbsolutePath) {
+      await fs.promises.unlink(previousPath).catch(error => {
+        if (error?.code !== 'ENOENT') console.warn('[commercial-template] No se pudo borrar la plantilla anterior', error);
+      });
+    }
+
+    await audit(req, 'project.commercial_template_updated', {
+      targetType: 'project',
+      targetId: project._id,
+      projectId: project._id,
+      message: 'Plantilla de Dato Unico actualizada',
+      metadata: { originalname: req.file.originalname, size: req.file.size }
+    }).catch(error => console.warn('[commercial-template] No se pudo registrar la auditoria', error));
+
+    res.json({ ok: true, commercialTemplate: project.commercialTemplate });
+  } catch (error) {
+    if (newAbsolutePath && !templateSaved) await fs.promises.unlink(newAbsolutePath).catch(() => {});
+    res.status(error.status || 500).json({ error: error.message || 'No se pudo guardar la plantilla.' });
   }
 });
 

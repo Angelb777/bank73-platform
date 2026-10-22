@@ -4362,6 +4362,50 @@ function bindDatoUnicoImportControls() {
   }
 }
 
+function renderCommercialTemplate(project = state.project || {}) {
+  const button = document.getElementById('downloadDatoUnicoTemplate');
+  if (!button) return;
+  const template = project?.commercialTemplate || {};
+  button.disabled = !template.path;
+  button.title = template.path
+    ? `Descargar ${template.originalname || 'plantilla de Dato Unico'}`
+    : 'El administrador todavia no ha publicado una plantilla para este proyecto';
+}
+
+async function loadCommercialTemplateStatus() {
+  try {
+    const result = await API.get(`/api/projects/${id}/commercial-template/info`);
+    state.project ||= {};
+    state.project.commercialTemplate = result?.commercialTemplate || null;
+    state.project.commercialTemplateScope = result?.scope || null;
+    renderCommercialTemplate(state.project);
+  } catch (error) {
+    console.warn('[commercial-template] No se pudo consultar la plantilla', error);
+    renderCommercialTemplate({});
+  }
+}
+
+document.getElementById('downloadDatoUnicoTemplate')?.addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  if (button.disabled) return;
+  button.disabled = true;
+  const originalText = button.textContent;
+  button.textContent = 'Descargando...';
+  try {
+    const template = state.project?.commercialTemplate || {};
+    await openSecureFile(
+      `/api/projects/${id}/commercial-template/download`,
+      template.originalname || 'plantilla-dato-unico.xlsx',
+      'download'
+    );
+  } catch (error) {
+    alert(error.message || 'No se pudo descargar la plantilla.');
+  } finally {
+    button.textContent = originalText;
+    renderCommercialTemplate(state.project || {});
+  }
+});
+
 async function refreshTopHeaderKpis() {
   const payload = await API.get(`/api/projects/${id}/summary?ts=${Date.now()}`);
 
@@ -4679,6 +4723,7 @@ function semaphoreForRole(roleKey) {
     if (statusSel) statusSel.value = p.status;
     if (projectTypeText) projectTypeText.textContent = `Tipo de proyecto: ${p.projectType || p.tipoProyecto || 'No definido'}`;
     renderProjectCover(p);
+    await loadCommercialTemplateStatus();
 
     renderProjectHeaderKpis(p);
       // ROLE-SEP: control de publicación y UI para commercial
@@ -7406,9 +7451,6 @@ async function loadFinance({ force = true } = {}) {
     document.getElementById('kpiIntereses').textContent = financeMoney(FINANCE_CONTROL?.totals?.totalInterestPaid || 0);
     document.getElementById('kpiPreventas').textContent = fmt(FINANCE_KPIS?.totalPreventas || 0);
 
-    // Alertas (por fechas de fin, como ya tienes)
-    renderFinanceAlerts(res.alerts || []);
-
     renderFinanceControlKpis(FINANCE_CONTROL?.totals || {});
     renderFinanceCoherence(FINANCE?.phases || []);
     const phaseLines = FINANCE_SELECTED_PHASE_ID
@@ -7420,18 +7462,6 @@ async function loadFinance({ force = true } = {}) {
     // Fases: cards
     renderPhases(FINANCE?.phases || []);
     renderUnifiedFinancePhases(FINANCE?.phases || []);
-
-    // Charts: Plan vs Real por fase (usos y fuentes)
-    renderPhaseChart(FINANCE?.phases || []);
-    renderPhaseSourceChart(FINANCE?.phases || []);
-    renderFinanceTimeCharts(FINANCE?.phases || []);
-    renderFinancePhaseLineCharts(FINANCE?.phases || []);
-
-    // Resumen acumulado final
-    renderAccumSummary(FINANCE?.phases || []);
-
-    // (Opcional) si mantienes tu tabla de real acumulado antigua:
-    renderRealAccumFromPhases(FINANCE?.phases || []);
 
     // Bind UI una vez
     bindFinanceOnce();
@@ -9234,31 +9264,33 @@ function effectivePoliciesForUnit(unit = {}) {
   });
 }
 
-function insurancePolicyCardsHtml(policies = [], { showCoverage = true } = {}) {
+function insurancePolicyCardsHtml(policies = [], { showCoverage = true, editable = false } = {}) {
   if (!policies.length) return '<div class="requirement-empty">No hay pólizas CAR/incendio registradas.</div>';
   return `<div style="display:grid;gap:9px;">${policies.map(policy => {
     const docLink = policy.documentId ? `<a class="btn btn-ghost btn-xs js-secure-file" href="#" data-url="${secureDocUrl(policy.documentId)}" data-filename="${escapeHtml(policy.documentName || 'poliza')}" data-action="view">${escapeHtml(policy.documentName || 'Ver documento')}</a>` : '<span class="small muted">Sin documento</span>';
     const ids = (policy.unitIds || []).map(String);
     const refs = [...(policy.unitRefs || []).map(String), ...ids.map(unitId => insuranceUnitReference(INSURANCE_UNITS_CACHE.find(unit => String(unit._id) === unitId) || {}) || unitId)];
     const coverage = policy.appliesToAllUnits !== false ? 'Todas las unidades' : (Array.from(new Set(refs)).join(', ') || 'Sin unidades seleccionadas');
-    return `<div class="insurance-policy-card ${policy.endorsedToBank ? 'is-endorsed' : 'is-not-endorsed'}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><strong>${escapeHtml(policy.type || 'CAR')} · ${escapeHtml(policy.policyNumber || 'Sin número')}</strong><span class="insurance-endorsement ${policy.endorsedToBank ? 'yes' : 'no'}">${policy.endorsedToBank ? '✓ Endosada al banco' : '⚠ No endosada al banco'}</span></div><div class="insurance-policy-card-grid"><div><span>Aseguradora</span><strong>${escapeHtml(policy.insurer || 'No informada')}</strong></div><div><span>Suma asegurada</span><strong>${escapeHtml(formatProjectMoney(policy.insuredAmount || 0))}</strong></div><div><span>Vigencia</span><strong>${escapeHtml(policy.startDate ? String(policy.startDate).slice(0,10) : '—')} → ${escapeHtml(policy.expiryDate ? String(policy.expiryDate).slice(0,10) : '—')}</strong></div><div><span>Banco</span><strong>${escapeHtml(policy.bank || 'No informado')}</strong></div>${showCoverage ? `<div><span>Cobertura</span><strong>${escapeHtml(coverage)}</strong></div>` : ''}<div><span>Documento</span>${docLink}</div></div></div>`;
+    const actions = editable && policy._id ? `<div class="insurance-policy-card-actions"><button class="btn btn-ghost btn-xs" type="button" data-edit-unit-policy="${escapeHtml(policy._id)}">Editar</button><button class="btn btn-danger btn-xs" type="button" data-delete-unit-policy="${escapeHtml(policy._id)}">Quitar de esta unidad</button></div>` : '';
+    return `<div class="insurance-policy-card ${policy.endorsedToBank ? 'is-endorsed' : 'is-not-endorsed'}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><strong>${escapeHtml(policy.type || 'CAR')} · ${escapeHtml(policy.policyNumber || 'Sin número')}</strong><span class="insurance-endorsement ${policy.endorsedToBank ? 'yes' : 'no'}">${policy.endorsedToBank ? '✓ Endosada al banco' : '⚠ No endosada al banco'}</span></div><div class="insurance-policy-card-grid"><div><span>Aseguradora</span><strong>${escapeHtml(policy.insurer || 'No informada')}</strong></div><div><span>Suma asegurada</span><strong>${escapeHtml(formatProjectMoney(policy.insuredAmount || 0))}</strong></div><div><span>Vigencia</span><strong>${escapeHtml(policy.startDate ? String(policy.startDate).slice(0,10) : '—')} → ${escapeHtml(policy.expiryDate ? String(policy.expiryDate).slice(0,10) : '—')}</strong></div><div><span>Banco</span><strong>${escapeHtml(policy.bank || 'No informado')}</strong></div>${showCoverage ? `<div><span>Cobertura</span><strong>${escapeHtml(coverage)}</strong></div>` : ''}<div><span>Documento</span>${docLink}</div></div>${actions}</div>`;
   }).join('')}</div>`;
 }
 
-function insurancePolicyUnitOptions(policy = {}, forcedUnitId = '') {
+function insurancePolicyUnitOptions(policy = {}, defaultUnitId = '') {
   const selectedIds = new Set((policy.unitIds || []).map(String));
   const selectedRefs = new Set((policy.unitRefs || []).map(String));
+  const hasSavedCoverage = selectedIds.size > 0 || selectedRefs.size > 0;
   return INSURANCE_UNITS_CACHE.map(unit => {
     const unitId = String(unit._id || '');
     const ref = insuranceUnitReference(unit);
-    const checked = forcedUnitId ? unitId === String(forcedUnitId) : selectedIds.has(unitId) || selectedRefs.has(ref);
-    return `<label><input type="checkbox" data-policy-unit-id="${escapeHtml(unitId)}" data-policy-unit-ref="${escapeHtml(ref)}" ${checked ? 'checked' : ''} ${forcedUnitId ? 'disabled' : ''}> ${escapeHtml(ref || unitId)}</label>`;
+    const checked = selectedIds.has(unitId) || selectedRefs.has(ref) || (!hasSavedCoverage && defaultUnitId && unitId === String(defaultUnitId));
+    return `<label><input type="checkbox" data-policy-unit-id="${escapeHtml(unitId)}" data-policy-unit-ref="${escapeHtml(ref)}" ${checked ? 'checked' : ''}> ${escapeHtml(ref || unitId)}</label>`;
   }).join('') || '<span class="small muted">No hay unidades cargadas.</span>';
 }
 
-function insurancePolicyEditorRow(policy = {}, { forcedUnitId = '' } = {}) {
-  const appliesAll = forcedUnitId ? false : policy.appliesToAllUnits !== false;
-  return `<div class="insurance-policy-row" data-insurance-policy-row data-policy-id="${escapeHtml(policy._id || '')}" data-forced-unit-id="${escapeHtml(forcedUnitId)}" data-document-id="${escapeHtml(policy.documentId || '')}" data-document-name="${escapeHtml(policy.documentName || '')}"><button class="btn btn-ghost btn-xs insurance-policy-remove" type="button" data-remove-policy>×</button><label>Tipo<select class="input" data-policy-field="type"><option value="CAR" ${policy.type !== 'INCENDIO' ? 'selected' : ''}>CAR</option><option value="INCENDIO" ${policy.type === 'INCENDIO' ? 'selected' : ''}>Incendio</option></select></label><label>Aseguradora<input class="input" data-policy-field="insurer" value="${escapeHtml(policy.insurer || '')}"></label><label>Nº de póliza<input class="input" data-policy-field="policyNumber" value="${escapeHtml(policy.policyNumber || '')}"></label><label>Suma asegurada<input class="input" data-policy-field="insuredAmount" type="number" min="0" step=".01" value="${escapeHtml(policy.insuredAmount || '')}"></label><label>Fecha de inicio<input class="input" data-policy-field="startDate" type="date" value="${policy.startDate ? String(policy.startDate).slice(0,10) : ''}"></label><label>Fecha de vencimiento<input class="input" data-policy-field="expiryDate" type="date" value="${policy.expiryDate ? String(policy.expiryDate).slice(0,10) : ''}"></label><label>Endosada al banco<select class="input" data-policy-field="endorsedToBank"><option value="false" ${policy.endorsedToBank ? '' : 'selected'}>No</option><option value="true" ${policy.endorsedToBank ? 'selected' : ''}>Sí</option></select></label><label>Banco<input class="input" data-policy-field="bank" value="${escapeHtml(policy.bank || '')}" ${policy.endorsedToBank ? '' : 'disabled'}></label>${forcedUnitId ? '<div class="insurance-policy-wide small muted">Esta póliza será específica para esta unidad y tendrá prioridad sobre la póliza global del mismo tipo.</div>' : `<label class="insurance-policy-wide">Aplicación<select class="input" data-policy-field="appliesToAllUnits"><option value="true" ${appliesAll ? 'selected' : ''}>Todas las unidades</option><option value="false" ${appliesAll ? '' : 'selected'}>Unidades concretas</option></select></label><div class="insurance-policy-wide insurance-policy-units" data-policy-units style="display:${appliesAll ? 'none' : 'grid'}">${insurancePolicyUnitOptions(policy)}</div>`}<label class="insurance-policy-wide">Documento<input data-policy-document type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"><span class="small muted" data-policy-document-name>${escapeHtml(policy.documentName || 'Sin documento')}</span></label></div>`;
+function insurancePolicyEditorRow(policy = {}, { defaultUnitId = '' } = {}) {
+  const appliesAll = defaultUnitId ? false : policy.appliesToAllUnits !== false;
+  return `<div class="insurance-policy-row" data-insurance-policy-row data-policy-id="${escapeHtml(policy._id || '')}" data-document-id="${escapeHtml(policy.documentId || '')}" data-document-name="${escapeHtml(policy.documentName || '')}"><button class="btn btn-ghost btn-xs insurance-policy-remove" type="button" data-remove-policy>×</button><label>Tipo<select class="input" data-policy-field="type"><option value="CAR" ${policy.type !== 'INCENDIO' ? 'selected' : ''}>CAR</option><option value="INCENDIO" ${policy.type === 'INCENDIO' ? 'selected' : ''}>Incendio</option></select></label><label>Aseguradora<input class="input" data-policy-field="insurer" value="${escapeHtml(policy.insurer || '')}"></label><label>Nº de póliza<input class="input" data-policy-field="policyNumber" value="${escapeHtml(policy.policyNumber || '')}"></label><label>Suma asegurada<input class="input" data-policy-field="insuredAmount" type="number" min="0" step=".01" value="${escapeHtml(policy.insuredAmount || '')}"></label><label>Fecha de inicio<input class="input" data-policy-field="startDate" type="date" value="${policy.startDate ? String(policy.startDate).slice(0,10) : ''}"></label><label>Fecha de vencimiento<input class="input" data-policy-field="expiryDate" type="date" value="${policy.expiryDate ? String(policy.expiryDate).slice(0,10) : ''}"></label><label>Endosada al banco<select class="input" data-policy-field="endorsedToBank"><option value="false" ${policy.endorsedToBank ? '' : 'selected'}>No</option><option value="true" ${policy.endorsedToBank ? 'selected' : ''}>Sí</option></select></label><label>Banco<input class="input" data-policy-field="bank" value="${escapeHtml(policy.bank || '')}" ${policy.endorsedToBank ? '' : 'disabled'}></label><label class="insurance-policy-wide">Aplicación<select class="input" data-policy-field="appliesToAllUnits"><option value="true" ${appliesAll ? 'selected' : ''}>Todas las unidades</option><option value="false" ${appliesAll ? '' : 'selected'}>Unidades concretas</option></select></label><div class="insurance-policy-wide insurance-policy-units" data-policy-units style="display:${appliesAll ? 'none' : 'grid'}">${insurancePolicyUnitOptions(policy, defaultUnitId)}</div><label class="insurance-policy-wide">Documento<input data-policy-document type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"><span class="small muted" data-policy-document-name>${escapeHtml(policy.documentName || 'Sin documento')}</span></label></div>`;
 }
 
 function bindInsurancePolicyEditor(root) {
@@ -9276,10 +9308,10 @@ async function saveInsurancePoliciesFrom(root, { preserveUnrendered = false } = 
   const policies = [];
   for (const row of Array.from(root.querySelectorAll('[data-insurance-policy-row]'))) {
     const get = key => row.querySelector(`[data-policy-field="${key}"]`)?.value || '';
-    const forcedUnitId = row.dataset.forcedUnitId || '';
-    const appliesToAllUnits = forcedUnitId ? false : get('appliesToAllUnits') !== 'false';
+    const appliesToAllUnits = get('appliesToAllUnits') !== 'false';
     const checkedUnits = Array.from(row.querySelectorAll('[data-policy-unit-id]:checked'));
-    const policy = { _id:row.dataset.policyId || undefined, type:get('type') || 'CAR', insurer:get('insurer').trim(), policyNumber:get('policyNumber').trim(), insuredAmount:Number(get('insuredAmount') || 0), startDate:get('startDate') || null, expiryDate:get('expiryDate') || null, endorsedToBank:get('endorsedToBank') === 'true', bank:get('bank').trim(), appliesToAllUnits, unitIds:forcedUnitId ? [forcedUnitId] : (appliesToAllUnits ? [] : checkedUnits.map(input => input.dataset.policyUnitId).filter(Boolean)), unitRefs:appliesToAllUnits ? [] : checkedUnits.map(input => input.dataset.policyUnitRef).filter(Boolean), documentId:row.dataset.documentId || null, documentName:row.dataset.documentName || '' };
+    const policy = { _id:row.dataset.policyId || undefined, type:get('type') || 'CAR', insurer:get('insurer').trim(), policyNumber:get('policyNumber').trim(), insuredAmount:Number(get('insuredAmount') || 0), startDate:get('startDate') || null, expiryDate:get('expiryDate') || null, endorsedToBank:get('endorsedToBank') === 'true', bank:get('bank').trim(), appliesToAllUnits, unitIds:appliesToAllUnits ? [] : checkedUnits.map(input => input.dataset.policyUnitId).filter(Boolean), unitRefs:appliesToAllUnits ? [] : checkedUnits.map(input => input.dataset.policyUnitRef).filter(Boolean), documentId:row.dataset.documentId || null, documentName:row.dataset.documentName || '' };
+    if (!appliesToAllUnits && !policy.unitIds.length) throw new Error('Selecciona al menos una unidad para la póliza.');
     if (policy.endorsedToBank && !policy.bank) throw new Error('Indica el banco de la póliza marcada como endosada.');
     const file = row.querySelector('[data-policy-document]')?.files?.[0];
     if (file) {
@@ -11582,29 +11614,28 @@ function getDisplayClienteName(venta, unit) {
 function renderUnitCard(u) {
   const venta = ventasMap.get(String(u._id));
   const banco = venta?.banco || '';
-  const cpp = venta?.numCPP || '';
+  const cppAmount = parsePanamaNumber(venta?.montoFinanciamientoCPP ?? venta?.valor ?? 0);
   const cliente = getDisplayClienteName(venta, u);
   const idu = String(u._id);
   const estadoTxt = estadoLabel(u.estado || 'disponible');
   const impago = /mora|impago|rechaz|atras|vencid|moros/i.test(venta?.statusBanco || '');
   const cppAlert = getCppExpiryAlert(u, venta);
   const applicablePolicies = effectivePoliciesForUnit(u);
+  const carAlert = applicablePolicies
+    .filter(policy => String(policy.type || 'CAR').toUpperCase() === 'CAR')
+    .map(policy => ({ policy, days: daysUntil(policy.expiryDate) }))
+    .filter(item => item.days !== null && item.days >= 0 && item.days <= 30)
+    .sort((a, b) => a.days - b.days)[0] || null;
 
   return `
     <div class="unit-card estado-${normalizeUnitEstadoFrontend(u.estado)} ${selected.has(idu) ? 'selected' : ''}"
          data-id="${idu}"
          draggable="true">
       ${impago ? `<span class="alert-ribbon">Impago</span>` : ``}
-${cppAlert ? `
-  <span class="alert-ribbon" style="
-    background:#dc2626;
-    top:auto;
-    bottom:12px;
-    right:12px;
-  ">
-    CPP vence en ${cppAlert.days} días
-  </span>
-` : ``}
+      ${(cppAlert || carAlert) ? `<div class="unit-card-expiry-alerts">
+        ${cppAlert ? `<span class="alert-ribbon">CPP vence en ${cppAlert.days} días</span>` : ''}
+        ${carAlert ? `<span class="alert-ribbon insurance-alert">CAR vence en ${carAlert.days} días</span>` : ''}
+      </div>` : ''}
 
       <div class="head">
         <div class="title">
@@ -11624,7 +11655,7 @@ ${cppAlert ? `
       <div class="badges">
         ${cliente ? `<span class="chip">${cliente}</span>` : `<span class="chip ghost">Sin cliente</span>`}
         ${banco ? `<span class="chip">Banco: ${banco}</span>` : ``}
-        ${cpp ? `<span class="chip">CPP: ${cpp}</span>` : ``}
+        ${cppAmount > 0 ? `<span class="chip">CPP: ${escapeHtml(formatProjectMoney(cppAmount))}</span>` : ``}
         ${applicablePolicies.map(policy => `<span class="chip">${escapeHtml(policy.type)}: ${escapeHtml(policy.policyNumber || 'sin número')}${policy.endorsedToBank ? ' · Endosada' : ' · No endosada'}</span>`).join('')}
       </div>
     </div>`;
@@ -12663,7 +12694,6 @@ tituloUnidad.innerHTML = `
   cont.innerHTML = `
     <div class="modal-tabs" id="fichaTabs">
   <button class="modal-tab active" data-tab="ficha">Ficha</button>
-  <button class="modal-tab" data-tab="checklist">Checklist</button>
   <button class="modal-tab" data-tab="docs">Documentos</button>
   <button class="modal-tab" data-tab="exports">Exportar PDF</button>
 </div>
@@ -12712,11 +12742,11 @@ ${inputNum('fv-valorTerreno', `Valor terreno ${info('Valor asignado al terreno d
 `);
 
   const htmlInsurance = seccion('Póliza CAR / incendio aplicable', `
-    <div class="insurance-unit-current">${insurancePolicyCardsHtml(effectivePoliciesForUnit(u), { showCoverage:false })}</div>
-    <details style="grid-column:1/-1;margin-top:10px;"><summary><strong>Asignar una póliza distinta solo a esta unidad</strong></summary>
-      <p class="small muted">La póliza específica tendrá prioridad para esta unidad sin modificar la póliza global ni las demás unidades.</p>
-      <div data-unit-policy-editor>${insurancePolicyEditorRow({}, { forcedUnitId:unitId })}</div>
-      <button type="button" class="btn btn-ghost" data-save-unit-policy>Guardar póliza específica</button>
+    <div class="insurance-unit-current">${insurancePolicyCardsHtml(effectivePoliciesForUnit(u), { showCoverage:true, editable:true })}</div>
+    <details data-unit-policy-manager style="grid-column:1/-1;margin-top:10px;"><summary><strong>Crear y asignar una póliza</strong></summary>
+      <p class="small muted">Selecciona todas las unidades cubiertas por esta misma póliza. Una unidad no puede tener dos pólizas del mismo tipo.</p>
+      <div data-unit-policy-editor>${insurancePolicyEditorRow({}, { defaultUnitId:unitId })}</div>
+      <div class="insurance-policy-editor-actions"><button type="button" class="btn btn-ghost" data-save-unit-policy>Guardar póliza</button><button type="button" class="btn btn-ghost" data-cancel-unit-policy>Cancelar</button></div>
     </details>
   `);
 
@@ -12969,8 +12999,6 @@ ${input('fv-comentario', `Comentario interno ${info('Comentario interno para seg
     // htmlMivi +
     htmlEntregaOtros;
 
-  const checklistHTML = renderChecklistView(v);
-
   const docsHTML = (typeof renderUnidadDocsSkeleton === 'function')
     ? renderUnidadDocsSkeleton(u)
     : `<div class="small muted">Subida de documentos por unidad aún no disponible.</div>`;
@@ -13014,23 +13042,19 @@ ${input('fv-comentario', `Comentario interno ${info('Comentario interno para seg
 `;
   const views = document.getElementById('fichaViews');
   const viewFicha = document.createElement('div');
-const viewChk = document.createElement('div');
 const viewDocs = document.createElement('div');
 const viewExports = document.createElement('div');
 
   viewFicha.id = 'view-ficha';
-  viewChk.id = 'view-checklist';
   viewDocs.id = 'view-docs';
   viewExports.id = 'view-exports';
 
   viewFicha.innerHTML = fichaHTML;
-  viewChk.innerHTML = checklistHTML;
   viewDocs.innerHTML = docsHTML;
   viewExports.innerHTML = exportsHTML;
 
   views.innerHTML = '';
   views.appendChild(viewFicha);
-  views.appendChild(viewChk);
   views.appendChild(viewDocs);
   views.appendChild(viewExports);
 
@@ -13043,6 +13067,72 @@ const viewExports = document.createElement('div');
   );
   window.BankSelect?.bindBankSelect?.('fv-banco');
   bindInsurancePolicyEditor(viewFicha);
+  const policyManager = viewFicha.querySelector('[data-unit-policy-manager]');
+  const policyEditor = viewFicha.querySelector('[data-unit-policy-editor]');
+  const policySaveButton = viewFicha.querySelector('[data-save-unit-policy]');
+  const resetUnitPolicyEditor = () => {
+    if (!policyEditor || !policyManager) return;
+    policyEditor.innerHTML = insurancePolicyEditorRow({}, { defaultUnitId:unitId });
+    policyManager.querySelector('summary strong').textContent = 'Crear y asignar una póliza';
+    if (policySaveButton) policySaveButton.textContent = 'Guardar póliza';
+    bindInsurancePolicyEditor(policyEditor);
+    policyManager.open = false;
+  };
+
+  viewFicha.querySelectorAll('[data-edit-unit-policy]').forEach(button => {
+    button.addEventListener('click', () => {
+      const policy = projectInsurancePolicies().find(item => String(item._id) === button.dataset.editUnitPolicy);
+      if (!policy || !policyEditor || !policyManager) return;
+      policyEditor.innerHTML = insurancePolicyEditorRow(policy);
+      policyManager.querySelector('summary strong').textContent = `Editar póliza ${policy.policyNumber || policy.type || 'CAR'}`;
+      if (policySaveButton) policySaveButton.textContent = 'Guardar cambios';
+      bindInsurancePolicyEditor(policyEditor);
+      policyManager.open = true;
+      policyManager.scrollIntoView({ behavior:'smooth', block:'nearest' });
+    });
+  });
+
+  viewFicha.querySelectorAll('[data-delete-unit-policy]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const policy = projectInsurancePolicies().find(item => String(item._id) === button.dataset.deleteUnitPolicy);
+      if (!policy) return;
+      if (!confirm(`¿Quitar la póliza ${policy.policyNumber || policy.type || 'CAR'} únicamente de esta unidad?`)) return;
+      button.disabled = true;
+      try {
+        const currentUnitId = String(unitId);
+        const currentUnitRef = insuranceUnitReference(u);
+        const otherUnits = INSURANCE_UNITS_CACHE.filter(unit => String(unit._id) !== currentUnitId);
+        const updatedPolicy = policy.appliesToAllUnits !== false
+          ? {
+              ...policy,
+              appliesToAllUnits: false,
+              unitIds: otherUnits.map(unit => String(unit._id)).filter(Boolean),
+              unitRefs: otherUnits.map(insuranceUnitReference).filter(Boolean)
+            }
+          : {
+              ...policy,
+              unitIds: (policy.unitIds || []).map(String).filter(value => value !== currentUnitId),
+              unitRefs: (policy.unitRefs || []).map(String).filter(value => value !== currentUnitRef)
+            };
+        const stillHasUnits = updatedPolicy.unitIds.length > 0 || updatedPolicy.unitRefs.length > 0;
+        const remaining = projectInsurancePolicies().flatMap(item => {
+          if (String(item._id) !== String(policy._id)) return [item];
+          return stillHasUnits ? [updatedPolicy] : [];
+        });
+        const result = await API.put(`/api/projects/${id}/insurance-policies`, { insurancePolicies: remaining });
+        state.project.technicalData ||= {};
+        state.project.technicalData.insurancePolicies = result.insurancePolicies || remaining;
+        await loadProject();
+        await loadUnits();
+        await abrirFichaUnidad(unitId);
+      } catch (error) {
+        button.disabled = false;
+        alert(error.message || 'No se pudo quitar la póliza de esta unidad.');
+      }
+    });
+  });
+
+  viewFicha.querySelector('[data-cancel-unit-policy]')?.addEventListener('click', resetUnitPolicyEditor);
   viewFicha.querySelector('[data-save-unit-policy]')?.addEventListener('click', async event => {
     const button = event.currentTarget;
     button.disabled = true;
@@ -13053,7 +13143,7 @@ const viewExports = document.createElement('div');
       await abrirFichaUnidad(unitId);
     } catch (error) {
       console.error(error);
-      alert(error.message || 'No se pudo guardar la póliza específica.');
+      alert(error.message || 'No se pudo guardar la póliza.');
     } finally { button.disabled = false; }
   });
 
@@ -13061,7 +13151,6 @@ const viewExports = document.createElement('div');
   if (elCons) elCons.value = safeVal(v.constructora);
 
   viewFicha.style.display = '';
-  viewChk.style.display = 'none';
   viewDocs.style.display = 'none';
   viewExports.style.display = 'none';
 
@@ -13073,7 +13162,6 @@ const viewExports = document.createElement('div');
       const tab = btn.dataset.tab;
 
       viewFicha.style.display = (tab === 'ficha') ? '' : 'none';
-      viewChk.style.display = (tab === 'checklist') ? '' : 'none';
       viewDocs.style.display = (tab === 'docs') ? '' : 'none';
       viewExports.style.display = (tab === 'exports') ? '' : 'none';
 
@@ -13084,8 +13172,6 @@ const viewExports = document.createElement('div');
 }
     });
   });
-
-  wireChecklistHelpToggles();
 
   const entregaEl = document.getElementById('fv-entregaExpedienteBanco');
   const recibidoEl = document.getElementById('fv-recibidoCPP');
@@ -13496,8 +13582,6 @@ const uBody = {
       referidoPor: vVal('fv-referidoPor'),
       observacionCliente: vVal('fv-observacionCliente'),
     };
-
-    vBody.checklist = collectChecklistPayload();
 
     await apiPost('/api/ventas/upsert-by-unit', vBody);
 
@@ -14899,6 +14983,7 @@ if (chatLoadMore) {
 try {
 applyRoleVisibility();
 await syncProvidersModuleVisibility();
+await loadCommercialTemplateStatus();
 
 if (['tecnico','legal'].includes(myRole)) {
   // Estos roles SOLO pueden ver checklists y docs (RBAC)
