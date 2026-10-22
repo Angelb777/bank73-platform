@@ -5712,7 +5712,10 @@ async function closeFinancePhaseModal() {
 }
 
 async function setFinancePhaseModalTab(tab = 'overview') {
-  const selected = ['overview', 'lines', 'charts'].includes(tab) ? tab : 'overview';
+  const modal = document.getElementById('financePhaseLinesModal');
+  const isRealContext = modal?.dataset.phaseContext === 'real';
+  const requested = ['overview', 'lines', 'charts'].includes(tab) ? tab : 'overview';
+  const selected = !isRealContext && requested !== 'overview' ? 'overview' : requested;
   const previous = FINANCE_PHASE_MODAL_TAB;
   if (selected !== previous) {
     try {
@@ -8152,6 +8155,44 @@ function financePlanUsesWithSources(phase = {}) {
   return uses.map((use, index) => ({ ...use, fundingSources: allocations[index] || financeDefaultUseSources() }));
 }
 
+function financeRealUsesWithSources(phase = {}) {
+  const uses = (phase?.uses || []).map(use => ({ ...use }));
+  if (uses.some(use => Array.isArray(use?.fundingSources))) {
+    return uses.map(use => ({
+      ...use,
+      fundingSources: Array.isArray(use?.fundingSources)
+        ? use.fundingSources.map(source => ({ ...source }))
+        : financeDefaultUseSources()
+    }));
+  }
+
+  const totalUses = sumItems(uses);
+  const sourceTemplates = (phase?.sources || []).map(source => ({
+    name: source?.name || '',
+    amount: numOr0(source?.amount)
+  })).filter(source => source.name || source.amount);
+  ['Banco', 'Promotor', 'Preventas'].forEach(name => {
+    if (!sourceTemplates.some(source => financeSourceKind(source.name) === financeSourceKind(name))) {
+      sourceTemplates.push({ name, amount: 0 });
+    }
+  });
+
+  const allocations = uses.map(() => []);
+  sourceTemplates.forEach(source => {
+    const totalCents = Math.round(numOr0(source.amount) * 100);
+    let allocatedCents = 0;
+    uses.forEach((use, index) => {
+      const isLast = index === uses.length - 1;
+      const cents = isLast
+        ? totalCents - allocatedCents
+        : Math.round(totalUses > 0 ? totalCents * numOr0(use.amount) / totalUses : 0);
+      allocatedCents += cents;
+      allocations[index].push({ name: source.name, amount: cents / 100 });
+    });
+  });
+  return uses.map((use, index) => ({ ...use, fundingSources: allocations[index] || financeDefaultUseSources() }));
+}
+
 function financeUseSourceRow(source = {}, useAmount = 0) {
   const amount = numOr0(source?.amount);
   const pct = useAmount ? amount / useAmount * 100 : 0;
@@ -8183,6 +8224,25 @@ function financePhasePlanUseRows(items = []) {
   }).join('');
 }
 
+function financePhaseRealUseRows(items = []) {
+  return (items || []).map(item => {
+    const amount = numOr0(item?.amount);
+    const sources = Array.isArray(item?.fundingSources) ? item.fundingSources : financeDefaultUseSources();
+    return `
+      <article class="finance-plan-use-card" data-real-use data-budget-id="${escapeHtml(item?._id || '')}">
+        <div class="finance-plan-use-head">
+          <label><span>Uso</span><input class="input" data-real-use-name value="${escapeHtml(item?.name || '')}" placeholder="Infraestructura"></label>
+          <label><span>Importe del uso</span><input class="input" data-real-use-amount type="text" inputmode="decimal" value="${formatPanamaNumber(amount)}"></label>
+          <button class="btn btn-danger btn-xs" type="button" data-remove-plan-use>Quitar</button>
+        </div>
+        <div class="finance-use-sources-head"><span>Fuentes</span><span>Porcentaje</span><span>Importe</span><span></span></div>
+        <div data-use-sources>${sources.map(source => financeUseSourceRow(source, amount)).join('')}</div>
+        <button class="btn btn-ghost btn-xs" type="button" data-add-use-source>+ Fuente</button>
+        <div class="finance-source-balance" data-use-source-balance></div>
+      </article>`;
+  }).join('');
+}
+
 function financeAggregateUseSources(uses = []) {
   const grouped = new Map();
   uses.forEach(use => (use.fundingSources || []).forEach(source => {
@@ -8203,9 +8263,9 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
   const host = document.getElementById('financePhaseOverview');
   if (!host) return;
   const initialPlanUses = financePlanUsesWithSources(phase);
+  const initialRealUses = financeRealUsesWithSources(phase);
   const initialPlanSourcesList = financeAggregateUseSources(initialPlanUses);
   const planSources = financeSourceBuckets(initialPlanSourcesList);
-  const realSources = financeSourceBuckets(phase?.sources || []);
   const phaseLines = Array.isArray(visibleLines) ? visibleLines : financeLinesForPhase(phase?._id);
   const approvedForLines = phaseLines.reduce((sum, line) => sum + numOr0(line?.approvedAmount), 0);
   const approvedBank = financePhaseApprovedBank(phase);
@@ -8255,17 +8315,10 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
           <label><span>Inicio real</span><input class="input" type="date" data-phase-overview="actualStartDate" value="${financeDateInput(phase?.actualStartDate)}"></label>
           <label><span>Fin real</span><input class="input" type="date" data-phase-overview="actualEndDate" value="${financeDateInput(phase?.actualEndDate)}"></label>
         </div>
-        <h4>Usos reales</h4>
-        <div data-budget-list="realUses">${financePhaseBudgetRows(phase?.uses, 'realUses')}</div>
-        <button class="btn btn-ghost btn-xs" type="button" data-add-budget-row="realUses">+ Uso real</button>
-        <h4>Fuentes reales</h4>
-        <div class="finance-fixed-sources finance-real-sources">
-          <label><span>Banco</span><input class="input" data-fixed-source="real-bank" type="text" inputmode="decimal" value="${formatPanamaNumber(realSources.bank)}"></label>
-          <label><span>Promotor / fondos propios</span><input class="input" data-fixed-source="real-promoter" type="text" inputmode="decimal" value="${formatPanamaNumber(realSources.promoter)}"></label>
-          <label><span>Preventas</span><input class="input" data-fixed-source="real-presales" type="text" inputmode="decimal" value="${formatPanamaNumber(realSources.presales)}"></label>
-        </div>
-        <div data-budget-list="realOther">${financePhaseBudgetRows(realSources.other, 'realOther')}</div>
-        <button class="btn btn-ghost btn-xs" type="button" data-add-budget-row="realOther">+ Otra fuente</button>
+        <div class="finance-phase-section-head"><div><h4>Usos y fuentes reales</h4><p>Cada uso puede tener un reparto diferente. Puedes escribir el porcentaje o el importe.</p></div></div>
+        <div data-real-uses-list>${financePhaseRealUseRows(initialRealUses)}</div>
+        <button class="btn btn-ghost btn-xs" type="button" data-add-real-use>+ Uso</button>
+        <div class="finance-plan-global" data-real-global-summary></div>
     </section>
     <div class="finance-line-allocation ${unassigned < -0.01 ? 'is-danger' : ''}" data-line-allocation>
       <span>Aprobado por el banco <b data-line-approved>${financeMoney(approvedBank)}</b></span>
@@ -8291,11 +8344,19 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
       };
     }).filter(source => source.name || source.amount)
   })).filter(item => item.name || item.amount);
-  const sourceValue = key => numOr0(host.querySelector(`[data-fixed-source="${key}"]`)?.value);
-  const setSourceValue = (key, value) => {
-    const input = host.querySelector(`[data-fixed-source="${key}"]`);
-    if (input) input.value = formatPanamaNumber(value);
-  };
+  const collectRealUses = () => Array.from(host.querySelectorAll('[data-real-use]')).map(row => ({
+    _id: isMongoIdLike(row.dataset.budgetId) ? row.dataset.budgetId : undefined,
+    name: row.querySelector('[data-real-use-name]')?.value.trim() || '',
+    amount: numOr0(row.querySelector('[data-real-use-amount]')?.value),
+    fundingSources: Array.from(row.querySelectorAll('[data-use-source]')).map(sourceRow => {
+      const amount = numOr0(sourceRow.querySelector('[data-funding-amount]')?.value);
+      return {
+        _id: isMongoIdLike(sourceRow.dataset.sourceId) ? sourceRow.dataset.sourceId : undefined,
+        name: sourceRow.querySelector('[data-funding-name]')?.value.trim() || (amount ? 'Otra fuente' : ''),
+        amount
+      };
+    }).filter(source => source.name || source.amount)
+  })).filter(item => item.name || item.amount);
   const setPhaseView = view => {
     host.querySelectorAll('[data-phase-panel]').forEach(panel => { panel.hidden = panel.dataset.phasePanel !== view; });
     host.querySelectorAll('[data-phase-view]').forEach(button => {
@@ -8306,12 +8367,46 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
   };
   const updateRealComparison = () => {
     const planTotal = sumItems(collectPlanUses());
-    const realTotal = sumItems(collectRows('realUses'));
+    const realTotal = sumItems(collectRealUses());
     const values = { plan: planTotal, real: realTotal, difference: realTotal - planTotal };
     Object.entries(values).forEach(([key, value]) => {
       const output = host.querySelector(`[data-real-comparison="${key}"]`);
       if (output) output.textContent = financeMoney(value);
     });
+  };
+  const recalculateRealSources = () => {
+    const uses = collectRealUses();
+    const total = sumItems(uses);
+    const sources = financeAggregateUseSources(uses);
+    host.querySelectorAll('[data-real-use]').forEach(row => {
+      const useAmount = numOr0(row.querySelector('[data-real-use-amount]')?.value);
+      const sourceTotal = Array.from(row.querySelectorAll('[data-funding-amount]')).reduce((sum, input) => sum + numOr0(input.value), 0);
+      const difference = useAmount - sourceTotal;
+      const balance = row.querySelector('[data-use-source-balance]');
+      if (!balance) return;
+      balance.classList.toggle('is-danger', Math.abs(difference) > 0.01);
+      balance.textContent = Math.abs(difference) <= 0.01
+        ? 'Fuentes equilibradas: 100%.'
+        : difference > 0
+          ? `Faltan ${financeMoney(difference)} para cubrir este uso (${useAmount ? (sourceTotal / useAmount * 100).toFixed(2) : '0.00'}%).`
+          : `Exceso de ${financeMoney(Math.abs(difference))} (${useAmount ? (sourceTotal / useAmount * 100).toFixed(2) : '0.00'}%).`;
+    });
+    const globalSummary = host.querySelector('[data-real-global-summary]');
+    if (globalSummary) {
+      const useRows = uses.map(use => {
+        const sourceText = (use.fundingSources || []).filter(source => source.name || source.amount).map(source => {
+          const pct = use.amount ? numOr0(source.amount) / use.amount * 100 : 0;
+          return `${escapeHtml(source.name || 'Fuente')} ${financeMoney(source.amount)} (${pct.toFixed(2)}%)`;
+        }).join(' · ');
+        return `<article><div><strong>Uso: ${escapeHtml(use.name || 'Sin nombre')}</strong><span>${financeMoney(use.amount)}</span></div><small>${sourceText || 'Sin fuentes indicadas'}</small></article>`;
+      }).join('');
+      const globalSourceText = sources.filter(source => source.name || source.amount).map(source => (
+        `${escapeHtml(source.name || 'Fuente')} ${financeMoney(source.amount)} (${total ? (numOr0(source.amount) / total * 100).toFixed(2) : '0.00'}%)`
+      )).join(' · ');
+      const globalDifference = total - sumItems(sources);
+      globalSummary.innerHTML = `<h4>Resumen global</h4>${useRows}<article class="finance-plan-global-total"><div><strong>Total de la fase</strong><span>${financeMoney(total)}</span></div><small>${globalSourceText || 'Sin fuentes indicadas'}</small><p class="${Math.abs(globalDifference) > 0.01 ? 'is-danger' : ''}">${Math.abs(globalDifference) <= 0.01 ? 'Fuentes globales equilibradas.' : globalDifference > 0 ? `Faltan ${financeMoney(globalDifference)}.` : `Exceso de ${financeMoney(Math.abs(globalDifference))}.`}</p></article>`;
+    }
+    updateRealComparison();
   };
   const recalculatePlanSources = () => {
     const uses = collectPlanUses();
@@ -8376,11 +8471,11 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
   };
 
   const syncEditedFundingField = target => {
-    const useRow = target.closest('[data-plan-use]');
+    const useRow = target.closest('[data-plan-use], [data-real-use]');
     const sourceRow = target.closest('[data-use-source]');
     if (!useRow) return;
-    const useAmount = numOr0(useRow.querySelector('[data-plan-use-amount]')?.value);
-    if (target.matches('[data-plan-use-amount]')) {
+    const useAmount = numOr0(useRow.querySelector('[data-plan-use-amount], [data-real-use-amount]')?.value);
+    if (target.matches('[data-plan-use-amount], [data-real-use-amount]')) {
       useRow.querySelectorAll('[data-use-source]').forEach(row => {
         const pct = numOr0(row.querySelector('[data-funding-pct]')?.value);
         const amountInput = row.querySelector('[data-funding-amount]');
@@ -8409,10 +8504,11 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
   const buildPhaseOverviewPayload = () => {
     const planUses = collectPlanUses();
     const planSourcesList = financeAggregateUseSources(planUses);
+    const realUses = collectRealUses();
+    const realSourcesList = realUses.length
+      ? financeAggregateUseSources(realUses)
+      : (phase?.sources || []).map(source => ({ ...source }));
     const plannedBuckets = financeSourceBuckets(planSourcesList);
-    const realBank = sourceValue('real-bank');
-    const realPromoter = sourceValue('real-promoter');
-    const realPresales = sourceValue('real-presales');
     const planTotal = sumItems(planUses);
     return {
       name: host.querySelector('[data-phase-overview="name"]')?.value.trim() || 'Fase',
@@ -8422,13 +8518,8 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
       actualEndDate: host.querySelector('[data-phase-overview="actualEndDate"]')?.value || null,
       planUses,
       planSources: planSourcesList,
-      uses: collectRows('realUses'),
-      sources: [
-        { name: 'Banco', amount: realBank },
-        { name: 'Promotor', amount: realPromoter },
-        { name: 'Preventas', amount: realPresales },
-        ...collectRows('realOther')
-      ],
+      uses: realUses,
+      sources: realSourcesList,
       financialConditions: {
         ...(phase?.financialConditions || {}),
         phaseTotal: planTotal,
@@ -8507,15 +8598,20 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
     }
     const removeUse = event.target.closest('[data-remove-plan-use]');
     if (removeUse) {
-      removeUse.closest('[data-plan-use]')?.remove();
-      recalculatePlanSources();
+      const useRow = removeUse.closest('[data-plan-use], [data-real-use]');
+      const isRealUse = useRow?.hasAttribute('data-real-use');
+      useRow?.remove();
+      if (isRealUse) recalculateRealSources();
+      else recalculatePlanSources();
       schedulePhaseAutosave();
       return;
     }
     const removeSource = event.target.closest('[data-remove-use-source]');
     if (removeSource) {
+      const useRow = removeSource.closest('[data-plan-use], [data-real-use]');
       removeSource.closest('[data-use-source]')?.remove();
-      recalculatePlanSources();
+      if (useRow?.hasAttribute('data-real-use')) recalculateRealSources();
+      else recalculatePlanSources();
       schedulePhaseAutosave();
       return;
     }
@@ -8524,11 +8620,18 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
       host.querySelector('[data-plan-uses-list]')?.insertAdjacentHTML('beforeend', financePhasePlanUseRows([{ name: '', amount: 0, fundingSources: financeDefaultUseSources() }]));
       return recalculatePlanSources();
     }
+    const addRealUse = event.target.closest('[data-add-real-use]');
+    if (addRealUse) {
+      host.querySelector('[data-real-uses-list]')?.insertAdjacentHTML('beforeend', financePhaseRealUseRows([{ name: '', amount: 0, fundingSources: financeDefaultUseSources() }]));
+      return recalculateRealSources();
+    }
     const addSource = event.target.closest('[data-add-use-source]');
     if (addSource) {
-      const useRow = addSource.closest('[data-plan-use]');
-      useRow?.querySelector('[data-use-sources]')?.insertAdjacentHTML('beforeend', financeUseSourceRow({ name: 'Otra fuente', amount: 0 }, numOr0(useRow?.querySelector('[data-plan-use-amount]')?.value)));
-      recalculatePlanSources();
+      const useRow = addSource.closest('[data-plan-use], [data-real-use]');
+      const useAmount = numOr0(useRow?.querySelector('[data-plan-use-amount], [data-real-use-amount]')?.value);
+      useRow?.querySelector('[data-use-sources]')?.insertAdjacentHTML('beforeend', financeUseSourceRow({ name: 'Otra fuente', amount: 0 }, useAmount));
+      if (useRow?.hasAttribute('data-real-use')) recalculateRealSources();
+      else recalculatePlanSources();
       schedulePhaseAutosave();
       return;
     }
@@ -8536,21 +8639,17 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
     if (copy) {
       const actualStart = host.querySelector('[data-phase-overview="actualStartDate"]');
       const actualEnd = host.querySelector('[data-phase-overview="actualEndDate"]');
-      const existingReal = collectRows('realUses').length || collectRows('realOther').length || sourceValue('real-bank') || sourceValue('real-promoter') || sourceValue('real-presales') || actualStart?.value || actualEnd?.value;
+      const existingReal = collectRealUses().length || actualStart?.value || actualEnd?.value;
       if (existingReal && !confirm('Esto reemplazará las fechas, usos y fuentes reales actuales por la estimación. ¿Continuar?')) return;
-      const realUses = host.querySelector('[data-budget-list="realUses"]');
-      const realOther = host.querySelector('[data-budget-list="realOther"]');
+      const realUses = host.querySelector('[data-real-uses-list]');
       const plannedUses = collectPlanUses();
-      const plannedSources = financeAggregateUseSources(plannedUses);
-      const plannedBuckets = financeSourceBuckets(plannedSources);
-      if (realUses) realUses.innerHTML = financePhaseBudgetRows(plannedUses.map(({ _id, fundingSources, ...item }) => item), 'realUses');
-      if (realOther) realOther.innerHTML = financePhaseBudgetRows(plannedBuckets.other, 'realOther');
-      setSourceValue('real-bank', plannedBuckets.bank);
-      setSourceValue('real-promoter', plannedBuckets.promoter);
-      setSourceValue('real-presales', plannedBuckets.presales);
+      if (realUses) realUses.innerHTML = financePhaseRealUseRows(plannedUses.map(({ _id, fundingSources = [], ...item }) => ({
+        ...item,
+        fundingSources: fundingSources.map(({ _id: sourceId, ...source }) => source)
+      })));
       if (actualStart) actualStart.value = host.querySelector('[data-phase-overview="startDate"]')?.value || '';
       if (actualEnd) actualEnd.value = host.querySelector('[data-phase-overview="endDate"]')?.value || '';
-      updateRealComparison();
+      recalculateRealSources();
       setPhaseView('real');
       schedulePhaseAutosave();
       return;
@@ -8572,10 +8671,14 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
       syncEditedFundingField(event.target);
       recalculatePlanSources();
     }
-    else if (event.target.closest('[data-phase-panel="real"]')) updateRealComparison();
+    else if (event.target.closest('[data-phase-panel="real"]')) {
+      syncEditedFundingField(event.target);
+      recalculateRealSources();
+    }
     schedulePhaseAutosave();
   };
   recalculatePlanSources();
+  recalculateRealSources();
   setPhaseView(initialView === 'real' ? 'real' : 'plan');
 }
 
@@ -8595,6 +8698,17 @@ async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = '
   setFinanceAutosaveStatus('financeUnitSaveStatus', 'Guardado', 'saved');
   const modal = mountFinancePhaseModal();
   if (!modal) return;
+  const isRealContext = initialView === 'real';
+  modal.dataset.phaseContext = isRealContext ? 'real' : 'plan';
+  modal.querySelectorAll('[data-finance-phase-tab="lines"], [data-finance-phase-tab="charts"]').forEach(button => {
+    button.hidden = !isRealContext;
+  });
+  const guide = modal.querySelector('.finance-phase-guide');
+  if (guide) {
+    guide.innerHTML = isRealContext
+      ? '<b>Cómo se organiza:</b> el resumen registra la realidad de la fase; las líneas distribuyen el préstamo y los movimientos registran desembolsos, amortizaciones e intereses pagados.'
+      : '<b>Cómo se organiza:</b> el resumen conserva la estimación y permite compararla con la realidad. Las líneas, los movimientos y sus gráficas se gestionan únicamente desde la fase real.';
+  }
   modal.classList.remove('is-fullscreen');
   modal.style.zoom = '';
   const expand = document.getElementById('financePhaseFullscreenBtn');
@@ -8625,7 +8739,7 @@ async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = '
   renderFinancePhaseOverview(phase, lines, initialView);
   renderFinanceLoanLines(lines);
   renderFinanceUnitAmortizations();
-  await setFinancePhaseModalTab(initialTab);
+  await setFinancePhaseModalTab(isRealContext ? initialTab : 'overview');
   const canEditPhase = ['admin', 'financiero', 'gerencia', 'socios'].includes(myRole);
   if (!canEditPhase) {
     modal.querySelectorAll('input, select, textarea').forEach(control => { control.disabled = true; });

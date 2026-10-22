@@ -552,8 +552,8 @@
     .profile-team-contact .wide { grid-column:1/-1; }
     .profile-label-title { display:inline-flex; align-items:center; gap:7px; margin-bottom:5px; }
     .profile-info-tip { position:relative; display:inline-grid; place-items:center; width:19px; height:19px; padding:0; border:1px solid #93c5fd; border-radius:50%; background:#eff6ff; color:#1d4ed8; font:800 12px/1 sans-serif; cursor:help; }
-    .profile-info-tip::after { content:attr(data-tooltip); position:absolute; z-index:20; left:50%; bottom:calc(100% + 9px); width:min(420px,75vw); padding:11px 13px; border-radius:10px; background:#0f172a; color:#f8fafc; box-shadow:0 12px 30px rgba(15,23,42,.25); font:500 12px/1.45 sans-serif; white-space:normal; text-align:left; opacity:0; visibility:hidden; transform:translate(-50%,5px); transition:.15s ease; pointer-events:none; }
-    .profile-info-tip:hover::after, .profile-info-tip:focus::after { opacity:1; visibility:visible; transform:translate(-50%,0); }
+    .profile-info-tip::after { content:attr(data-tooltip); position:absolute; z-index:20; left:-8px; bottom:calc(100% + 9px); box-sizing:border-box; width:min(420px,calc(100vw - 96px)); padding:11px 13px; border-radius:10px; background:#0f172a; color:#f8fafc; box-shadow:0 12px 30px rgba(15,23,42,.25); font:500 12px/1.45 sans-serif; white-space:normal; text-align:left; opacity:0; visibility:hidden; transform:translateY(5px); transition:.15s ease; pointer-events:none; }
+    .profile-info-tip:hover::after, .profile-info-tip:focus::after { opacity:1; visibility:visible; transform:translateY(0); }
     .conditional-field[hidden] { display:none !important; }
     @media (max-width:840px) {
       .profile-modal.modal.create-modal { width:calc(100vw - 20px); height:calc(100vh - 20px); max-height:calc(100vh - 20px); }
