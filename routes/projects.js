@@ -18,6 +18,7 @@ const { calculateFundingScore } = require('../services/fundingScoring');
 const { buildViewer3DUnitRecord } = require('../services/viewer3d_unit_record');
 const { normalizePhaseRequirements } = require('../services/phaseRequirements');
 const { dateInReportPeriod, anyDateInReportPeriod, buildPeriodActivity } = require('../services/reportActivity');
+const { buildFinanceControlSummary } = require('../services/financeReportContext');
 const audit             = require('../utils/audit');
 const { normalizeProjectCurrency, parsePanamaNumber, formatProjectMoney, currencySymbol } = require('../utils/currency');
 
@@ -3298,22 +3299,31 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       line.balanceAfterSales = line.debt;
     }
 
+    const sharedFinanceControl = buildFinanceControlSummary(financeDoc || {}, project);
+    const sharedFinanceTotals = sharedFinanceControl.totals || {};
     const activeCreditLines = summaryFinanceLoanLines.length ? summaryFinanceLoanLines : normalizedCreditLines;
     const totalDebt = activeCreditLines.reduce((a, x) => a + toNum(x.debt), 0);
-    const financeTotals = summaryFinanceLoanLines.length
+    const hasFinanceControlLines = sharedFinanceControl.loanLines?.length > 0;
+    const financeTotals = hasFinanceControlLines
       ? {
-          disbursed: summaryFinanceLoanLines.reduce((a, x) => a + toNum(x.disbursementAmount), 0),
-          manualAmortized: summaryFinanceLoanLines.reduce((a, x) => a + toNum(x.manualAmortized), 0),
-          allocatedAmortized: summaryFinanceLoanLines.reduce((a, x) => a + toNum(x.allocatedAmortized), 0),
-          amortized: summaryFinanceLoanLines.reduce((a, x) => a + toNum(x.totalRecovered), 0),
-          interestPaid: summaryFinanceLoanLines.reduce((a, x) => a + toNum(x.interestPaid), 0),
-          totalPaidToBank: summaryFinanceLoanLines.reduce((a, x) => a + toNum(x.totalPaidToBank), 0),
-          debt: totalDebt,
-          checkAmountTotal: summaryUnitAmortizations.reduce((a, x) => a + toNum(x.checkAmount), 0),
-          promoterTotal: summaryUnitAmortizations.reduce((a, x) => a + toNum(x.promoterAmount), 0)
+          budgetApproved: toNum(sharedFinanceTotals.budgetApproved),
+          loanApproved: toNum(sharedFinanceTotals.loanApproved),
+          disbursed: toNum(sharedFinanceTotals.totalDisbursed),
+          manualAmortized: toNum(sharedFinanceTotals.totalManualAmortized),
+          allocatedAmortized: toNum(sharedFinanceTotals.totalAllocatedAmortized),
+          amortized: toNum(sharedFinanceTotals.totalAmortized),
+          interestPaid: toNum(sharedFinanceTotals.totalInterestPaid),
+          totalPaidToBank: toNum(sharedFinanceTotals.totalPaidToBank),
+          debt: toNum(sharedFinanceTotals.currentDebtBalance),
+          checkAmountTotal: toNum(sharedFinanceTotals.checkAmountTotal),
+          promoterTotal: toNum(sharedFinanceTotals.promoterTotal)
         }
       : {
-          disbursed: normalizedCreditLines.reduce((a, x) => a + toNum(x.disbursedAmount), 0),
+          budgetApproved: toNum(sharedFinanceTotals.budgetApproved),
+          loanApproved: toNum(sharedFinanceTotals.loanApproved),
+          disbursed: normalizedCreditLines.length
+            ? normalizedCreditLines.reduce((a, x) => a + toNum(x.disbursedAmount), 0)
+            : toNum(project.loanDisbursed),
           manualAmortized: normalizedCreditLines.reduce((a, x) => a + toNum(x.amortizedAmount), 0),
           allocatedAmortized: 0,
           amortized: normalizedCreditLines.reduce((a, x) => a + toNum(x.amortizedAmount), 0),
@@ -3398,10 +3408,10 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       avgTicket,
       inventoryValue,
       loan: {
-        approved: project.loanApproved || 0,
-        disbursed: project.loanDisbursed || 0,
-        pct: project.loanApproved
-          ? Math.round(100 * (project.loanDisbursed || 0) / project.loanApproved)
+        approved: financeTotals.loanApproved,
+        disbursed: financeTotals.disbursed,
+        pct: financeTotals.loanApproved
+          ? Math.round(100 * financeTotals.disbursed / financeTotals.loanApproved)
           : 0
       },
       cpp: { active: cppActive, due30: cppDue30, due60: cppDue60, due90: cppDue90 },
@@ -3607,9 +3617,9 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       promoterProfile: primaryPromoter?.promoterProfile || null,
       legalData: project.legalData || {},
       updatedAt: project.updatedAt,
-      loanApproved: project.loanApproved || 0,
-      loanDisbursed: project.loanDisbursed || 0,
-      budgetApproved: project.budgetApproved || 0,
+      loanApproved: financeTotals.loanApproved,
+      loanDisbursed: financeTotals.disbursed,
+      budgetApproved: financeTotals.budgetApproved,
       budgetSpent: project.budgetSpent || 0,
       unitsTotal: headerKpis.unitsTotal,
       unitsSold: headerKpis.unitsSold

@@ -1989,7 +1989,7 @@ function kpiCard(label, value, sub=''){
 }
 
 const TOP_HEADER_KPI_LABELS = {
-  commercialValue: 'Valor total',
+  commercialValue: 'Valor total ventas',
   budgetApproved: 'Presupuesto Total',
   loanApproved: 'Cuantía Bancaria Aprobada',
   loanDisbursed: 'Desembolsado',
@@ -2000,11 +2000,27 @@ const TOP_HEADER_KPI_LABELS = {
 
 function buildTopHeaderKpiTiles(project = {}, hs = {}, kpis = {}) {
   const financeKpis = window.FINANCE_KPIS || {};
+  const financeControlTotals = window.FINANCE_CONTROL?.totals || {};
+  const summaryFinanceTotals = window.__LAST_SUMMARY_PAYLOAD__?.financial?.totals || {};
   const summaryKpis = Object.keys(kpis || {}).length ? kpis : (window.__PROJECT_SUMMARY_KPIS || {});
   const commercialValue = summaryKpis.inventoryValue ?? project.inventoryValue ?? 0;
-  const loanApproved = project.loanApproved ?? hs.loanApproved ?? kpis.loan?.approved ?? 0;
-  const loanDisbursed = project.loanDisbursed ?? hs.loanDisbursed ?? kpis.loan?.disbursed ?? 0;
-  const budgetApproved = project.budgetApproved ?? hs.budgetApproved ?? 0;
+  const loanApproved = financeControlTotals.loanApproved
+    ?? summaryFinanceTotals.loanApproved
+    ?? project.loanApproved
+    ?? hs.loanApproved
+    ?? kpis.loan?.approved
+    ?? 0;
+  const loanDisbursed = financeControlTotals.totalDisbursed
+    ?? summaryFinanceTotals.disbursed
+    ?? project.loanDisbursed
+    ?? hs.loanDisbursed
+    ?? kpis.loan?.disbursed
+    ?? 0;
+  const budgetApproved = financeControlTotals.budgetApproved
+    ?? summaryFinanceTotals.budgetApproved
+    ?? project.budgetApproved
+    ?? hs.budgetApproved
+    ?? 0;
   const budgetSpent = financeKpis?.real?.uses ?? project.budgetSpent ?? project.expense ?? 0;
 
   return [
@@ -5473,6 +5489,15 @@ function financeLoanLineHasMeaningfulData(line = {}, idx = 0) {
   return hasCustomName || String(line.notes || '').trim() || numOr0(line.approvedAmount) || hasEntries || numOr0(line.disbursementAmount) || numOr0(line.amortizedAmount);
 }
 
+function financeLoanEntryHasData(entry = {}) {
+  return !!(
+    entry?.disbursementDate || entry?.movementDate || entry?.loanNumber ||
+    numOr0(entry?.disbursementAmount) || entry?.maturityDate ||
+    numOr0(entry?.amortizedAmount) || numOr0(entry?.interestAmount) ||
+    String(entry?.notes || '').trim()
+  );
+}
+
 function financeLoanLinesWithApprovedSeeds(savedLines = [], phase = {}) {
   const seeds = financeSeedLoanLinesFromApprovedPhaseLines(phase);
   if (!seeds.length) return savedLines;
@@ -5485,20 +5510,24 @@ function financeLoanLinesWithApprovedSeeds(savedLines = [], phase = {}) {
 
 function financeLoanLinesWithUseSeeds(savedLines = [], phase = {}) {
   const baseLines = financeLoanLinesWithApprovedSeeds(savedLines, phase).map(line => ({ ...line, entries: Array.isArray(line.entries) ? line.entries : [] }));
-  const uses = (phase?.planUses || []).filter(use => String(use?.name || '').trim() || numOr0(use?.amount));
+  const uses = (phase?.uses || []).filter(use => String(use?.name || '').trim() || numOr0(use?.amount));
   if (!uses.length) return baseLines;
   const normalizeName = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
     .replace(/\b(de|del|la|el|los|las)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  const legacyPlanUseIds = new Set((phase?.planUses || []).map(use => String(use?._id || '')).filter(Boolean));
   const claimed = new Set();
   uses.forEach((use, index) => {
     const useId = String(use?._id || '');
     let lineIndex = baseLines.findIndex(line => useId && String(line?.sourceUseId || '') === useId);
     if (lineIndex < 0) {
       lineIndex = baseLines.findIndex((line, idx) => (
-        !claimed.has(idx) && !line?.sourceUseId && !numOr0(line?.approvedAmount) && normalizeName(line?.name) === normalizeName(use?.name)
+        !claimed.has(idx) &&
+        normalizeName(line?.name) === normalizeName(use?.name) &&
+        (!line?.sourceUseId ||
+          (line?.approvedAmountMode === 'auto' && legacyPlanUseIds.has(String(line?.sourceUseId || ''))))
       ));
     }
-    if (lineIndex < 0 && !useId) {
+    if (lineIndex < 0) {
       baseLines.push({
         _id: `auto-use-${useId || index}-${Date.now()}`,
         phaseId: String(phase?._id || FINANCE_SELECTED_PHASE_ID || ''),
@@ -5513,8 +5542,14 @@ function financeLoanLinesWithUseSeeds(savedLines = [], phase = {}) {
       lineIndex = baseLines.length - 1;
     }
     if (lineIndex < 0) return;
-    if (!baseLines[lineIndex].sourceUseId && !numOr0(baseLines[lineIndex].approvedAmount)) {
-      baseLines[lineIndex] = { ...baseLines[lineIndex], sourceUseId: useId, approvedAmountMode: 'auto' };
+    if (!baseLines[lineIndex].sourceUseId || legacyPlanUseIds.has(String(baseLines[lineIndex].sourceUseId || ''))) {
+      const shouldBecomeAutomatic = baseLines[lineIndex].approvedAmountMode === 'auto' ||
+        (!numOr0(baseLines[lineIndex].approvedAmount) && !(baseLines[lineIndex].entries || []).some(financeLoanEntryHasData));
+      baseLines[lineIndex] = {
+        ...baseLines[lineIndex],
+        sourceUseId: useId,
+        approvedAmountMode: shouldBecomeAutomatic ? 'auto' : baseLines[lineIndex].approvedAmountMode
+      };
     }
     claimed.add(lineIndex);
     if (baseLines[lineIndex].approvedAmountMode === 'auto') baseLines[lineIndex].name = use?.name || baseLines[lineIndex].name;
@@ -6904,7 +6939,7 @@ function renderFinanceLoanLines(lines = []) {
                     <td><span class="finance-entry-kind is-${entryType}">${isDisbursement ? 'Desembolso' : isManualAmortization ? 'Amortización' : isInterestPayment ? 'Interés' : 'Histórica'}</span></td>
                     <td>${isDisbursement ? `<div class="finance-account-source"><b>Cuenta ${escapeHtml(String(entry.advanceAccountNumber || 'Nueva'))}</b><select data-field="fundingParty" ${workflowLocked ? 'disabled' : ''}><option value="bank" ${(entry.fundingParty || 'bank') === 'bank' ? 'selected' : ''}>Banco</option><option value="promoter" ${entry.fundingParty === 'promoter' ? 'selected' : ''}>Promotor</option>${entry.fundingParty === 'mixed' ? '<option value="mixed" selected>Banco + promotor (histórico)</option>' : ''}</select>${entry.promoterContributionStatus === 'contributed' ? '<small class="finance-status is-ok">Desembolsado</small>' : ''}</div>` : '<span class="small muted">—</span>'}</td>
                     <td><input data-field="${isDisbursement ? 'disbursementDate' : 'movementDate'}" type="date" value="${financeDateInput(isDisbursement ? entry.disbursementDate : entry.movementDate)}" ${workflowLocked ? 'disabled' : ''}></td>
-                    <td><input data-field="loanNumber" value="${escapeHtml(entry.loanNumber || '')}" ${!isDisbursement || workflowLocked ? 'disabled' : ''}></td>
+                    <td><input data-field="loanNumber" value="${escapeHtml(entry.loanNumber || '')}" placeholder="Opcional" ${(!isDisbursement && !isInterestPayment) || workflowLocked ? 'disabled' : ''}></td>
                     <td><input data-field="disbursementAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.disbursementAmount)}" ${!isDisbursement || workflowLocked ? 'disabled' : ''}></td>
                     <td><input data-field="maturityDate" type="date" value="${financeDateInput(entry.maturityDate)}" ${!isDisbursement || workflowLocked ? 'disabled' : ''}></td>
                     <td><input data-field="${isInterestPayment ? 'interestAmount' : 'amortizedAmount'}" type="text" inputmode="decimal" value="${formatPanamaNumber(isInterestPayment ? entry.interestAmount : entry.amortizedAmount)}" ${isDisbursement ? 'disabled' : ''}></td>
@@ -7313,6 +7348,7 @@ async function loadFinance({ force = true } = {}) {
     FINANCE_ALL_LOAN_LINES = (FINANCE_CONTROL?.loanLines || []).map(line => ({ ...line }));
     FINANCE_COMMERCIAL_UNITS = res.commercialUnits || [];
     window.FINANCE_KPIS = FINANCE_KPIS;
+    window.FINANCE_CONTROL = FINANCE_CONTROL;
     renderProjectHeaderKpis(FINANCE_PROJECT || state.project || {});
 
     // ✅ Guardamos FINANCE en window para el modal "Iniciar REAL" (dropdown de fases)
@@ -8550,6 +8586,12 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
         phase = response.phase;
         const phaseIndex = (FINANCE?.phases || []).findIndex(item => String(item?._id) === String(response.phase._id));
         if (phaseIndex >= 0) FINANCE.phases[phaseIndex] = response.phase;
+      }
+      if (Array.isArray(response?.loanLines)) {
+        FINANCE_ALL_LOAN_LINES = response.loanLines.map(line => ({ ...line }));
+        if (FINANCE_CONTROL) FINANCE_CONTROL.loanLines = FINANCE_ALL_LOAN_LINES;
+        renderFinanceLoanLines(financeLinesForPhase(response.phase?._id || phase?._id));
+        renderFinanceUnitAmortizations();
       }
       savedVersion = Math.max(savedVersion, version);
       if (!dirty && savedVersion === requestedSaveVersion) setSaveStatus('Guardado', 'saved');

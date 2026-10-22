@@ -384,7 +384,8 @@ function plannedBankForUse(use = {}) {
 function syncLoanLinesFromPhaseUses(doc, phase, { createAll = false, createForUseIds = new Set() } = {}) {
   const phaseId = String(phase?._id || '');
   if (!phaseId) return;
-  const uses = Array.from(phase.planUses || []).filter(use => String(use?.name || '').trim() || toNum(use?.amount));
+  const uses = Array.from(phase.uses || []).filter(use => String(use?.name || '').trim() || toNum(use?.amount));
+  const legacyPlanUseIds = new Set((phase.planUses || []).map(use => String(use?._id || '')).filter(Boolean));
   const isFirstPhase = String(doc.phases?.[0]?._id || '') === phaseId;
   const phaseLines = Array.from(doc.loanLines || []).filter(line => String(line?.phaseId || '') === phaseId || (isFirstPhase && !line?.phaseId));
   const claimedLineIds = new Set();
@@ -395,13 +396,15 @@ function syncLoanLinesFromPhaseUses(doc, phase, { createAll = false, createForUs
     if (!line) {
       line = phaseLines.find(item => (
         !claimedLineIds.has(String(item?._id || '')) &&
-        !item?.sourceUseId &&
         normalizedFinanceName(item?.name) === normalizedFinanceName(use?.name) &&
-        !toNum(item?.approvedAmount)
+        (!item?.sourceUseId ||
+          (item?.approvedAmountMode === 'auto' && legacyPlanUseIds.has(String(item?.sourceUseId || ''))))
       ));
       if (line) {
+        const shouldBecomeAutomatic = line.approvedAmountMode === 'auto' ||
+          (!toNum(line.approvedAmount) && !loanLineHasMovements(line));
         line.sourceUseId = use._id;
-        line.approvedAmountMode = 'auto';
+        if (shouldBecomeAutomatic) line.approvedAmountMode = 'auto';
       }
     }
     if (!line && (createAll || createForUseIds.has(useId))) {
@@ -1425,7 +1428,7 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
     const doc = await getOrCreate(projectId, project.tenantKey);
     const ph = doc.phases.id(phaseId);
     if (!ph) return res.status(404).json({ error: 'Fase no encontrada' });
-    const previousPlanUseIds = new Set((ph.planUses || []).map(use => String(use?._id || '')));
+    const previousRealUseIds = new Set((ph.uses || []).map(use => String(use?._id || '')));
     const hadActualDisbursement = toNum(ph.disbActual) > 0;
     const requirementCommercialUnits = 'requirements' in req.body
       ? await getFinanceCommercialUnits(projectId, project.tenantKey)
@@ -1466,14 +1469,14 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
       if (!ph.isCompleted && !('completedAt' in req.body)) ph.completedAt = null;
     }
 
-    if ('planUses' in req.body || 'planSources' in req.body || 'financialConditions' in req.body) {
-      const newUseIds = new Set((ph.planUses || []).map(use => String(use?._id || '')).filter(useId => useId && !previousPlanUseIds.has(useId)));
-      syncLoanLinesFromPhaseUses(doc, ph, { createForUseIds: newUseIds });
+    if ('uses' in req.body || 'planUses' in req.body || 'planSources' in req.body || 'financialConditions' in req.body) {
+      const newUseIds = new Set((ph.uses || []).map(use => String(use?._id || '')).filter(useId => useId && !previousRealUseIds.has(useId)));
+      syncLoanLinesFromPhaseUses(doc, ph, { createAll: 'uses' in req.body, createForUseIds: newUseIds });
       validateLoanLineLimits(doc, doc.loanLines || []);
     }
 
     await doc.save();
-    res.json({ ok: true, phase: ph, kpis: doc.kpis() });
+    res.json({ ok: true, phase: ph, loanLines: doc.loanLines || [], kpis: doc.kpis() });
   } catch (err) {
     console.error('PUT phase error', err);
     res.status(err.status || 500).json({ error: err.status ? err.message : 'Error al actualizar fase' });
@@ -2259,16 +2262,18 @@ async function exportFinancePdf({ req, res, projectId, projectName, projectCurre
       financePdfTable(pdf, line.entries.map(entry => ({
         type: entry.entryType === 'sale_amortization' ? 'Venta' : entry.entryType === 'manual_amortization' ? 'Amortización' : entry.entryType === 'interest_payment' ? 'Interés pagado' : entry.entryType === 'disbursement' ? `Cuenta ${entry.advanceAccountNumber || '—'} · ${entry.fundingParty === 'mixed' ? 'Mixta' : entry.fundingParty === 'promoter' ? 'Promotor' : 'Banco'}` : 'Histórico',
         date: fmtDate(entry.date),
+        loanNumber: entry.loanNumber || '—',
         disbursed: money(entry.disbursementAmount),
         amortized: money(entry.amortizedAmount),
         interestPaid: money(entry.interestAmount),
         status: entry.entryType === 'interest_payment' ? 'Pagado' : entry.workflowStatus === 'requested' ? 'Solicitado' : entry.workflowStatus === 'returned' ? 'Devuelto' : entry.workflowStatus === 'prepared' ? 'Preparado' : entry.paymentStatus === 'automatic' ? 'Automática' : 'Desembolsado'
       })), [
-        { key:'type', label:'Tipo', wPct:0.22, align:'left' },
-        { key:'date', label:'Fecha', wPct:0.14, align:'left' },
-        { key:'disbursed', label:'Desembolso', wPct:0.16, align:'right' },
-        { key:'amortized', label:'Amortización', wPct:0.16, align:'right' },
-        { key:'interestPaid', label:'Interés', wPct:0.16, align:'right' },
+        { key:'type', label:'Tipo', wPct:0.18, align:'left' },
+        { key:'date', label:'Fecha', wPct:0.12, align:'left' },
+        { key:'loanNumber', label:'Nº préstamo', wPct:0.15, align:'left' },
+        { key:'disbursed', label:'Desembolso', wPct:0.13, align:'right' },
+        { key:'amortized', label:'Amortización', wPct:0.13, align:'right' },
+        { key:'interestPaid', label:'Interés', wPct:0.13, align:'right' },
         { key:'status', label:'Estado', wPct:0.16, align:'left' },
       ]);
     }
