@@ -507,6 +507,9 @@
     .profile-button.is-complete { border-color: rgba(34,197,94,.85); color:#16a34a; background:rgba(34,197,94,.14); }
     .profile-button.is-partial { border-color: rgba(245,158,11,.9); color:#d97706; background:rgba(245,158,11,.14); }
     .profile-button.is-incomplete { border-color: rgba(239,68,68,.9); color:#dc2626; background:rgba(239,68,68,.12); }
+    body.light-theme .profile-button.is-complete { border-color:#16a34a !important; color:#15803d !important; background:#dcfce7 !important; }
+    body.light-theme .profile-button.is-partial { border-color:#d97706 !important; color:#b45309 !important; background:#fef3c7 !important; }
+    body.light-theme .profile-button.is-incomplete { border-color:#dc2626 !important; color:#b91c1c !important; background:#fee2e2 !important; }
     body.dark-theme .profile-button.is-complete { color:#86efac; background:rgba(34,197,94,.12); }
     body.dark-theme .profile-button.is-partial { color:#fcd34d; background:rgba(245,158,11,.12); }
     body.dark-theme .profile-button.is-incomplete { color:#fecaca; background:rgba(239,68,68,.10); }
@@ -547,6 +550,11 @@
     .profile-team-card.is-active { border-color:#93c5fd; background:#f8fbff; }
     .profile-team-card.is-active .profile-team-contact { display:grid; }
     .profile-team-contact .wide { grid-column:1/-1; }
+    .profile-label-title { display:inline-flex; align-items:center; gap:7px; margin-bottom:5px; }
+    .profile-info-tip { position:relative; display:inline-grid; place-items:center; width:19px; height:19px; padding:0; border:1px solid #93c5fd; border-radius:50%; background:#eff6ff; color:#1d4ed8; font:800 12px/1 sans-serif; cursor:help; }
+    .profile-info-tip::after { content:attr(data-tooltip); position:absolute; z-index:20; left:50%; bottom:calc(100% + 9px); width:min(420px,75vw); padding:11px 13px; border-radius:10px; background:#0f172a; color:#f8fafc; box-shadow:0 12px 30px rgba(15,23,42,.25); font:500 12px/1.45 sans-serif; white-space:normal; text-align:left; opacity:0; visibility:hidden; transform:translate(-50%,5px); transition:.15s ease; pointer-events:none; }
+    .profile-info-tip:hover::after, .profile-info-tip:focus::after { opacity:1; visibility:visible; transform:translate(-50%,0); }
+    .conditional-field[hidden] { display:none !important; }
     @media (max-width:840px) {
       .profile-modal.modal.create-modal { width:calc(100vw - 20px); height:calc(100vh - 20px); max-height:calc(100vh - 20px); }
       .profile-modal .create-modal-body { padding:24px 18px 18px; }
@@ -1197,7 +1205,7 @@
         <section class="profile-section">
           <div class="profile-section-head"><div><div class="profile-section-title">Trayectoria y actividad</div><div class="profile-section-help">Experiencia acumulada y dimensión de los proyectos desarrollados.</div></div></div>
           <div class="profile-fields">
-          <label>Tipo de promotor
+          <label><span class="profile-label-title">Tipo de promotor <button class="profile-info-tip" type="button" aria-label="Información sobre los tipos de promotor" data-tooltip="Promotor constructor: construye con medios propios. Llave en mano: encarga la construcción completa a una constructora. Subcontratación: dirige la construcción y comercialización subcontratando partidas. Gestión fragmentada: gestiona el proyecto para inversores y coordina por separado técnicos, constructores y comercialización.">i</button></span>
             <select id="pp-promoterType">
               <option value="No definido">No definido</option>
               <option value="Promotor constructor">Promotor constructor</option>
@@ -1227,8 +1235,8 @@
           </label>
           <label>Bancos con los que ha trabajado<input id="pp-banksWorkedWith" type="text" placeholder="Banco General, Banistmo..."></label>
           <label>Historial de entregas a tiempo<input id="pp-onTimeDeliveryHistory" type="text"></label>
-          <label>Historial de incidencias legales o técnicas<input id="pp-incidentHistory" type="text"></label>
-          <label>Nivel de documentación disponible
+          <label><span class="profile-label-title">Historial de incidencias legales o técnicas <button class="profile-info-tip" type="button" aria-label="Información sobre el historial de incidencias" data-tooltip="Indica litigios, sanciones, reclamaciones, paralizaciones de obra, defectos constructivos u otras incidencias legales o técnicas relevantes, incluyendo su estado o resolución.">i</button></span><input id="pp-incidentHistory" type="text"></label>
+          <label><span class="profile-label-title">Nivel de documentación disponible <button class="profile-info-tip" type="button" aria-label="Información sobre la documentación disponible" data-tooltip="Indica en qué medida dispones de documentación suficiente y actualizada para verificar los datos introducidos en el perfil.">i</button></span>
             <select id="pp-documentationLevel">
               <option value="">No definido</option>
               <option value="Baja">Baja</option>
@@ -1241,6 +1249,7 @@
         <section class="profile-section">
           <div class="profile-section-head"><div><div class="profile-section-title">Equipo y observaciones</div><div class="profile-section-help">Capacidades internas disponibles y cualquier información adicional relevante.</div></div></div>
           <div class="profile-team-grid" id="pp-teamAreas"></div>
+          <label style="display:block;margin-top:16px;color:#334155;font-size:13px;">N.º total de empleados<input id="pp-employeeCount" type="number" min="0" step="1" placeholder="Total de empleados de la promotora"></label>
           <label style="display:block;margin-top:16px;color:#334155;font-size:13px;">Notas<textarea id="pp-notes" rows="3"></textarea></label>
         </section>
       </div>
@@ -1336,15 +1345,15 @@
         <div class="create-step-card">
         <div class="create-section-title">Datos legales <span class="create-section-kicker">Sociedad, directores, accionistas y fideicomiso</span></div>
         <div class="create-grid">
-          <label>Promotor registrado<select id="ld-promoterProfileSelect"><option value="">Escribir manualmente</option></select></label>
-          <label>Promotor / deudor como sociedad legal<input id="ld-promoterLegalName" type="text"></label>
+          <label>Promotor<select id="ld-promoterProfileSelect"><option value="">Seleccionar promotor</option></select></label>
+          <label>Sociedad promotora<select id="ld-promoterLegalName"><option value="">Selecciona primero un promotor</option></select></label>
           <label>Fideicomiso
             <select id="ld-trustApplies">
               <option value="false">No aplica</option>
               <option value="true">Aplica</option>
             </select>
           </label>
-          <label>Nombre del fideicomiso<input id="ld-trustName" type="text"></label>
+          <label id="ld-trustNameLabel" class="conditional-field" hidden>Nombre del fideicomiso<input id="ld-trustName" type="text"></label>
         </div>
         <h4>Junta directiva</h4>
         <div id="createBoardMembers"></div>

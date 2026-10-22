@@ -228,6 +228,7 @@
     setProfileField('pp-incidentHistory', p.incidentHistory);
     setProfileField('pp-documentationLevel', p.documentationLevel);
     renderProfileTeam(p.internalTeam || {}, p.teamContacts || {});
+    setProfileField('pp-employeeCount', p.employeeCount);
     setProfileField('pp-notes', p.notes);
     bindProfileMoneyInputs();
     updateProfileButton(data.promoterProfileCompletion || {});
@@ -260,6 +261,7 @@
         legal: getProfileField('pp-team-legal')
       },
       teamContacts: collectProfileTeamContacts(),
+      employeeCount: numberOrNull(getProfileField('pp-employeeCount')),
       notes: getProfileField('pp-notes').trim()
     };
   }
@@ -953,7 +955,7 @@
       const data = await API.get('/api/projects/assignees?role=promoter');
       const list = (data && data.users) || [];
       createPromoterProfiles.clear();
-      select.innerHTML = '<option value="">Escribir manualmente</option>';
+      select.innerHTML = '<option value="">Seleccionar promotor</option>';
       list.forEach(user => {
         const opt = document.createElement('option');
         opt.value = user._id;
@@ -964,7 +966,7 @@
       });
       createPromoterProfilesLoaded = true;
     } catch (e) {
-      select.innerHTML = '<option value="">Escribir manualmente</option>';
+      select.innerHTML = '<option value="">Seleccionar promotor</option>';
       console.warn('No se pudieron cargar promotores para creacion', e);
     }
   }
@@ -972,6 +974,45 @@
   function primaryPromoterCompany(profile = {}) {
     const companies = Array.isArray(profile?.companies) ? profile.companies : [];
     return String((companies.find(company => company?.isPrimary) || companies[0])?.name || profile?.companyName || '').trim();
+  }
+
+  function promoterCompanies(profile = {}) {
+    const companies = Array.isArray(profile?.companies) ? profile.companies : [];
+    const values = companies.map(company => String(company?.name || '').trim()).filter(Boolean);
+    const legacy = String(profile?.companyName || '').trim();
+    if (!values.length && legacy) values.push(legacy);
+    return Array.from(new Set(values));
+  }
+
+  function populateCreatePromoterCompanies(profile = {}, preferred = '') {
+    const select = document.getElementById('ld-promoterLegalName');
+    if (!select) return;
+    const companies = promoterCompanies(profile);
+    select.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = companies.length ? 'Seleccionar sociedad' : 'El promotor no tiene sociedades registradas';
+    select.appendChild(placeholder);
+    companies.forEach(name => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name;
+      select.appendChild(option);
+    });
+    const requested = String(preferred || '').trim();
+    select.value = companies.includes(requested) ? requested : (companies.length === 1 ? companies[0] : '');
+    select.disabled = companies.length === 0;
+  }
+
+  function syncCreateTrustNameVisibility() {
+    const applies = document.getElementById('ld-trustApplies')?.value === 'true';
+    const label = document.getElementById('ld-trustNameLabel');
+    const input = document.getElementById('ld-trustName');
+    if (label) label.hidden = !applies;
+    if (input) {
+      input.disabled = !applies;
+      if (!applies) input.value = '';
+    }
   }
 
   let createProcessTemplateLoaded = false;
@@ -2944,10 +2985,12 @@
     hideGlobalCreateFinancialConditionFields();
     await loadCreatePromoterProfiles();
     if (role === 'promoter') {
-      const legalInput = document.getElementById('ld-promoterLegalName');
-      const company = primaryPromoterCompany(promoterProfileState?.promoterProfile);
-      if (legalInput && !legalInput.value.trim() && company) legalInput.value = company;
+      populateCreatePromoterCompanies(promoterProfileState?.promoterProfile || {}, document.getElementById('ld-promoterLegalName')?.value);
+    } else {
+      const selectedUser = createPromoterProfiles.get(String(document.getElementById('ld-promoterProfileSelect')?.value || ''));
+      populateCreatePromoterCompanies(selectedUser?.promoterProfile || {}, document.getElementById('ld-promoterLegalName')?.value);
     }
+    syncCreateTrustNameVisibility();
     await loadCreateProgressChecks();
     await loadCreatePermitTemplates();
     renderCreatePermitItems();
@@ -3016,12 +3059,11 @@
     document.getElementById('createPermitTemplate')?.addEventListener('change', renderCreatePermitItems);
     document.getElementById('ld-promoterProfileSelect')?.addEventListener('change', ev => {
       const user = createPromoterProfiles.get(String(ev.target.value || ''));
-      const legalName = primaryPromoterCompany(user?.promoterProfile);
-      const input = document.getElementById('ld-promoterLegalName');
-      if (input) input.value = legalName;
+      populateCreatePromoterCompanies(user?.promoterProfile || {});
       createRequirementPromoterOriginal = JSON.parse(JSON.stringify(user?.promoterProfile || {}));
       createRequirementPromoterDraft = JSON.parse(JSON.stringify(user?.promoterProfile || {}));
     });
+    document.getElementById('ld-trustApplies')?.addEventListener('change', syncCreateTrustNameVisibility);
     if (btnExpandCreate) btnExpandCreate.addEventListener('click', () => {
       modal.classList.toggle('is-fullscreen');
       const full = modal.classList.contains('is-fullscreen');
@@ -3125,6 +3167,12 @@
             shareholders: createRequirementLegalDraft.shareholders || collectedLegalData.shareholders,
             boardMembers: createRequirementLegalDraft.boardMembers || collectedLegalData.boardMembers
           } : collectedLegalData;
+          if (!legalData.promoterLegalName) {
+            alert('Selecciona la sociedad promotora del proyecto. Si no aparece, añádela primero al perfil del promotor.');
+            setCreateStep('legal');
+            document.getElementById('ld-promoterLegalName')?.focus();
+            return;
+          }
           const selectedPromoterId = String(document.getElementById('ld-promoterProfileSelect')?.value || '');
           const promoterExperienceValues = createRequirementPromoterDraft
             ? Object.fromEntries(REQUIREMENT_PROMOTER_FIELDS.map(([key]) => [key, createRequirementPromoterDraft[key]]))
@@ -3336,6 +3384,7 @@
           clearCreateDatoUnicoFile();
           const trustApplies = document.getElementById('ld-trustApplies');
           if (trustApplies) trustApplies.value = 'false';
+          syncCreateTrustNameVisibility();
           const seeks = document.getElementById('pSeeksFinancing'); if (seeks) seeks.value = 'false';
           const secured = document.getElementById('fundingSecuredAmount'); if (secured) secured.value = '0';
           syncCreateFundingRequestVisibility();

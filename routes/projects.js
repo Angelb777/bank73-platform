@@ -1559,6 +1559,21 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
       : validBanks;
     body.assignedCommercials = validCommercials;
 
+    const selectedPromoterId = body.assignedPromoters?.[0];
+    if (selectedPromoterId) {
+      const selectedPromoter = await User.findOne({ _id: selectedPromoterId, tenantKey }).select('promoterProfile').lean();
+      const profile = selectedPromoter?.promoterProfile || {};
+      const registeredCompanies = (Array.isArray(profile.companies) ? profile.companies : [])
+        .map(company => String(company?.name || '').trim())
+        .filter(Boolean);
+      if (!registeredCompanies.length && String(profile.companyName || '').trim()) registeredCompanies.push(String(profile.companyName).trim());
+      const normalizeCompany = value => String(value || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const selectedCompany = normalizeCompany(body.legalData?.promoterLegalName);
+      if (registeredCompanies.length && !registeredCompanies.some(name => normalizeCompany(name) === selectedCompany)) {
+        return res.status(400).json({ error: 'La sociedad promotora debe ser una de las sociedades registradas en el perfil del promotor' });
+      }
+    }
+
     // Si envías más asignaciones en el body y existen esos campos en Project, las dejamos pasar:
     const moreRoles = ['legal','tecnico','gerencia','socios','financiero','contable'];
     for (const r of moreRoles) {
@@ -3586,10 +3601,11 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       tipoProyecto: project.projectType || '',
       promoters: projectPromoters.map(promoterPublicShape).filter(Boolean),
       promoterName: primaryPromoter?.name || primaryPromoter?.email || '',
-      promoterCompanyName: primaryPromoter?.promoterProfile?.companyName || project.legalData?.promoterLegalName || '',
+      promoterCompanyName: project.legalData?.promoterLegalName || primaryPromoter?.promoterProfile?.companyName || '',
       promoterCategory: primaryPromoter?.promoterCategory || 'No definido',
       promoterType: primaryPromoter?.promoterProfile?.promoterType || 'No definido',
       promoterProfile: primaryPromoter?.promoterProfile || null,
+      legalData: project.legalData || {},
       updatedAt: project.updatedAt,
       loanApproved: project.loanApproved || 0,
       loanDisbursed: project.loanDisbursed || 0,
@@ -3965,7 +3981,7 @@ if (isSoldLikeStatus(st)) U.sold++;
       projectName: project.name || 'Proyecto',
       projectType: project.projectType || '',
       promoterName: exportPrimaryPromoter?.name || exportPrimaryPromoter?.email || '',
-      promoterCompanyName: exportPrimaryPromoter?.promoterProfile?.companyName || project.legalData?.promoterLegalName || '',
+      promoterCompanyName: project.legalData?.promoterLegalName || exportPrimaryPromoter?.promoterProfile?.companyName || '',
       promoterCategory: exportPrimaryPromoter?.promoterCategory || 'No definido',
       promoterType: exportPrimaryPromoter?.promoterProfile?.promoterType || 'No definido',
       updatedAt: project.updatedAt,

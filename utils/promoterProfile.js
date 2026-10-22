@@ -19,6 +19,10 @@ function sanitizePromoterProfile(input = {}, options = {}) {
     }
     return null;
   };
+  const toWholeNum = (v) => {
+    const number = toNum(v);
+    return number === null ? null : Math.round(number);
+  };
 
   const normalizePromoterType = (value) => {
     const raw = String(value || '').trim();
@@ -84,6 +88,7 @@ function sanitizePromoterProfile(input = {}, options = {}) {
     developedVolume: toNum(input.developedVolume ?? input.volumenDesarrollado ?? input.volumenTotalDesarrollado),
     developedUnits: toNum(input.developedUnits ?? input.unidadesDesarrolladas),
     averageProjectTicket: toNum(input.averageProjectTicket ?? input.ticketMedioProyecto),
+    employeeCount: toWholeNum(input.employeeCount ?? input.numeroEmpleados ?? input.numEmployees),
     bankFinancingExperience: normalizeYesNo(input.bankFinancingExperience ?? input.experienciaFinanciacionBancaria),
     banksWorkedWith: Array.from(new Set((Array.isArray(input.banksWorkedWith)
       ? input.banksWorkedWith

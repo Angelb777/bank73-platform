@@ -3034,9 +3034,9 @@ if (!isPeriodView) try {
     ? promoterNames.join(', ')
     : (project.promoterName || 'No definido');
   const promoterCompanyLabel =
+    project.legalData?.promoterLegalName ||
     project.promoterCompanyName ||
     project.promoterSocietyName ||
-    project.legalData?.promoterLegalName ||
     project.legalCompanyName ||
     project.sociedad ||
     project.promoterProfile?.companyName ||
@@ -3086,7 +3086,7 @@ if (!isPeriodView) try {
   const legalData = project.legalData || {};
   document.getElementById('summaryLegalDataBox')?.remove();
   const legalRows = [
-    ['Promotor/deudor como sociedad legal', legalData.promoterLegalName || project.legalCompanyName || project.sociedad],
+    ['Sociedad promotora', legalData.promoterLegalName || project.legalCompanyName || project.sociedad],
     ['Fideicomiso', legalData.trustApplies ? 'Aplica' : 'No aplica'],
     ['Nombre del fideicomiso', legalData.trustName],
     ['Representantes legales', (legalData.legalRepresentatives || legalData.representantesLegales || []).map(x => x.name || x.nombre || x).filter(Boolean).join(', ')]

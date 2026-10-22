@@ -2244,10 +2244,10 @@ function shortProjectDescription(value, maxLength = 150) {
     <details style="margin-top:14px;">
       <summary class="small muted">Datos legales</summary>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
-        <label class="small muted">Promotor / sociedad<input id="ep-ld-promoterLegalName" class="input"></label>
+        <label class="small muted">Sociedad promotora<input id="ep-ld-promoterLegalName" class="input"></label>
         <input id="ep-ld-interimBank" type="hidden">
         <label class="small muted">Fideicomiso<select id="ep-ld-trustApplies" class="input"><option value="false">No aplica</option><option value="true">Aplica</option></select></label>
-        <label class="small muted">Nombre fideicomiso<input id="ep-ld-trustName" class="input"></label>
+        <label id="ep-ld-trustNameLabel" class="small muted" hidden>Nombre fideicomiso<input id="ep-ld-trustName" class="input"></label>
       </div>
       <h4 style="margin:12px 0 8px;">Junta directiva</h4>
       <div id="ep-boardMembers"></div>
@@ -2271,6 +2271,13 @@ function shortProjectDescription(value, maxLength = 150) {
     document.getElementById('editProjCancel').addEventListener('click', () => { wrap.style.display = 'none'; });
     document.getElementById('ep-add-board')?.addEventListener('click', () => document.getElementById('ep-boardMembers')?.insertAdjacentHTML('beforeend', dashboardRepeatRow('board')));
     document.getElementById('ep-add-shareholder')?.addEventListener('click', () => document.getElementById('ep-shareholders')?.insertAdjacentHTML('beforeend', dashboardRepeatRow('shareholder')));
+    document.getElementById('ep-ld-trustApplies')?.addEventListener('change', event => {
+      const applies = event.target.value === 'true';
+      const label = document.getElementById('ep-ld-trustNameLabel');
+      const input = document.getElementById('ep-ld-trustName');
+      if (label) label.hidden = !applies;
+      if (input && !applies) input.value = '';
+    });
     ['ep-boardMembers','ep-shareholders'].forEach(id => {
       document.getElementById(id)?.addEventListener('click', event => {
         event.target.closest('[data-remove-ep-row]')?.closest('.create-repeat-row')?.remove();
@@ -2484,6 +2491,9 @@ function shortProjectDescription(value, maxLength = 150) {
               <option value="Alta">Alta</option>
             </select>
           </label>
+          <label class="small muted">N.º total de empleados
+            <input id="pp-employeeCount" class="input" type="number" min="0" step="1" placeholder="Total de empleados de la promotora" />
+          </label>
           <div id="pp-teamAreas" style="grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
         </div>
         <label class="small muted" style="display:block;margin-top:10px;">Notas
@@ -2554,6 +2564,7 @@ function shortProjectDescription(value, maxLength = 150) {
         onTimeDeliveryHistory: document.getElementById('pp-onTimeDeliveryHistory')?.value || '',
         incidentHistory: document.getElementById('pp-incidentHistory')?.value || '',
         documentationLevel: document.getElementById('pp-documentationLevel')?.value || '',
+        employeeCount: numOrBlank('pp-employeeCount'),
         internalTeam: {
           technical: !!document.getElementById('pp-team-technical')?.checked,
           financial: !!document.getElementById('pp-team-financial')?.checked,
@@ -2598,6 +2609,7 @@ function shortProjectDescription(value, maxLength = 150) {
     document.getElementById('pp-onTimeDeliveryHistory').value = profile.onTimeDeliveryHistory || '';
     document.getElementById('pp-incidentHistory').value = profile.incidentHistory || '';
     document.getElementById('pp-documentationLevel').value = profile.documentationLevel || '';
+    document.getElementById('pp-employeeCount').value = profile.employeeCount ?? '';
     renderAdminPromoterTeam(profile.internalTeam || {}, profile.teamContacts || {});
     document.getElementById('pp-notes').value = profile.notes || '';
     document.getElementById('pp-category').textContent = user.promoterCategory || 'No definido';
@@ -3420,6 +3432,7 @@ if (pEdit) {
     document.getElementById('ep-ld-interimBank').value = legal.interimBank || '';
     document.getElementById('ep-ld-trustApplies').value = legal.trustApplies ? 'true' : 'false';
     document.getElementById('ep-ld-trustName').value = legal.trustName || '';
+    document.getElementById('ep-ld-trustNameLabel').hidden = !legal.trustApplies;
     document.getElementById('ep-boardMembers').innerHTML = (legal.boardMembers || []).map(item => dashboardRepeatRow('board', item)).join('');
     document.getElementById('ep-shareholders').innerHTML = (legal.shareholders || []).map(item => dashboardRepeatRow('shareholder', item)).join('');
 
