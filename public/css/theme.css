@@ -8456,3 +8456,474 @@ body.light-theme .project-experience.viewer-active #tab-resumen #summaryHeader .
     overflow-x: hidden !important;
   }
 }
+
+
+/* ===== Workspace Técnico ===== */
+
+#tab-tecnico {
+  --technical-ink:#0f172a;
+  --technical-muted:#64748b;
+  --technical-line:rgba(148,163,184,.28);
+  --technical-blue:#2563eb;
+  --technical-cyan:#06b6d4;
+  --technical-green:#16a34a;
+  --technical-amber:#d97706;
+  --technical-red:#dc2626;
+}
+
+.technical-shell{display:grid;gap:18px}
+.technical-hero{position:relative;overflow:hidden;display:flex;justify-content:space-between;gap:24px;align-items:flex-end;padding:28px;border:1px solid rgba(56,189,248,.24);border-radius:24px;color:#f8fafc;background:radial-gradient(circle at 82% 18%,rgba(34,211,238,.2),transparent 31%),linear-gradient(135deg,#07152b 0%,#0b2545 56%,#123c55 100%);box-shadow:0 18px 50px rgba(2,8,23,.2)}
+.technical-hero::after{content:"";position:absolute;width:240px;height:240px;right:-100px;bottom:-150px;border:34px solid rgba(255,255,255,.06);border-radius:50%}
+.technical-hero>*{position:relative;z-index:1}
+.technical-eyebrow,.technical-section-kicker{display:block;color:#67e8f9;font-size:.72rem;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
+.technical-hero h2{margin:6px 0 5px;font-size:clamp(1.55rem,3vw,2.35rem);color:#fff}
+.technical-hero p{margin:0;max-width:720px;color:#cbd5e1}
+.technical-jump-nav{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.technical-jump-nav button,.technical-filter-pills button{border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:9px 14px;color:#e2e8f0;background:rgba(255,255,255,.08);font:inherit;font-size:.82rem;font-weight:800;cursor:pointer;transition:.18s ease}
+.technical-jump-nav button:hover{background:rgba(255,255,255,.16);transform:translateY(-1px)}
+
+.technical-kpis,.technical-unit-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.technical-kpi{position:relative;overflow:hidden;min-height:112px;padding:17px;border:1px solid var(--technical-line);border-radius:18px;background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(248,250,252,.9));box-shadow:0 9px 26px rgba(15,23,42,.07)}
+.technical-kpi::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--kpi-color,var(--technical-blue))}
+.technical-kpi span{display:block;color:var(--technical-muted);font-size:.78rem;font-weight:800}
+.technical-kpi strong{display:block;margin:7px 0 2px;color:var(--technical-ink);font-size:1.7rem;line-height:1}
+.technical-kpi small{color:var(--technical-muted)}
+.technical-kpi.is-danger{--kpi-color:var(--technical-red)}
+.technical-kpi.is-warning{--kpi-color:var(--technical-amber)}
+.technical-kpi.is-success{--kpi-color:var(--technical-green)}
+.technical-kpi.is-cyan{--kpi-color:var(--technical-cyan)}
+
+.technical-section{scroll-margin-top:18px;padding:22px;border:1px solid var(--technical-line);border-radius:22px;background:var(--card-bg,#fff);box-shadow:0 12px 34px rgba(15,23,42,.07)}
+.technical-section-head{display:flex;justify-content:space-between;align-items:flex-end;gap:18px;margin-bottom:18px}
+.technical-section-head h3{margin:4px 0;color:var(--text,var(--technical-ink));font-size:1.35rem}
+.technical-section-head p{margin:0;color:var(--muted,var(--technical-muted))}
+.technical-section-kicker{color:#0284c7}
+.technical-section-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.technical-section-actions select,.technical-unit-filters select,.technical-unit-filters input{min-height:40px;border:1px solid var(--stroke,#cbd5e1);border-radius:11px;color:var(--text,var(--technical-ink));background:var(--input-bg,#fff);padding:8px 11px}
+.technical-selection-count{color:var(--muted,var(--technical-muted));font-size:.82rem;font-weight:800}
+
+.technical-permit-toolbar{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:14px}
+.technical-permit-progress{display:flex;align-items:center;gap:12px;min-width:290px}
+.technical-progress-ring{--progress:0;display:grid;place-items:center;width:62px;height:62px;flex:0 0 62px;border-radius:50%;background:conic-gradient(var(--technical-cyan) calc(var(--progress)*1%),rgba(148,163,184,.22) 0)}
+.technical-progress-ring::before{content:"";grid-area:1/1;width:47px;height:47px;border-radius:50%;background:var(--card-bg,#fff)}
+.technical-progress-ring strong{grid-area:1/1;position:relative;color:var(--text,var(--technical-ink));font-size:.78rem}
+.technical-progress-copy strong{display:block;color:var(--text,var(--technical-ink))}
+.technical-progress-copy span{color:var(--muted,var(--technical-muted));font-size:.82rem}
+.technical-filter-pills{display:flex;gap:7px;flex-wrap:wrap}
+.technical-filter-pills button{color:var(--muted,var(--technical-muted));border-color:var(--technical-line);background:rgba(148,163,184,.08)}
+.technical-filter-pills button:hover,.technical-filter-pills button.is-active{color:#fff;border-color:#0284c7;background:#0284c7}
+
+.technical-permits-board{display:grid;gap:19px}
+.technical-permit-phase{display:grid;gap:11px}
+.technical-permit-phase>header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding:0 2px}
+.technical-permit-phase>header span{display:block;color:var(--muted,var(--technical-muted));font-size:.66rem;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
+.technical-permit-phase>header h4{margin:2px 0 0;color:var(--text,var(--technical-ink));font-size:1.02rem}
+.technical-permit-phase>header>strong{color:var(--muted,var(--technical-muted));font-size:.76rem}
+.technical-permit-phase-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(225px,1fr));gap:11px}
+
+.technical-permit-card{position:relative;display:flex;flex-direction:column;min-height:350px;padding:17px 16px 15px;border:1px solid var(--technical-line);border-top:3px solid var(--permit-color,#94a3b8);border-radius:14px;background:var(--card-bg,#fff);box-shadow:0 6px 18px rgba(15,23,42,.055);transition:.18s ease}
+.technical-permit-card:hover{transform:translateY(-2px);box-shadow:0 13px 28px rgba(15,23,42,.11)}
+.technical-permit-card.is-saving{opacity:.62;pointer-events:none}
+.technical-permit-card-sequence{display:flex;align-items:center;gap:8px;margin-bottom:13px}
+.technical-permit-card-sequence span{color:var(--permit-color);font-size:.7rem;font-weight:950}
+.technical-permit-card-sequence i{height:1px;flex:1;background:linear-gradient(90deg,var(--permit-color),transparent)}
+.technical-permit-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.technical-permit-card h5{min-height:45px;margin:10px 0 12px;color:var(--text,var(--technical-ink));font-size:.98rem;line-height:1.42}
+.technical-permit-status{padding:5px 8px;border:1px solid color-mix(in srgb,var(--permit-color) 35%,transparent);border-radius:999px;color:var(--permit-color,#64748b);background:color-mix(in srgb,var(--permit-color) 10%,transparent);font-size:.63rem;font-weight:900;text-transform:uppercase;white-space:nowrap}
+.technical-permit-prerequisite{display:flex;align-items:center;gap:7px;padding:9px;border-radius:10px;color:#166534;background:#dcfce7;font-size:.72rem}
+.technical-permit-prerequisite>span{display:grid;place-items:center;width:19px;height:19px;border-radius:50%;color:#fff;background:#16a34a;font-weight:950}
+.technical-permit-prerequisite.is-pending{color:#92400e;background:#fff7ed}
+.technical-permit-prerequisite.is-pending>span{background:#d97706}
+.technical-permit-dependencies{display:grid;gap:5px;margin:10px 1px}
+.technical-permit-dependencies span{overflow:hidden;color:var(--muted,var(--technical-muted));font-size:.68rem;text-overflow:ellipsis;white-space:nowrap}
+.technical-permit-dependencies span.is-approved{color:#15803d}
+.technical-permit-spacer{flex:1}
+.technical-permit-facts{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0}
+.technical-permit-facts span{padding:8px;border-radius:9px;background:rgba(148,163,184,.09)}
+.technical-permit-facts small,.technical-permit-facts strong{display:block}
+.technical-permit-facts small{color:var(--muted,var(--technical-muted));font-size:.61rem}
+.technical-permit-facts strong{margin-top:3px;color:var(--text,var(--technical-ink));font-size:.7rem}
+.technical-permit-state-label{display:grid;gap:4px;color:var(--muted,var(--technical-muted));font-size:.66rem;font-weight:850}
+.technical-permit-state{width:100%;min-height:40px;border:1px solid color-mix(in srgb,var(--permit-color) 35%,var(--technical-line));border-radius:9px;padding:7px 9px;color:var(--text,var(--technical-ink));background:var(--input-bg,#fff);font:inherit;font-size:.78rem;font-weight:800;cursor:pointer}
+.technical-permit-state:disabled{cursor:not-allowed;opacity:.72}
+.technical-permit-auto-note{margin-top:6px;color:var(--muted,var(--technical-muted));font-size:.64rem;line-height:1.35}
+.technical-permit-detail-button{margin-top:10px;border:0;border-radius:9px;padding:9px;color:#0369a1;background:#e0f2fe;font:inherit;font-size:.72rem;font-weight:900;cursor:pointer}
+.technical-permit-detail-button:hover{color:#fff;background:#0284c7}
+.technical-empty{grid-column:1/-1;padding:32px;border:1px dashed var(--technical-line);border-radius:16px;text-align:center;color:var(--muted,var(--technical-muted))}
+
+/* ===== Ficha de permisos ===== */
+
+.technical-permit-detail{display:grid;gap:14px;color:#172033;color-scheme:light}
+.technical-permit-detail>header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:17px;border-left:4px solid var(--permit-color);border-radius:12px;background:rgba(148,163,184,.09)}
+.technical-permit-detail>header>div:first-child span,.technical-permit-detail>header>div:first-child strong{display:block}
+.technical-permit-detail>header>div:first-child span{color:#64748b;font-size:.75rem}
+.technical-permit-detail>header>div:first-child strong{margin-top:5px;color:var(--permit-color);font-size:1rem}
+.technical-detail-facts{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.technical-detail-facts span{padding:7px 9px;border-radius:8px;color:#fff;background:#111827;font-size:.72rem}
+.technical-detail-facts span b{color:#fff}
+.technical-detail-section{padding:15px;border:1px solid var(--technical-line);border-radius:12px;color:#172033}
+.technical-detail-section h4{margin:0 0 10px;color:#172033;font-size:.88rem}
+.technical-detail-section ul{display:grid;gap:7px;margin:0;padding-left:20px;color:#172033;font-size:.78rem;line-height:1.5}
+.technical-detail-section-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.technical-detail-section-head h4{margin:0}
+.technical-dependency-list{display:grid;gap:7px}
+.technical-dependency-row{display:flex;align-items:center;gap:9px;padding:9px;border-radius:9px;background:#fff7ed}
+.technical-dependency-row>span{display:grid;place-items:center;width:21px;height:21px;border-radius:50%;color:#fff;background:#d97706;font-weight:900}
+.technical-dependency-row strong,.technical-dependency-row small{display:block}
+.technical-dependency-row strong{color:#92400e;font-size:.77rem}
+.technical-dependency-row small{margin-top:2px;color:#b45309;font-size:.67rem}
+.technical-dependency-row.is-approved{background:#dcfce7}
+.technical-dependency-row.is-approved>span{background:#16a34a}
+.technical-dependency-row.is-approved strong{color:#166534}
+.technical-dependency-row.is-approved small{color:#15803d}
+.technical-detail-units{display:grid;gap:5px;max-height:230px;overflow:auto}
+.technical-detail-units>div{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;padding:8px;border-bottom:1px solid var(--technical-line);font-size:.72rem}
+.technical-detail-units strong{color:#172033}
+.technical-detail-units em{padding:4px 6px;border-radius:99px;color:#92400e;background:#fff7ed;font-style:normal;font-weight:800}
+.technical-detail-units em.is-approved{color:#166534;background:#dcfce7}
+.technical-detail-document{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--technical-line)}
+.technical-detail-document:last-child{border-bottom:0}
+.technical-detail-document strong,.technical-detail-document span{display:block}
+.technical-detail-document strong{color:#172033;font-size:.76rem}
+.technical-detail-document span{margin-top:2px;color:#64748b;font-size:.66rem}
+.technical-detail-empty{padding:10px;border-radius:8px;color:#64748b;background:rgba(148,163,184,.08);font-size:.75rem}
+.technical-detail-empty.is-error{color:#b91c1c;background:#fef2f2}
+
+/* ===== Unidades ===== */
+
+.technical-unit-filters{display:grid;grid-template-columns:minmax(180px,.7fr) minmax(210px,.8fr) minmax(260px,1.5fr);gap:9px;margin-bottom:12px}
+.technical-unit-kpis{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:14px}
+.technical-unit-kpis .technical-kpi{min-height:82px;padding:13px 15px}
+.technical-unit-kpis .technical-kpi strong{font-size:1.35rem}
+
+#tab-tecnico .commercial-folder{margin-bottom:14px}
+#tab-tecnico .commercial-folder-body{display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));gap:12px}
+#tab-tecnico .commercial-folder.collapsed .commercial-folder-body{display:none}
+
+#tab-tecnico .unit-card{--accent:#94a3b8;position:relative;min-height:205px;padding:16px;border:1px solid rgba(148,163,184,.25);border-left:6px solid var(--accent);border-radius:16px;color:#e5e7eb;background:linear-gradient(150deg,#0f172a,#111f36);box-shadow:0 7px 20px rgba(2,6,23,.18);cursor:pointer;transition:.18s ease}
+#tab-tecnico .unit-card:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(2,6,23,.27)}
+#tab-tecnico .unit-card.selected{outline:2px solid var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 18%,transparent),0 12px 28px rgba(2,6,23,.28)}
+#tab-tecnico .unit-card .head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+#tab-tecnico .unit-card .title{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+#tab-tecnico .unit-card .status{padding:4px 8px;border:1px solid rgba(96,165,250,.22);border-radius:999px;color:#dbeafe;background:rgba(59,130,246,.14);font-size:.64rem;font-weight:850}
+#tab-tecnico .unit-card .meta{margin:8px 0 10px;color:#aab7ca;font-size:.8rem}
+#tab-tecnico .technical-construction-state{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 11px;padding:8px 10px;border:1px solid color-mix(in srgb,var(--accent) 28%,transparent);border-radius:10px;background:color-mix(in srgb,var(--accent) 11%,transparent)}
+#tab-tecnico .technical-construction-state span{color:#94a3b8;font-size:.61rem;font-weight:850;letter-spacing:.06em;text-transform:uppercase}
+#tab-tecnico .technical-construction-state strong{color:color-mix(in srgb,var(--accent) 65%,#fff);font-size:.75rem}
+#tab-tecnico .unit-card .badges{display:flex;flex-wrap:wrap;gap:6px}
+#tab-tecnico .unit-card .chip.technical-signal{display:flex;align-items:center;gap:6px;min-height:34px;padding:5px 8px;border:1px solid transparent;border-radius:10px;background:#1e293b;color:#dbeafe;font-size:.67rem;line-height:1.08}
+#tab-tecnico .technical-signal i{display:grid;place-items:center;width:18px;height:18px;flex:0 0 18px;border-radius:50%;background:currentColor;color:#0f172a;font-style:normal;font-size:.68rem;font-weight:950}
+#tab-tecnico .technical-signal small{display:block;margin-bottom:2px;color:inherit;opacity:.72;font-size:.53rem;font-weight:850;letter-spacing:.06em;text-transform:uppercase}
+#tab-tecnico .unit-card .chip.is-ok{border-color:rgba(34,197,94,.22);background:rgba(22,163,74,.14);color:#bbf7d0}
+#tab-tecnico .unit-card .chip.is-warning{border-color:rgba(245,158,11,.22);background:rgba(217,119,6,.16);color:#fde68a}
+#tab-tecnico .unit-card .chip.is-danger{border-color:rgba(248,113,113,.26);background:rgba(220,38,38,.18);color:#fecaca}
+
+#tab-tecnico .unit-card .sel-wrap{position:relative;width:22px;height:22px;flex:0 0 22px}
+#tab-tecnico .unit-card .sel{position:absolute;inset:0;opacity:0;cursor:pointer;z-index:2}
+#tab-tecnico .unit-card .sel-box{display:block;width:20px;height:20px;border:2px solid #64748b;border-radius:6px;background:#0b1220}
+#tab-tecnico .unit-card .sel:checked+.sel-box{border-color:#38bdf8;background:#0284c7}
+#tab-tecnico .unit-card .sel:checked+.sel-box::after{content:"✓";display:grid;place-items:center;color:#fff;font-weight:900}
+#tab-tecnico .construction-pending{--accent:#f59e0b}
+#tab-tecnico .construction-in-progress{--accent:#38bdf8}
+#tab-tecnico .construction-gray-work{--accent:#94a3b8}
+#tab-tecnico .construction-finishes{--accent:#a78bfa}
+#tab-tecnico .construction-completed{--accent:#22c55e}
+#tab-tecnico .commercial-folder.is-drag-over{outline:3px dashed #22d3ee;outline-offset:3px}
+
+#modalCrearLote[data-launch-context="technical"] .technical-commercial-sensitive,
+#modalCrearModelo[data-launch-context="technical"] .technical-commercial-sensitive{display:none!important}
+#modalCrearModelo[data-launch-context="technical"] .commercial-models-head,
+#modalCrearModelo[data-launch-context="technical"] .commercial-model-row{grid-template-columns:minmax(140px,1.5fr) repeat(4,minmax(72px,.72fr)) minmax(85px,.75fr) auto}
+.technical-action-primary{color:#fff!important;border-color:#0284c7!important;background:#0284c7!important}
+.technical-delete-confirm{display:grid;gap:14px}
+.technical-delete-confirm p{margin:0;line-height:1.55}
+.technical-delete-confirm label{display:grid;gap:6px;font-weight:800}
+.technical-delete-confirm input{min-height:44px;border:1px solid var(--stroke,#cbd5e1);border-radius:10px;padding:9px 11px;color:var(--text,#0f172a);background:var(--input-bg,#fff)}
+
+/* ===== Planos y pólizas ===== */
+
+.technical-documents-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.technical-library-card{border:1px solid var(--technical-line);border-radius:18px;overflow:hidden;background:var(--card-bg,#fff)}
+.technical-library-head{display:flex;justify-content:space-between;align-items:center;padding:15px 17px;border-bottom:1px solid var(--technical-line);background:rgba(14,165,233,.055)}
+.technical-library-head>div{display:flex;gap:9px;align-items:center}
+.technical-library-head h4{margin:0;color:var(--text,var(--technical-ink))}
+.technical-library-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;color:#0369a1;background:#e0f2fe;font-weight:900}
+.technical-count-badge{min-width:28px;padding:4px 8px;border-radius:999px;text-align:center;color:#0369a1;background:#e0f2fe;font-size:.75rem;font-weight:900}
+.technical-library-list{display:grid;gap:1px;max-height:430px;overflow:auto}
+.technical-library-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid rgba(148,163,184,.16)}
+.technical-library-row:last-child{border-bottom:0}
+.technical-library-row strong{display:block;color:var(--text,var(--technical-ink));font-size:.86rem}
+.technical-library-row span{display:block;margin-top:3px;color:var(--muted,var(--technical-muted));font-size:.73rem}
+.technical-library-row .btn{flex:0 0 auto}
+
+.technical-batch-form{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.technical-batch-form label{display:grid;gap:5px;color:var(--text,var(--technical-ink));font-size:.8rem;font-weight:800}
+.technical-batch-form input,.technical-batch-form select{min-height:42px;border:1px solid var(--stroke,#cbd5e1);border-radius:10px;padding:8px 10px;color:var(--text,var(--technical-ink));background:var(--input-bg,#fff)}
+.technical-batch-form .technical-batch-wide{grid-column:1/-1}
+
+/* ===== Dark mode ===== */
+
+body:not(.light-theme) #tab-tecnico .technical-kpi{background:linear-gradient(145deg,#111c2f,#101827)}
+body:not(.light-theme) #tab-tecnico .technical-kpi strong{color:#f8fafc}
+body:not(.light-theme) #tab-tecnico .technical-section,
+body:not(.light-theme) #tab-tecnico .technical-library-card{background:#0f172a}
+body:not(.light-theme) #tab-tecnico .technical-progress-ring::before{background:#0f172a}
+body:not(.light-theme) #tab-tecnico .technical-permit-card{background:#111827}
+body:not(.light-theme) #tab-tecnico .technical-permit-state{background:#0b1220}
+body:not(.light-theme) #tab-tecnico .technical-permit-detail-button{color:#7dd3fc;background:rgba(2,132,199,.18)}
+
+/* ===== Permisos compactos ===== */
+
+#tab-tecnico .technical-permits-section{padding:18px}
+#tab-tecnico .technical-permits-section .technical-section-head{margin-bottom:12px}
+#tab-tecnico .technical-permit-toolbar{margin-bottom:10px}
+#tab-tecnico .technical-permit-progress{min-width:245px;gap:9px}
+#tab-tecnico .technical-progress-ring{width:52px;height:52px;flex-basis:52px}
+#tab-tecnico .technical-progress-ring::before{width:39px;height:39px}
+#tab-tecnico .technical-permit-phase{grid-template-columns:minmax(118px,145px) minmax(0,1fr);gap:12px;padding-top:12px;border-top:1px solid var(--technical-line)}
+#tab-tecnico .technical-permit-phase:first-child{padding-top:0;border-top:0}
+#tab-tecnico .technical-permit-phase>header{display:block;align-self:start;padding:4px 0}
+#tab-tecnico .technical-permit-phase>header>strong{display:block;margin-top:7px;line-height:1.35}
+#tab-tecnico .technical-permit-phase-grid{grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:9px}
+#tab-tecnico .technical-permit-card{min-height:230px;padding:12px;border-radius:12px}
+#tab-tecnico .technical-permit-card-sequence{margin-bottom:7px}
+#tab-tecnico .technical-permit-card-head{align-items:flex-start}
+#tab-tecnico .technical-permit-card-head .technical-section-kicker{font-size:.61rem;line-height:1.25}
+#tab-tecnico .technical-permit-card h5{min-height:0;margin:7px 0 8px;font-size:.84rem;line-height:1.32}
+#tab-tecnico .technical-permit-status{padding:4px 6px;font-size:.57rem}
+#tab-tecnico .technical-permit-prerequisite{gap:5px;padding:6px 7px;font-size:.64rem}
+#tab-tecnico .technical-permit-prerequisite>span{width:16px;height:16px;font-size:.65rem}
+#tab-tecnico .technical-permit-dependencies{gap:3px;margin:6px 1px 2px}
+#tab-tecnico .technical-permit-dependencies span{font-size:.62rem}
+#tab-tecnico .technical-permit-facts{gap:5px;margin:7px 0}
+#tab-tecnico .technical-permit-facts span{padding:6px}
+#tab-tecnico .technical-permit-facts small{font-size:.56rem}
+#tab-tecnico .technical-permit-facts strong{font-size:.64rem}
+#tab-tecnico .technical-permit-auto-note{margin:2px 0 5px;font-size:.59rem}
+#tab-tecnico .technical-permit-card-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:6px;margin-top:auto}
+#tab-tecnico .technical-permit-state-label{gap:3px;font-size:.59rem}
+#tab-tecnico .technical-permit-state{min-height:34px;padding:5px 7px;font-size:.7rem}
+#tab-tecnico .technical-permit-detail-button{min-height:34px;margin:0;padding:7px 10px;font-size:.66rem}
+
+body:not(.light-theme) #tab-tecnico .technical-permits-section{color:#e2e8f0;background:#0f172a}
+body:not(.light-theme) #tab-tecnico .technical-permits-section .technical-section-head h3,
+body:not(.light-theme) #tab-tecnico .technical-progress-copy strong,
+body:not(.light-theme) #tab-tecnico .technical-permit-phase>header h4,
+body:not(.light-theme) #tab-tecnico .technical-permit-card h5,
+body:not(.light-theme) #tab-tecnico .technical-permit-facts strong{color:#f8fafc}
+body:not(.light-theme) #tab-tecnico .technical-permits-section .technical-section-head p,
+body:not(.light-theme) #tab-tecnico .technical-progress-copy span,
+body:not(.light-theme) #tab-tecnico .technical-permit-phase>header>strong,
+body:not(.light-theme) #tab-tecnico .technical-permit-state-label{color:#94a3b8}
+body:not(.light-theme) #tab-tecnico .technical-filter-pills button{color:#cbd5e1;border-color:#334155;background:#172033}
+body:not(.light-theme) #tab-tecnico .technical-filter-pills button:hover,
+body:not(.light-theme) #tab-tecnico .technical-filter-pills button.is-active{color:#fff;border-color:#0284c7;background:#0284c7}
+body:not(.light-theme) #tab-tecnico .technical-permit-state{color:#f8fafc;border-color:#475569;background:#0b1220;color-scheme:dark}
+body:not(.light-theme) #tab-tecnico .technical-permit-state option{color:#f8fafc;background:#0b1220}
+
+/* ===== Light mode ===== */
+
+body.light-theme #tab-tecnico .technical-permits-section{color:#0f172a;border-color:#dbe3ee;background:#fff;box-shadow:0 12px 34px rgba(15,23,42,.06)}
+body.light-theme #tab-tecnico .technical-permits-section .technical-section-head h3,
+body.light-theme #tab-tecnico .technical-progress-copy strong,
+body.light-theme #tab-tecnico .technical-permit-phase>header h4,
+body.light-theme #tab-tecnico .technical-permit-card h5,
+body.light-theme #tab-tecnico .technical-permit-facts strong{color:#0f172a}
+body.light-theme #tab-tecnico .technical-permits-section .technical-section-head p,
+body.light-theme #tab-tecnico .technical-progress-copy span,
+body.light-theme #tab-tecnico .technical-permit-phase>header>strong,
+body.light-theme #tab-tecnico .technical-permit-state-label{color:#64748b}
+body.light-theme #tab-tecnico .technical-permit-card{border-color:#dbe3ee;background:#fff;box-shadow:0 5px 16px rgba(15,23,42,.06)}
+body.light-theme #tab-tecnico .technical-permit-facts span{background:#f1f5f9}
+body.light-theme #tab-tecnico .technical-progress-ring::before{background:#fff}
+body.light-theme #tab-tecnico .technical-filter-pills button{color:#475569;border-color:#dbe3ee;background:#f8fafc}
+body.light-theme #tab-tecnico .technical-filter-pills button:hover,
+body.light-theme #tab-tecnico .technical-filter-pills button.is-active{color:#fff;border-color:#0284c7;background:#0284c7}
+body.light-theme #tab-tecnico .technical-permit-state{color:#0f172a;border-color:#cbd5e1;background:#fff;color-scheme:light}
+body.light-theme #tab-tecnico .technical-permit-state option{color:#0f172a;background:#fff}
+
+/* ===== Responsive ===== */
+
+@media(max-width:900px){
+  #tab-tecnico .technical-permit-phase{grid-template-columns:1fr}
+  #tab-tecnico .technical-permit-phase>header{display:flex;align-items:flex-end}
+  #tab-tecnico .technical-permit-phase>header>strong{margin-top:0}
+}
+
+@media(max-width:1050px){
+  .technical-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+
+@media(max-width:760px){
+  .technical-hero,.technical-section-head,.technical-permit-toolbar{align-items:stretch;flex-direction:column}
+  .technical-jump-nav,.technical-section-actions{justify-content:flex-start}
+  .technical-kpis,.technical-unit-kpis,.technical-permits-board,.technical-unit-filters,.technical-documents-grid,.technical-batch-form{grid-template-columns:1fr}
+  .technical-batch-form .technical-batch-wide{grid-column:auto}
+}
+
+/* ==========================================================
+   CORRECCIONES DE CONTRASTE
+   Popup blanco tanto en light como en dark mode
+   ========================================================== */
+
+.technical-permit-detail {
+  color:#172033 !important;
+  color-scheme:light;
+}
+
+.technical-permit-detail .technical-detail-section,
+.technical-permit-detail .technical-detail-section h4,
+.technical-permit-detail .technical-detail-section ul,
+.technical-permit-detail .technical-detail-section li,
+.technical-permit-detail .technical-detail-section p,
+.technical-permit-detail .technical-detail-units > div,
+.technical-permit-detail .technical-detail-units strong,
+.technical-permit-detail .technical-detail-document strong {
+  color:#172033 !important;
+}
+
+.technical-permit-detail > header > div:first-child span,
+.technical-permit-detail .technical-detail-document span,
+.technical-permit-detail .technical-detail-empty:not(.is-error) {
+  color:#64748b !important;
+}
+
+.technical-permit-detail .technical-detail-facts span,
+.technical-permit-detail .technical-detail-facts b {
+  color:#ffffff !important;
+}
+
+.technical-permit-detail .technical-detail-facts span {
+  background:#111827 !important;
+}
+
+/* ==========================================================
+   CORRECCIONES DE CONTRASTE
+   Contenedor final: Planos arquitectónicos y pólizas
+   ========================================================== */
+
+body:not(.light-theme) #tab-tecnico
+.technical-section:has(.technical-documents-grid) {
+  color:#e2e8f0;
+  background:#141b2e;
+}
+
+body:not(.light-theme) #tab-tecnico
+.technical-section:has(.technical-documents-grid)
+.technical-section-head h3,
+body:not(.light-theme) #tab-tecnico
+.technical-section:has(.technical-documents-grid)
+.technical-library-head h4,
+body:not(.light-theme) #tab-tecnico
+.technical-section:has(.technical-documents-grid)
+.technical-library-row strong {
+  color:#f8fafc !important;
+}
+
+body:not(.light-theme) #tab-tecnico
+.technical-section:has(.technical-documents-grid)
+.technical-section-head p,
+body:not(.light-theme) #tab-tecnico
+.technical-section:has(.technical-documents-grid)
+.technical-library-row span {
+  color:#cbd5e1 !important;
+}
+
+body:not(.light-theme) #tab-tecnico
+.technical-documents-grid .technical-library-card,
+body:not(.light-theme) #tab-tecnico
+.technical-documents-grid .technical-library-list {
+  color:#e2e8f0;
+}
+
+body:not(.light-theme) #tab-tecnico
+.technical-documents-grid .technical-empty {
+  color:#cbd5e1 !important;
+}
+
+
+/* ===== PLANOS Y PÓLIZAS - MODO DIURNO ===== */
+
+body.light-theme #tab-tecnico .technical-section:has(.technical-documents-grid) {
+    background: #ffffff !important;
+    color: #0f172a !important;
+}
+
+body.light-theme #tab-tecnico .technical-documents-grid .technical-library-card {
+    background: #ffffff !important;
+    border-color: #dbe3ee !important;
+}
+
+body.light-theme #tab-tecnico .technical-documents-grid .technical-library-head {
+    background: #f1f5f9 !important;
+}
+
+body.light-theme #tab-tecnico .technical-documents-grid .technical-library-list {
+    background: #ffffff !important;
+}
+
+body.light-theme #tab-tecnico .technical-section:has(.technical-documents-grid) h3,
+body.light-theme #tab-tecnico .technical-documents-grid h4,
+body.light-theme #tab-tecnico .technical-documents-grid .technical-library-row strong {
+    color: #0f172a !important;
+}
+
+body.light-theme #tab-tecnico .technical-section:has(.technical-documents-grid) .technical-section-head p,
+body.light-theme #tab-tecnico .technical-documents-grid .technical-library-row span,
+body.light-theme #tab-tecnico .technical-documents-grid .technical-empty {
+    color: #64748b !important;
+}
+
+
+/* ===== UNIDADES Y ETAPAS - MODO DIURNO ===== */
+
+/* Contenedor principal blanco */
+body.light-theme #tab-tecnico .technical-section:has(.technical-unit-filters) {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border-color: #dbe3ee !important;
+}
+
+/* Título y descripción */
+body.light-theme #tab-tecnico .technical-section:has(.technical-unit-filters) .technical-section-head h3 {
+    color: #0f172a !important;
+}
+
+body.light-theme #tab-tecnico .technical-section:has(.technical-unit-filters) .technical-section-head p {
+    color: #64748b !important;
+}
+
+/* Indicador de unidades seleccionadas */
+body.light-theme #tab-tecnico .technical-selection-count {
+    color: #475569 !important;
+}
+
+/* Tarjetas resumen de unidades */
+body.light-theme #tab-tecnico .technical-unit-kpis .technical-kpi {
+    background: #f8fafc !important;
+    border-color: #dbe3ee !important;
+}
+
+body.light-theme #tab-tecnico .technical-unit-kpis .technical-kpi strong {
+    color: #0f172a !important;
+}
+
+body.light-theme #tab-tecnico .technical-unit-kpis .technical-kpi span,
+body.light-theme #tab-tecnico .technical-unit-kpis .technical-kpi small {
+    color: #64748b !important;
+}
+
+/* Filtros */
+body.light-theme #tab-tecnico .technical-unit-filters select,
+body.light-theme #tab-tecnico .technical-unit-filters input {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+}
+
+/* Mantener tarjetas individuales de unidades oscuras */
+body.light-theme #tab-tecnico .unit-card {
+    background: linear-gradient(150deg,#0f172a,#111f36);
+    color: #e5e7eb;
+}
+

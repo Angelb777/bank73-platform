@@ -69,7 +69,7 @@ const ALLOWED_FIELDS = new Set([
   'desembolsoMivi', 'fechaPagoMivi',
 
   // técnico / obra / permisos
-  'enConstruccion', 'estatusConstruccion', 'faseConstruccion',
+  'enConstruccion', 'estatusConstruccion',
   'permisoConstruccionMunicipal', 'permisoConstruccionNum',
   'permisoOcupacion', 'permisoOcupacionNum', 'fechaEmisionPermisoOcupacion',
   'constructora',
@@ -87,6 +87,15 @@ const ALLOWED_FIELDS = new Set([
   'captadoAtencionOficina', 'captadoMailInternet',
   'captadoEnProyecto', 'captadoMercadeoProspecto',
   'proformaSolicitadaPor', 'referidoPor', 'observacionCliente'
+]);
+const TECHNICAL_FIELDS = new Set([
+  'manzana', 'lote', 'numeroFinca', 'codigoUbicacion', 'ubicacion', 'calle',
+  'metrajeLote', 'metrosExtra', 'precioM2Extra', 'areaAbierta', 'areaCerrada',
+  'areaTotalConstruccion', 'recamaras', 'banos', 'valorMejoras', 'valorTerreno',
+  'enConstruccion', 'estatusConstruccion',
+  'permisoConstruccionMunicipal', 'permisoConstruccionNum',
+  'permisoOcupacion', 'permisoOcupacionNum', 'fechaEmisionPermisoOcupacion',
+  'constructora'
 ]);
 
 const STEP_STATES = ['pendiente', 'en_proceso', 'completado', 'bloqueado'];
@@ -108,6 +117,25 @@ function pickAllowed(obj = {}) {
     if (ALLOWED_FIELDS.has(k)) out[k] = obj[k];
   }
   return out;
+}
+
+function pickAllowedForRole(obj = {}, role = '') {
+  const allowed = pickAllowed(obj);
+  if (String(role || '').toLowerCase() !== 'tecnico') return allowed;
+  return Object.fromEntries(Object.entries(allowed).filter(([key]) => TECHNICAL_FIELDS.has(key)));
+}
+
+function ventaForRole(venta = {}, role = '') {
+  if (String(role || '').toLowerCase() !== 'tecnico') return venta;
+  const technical = Object.fromEntries(Object.entries(venta).filter(([key]) => TECHNICAL_FIELDS.has(key)));
+  return {
+    _id: venta._id,
+    projectId: venta.projectId,
+    unitId: venta.unitId,
+    createdAt: venta.createdAt,
+    updatedAt: venta.updatedAt,
+    ...technical
+  };
 }
 
 // ROLE-SEP: marcar este router como "ventas" para el guard de comerciales
@@ -201,7 +229,7 @@ router.get(
         deletedAt: null
       }).sort({ createdAt: -1 }).lean();
 
-      res.json(list);
+      res.json(list.map(item => ventaForRole(item, req.user?.role)));
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -224,7 +252,7 @@ router.get(
       }).lean();
 
       if (!v) return res.status(404).json({ error: 'No existe' });
-      res.json(v);
+      res.json(ventaForRole(v, req.user?.role));
     } catch (e) {
       res.status(400).json({ error: e.message });
     }
@@ -245,7 +273,7 @@ router.post(
         return res.status(400).json({ error: 'projectId y unitId requeridos' });
       }
 
-      const base = pickAllowed(req.body);
+      const base = pickAllowedForRole(req.body, req.user?.role);
       base.projectId = projectId;
       base.unitId = unitId;
       base.tenantKey = req.tenantKey;
@@ -300,7 +328,7 @@ router.post(
         return res.status(400).json({ error: 'projectId y unitId requeridos' });
       }
 
-      const set = pickAllowed(data);
+      const set = pickAllowedForRole(data, req.user?.role);
       set.tenantKey = req.tenantKey;
 
       if ('checklist' in data) {
@@ -352,7 +380,7 @@ router.patch(
       const { unitIds = [], update = {}, upsert = false, projectId } = req.body || {};
       if (!unitIds.length) return res.status(400).json({ error: 'unitIds requerido' });
 
-      const set = pickAllowed(update);
+      const set = pickAllowedForRole(update, req.user?.role);
       set.tenantKey = req.tenantKey;
 
       let modified = 0;
@@ -419,7 +447,7 @@ router.patch(
   requireProjectAccess({ promoterCanEditAssigned: true }),
   async (req, res) => {
     try {
-      const set = pickAllowed(req.body);
+      const set = pickAllowedForRole(req.body, req.user?.role);
 
       if ('checklist' in req.body) {
         set.checklist = sanitizeChecklist(req.body.checklist);

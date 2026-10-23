@@ -171,7 +171,8 @@ function detectArea(req) {
     req.isSalesRoute === true ||
     /\/ventas(\/|$)/i.test(url) ||
     req.isUnitsRoute === true ||
-    /\/units?(\/|$)/i.test(url);
+    /\/units?(\/|$)/i.test(url) ||
+    /\/commercial-folders(\/|$)/i.test(url);
 
   const isChecklists =
     /\/(checklists?|tasks?|permits)(\/|$)/i.test(url);
@@ -181,12 +182,17 @@ function detectArea(req) {
     /\/documents?(\/|$)/i.test(url) ||
     /\/unit-doc-folders(\/|$)/i.test(url);
 
+  const isProjectRead = method === 'GET' && /\/projects\/[^/]+\/?$/i.test(url);
+  const isInsurancePolicies = /\/projects\/[^/]+\/insurance-policies\/?$/i.test(url);
+
   return {
     url,
     method,
     isSales,
     isChecklists,
-    isDocs
+    isDocs,
+    isProjectRead,
+    isInsurancePolicies
   };
 }
 
@@ -401,13 +407,31 @@ function requireProjectAccess(options = {}) {
           });
         }
 
-        if (!(area.isChecklists || area.isDocs)) {
-          return res.status(403).json({
-            error: 'Acceso permitido sólo a checklists y documentos'
-          });
+        if (role === 'tecnico') {
+          const canReadProject = area.isProjectRead;
+          const canEditPolicies = area.isInsurancePolicies && area.method === 'PUT';
+          const canReadTechnicalSales = area.isSales && ['GET', 'HEAD'].includes(area.method);
+          const canPatchTechnicalSales = area.isSales && area.method === 'PATCH' && (
+            /\/(ventas|units)(\/|$)/i.test(area.url) ||
+            /\/commercial-folders\/(unassigned\/units|[^/]+\/units)\/?$/i.test(area.url)
+          );
+          const canUpsertTechnicalUnit = area.method === 'POST' && /\/ventas\/upsert-by-unit\/?$/i.test(area.url);
+          const canCreateTechnicalUnits = area.method === 'POST' && /\/units\/batch\/?$/i.test(area.url);
+          const canDeleteTechnicalUnits = area.method === 'DELETE' && /\/units\/(batch|[^/]+)\/?$/i.test(area.url);
+          const canManageTechnicalModels = area.method === 'PUT' && /\/projects\/[^/]+\/housing-models\/?$/i.test(area.url);
+
+          if (area.isChecklists || area.isDocs || canReadProject || canEditPolicies || canReadTechnicalSales || canPatchTechnicalSales || canUpsertTechnicalUnit || canCreateTechnicalUnits || canDeleteTechnicalUnits || canManageTechnicalModels) {
+            return next();
+          }
+        } else if (area.isChecklists || area.isDocs) {
+          return next();
         }
 
-        return next();
+        return res.status(403).json({
+          error: role === 'tecnico'
+            ? 'Acceso técnico permitido sólo a proyecto, permisos, unidades, pólizas y documentos'
+            : 'Acceso permitido sólo a checklists y documentos'
+        });
       }
 
       // Cualquier otro rol futuro => denegado

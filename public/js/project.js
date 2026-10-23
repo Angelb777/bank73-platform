@@ -63,6 +63,7 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
     proyecto:  document.getElementById('tab-proyecto'),
     finanzas:  document.getElementById('tab-finanzas'),
     comercial: document.getElementById('tab-comercial'),
+    tecnico:   document.getElementById('tab-tecnico'),
     proveedores: document.getElementById('tab-proveedores'),
     docs:      document.getElementById('tab-docs'),
     avaluadores: document.getElementById('tab-avaluadores'),
@@ -441,6 +442,9 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
     document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === key));
     Object.entries(panes).forEach(([k,el]) => el && el.classList.toggle('active', k === key));
     if (key === 'proveedores') renderProvidersTab();
+    if (key === 'tecnico' && typeof loadTechnicalWorkspace === 'function') {
+      loadTechnicalWorkspace().catch(e => console.error('[Técnico] No se pudo cargar el workspace', e));
+    }
     if (key === 'docs' && window.__docsModuleReady && typeof loadDocs === 'function') {
       invalidateProjectDocsCache();
       loadDocs({ q: (document.getElementById('docsSearch')?.value || '') }).catch(e => {
@@ -466,19 +470,6 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
 
   setTimeout(() => bindDatoUnicoImportControls(), 0);
 
-// Delegación global: "Gestionar permisos"
-document.addEventListener('click', (ev) => {
-  const btn = ev.target.closest('.js-open-permits');
-  if (!btn) return;
-  ev.preventDefault();
-  openPermitsModal().catch(err => {
-    console.error('[Permits] error', err);
-    alert('No se pudo abrir Permisos. Revisa la consola.');
-  });
-});
-
-
-
 const modalBackdrop = document.getElementById('modalBackdrop');
 const modalTitle    = document.getElementById('modalTitle');
 const modalBody     = document.getElementById('modalBody');
@@ -486,7 +477,11 @@ const modalPrimary  = document.getElementById('modalPrimary');
 const modalCloseBtn = document.getElementById('modalClose');
 
 if (modalCloseBtn && modalBackdrop) {
-  modalCloseBtn.onclick = () => (modalBackdrop.style.display = 'none');
+  modalCloseBtn.onclick = () => {
+    const wasPermits = /permisos/i.test(modalTitle?.textContent || '');
+    modalBackdrop.style.display = 'none';
+    if (wasPermits) window.refreshTechnicalWorkspace?.({ force:true, preserveSelection:true });
+  };
 }
 
 function openModal(title, bodyHTML, primaryText = 'Guardar', onPrimary = null) {
@@ -925,7 +920,10 @@ function buildPermitsByInstitution(items = []) {
       map[inst] = { institution: inst, pending: 0, inProcess: 0, approved: 0, rejected: 0 };
     }
 
-    const b = permitBucket(it.status);
+    const effectiveStatus = window.__technicalWorkspace?.loaded
+      ? technicalPermitEffectiveStatus(it)
+      : it.status;
+    const b = permitBucket(effectiveStatus);
     if (b === 'pending')   map[inst].pending++;
     if (b === 'inProcess') map[inst].inProcess++;
     if (b === 'approved')  map[inst].approved++;
@@ -970,7 +968,10 @@ async function openPermitsModal() {
       <span class="small muted">Cargando permisos…</span>
     </div>
     <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
-  `, 'Cerrar', () => { modalBackdrop.style.display='none'; });
+  `, 'Cerrar', async () => {
+    modalBackdrop.style.display='none';
+    await window.refreshTechnicalWorkspace?.({ force:true, preserveSelection:true });
+  });
 
   try {
   __permits = await apiPermitsGetProject();
@@ -1845,6 +1846,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
     proyecto:  document.getElementById('tabBtn-proyecto'),
     finanzas:  document.getElementById('tabBtn-finanzas'),
     comercial: document.getElementById('tabBtn-comercial'),
+    tecnico:   document.getElementById('tabBtn-tecnico'),
     proveedores: document.getElementById('tabBtn-proveedores'),
     docs:      document.getElementById('tabBtn-docs'),
     avaluadores: document.getElementById('tabBtn-avaluadores'),
@@ -1855,6 +1857,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
     proyecto:  document.getElementById('tab-proyecto'),
     finanzas:  document.getElementById('tab-finanzas'),
     comercial: document.getElementById('tab-comercial'),
+    tecnico:   document.getElementById('tab-tecnico'),
     proveedores: document.getElementById('tab-proveedores'),
     docs:      document.getElementById('tab-docs'),
     avaluadores: document.getElementById('tab-avaluadores'),
@@ -1883,7 +1886,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
   if (typeof state !== 'undefined' && state) state.allowedChecklistRoles = null;
 
   if (isFull) {
-    ['resumen','proyecto','finanzas','comercial','proveedores','docs','chat'].forEach(show);
+    ['resumen','proyecto','finanzas','comercial','tecnico','proveedores','docs','chat'].forEach(show);
     if (myRole === 'bank') show('avaluadores'); else hide('avaluadores');
     activateTab('resumen');
     togglePartialUI(false);
@@ -1897,8 +1900,8 @@ function applyRoleVisibility() {                                // ROLE-SEP
     __ALLOWED_ROLES = ['TECNICO'];
     if (state) state.allowedChecklistRoles = __ALLOWED_ROLES;
     ['resumen','finanzas','comercial','proveedores'].forEach(hide);
-    ['proyecto','docs'].forEach(show);
-    activateTab('proyecto');
+    ['proyecto','tecnico','docs','chat'].forEach(show);
+    activateTab('tecnico');
     togglePartialUI(true);
     if (typeof renderProyecto === 'function') renderProyecto();
     if (document.getElementById('tab-docs')?.classList.contains('active') && typeof loadDocs === 'function') loadDocs();
@@ -1909,7 +1912,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
   if (myRole === 'legal') {
     __ALLOWED_ROLES = ['LEGAL'];
     if (state) state.allowedChecklistRoles = __ALLOWED_ROLES;
-    ['resumen','finanzas','comercial','proveedores'].forEach(hide);
+    ['resumen','finanzas','comercial','tecnico','proveedores'].forEach(hide);
     ['proyecto','docs'].forEach(show);
     activateTab('proyecto');
     togglePartialUI(true);
@@ -1922,7 +1925,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
   if (myRole === 'commercial') {
     __ALLOWED_ROLES = ['COMERCIAL'];
     if (state) state.allowedChecklistRoles = __ALLOWED_ROLES;
-    ['resumen','finanzas'].forEach(hide);
+    ['resumen','finanzas','tecnico'].forEach(hide);
     ['proyecto','comercial','proveedores','docs'].forEach(show);
     activateTab('proyecto');
     togglePartialUI(true);
@@ -1932,7 +1935,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
   }
 
   // Fallback ultra-restringido
-  ['resumen','finanzas','comercial','proveedores','docs'].forEach(hide);
+  ['resumen','finanzas','comercial','tecnico','proveedores','docs'].forEach(hide);
   ['proyecto'].forEach(show);
   activateTab('proyecto');
   __ALLOWED_ROLES = null;
@@ -4723,7 +4726,7 @@ function semaphoreForRole(roleKey) {
     if (statusSel) statusSel.value = p.status;
     if (projectTypeText) projectTypeText.textContent = `Tipo de proyecto: ${p.projectType || p.tipoProyecto || 'No definido'}`;
     renderProjectCover(p);
-    await loadCommercialTemplateStatus();
+    if (!['tecnico','legal'].includes(myRole)) await loadCommercialTemplateStatus();
 
     renderProjectHeaderKpis(p);
       // ROLE-SEP: control de publicación y UI para commercial
@@ -5006,9 +5009,6 @@ return {
 
   const collapsedCls = state.collapsed.has(ph.key) ? 'collapsed' : '';
   const addBtn = `
-    ${ph.key === 'PERMISOS'
-      ? `<button type="button" class="btn btn-ghost btn-xs js-open-permits" data-permits="open">Gestionar permisos</button>`
-      : ``}
     <button class="btn btn-ghost btn-xs js-add-cl" data-phase="${ph.key}">+ Checklist</button>
   `;
 
@@ -10258,6 +10258,12 @@ function normalizeUnitEstadoFrontend(v) {
   const delCerrar = document.getElementById('delCerrar');
   const delAplicar = document.getElementById('delAplicar');
 
+  // Las fichas y gestores son compartidos por Comercial y Técnico. Sacarlos del
+  // panel evita que el tab inactivo oculte el modal cuando se abre desde Técnico.
+  [modalCrear, modalCrearModelo, modalFicha, modalBatch, modalDel].forEach(modal => {
+    if (modal && modal.parentElement !== document.body) document.body.appendChild(modal);
+  });
+
   // Helpers API
   function mergedHeaders() {
   // Siempre enviamos token + tenant + content-type
@@ -10740,6 +10746,7 @@ function estadoLabel(v) {
   let ventasMap = new Map(); // unitId -> venta
   let selected = new Set();
   let fichaUnitId = null;
+  let fichaMode = 'commercial';
   let foldersCache = [];
   let unitDocDepartment = 'commercial';
   let unitDocFolderId = '';
@@ -10788,7 +10795,7 @@ function estadoLabel(v) {
             <span>Banos</span>
             <span>Abierta</span>
             <span>Cerrada</span>
-            <span>Precio</span>
+            <span class="technical-commercial-sensitive">Precio</span>
             <span>Coste</span>
             <span></span>
           </div>
@@ -10799,7 +10806,7 @@ function estadoLabel(v) {
               <input data-commercial-model="bathrooms" type="number" min="0" step="any" placeholder="Baños" value="${attr(model.bathrooms ?? '')}">
               <input data-commercial-model="openAreaM2" type="number" min="0" step="any" placeholder="Área abierta" value="${attr(model.openAreaM2 ?? '')}">
               <input data-commercial-model="closedAreaM2" type="number" min="0" step="any" placeholder="Área cerrada" value="${attr(model.closedAreaM2 ?? '')}">
-              <input data-commercial-model="price" type="number" min="0" step="any" placeholder="Precio" value="${attr(model.price ?? '')}">
+              <input class="technical-commercial-sensitive" data-commercial-model="price" type="number" min="0" step="any" placeholder="Precio" value="${attr(model.price ?? '')}">
               <input data-commercial-model="cost" type="number" min="0" step="any" placeholder="Coste" value="${attr(model.cost ?? '')}">
               <button type="button" class="btn mini" data-delete-commercial-model="${idx}">Eliminar</button>
             </div>
@@ -10810,7 +10817,7 @@ function estadoLabel(v) {
             <input id="cm-bathrooms" type="number" min="0" step="any" placeholder="Baños">
             <input id="cm-openAreaM2" type="number" min="0" step="any" placeholder="Área abierta">
             <input id="cm-closedAreaM2" type="number" min="0" step="any" placeholder="Área cerrada">
-            <input id="cm-price" type="number" min="0" step="any" placeholder="Precio">
+            <input class="technical-commercial-sensitive" id="cm-price" type="number" min="0" step="any" placeholder="Precio">
             <input id="cm-cost" type="number" min="0" step="any" placeholder="Coste">
             <button type="button" class="btn mini primary" id="btnAddCommercialModel">Añadir</button>
           </div>
@@ -10853,6 +10860,7 @@ function estadoLabel(v) {
     state.project.housingModels = result?.housingModels || models;
     const modelSelect = document.getElementById('cl-modeloSelect');
     if (modelSelect) modelSelect.innerHTML = projectModelOptions(modelSelect.value, { includeEmpty: true });
+    await window.refreshTechnicalWorkspace?.({ force:true, preserveSelection:true });
   }
 
   function setCommercialModelsMsg(text, color = '') {
@@ -10917,7 +10925,7 @@ function estadoLabel(v) {
             <span>Banos</span>
             <input id="cl-banos" type="number" min="0" value="0" />
           </label>
-          <label>
+          <label class="technical-commercial-sensitive">
             <span>Precio lista</span>
             <input id="cl-precio" type="text" inputmode="decimal" value="100,000.00" />
           </label>
@@ -12637,18 +12645,19 @@ async function aplicarImportWord(unitId) {
 
   await loadVentasMap();
 
-  await abrirFichaUnidad(unitId);
+  await abrirFichaUnidad(unitId, { mode:fichaMode });
 
   await loadUnits();
 }
 
-  async function abrirFichaUnidad(unitId) {
+  async function abrirFichaUnidad(unitId, options = {}) {
   // La ficha es global: fuera de pantalla completa vive en <body>; dentro del
   // visor fullscreen debe ser hija del elemento fullscreen para poder mostrarse.
   const viewerPanel = document.getElementById('project3dPanel');
   const modalHost = document.fullscreenElement === viewerPanel ? viewerPanel : document.body;
   if (modalFicha && modalFicha.parentElement !== modalHost) modalHost.appendChild(modalFicha);
   fichaUnitId = unitId;
+  fichaMode = options.mode === 'technical' ? 'technical' : 'commercial';
 
   const u = unitsCache.find(x => String(x._id) === String(unitId)) || await apiGet(`/api/units/${unitId}`);
   const rawV = ventasMap.get(String(unitId)) || {};
@@ -12695,7 +12704,7 @@ tituloUnidad.innerHTML = `
     <div class="modal-tabs" id="fichaTabs">
   <button class="modal-tab active" data-tab="ficha">Ficha</button>
   <button class="modal-tab" data-tab="docs">Documentos</button>
-  <button class="modal-tab" data-tab="exports">Exportar PDF</button>
+  ${fichaMode === 'technical' ? '' : '<button class="modal-tab" data-tab="exports">Exportar PDF</button>'}
 </div>
     <div id="fichaViews"></div>
   `;
@@ -12748,6 +12757,30 @@ ${inputNum('fv-valorTerreno', `Valor terreno ${info('Valor asignado al terreno d
       <div data-unit-policy-editor>${insurancePolicyEditorRow({}, { defaultUnitId:unitId })}</div>
       <div class="insurance-policy-editor-actions"><button type="button" class="btn btn-ghost" data-save-unit-policy>Guardar póliza</button><button type="button" class="btn btn-ghost" data-cancel-unit-policy>Cancelar</button></div>
     </details>
+  `);
+
+  const htmlUnidadTechnical = seccion('Datos de la unidad', `
+    <div class="label label-with-info"><span>Estado</span>${info('Mismo estado de la unidad utilizado en Comercial.')}</div>
+    <select id="fu-estado">
+      ${UNIT_ESTADOS.map(s => `<option value="${s.v}" ${normalizeUnitEstadoFrontend(u.estado) === s.v ? 'selected' : ''}>${s.l}</option>`).join('')}
+    </select>
+    <div class="label">Modelo definido ${info('Modelo o tipología compartida con Comercial.')}</div>
+    <select id="fu-modeloSelect">${projectModelOptions(u.modelId || u.modelo || '')}</select>
+    ${input('fu-modelo', `Modelo ${info('Nombre del modelo o tipología de vivienda.')}`, u.modelo || '')}
+    ${inputNum('fu-m2', `m² unidad ${info('Área general registrada para la unidad.')}`, u.m2 || 0)}
+    ${inputNum('fu-costo', `Coste de la unidad ${info('Coste base compartido con la ficha canónica de la unidad.')}`, u.costoUnidad || 0)}
+    ${input('fv-numeroFinca', `Número de finca ${info('Identificador registral del inmueble.')}`, u.numeroFinca || '')}
+    ${input('fv-codigoUbicacion', `Código de ubicación ${info('Código registral o catastral.')}`, u.codigoUbicacion || '')}
+    ${input('fv-calle', `Calle ${info('Calle o vial interno de la unidad.')}`, u.calle || '')}
+    ${inputNum('fv-metrosExtra', `M² extra ${info('Metros adicionales asociados al inmueble.')}`, u.metrosExtra || 0)}
+    ${inputNum('fv-precioM2Extra', `Precio m² extra ${info('Valor registrado para cada metro adicional.')}`, u.precioM2Extra || 0)}
+    ${inputNum('fv-areaAbierta', `Área abierta vivienda (m²) ${info('Área abierta definida para esta unidad.')}`, u.areaAbierta || 0)}
+    ${inputNum('fv-areaCerrada', `Área cerrada vivienda (m²) ${info('Área cerrada definida para esta unidad.')}`, u.areaCerrada || 0)}
+    ${inputNum('fv-areaTotalConstruccion', `Área total construcción (m²) ${info('Se calcula como área abierta más área cerrada.')}`, (parseDecimalMeasureNumber(u.areaAbierta || 0) + parseDecimalMeasureNumber(u.areaCerrada || 0)), { readonly:true })}
+    ${inputNum('fv-recamaras', `Recámaras ${info('Cantidad definida en la tipología.')}`, u.recamaras || 0)}
+    ${inputNum('fv-banos', `Baños ${info('Cantidad definida en la tipología.')}`, u.banos || 0)}
+    ${inputNum('fv-valorMejoras', `Valor mejoras ${info('Valor compartido con la ficha de la unidad.')}`, u.valorMejoras || 0)}
+    ${inputNum('fv-valorTerreno', `Valor terreno ${info('Valor compartido con la ficha de la unidad.')}`, u.valorTerreno || 0)}
   `);
 
 const htmlCliente1 = seccion('Cliente 1 / Solicitante principal', `
@@ -12919,8 +12952,6 @@ ${selectCustom('fv-estatusConstruccion', `Estatus construcción ${info('Estado t
   { v: 'Acabados', l: 'Acabados' },
   { v: 'Culminada', l: 'Culminada' }
 ], v.estatusConstruccion || '')}
-${input('fv-faseConstruccion', `Fase construcción ${info('Detalle adicional de la fase constructiva de la unidad.')}`, v.faseConstruccion || '')}
-
 ${inputChk('fv-permisoConstruccionMunicipal', `Permiso construcción municipal ${info('Checklist para confirmar existencia del permiso de construcción municipal.')}`, !!v.permisoConstruccionMunicipal)}
 ${input('fv-permisoConstruccionNum', `Resolución permiso construcción ${info('Número de resolución del permiso de construcción municipal.')}`, v.permisoConstruccionNum || '')}
 ${inputChk('fv-permisoOcupacion', `Permiso ocupación municipal ${info('Checklist para confirmar existencia del permiso de ocupación municipal.')}`, !!v.permisoOcupacion)}
@@ -12986,18 +13017,10 @@ ${input('fv-observacionCliente', `Observación cliente ${info('Observaciones rel
 ${input('fv-comentario', `Comentario interno ${info('Comentario interno para seguimiento operativo, comercial, legal o bancario.')}`, v.comentario || '')}
 `);
 
-  const fichaHTML =
-    htmlUnidad +
-    htmlInsurance +
-    htmlCliente1 +
-    htmlCliente2 +
-    htmlReferencias +
-    htmlFinanciamiento +
-    htmlContrato +
-    htmlTecnico +
-    htmlLegal +
-    // htmlMivi +
-    htmlEntregaOtros;
+  const fichaHTML = fichaMode === 'technical'
+    ? htmlUnidadTechnical + htmlInsurance + htmlTecnico
+    : htmlUnidad + htmlInsurance + htmlCliente1 + htmlCliente2 + htmlReferencias +
+      htmlFinanciamiento + htmlContrato + htmlTecnico + htmlLegal + htmlEntregaOtros;
 
   const docsHTML = (typeof renderUnidadDocsSkeleton === 'function')
     ? renderUnidadDocsSkeleton(u)
@@ -13124,7 +13147,8 @@ const viewExports = document.createElement('div');
         state.project.technicalData.insurancePolicies = result.insurancePolicies || remaining;
         await loadProject();
         await loadUnits();
-        await abrirFichaUnidad(unitId);
+        await window.refreshTechnicalWorkspace?.({ force:true, preserveSelection:true });
+        await abrirFichaUnidad(unitId, { mode:fichaMode });
       } catch (error) {
         button.disabled = false;
         alert(error.message || 'No se pudo quitar la póliza de esta unidad.');
@@ -13135,12 +13159,19 @@ const viewExports = document.createElement('div');
   viewFicha.querySelector('[data-cancel-unit-policy]')?.addEventListener('click', resetUnitPolicyEditor);
   viewFicha.querySelector('[data-save-unit-policy]')?.addEventListener('click', async event => {
     const button = event.currentTarget;
+    const editingId = viewFicha.querySelector('[data-unit-policy-editor] [data-insurance-policy-row]')?.dataset.policyId;
+    const editingPolicy = editingId ? projectInsurancePolicies().find(item => String(item._id) === String(editingId)) : null;
+    const affectedUnits = editingPolicy?.appliesToAllUnits !== false
+      ? INSURANCE_UNITS_CACHE.length
+      : Math.max((editingPolicy?.unitIds || []).length, (editingPolicy?.unitRefs || []).length);
+    if (editingPolicy && affectedUnits > 1 && !confirm(`Esta póliza está compartida por ${affectedUnits} unidades. Los cambios se reflejarán en todas ellas. ¿Continuar?`)) return;
     button.disabled = true;
     try {
       await saveInsurancePoliciesFrom(viewFicha.querySelector('[data-unit-policy-editor]'), { preserveUnrendered:true });
       await loadProject();
       await loadUnits();
-      await abrirFichaUnidad(unitId);
+      await window.refreshTechnicalWorkspace?.({ force:true, preserveSelection:true });
+      await abrirFichaUnidad(unitId, { mode:fichaMode });
     } catch (error) {
       console.error(error);
       alert(error.message || 'No se pudo guardar la póliza.');
@@ -13286,6 +13317,76 @@ if (btnImportWord && importWordInput) {
   fichaGuardar.classList.add('is-loading');
 
   try {
+    if (fichaMode === 'technical') {
+      const nombreUnidad = (document.getElementById('fu-nombreUnidad')?.value || '').trim();
+      let manzana = nombreUnidad;
+      let lote = '';
+      const loteConPrefijo = nombreUnidad.match(/^(.*?)-(L-.+)$/i);
+      if (loteConPrefijo) {
+        manzana = loteConPrefijo[1].trim();
+        lote = loteConPrefijo[2].trim();
+      } else {
+        const separator = nombreUnidad.lastIndexOf('-');
+        if (separator > 0) {
+          manzana = nombreUnidad.slice(0, separator).trim();
+          lote = nombreUnidad.slice(separator + 1).trim();
+        }
+      }
+
+      await apiPatch(`/api/units/${fichaUnitId}`, {
+        manzana,
+        lote,
+        estado: vVal('fu-estado'),
+        modelId: vVal('fu-modeloSelect') || undefined,
+        modelo: vVal('fu-modelo'),
+        m2: vNum('fu-m2'),
+        costoUnidad: vNum('fu-costo'),
+        costoUnidadManual: document.getElementById('fu-costo')?.dataset.manual === 'true',
+        numeroFinca: vVal('fv-numeroFinca'),
+        codigoUbicacion: vVal('fv-codigoUbicacion'),
+        calle: vVal('fv-calle'),
+        metrosExtra: vNum('fv-metrosExtra'),
+        precioM2Extra: vNum('fv-precioM2Extra'),
+        areaAbierta: vNum('fv-areaAbierta'),
+        areaCerrada: vNum('fv-areaCerrada'),
+        recamaras: vNum('fv-recamaras'),
+        banos: vNum('fv-banos'),
+        valorMejoras: vNum('fv-valorMejoras'),
+        valorTerreno: vNum('fv-valorTerreno')
+      });
+
+      await apiPost('/api/ventas/upsert-by-unit', {
+        projectId: id,
+        unitId: fichaUnitId,
+        numeroFinca: vVal('fv-numeroFinca'),
+        codigoUbicacion: vVal('fv-codigoUbicacion'),
+        calle: vVal('fv-calle'),
+        metrosExtra: vNum('fv-metrosExtra'),
+        precioM2Extra: vNum('fv-precioM2Extra'),
+        areaAbierta: vNum('fv-areaAbierta'),
+        areaCerrada: vNum('fv-areaCerrada'),
+        areaTotalConstruccion: vNum('fv-areaAbierta') + vNum('fv-areaCerrada'),
+        recamaras: vNum('fv-recamaras'),
+        banos: vNum('fv-banos'),
+        valorMejoras: vNum('fv-valorMejoras'),
+        valorTerreno: vNum('fv-valorTerreno'),
+        enConstruccion: vChk('fv-enConstruccion'),
+        estatusConstruccion: vVal('fv-estatusConstruccion'),
+        permisoConstruccionMunicipal: vChk('fv-permisoConstruccionMunicipal'),
+        permisoConstruccionNum: vVal('fv-permisoConstruccionNum'),
+        permisoOcupacion: vChk('fv-permisoOcupacion'),
+        permisoOcupacionNum: vVal('fv-permisoOcupacionNum'),
+        fechaEmisionPermisoOcupacion: vDate('fv-fechaEmisionPermisoOcupacion'),
+        constructora: vVal('fv-constructora')
+      });
+
+      modalFicha.style.display = 'none';
+      await loadUnits();
+      await window.refreshTechnicalWorkspace?.({ preserveSelection:true });
+      await markProjectDataChanged();
+      return;
+    }
+
     // 1) Actualizar la unidad
     const nombreUnidad = (document.getElementById('fu-nombreUnidad')?.value || '').trim();
 
@@ -13535,8 +13636,6 @@ const uBody = {
       // =====================================================
       enConstruccion: vChk('fv-enConstruccion'),
       estatusConstruccion: vVal('fv-estatusConstruccion'),
-      faseConstruccion: vVal('fv-faseConstruccion'),
-
       permisoConstruccionMunicipal: vChk('fv-permisoConstruccionMunicipal'),
       permisoConstruccionNum: vVal('fv-permisoConstruccionNum'),
 
@@ -13668,7 +13767,6 @@ const uBody = {
       'calle',
       'loteEsquina',
       'estatusConstruccion',
-      'faseConstruccion',
       'permisoConstruccionNum',
       'permisoOcupacionNum',
       'constructora',
@@ -13883,18 +13981,24 @@ if (btnExportarExcel) {
   });
 }
 
-  if (btnCrear) btnCrear.addEventListener('click', () => {
+  function openSharedCreateUnits(context = 'commercial') {
     renderCreateBatchModalLayout();
+    modalCrear.dataset.launchContext = context;
     const modelSelect = document.getElementById('cl-modeloSelect');
     if (modelSelect) modelSelect.innerHTML = projectModelOptions('', { includeEmpty: true });
     const loc = document.getElementById('cl-ubicacion');
     if (loc) loc.value = state?.project?.location || state?.project?.address || '';
     modalCrear.style.display='flex';
-  });
-  if (btnCrearModelo) btnCrearModelo.addEventListener('click', () => {
+  }
+  function openSharedModelsManager(context = 'commercial') {
+    modalCrearModelo.dataset.launchContext = context;
     renderCommercialModelsManager();
     modalCrearModelo.style.display = 'flex';
-  });
+  }
+  window.openSharedCreateUnits = openSharedCreateUnits;
+  window.openSharedModelsManager = openSharedModelsManager;
+  if (btnCrear) btnCrear.addEventListener('click', () => openSharedCreateUnits('commercial'));
+  if (btnCrearModelo) btnCrearModelo.addEventListener('click', () => openSharedModelsManager('commercial'));
   if (modalCrearCerrar) modalCrearCerrar.addEventListener('click', () => modalCrear.style.display='none');
   if (modalModeloCerrar) modalModeloCerrar.addEventListener('click', () => modalCrearModelo.style.display='none');
   if (btnBatch) btnBatch.addEventListener('click', openBatch);
@@ -13934,6 +14038,7 @@ if (btnExportarExcel) {
         await apiPost('/api/units/batch', body);
         modalCrear.style.display = 'none';
         await loadUnits();
+        await window.refreshTechnicalWorkspace?.({ force:true });
         await markProjectDataChanged();
       } catch (e) { alert('Error creando unidades: ' + e.message); }
     });
@@ -13951,6 +14056,706 @@ if (btnExportarExcel) {
 
   // La carga inicial la orquesta el init principal para evitar llamadas duplicadas.
 })();
+
+
+// ======================
+// ====== TÉCNICO
+// ======================
+const technicalWorkspace = {
+  loaded: false,
+  loading: null,
+  units: [],
+  ventas: new Map(),
+  folders: [],
+  unassigned: { name:'Sin carpeta', color:'#0f172a' },
+  permits: null,
+  templates: [],
+  plans: [],
+  selected: new Set(),
+  permitFilter: 'all'
+};
+window.__technicalWorkspace = technicalWorkspace;
+
+const TECHNICAL_PERMIT_META = {
+  pending:     { label:'Pendiente', color:'#d97706' },
+  in_progress: { label:'En curso', color:'#2563eb' },
+  submitted:   { label:'Presentado', color:'#0891b2' },
+  approved:    { label:'Aprobado', color:'#16a34a' },
+  rejected:    { label:'Rechazado', color:'#dc2626' },
+  waived:      { label:'Exonerado', color:'#64748b' }
+};
+const TECHNICAL_UNIT_STATES = [
+  { v:'disponible', l:'Disponible' }, { v:'inventario', l:'Inventario' },
+  { v:'reservado', l:'Reservado' }, { v:'con_cpp', l:'Con CPP o venta al contado' },
+  { v:'tramite_legal_activado', l:'Trámite legal activado' },
+  { v:'escriturado_traspasado', l:'Escriturado / Traspasado' },
+  { v:'vivienda_entregada', l:'Vivienda entregada' }
+];
+
+function technicalUnitState(value) {
+  const stateValue = String(value || 'disponible').toLowerCase().trim();
+  const aliases = { reservado_separado:'reservado', cpp_recibida:'con_cpp', venta_contado:'con_cpp', en_escrituracion:'tramite_legal_activado', escriturado:'escriturado_traspasado', entregado:'vivienda_entregada' };
+  return aliases[stateValue] || stateValue || 'disponible';
+}
+
+function technicalUnitStateLabel(value) {
+  const normalized = technicalUnitState(value);
+  return TECHNICAL_UNIT_STATES.find(item => item.v === normalized)?.l || normalized;
+}
+
+function technicalUnitReference(unit = {}) {
+  return String(unit.code || `${unit.manzana || unit.modelo || ''}-${unit.lote || ''}`).trim();
+}
+
+function technicalPolicyApplies(policy = {}, unit = {}) {
+  if (policy.appliesToAllUnits !== false) return true;
+  const idValue = String(unit._id || '');
+  const ref = technicalUnitReference(unit);
+  return (policy.unitIds || []).some(value => String(value) === idValue)
+    || (policy.unitRefs || []).some(value => String(value) === ref);
+}
+
+function technicalPoliciesForUnit(unit = {}) {
+  const policies = projectInsurancePolicies().filter(policy => technicalPolicyApplies(policy, unit));
+  return ['CAR','INCENDIO'].flatMap(type => {
+    const typed = policies.filter(policy => String(policy.type || '').toUpperCase() === type);
+    const specific = typed.filter(policy => policy.appliesToAllUnits === false);
+    return specific.length ? specific : typed.filter(policy => policy.appliesToAllUnits !== false);
+  });
+}
+
+function technicalDaysUntil(value) {
+  if (!value) return null;
+  const target = new Date(value);
+  if (Number.isNaN(target.getTime())) return null;
+  const now = new Date();
+  return Math.ceil((target.getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) / 86400000);
+}
+
+function technicalKpi(label, value, detail, tone = '') {
+  return `<article class="technical-kpi ${tone}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong><small>${escapeHtml(detail)}</small></article>`;
+}
+
+function renderTechnicalKpis() {
+  const host = document.getElementById('technicalKpis');
+  if (!host) return;
+  const ventas = technicalWorkspace.ventas;
+  const permits = technicalWorkspace.permits?.items || [];
+  const activePermits = permits.filter(item => technicalPermitEffectiveStatus(item) !== 'waived');
+  const approved = activePermits.filter(item => technicalPermitEffectiveStatus(item) === 'approved').length;
+  const progress = activePermits.length ? Math.round(approved / activePermits.length * 100) : 0;
+  const inConstruction = technicalWorkspace.units.filter(unit => ventas.get(String(unit._id))?.enConstruccion).length;
+  const completed = technicalWorkspace.units.filter(unit => String(ventas.get(String(unit._id))?.estatusConstruccion || '').toLowerCase() === 'culminada').length;
+  const missingOccupation = technicalWorkspace.units.filter(unit => !ventas.get(String(unit._id))?.permisoOcupacion).length;
+  const expiringPolicies = projectInsurancePolicies().filter(policy => {
+    const days = technicalDaysUntil(policy.expiryDate);
+    return days !== null && days <= 60;
+  }).length;
+  host.innerHTML = [
+    technicalKpi('Permisos aprobados', `${progress}%`, `${approved} de ${activePermits.length || 0}`, progress === 100 ? 'is-success' : 'is-cyan'),
+    technicalKpi('Unidades en obra', inConstruction, 'Construcción activa', 'is-cyan'),
+    technicalKpi('Unidades culminadas', completed, 'Estado técnico', 'is-success'),
+    technicalKpi('Sin permiso de ocupación', missingOccupation, 'Requieren seguimiento', missingOccupation ? 'is-warning' : 'is-success'),
+    technicalKpi('Pólizas con alerta', expiringPolicies, 'Vencidas o a 60 días', expiringPolicies ? 'is-danger' : 'is-success')
+  ].join('');
+}
+
+function technicalAggregatedPermitSummary(kind) {
+  const rows = technicalWorkspace.units.map(unit => {
+    const venta = technicalWorkspace.ventas.get(String(unit._id)) || {};
+    const construction = kind === 'construction';
+    const number = construction ? venta.permisoConstruccionNum : venta.permisoOcupacionNum;
+    const approved = construction
+      ? !!(venta.permisoConstruccionMunicipal || String(number || '').trim())
+      : !!(venta.permisoOcupacion || String(number || '').trim());
+    return { unit: commercialUnitName(unit), number: number || '—', approved };
+  });
+  const approved = rows.filter(row => row.approved).length;
+  return {
+    rows,
+    approved,
+    total: rows.length,
+    status: rows.length > 0 && approved === rows.length ? 'approved' : 'pending'
+  };
+}
+
+function technicalPermitAggregate(item) {
+  if (isConstructionPermit(item)) return technicalAggregatedPermitSummary('construction');
+  if (isOccupationPermit(item)) return technicalAggregatedPermitSummary('occupation');
+  return null;
+}
+
+function technicalPermitEffectiveStatus(item) {
+  return technicalPermitAggregate(item)?.status || item?.status || 'pending';
+}
+
+function technicalPermitDependencies(item, index) {
+  return (item?.dependencies || []).map(code => {
+    const dependency = index[code];
+    return {
+      code,
+      title: dependency?.title || code,
+      approved: technicalPermitEffectiveStatus(dependency) === 'approved'
+    };
+  });
+}
+
+function technicalPermitCanAdvance(status, dependencies) {
+  return !['in_progress', 'submitted', 'approved'].includes(status)
+    || dependencies.every(dependency => dependency.approved);
+}
+
+async function technicalUpdatePermitStatus(code, status, select) {
+  const item = (technicalWorkspace.permits?.items || []).find(current => current.code === code);
+  if (!item) return;
+  const dependencies = technicalPermitDependencies(item, buildIndexByCode(technicalWorkspace.permits.items));
+  if (!technicalPermitCanAdvance(status, dependencies)) {
+    const pending = dependencies.filter(dependency => !dependency.approved).map(dependency => dependency.title);
+    alert(`Antes de avanzar este trámite debes aprobar:\n• ${pending.join('\n• ')}`);
+    select.value = technicalPermitEffectiveStatus(item);
+    return;
+  }
+  const previous = item.status;
+  select.disabled = true;
+  select.closest('.technical-permit-card')?.classList.add('is-saving');
+  try {
+    const fresh = await apiPermitsPatchItem(code, { status });
+    technicalWorkspace.permits = fresh;
+    __permits = fresh;
+    renderTechnicalPermits();
+    renderTechnicalKpis();
+    updatePermitsByInstitutionChart();
+    await markProjectDataChanged({ refreshSummary:true });
+  } catch (error) {
+    item.status = previous;
+    select.value = previous;
+    select.disabled = false;
+    select.closest('.technical-permit-card')?.classList.remove('is-saving');
+    console.error('[Técnico] status permiso', error);
+    alert('No se pudo actualizar el estado del permiso.');
+  }
+}
+
+async function technicalPermitDocuments(code, host) {
+  if (!host) return;
+  host.innerHTML = '<div class="technical-detail-empty">Cargando documentos…</div>';
+  try {
+    let response = await fetch(`/api/documents?projectId=${id}&category=permits&permitCode=${encodeURIComponent(code)}&ts=${Date.now()}`, { headers:{ ...authHeaders(), ...tenantHeaders() } });
+    let documents = response.ok ? await response.json() : [];
+    if (!response.ok) {
+      response = await fetch(`/api/documents?projectId=${id}&category=permits&ts=${Date.now()}`, { headers:{ ...authHeaders(), ...tenantHeaders() } });
+      documents = response.ok ? await response.json() : [];
+      const escapedCode = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const matcher = new RegExp(escapedCode, 'i');
+      documents = (documents || []).filter(document => matcher.test(document.title || '') || matcher.test(document.originalname || ''));
+    }
+    host.innerHTML = documents.length ? documents.map(document => `
+      <div class="technical-detail-document">
+        <div><strong>${escapeHtml(document.originalname || document.filename || 'Documento')}</strong><span>${document.createdAt ? new Date(document.createdAt).toLocaleDateString() : 'Sin fecha'}${document.expiryDate ? ` · Caduca ${new Date(document.expiryDate).toLocaleDateString()}` : ''}</span></div>
+        <a class="btn btn-ghost btn-xs js-secure-file" href="#" data-url="${secureDocUrl(document._id)}" data-filename="${escapeHtml(document.originalname || document.filename || 'documento')}" data-action="view">Ver</a>
+      </div>`).join('') : '<div class="technical-detail-empty">Todavía no hay documentos en este trámite.</div>';
+  } catch (error) {
+    console.error('[Técnico] documentos permiso', error);
+    host.innerHTML = '<div class="technical-detail-empty is-error">No se pudieron cargar los documentos.</div>';
+  }
+}
+
+function technicalUploadPermitDocuments(code) {
+  const picker = document.createElement('input');
+  picker.type = 'file';
+  picker.multiple = true;
+  picker.onchange = async () => {
+    const files = [...(picker.files || [])];
+    if (!files.length) return;
+    const expiryDate = String(prompt('Fecha de caducidad (AAAA-MM-DD, opcional):', '') || '').trim();
+    if (expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) return alert('La fecha debe tener formato AAAA-MM-DD.');
+    const formData = new FormData();
+    files.forEach(file => formData.append('files', file));
+    formData.append('projectId', id);
+    formData.append('category', 'permits');
+    formData.append('permitCode', code);
+    if (expiryDate) formData.append('expiryDate', expiryDate);
+    try {
+      const response = await fetch('/api/documents/upload', { method:'POST', body:formData, headers:{ ...authHeaders(), ...tenantHeaders() }, credentials:'include' });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.message || result.error || `HTTP ${response.status}`);
+      await technicalPermitDocuments(code, document.getElementById('technicalPermitDetailDocuments'));
+      await loadTechnicalWorkspace({ force:true, preserveSelection:true });
+      invalidateProjectDocsCache?.();
+      await markProjectDataChanged();
+    } catch (error) {
+      alert(error.message || 'No se pudieron adjuntar los documentos.');
+    }
+  };
+  picker.click();
+}
+
+function openTechnicalPermitDetail(code) {
+  const item = (technicalWorkspace.permits?.items || []).find(current => current.code === code);
+  if (!item) return;
+  const index = buildIndexByCode(technicalWorkspace.permits.items);
+  const dependencies = technicalPermitDependencies(item, index);
+  const aggregate = technicalPermitAggregate(item);
+  const status = technicalPermitEffectiveStatus(item);
+  const meta = TECHNICAL_PERMIT_META[status] || TECHNICAL_PERMIT_META.pending;
+  const list = (values, empty) => values?.length ? `<ul>${values.map(value => `<li>${escapeHtml(value)}</li>`).join('')}</ul>` : `<div class="technical-detail-empty">${empty}</div>`;
+  const dependencyHtml = dependencies.length ? dependencies.map(dependency => `<div class="technical-dependency-row ${dependency.approved ? 'is-approved' : 'is-pending'}"><span>${dependency.approved ? '✓' : '!'}</span><div><strong>${escapeHtml(dependency.title)}</strong><small>${dependency.approved ? 'Aprobado' : 'Pendiente de aprobación'}</small></div></div>`).join('') : '<div class="technical-detail-empty">Este trámite no necesita una aprobación previa.</div>';
+  const unitHtml = aggregate ? `<section class="technical-detail-section"><h4>Estado por unidad comercial</h4><div class="technical-detail-units">${aggregate.rows.length ? aggregate.rows.map(row => `<div><span>${escapeHtml(row.unit)}</span><strong>${escapeHtml(row.number)}</strong><em class="${row.approved ? 'is-approved' : 'is-pending'}">${row.approved ? 'Aprobado' : 'Pendiente'}</em></div>`).join('') : '<div class="technical-detail-empty">No hay unidades comerciales.</div>'}</div></section>` : '';
+  openModal(item.title || item.code, `
+    <div class="technical-permit-detail" style="--permit-color:${meta.color}">
+      <header><div><span>${escapeHtml(item.institution || 'Institución no informada')}</span><strong>${escapeHtml(meta.label)}</strong></div><div class="technical-detail-facts"><span style="color: white;"><b>${item.slaDays || '—'}</b> días hábiles</span><span style="color: white;"><b>${dependencies.length}</b> dependencias</span></div></header>
+      <section class="technical-detail-section"><h4>Aprobaciones previas</h4><div class="technical-dependency-list">${dependencyHtml}</div></section>
+      <section class="technical-detail-section"><h4>Requisitos</h4>${list(item.requirements, 'No hay requisitos descritos.')}</section>
+      <section class="technical-detail-section"><h4>Observaciones</h4>${list(item.observations, 'No hay observaciones.')}</section>
+      ${unitHtml}
+      <section class="technical-detail-section"><div class="technical-detail-section-head"><h4>Documentos</h4><button id="technicalPermitDetailUpload" class="btn btn-ghost btn-xs" type="button">Adjuntar documentos</button></div><div id="technicalPermitDetailDocuments"></div></section>
+    </div>`, 'Cerrar', () => { modalBackdrop.style.display = 'none'; });
+  document.getElementById('technicalPermitDetailUpload')?.addEventListener('click', () => technicalUploadPermitDocuments(code));
+  technicalPermitDocuments(code, document.getElementById('technicalPermitDetailDocuments'));
+}
+
+function technicalRecommendedTemplate(template) {
+  const haystack = `${template?.name || ''} ${(template?.items || []).map(item => `${item.type || ''} ${item.title || ''}`).join(' ')}`.toLowerCase();
+  const projectType = String(state.project?.projectType || state.project?.tipoProyecto || '').toLowerCase();
+  if ((template?.projectTypes || []).some(value => String(value || '').toLowerCase() === projectType)) return 100;
+  const tokens = projectType.split(/[^a-záéíóúñ]+/i).filter(token => token.length > 4);
+  return tokens.reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0);
+}
+
+function renderTechnicalTemplatePicker() {
+  const select = document.getElementById('technicalPermitTemplate');
+  if (!select) return;
+  const ranked = [...technicalWorkspace.templates].sort((a,b) => technicalRecommendedTemplate(b) - technicalRecommendedTemplate(a));
+  const topScore = ranked.length ? technicalRecommendedTemplate(ranked[0]) : 0;
+  select.innerHTML = ranked.length
+    ? ranked.map((template, index) => `<option value="${escapeHtml(template._id)}">${index === 0 && topScore > 0 ? '★ Recomendada · ' : ''}${escapeHtml(template.name)} · v${escapeHtml(template.version || 1)}</option>`).join('')
+    : '<option value="">No hay plantillas disponibles</option>';
+}
+
+function renderTechnicalPermits() {
+  const board = document.getElementById('technicalPermitsBoard');
+  const progressHost = document.getElementById('technicalPermitProgress');
+  if (!board || !progressHost) return;
+  const items = technicalWorkspace.permits?.items || [];
+  const relevant = items.filter(item => technicalPermitEffectiveStatus(item) !== 'waived');
+  const approved = relevant.filter(item => technicalPermitEffectiveStatus(item) === 'approved').length;
+  const progress = relevant.length ? Math.round(approved / relevant.length * 100) : 0;
+  progressHost.innerHTML = `<div class="technical-progress-ring" style="--progress:${progress}"><strong>${progress}%</strong></div><div class="technical-progress-copy"><strong>${approved} de ${relevant.length} aprobados</strong><span>${items.length ? `Plantilla v${technicalWorkspace.permits?.templateVersion || 1}` : 'Selecciona una plantilla para comenzar'}</span></div>`;
+
+  const filtered = items.filter(item => {
+    if (technicalWorkspace.permitFilter === 'all') return true;
+    const status = technicalPermitEffectiveStatus(item);
+    if (technicalWorkspace.permitFilter === 'attention') return ['pending','rejected'].includes(status) || (technicalDaysUntil(item.dueDate) ?? 999) < 0;
+    return status === technicalWorkspace.permitFilter;
+  });
+  const index = buildIndexByCode(items);
+  const grouped = groupByPhase(filtered);
+  board.innerHTML = filtered.length ? grouped.order.map(phase => {
+    const phaseItems = grouped.groups[phase] || [];
+    const phaseApproved = phaseItems.filter(item => technicalPermitEffectiveStatus(item) === 'approved').length;
+    return `<section class="technical-permit-phase">
+      <header><div><span>Etapa</span><h4>${escapeHtml(phase)}</h4></div><strong>${phaseApproved}/${phaseItems.length} aprobados</strong></header>
+      <div class="technical-permit-phase-grid">${phaseItems.map((item, itemIndex) => {
+        const status = technicalPermitEffectiveStatus(item);
+        const meta = TECHNICAL_PERMIT_META[status] || TECHNICAL_PERMIT_META.pending;
+        const dependencies = technicalPermitDependencies(item, index);
+        const pending = dependencies.filter(dependency => !dependency.approved);
+        const aggregate = technicalPermitAggregate(item);
+        const days = technicalDaysUntil(item.dueDate);
+        const dueText = days === null ? 'Sin fecha límite' : days < 0 ? `Vencido hace ${Math.abs(days)} días` : days === 0 ? 'Vence hoy' : `${days} días restantes`;
+        const prerequisite = dependencies.length
+          ? pending.length ? `Faltan ${pending.length} aprobaciones previas` : 'Prerequisitos aprobados'
+          : 'Sin prerequisitos';
+        return `<article class="technical-permit-card ${pending.length ? 'is-blocked' : 'is-ready'} ${aggregate ? 'is-automatic' : ''}" data-code="${escapeHtml(item.code)}" style="--permit-color:${meta.color}">
+          <div class="technical-permit-card-sequence"><span>${String(itemIndex + 1).padStart(2,'0')}</span><i></i></div>
+          <div class="technical-permit-card-head"><span class="technical-section-kicker">${escapeHtml(item.institution || 'General')}</span><span class="technical-permit-status">${meta.label}</span></div>
+          <h5>${escapeHtml(item.title || item.code)}</h5>
+          <div class="technical-permit-prerequisite ${pending.length ? 'is-pending' : 'is-approved'}"><span>${pending.length ? '!' : '✓'}</span><strong>${escapeHtml(prerequisite)}</strong></div>
+          ${dependencies.length ? `<div class="technical-permit-dependencies">${dependencies.slice(0,2).map(dependency => `<span class="${dependency.approved ? 'is-approved' : ''}" title="${escapeHtml(dependency.title)}">${dependency.approved ? '✓' : '•'} ${escapeHtml(dependency.title)}</span>`).join('')}${dependencies.length > 2 ? `<span>+${dependencies.length - 2} más</span>` : ''}</div>` : ''}
+          <div class="technical-permit-facts"><span><small>Plazo</small><strong>${item.slaDays ? `${item.slaDays} días hábiles` : 'No informado'}</strong></span><span><small>Vencimiento</small><strong>${escapeHtml(dueText)}</strong></span></div>
+          ${aggregate ? `<div class="technical-permit-auto-note">Se actualiza desde las unidades: ${aggregate.approved}/${aggregate.total} aprobadas</div>` : ''}
+          <div class="technical-permit-card-actions">
+            <label class="technical-permit-state-label"><span>Estado</span>
+              <select class="technical-permit-state" data-code="${escapeHtml(item.code)}" ${aggregate ? 'disabled' : ''} aria-label="Estado de ${escapeHtml(item.title || item.code)}">${PERMIT_STATES.map(value => `<option value="${value}" ${status === value ? 'selected' : ''}>${PERMIT_LABEL[value]}</option>`).join('')}</select>
+            </label>
+            <button class="technical-permit-detail-button js-technical-permit-detail" type="button" data-code="${escapeHtml(item.code)}">Ficha</button>
+          </div>
+        </article>`;
+      }).join('')}</div>
+    </section>`;
+  }).join('') : `<div class="technical-empty">${items.length ? 'No hay permisos en este filtro.' : 'Todavía no hay una ruta de permisos. Escoge arriba la plantilla apropiada para la tipología.'}</div>`;
+}
+
+function technicalUnitMatchesFilters(unit, venta) {
+  const construction = document.getElementById('technicalConstructionFilter')?.value || '';
+  const permitFilter = document.getElementById('technicalPermitFilter')?.value || '';
+  const query = String(document.getElementById('technicalUnitSearch')?.value || '').trim().toLowerCase();
+  if (construction && String(venta?.estatusConstruccion || '') !== construction) return false;
+  if (permitFilter === 'missing-construction' && venta?.permisoConstruccionMunicipal) return false;
+  if (permitFilter === 'missing-occupation' && venta?.permisoOcupacion) return false;
+  if (permitFilter === 'complete' && !(venta?.permisoConstruccionMunicipal && venta?.permisoOcupacion)) return false;
+  if (query) {
+    const text = [unit.manzana, unit.lote, unit.modelo, venta?.estatusConstruccion, venta?.constructora, venta?.permisoConstruccionNum, venta?.permisoOcupacionNum].join(' ').toLowerCase();
+    if (!text.includes(query)) return false;
+  }
+  return true;
+}
+
+function technicalConstructionTone(value, active = false) {
+  const normalized = String(value || (active ? 'En construcción' : 'Pendiente'))
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  if (normalized === 'culminada') return 'completed';
+  if (normalized === 'acabados') return 'finishes';
+  if (normalized === 'obra gris') return 'gray-work';
+  if (normalized.includes('construccion') || active) return 'in-progress';
+  return 'pending';
+}
+
+function technicalUnitCard(unit) {
+  const venta = technicalWorkspace.ventas.get(String(unit._id)) || {};
+  const policies = technicalPoliciesForUnit(unit);
+  const idValue = String(unit._id);
+  const construction = venta.estatusConstruccion || (venta.enConstruccion ? 'En construcción' : 'Pendiente');
+  const constructionTone = technicalConstructionTone(construction, venta.enConstruccion);
+  return `<article class="unit-card construction-${escapeHtml(constructionTone)} ${technicalWorkspace.selected.has(idValue) ? 'selected' : ''}" data-technical-unit="${escapeHtml(idValue)}" draggable="true">
+    <div class="head"><div class="title"><b>${escapeHtml(unit.manzana || '-')}-${escapeHtml(unit.lote || '')}</b><span class="status">${escapeHtml(technicalUnitStateLabel(unit.estado || 'disponible'))}</span></div><label class="sel-wrap" title="Seleccionar"><input class="sel" type="checkbox" ${technicalWorkspace.selected.has(idValue) ? 'checked' : ''}><span class="sel-box"></span></label></div>
+    <div class="meta">${escapeHtml(unit.modelo || 'Sin modelo')} · ${escapeHtml(unit.m2 || 0)} m²</div>
+    <div class="technical-construction-state"><span>Estado de obra</span><strong>${escapeHtml(construction)}</strong></div>
+    <div class="badges">
+      <span class="chip technical-signal ${venta.permisoConstruccionMunicipal ? 'is-ok' : 'is-warning'}"><i>${venta.permisoConstruccionMunicipal ? '✓' : '!'}</i><span><small>Permiso</small>Construcción</span></span>
+      <span class="chip technical-signal ${venta.permisoOcupacion ? 'is-ok' : 'is-warning'}"><i>${venta.permisoOcupacion ? '✓' : '!'}</i><span><small>Permiso</small>Ocupación</span></span>
+      ${policies.length ? policies.map(policy => `<span class="chip technical-signal ${technicalDaysUntil(policy.expiryDate) < 0 ? 'is-danger' : 'is-ok'}"><i>${technicalDaysUntil(policy.expiryDate) < 0 ? '!' : '✓'}</i><span><small>Póliza</small>${escapeHtml(policy.type || 'Cobertura')} · ${escapeHtml(policy.policyNumber || 'sin número')}</span></span>`).join('') : '<span class="chip technical-signal is-warning"><i>!</i><span><small>Póliza</small>Sin cobertura</span></span>'}
+    </div>
+  </article>`;
+}
+
+function technicalFolderCollapsed(folderId) {
+  return localStorage.getItem(`bank73_com_folder_closed_${id}_${folderId || 'unassigned'}`) === '1';
+}
+
+function renderTechnicalUnits() {
+  const gridHost = document.getElementById('technicalUnitsGrid');
+  const kpiHost = document.getElementById('technicalUnitKpis');
+  if (!gridHost || !kpiHost) return;
+  const all = technicalWorkspace.units;
+  const filtered = all.filter(unit => technicalUnitMatchesFilters(unit, technicalWorkspace.ventas.get(String(unit._id)) || {}));
+  const ventas = technicalWorkspace.ventas;
+  const inWork = all.filter(unit => ventas.get(String(unit._id))?.enConstruccion).length;
+  const completed = all.filter(unit => String(ventas.get(String(unit._id))?.estatusConstruccion || '').toLowerCase() === 'culminada').length;
+  const missingConstruction = all.filter(unit => !ventas.get(String(unit._id))?.permisoConstruccionMunicipal).length;
+  const missingOccupation = all.filter(unit => !ventas.get(String(unit._id))?.permisoOcupacion).length;
+  kpiHost.innerHTML = [
+    technicalKpi('En construcción', inWork, `${all.length} unidades totales`, 'is-cyan'),
+    technicalKpi('Culminadas', completed, 'Obra finalizada', 'is-success'),
+    technicalKpi('Sin permiso construcción', missingConstruction, 'Pendientes', missingConstruction ? 'is-warning' : 'is-success'),
+    technicalKpi('Sin permiso ocupación', missingOccupation, 'Pendientes', missingOccupation ? 'is-warning' : 'is-success')
+  ].join('');
+
+  const grouped = new Map(technicalWorkspace.folders.map(folder => [String(folder._id), []]));
+  const unassigned = [];
+  filtered.forEach(unit => {
+    const folderId = unit.folderId ? String(unit.folderId) : '';
+    if (folderId && grouped.has(folderId)) grouped.get(folderId).push(unit); else unassigned.push(unit);
+  });
+  const folderHtml = (folder, units, isUnassigned = false) => {
+    const folderId = isUnassigned ? '' : String(folder._id);
+    const collapseKey = isUnassigned ? 'unassigned' : folderId;
+    const collapsed = technicalFolderCollapsed(collapseKey);
+    return `<section class="commercial-folder ${isUnassigned ? 'unassigned' : ''} ${collapsed ? 'collapsed' : ''}" data-technical-folder="${escapeHtml(folderId)}" style="--folder-color:${escapeHtml(folder.color || '#0f172a')}">
+      <div class="commercial-folder-head"><h3>${escapeHtml(folder.name || 'Sin carpeta')}</h3><div class="folder-actions"><span>${units.length} unidades</span><button type="button" class="btn mini" data-technical-folder-toggle="${escapeHtml(collapseKey)}">${collapsed ? 'Mostrar' : 'Ocultar'}</button></div></div>
+      <div class="commercial-folder-body">${units.map(technicalUnitCard).join('') || '<div class="empty">No hay unidades en esta vista.</div>'}</div>
+    </section>`;
+  };
+  gridHost.innerHTML = folderHtml(technicalWorkspace.unassigned, unassigned, true) + technicalWorkspace.folders.map(folder => folderHtml(folder, grouped.get(String(folder._id)) || [])).join('');
+  bindTechnicalUnitCards();
+  updateTechnicalSelection();
+}
+
+function updateTechnicalSelection() {
+  const count = technicalWorkspace.selected.size;
+  const label = document.getElementById('technicalSelectionCount');
+  const selectAll = document.getElementById('technicalSelectAll');
+  const batch = document.getElementById('technicalBatchEdit');
+  const remove = document.getElementById('technicalDeleteUnits');
+  if (label) label.textContent = `${count} ${count === 1 ? 'seleccionada' : 'seleccionadas'}`;
+  if (batch) batch.disabled = count === 0;
+  if (remove) remove.disabled = count === 0;
+  if (selectAll) {
+    const visible = document.querySelectorAll('#technicalUnitsGrid [data-technical-unit]').length;
+    const selectedVisible = [...document.querySelectorAll('#technicalUnitsGrid [data-technical-unit]')].filter(card => technicalWorkspace.selected.has(card.dataset.technicalUnit)).length;
+    selectAll.textContent = visible > 0 && selectedVisible === visible ? 'Deseleccionar todo' : 'Seleccionar todo';
+  }
+}
+
+function bindTechnicalUnitCards() {
+  const gridHost = document.getElementById('technicalUnitsGrid');
+  if (!gridHost) return;
+  gridHost.querySelectorAll('[data-technical-unit]').forEach(card => {
+    const unitId = card.dataset.technicalUnit;
+    card.addEventListener('click', event => {
+      if (event.target.closest('.sel-wrap')) return;
+      window.abrirFichaUnidad?.(unitId, { mode:'technical' });
+    });
+    card.querySelector('.sel')?.addEventListener('change', event => {
+      if (event.target.checked) technicalWorkspace.selected.add(unitId); else technicalWorkspace.selected.delete(unitId);
+      card.classList.toggle('selected', event.target.checked);
+      updateTechnicalSelection();
+    });
+    card.addEventListener('dragstart', event => {
+      const ids = technicalWorkspace.selected.has(unitId) ? [...technicalWorkspace.selected] : [unitId];
+      event.dataTransfer.setData('application/json', JSON.stringify(ids));
+      event.dataTransfer.setData('text/plain', unitId);
+    });
+  });
+  gridHost.querySelectorAll('[data-technical-folder]').forEach(folder => {
+    folder.addEventListener('dragover', event => { event.preventDefault(); folder.classList.add('is-drag-over'); });
+    folder.addEventListener('dragleave', event => { if (!folder.contains(event.relatedTarget)) folder.classList.remove('is-drag-over'); });
+    folder.addEventListener('drop', async event => {
+      event.preventDefault(); folder.classList.remove('is-drag-over');
+      let ids = [];
+      try { ids = JSON.parse(event.dataTransfer.getData('application/json') || '[]'); } catch (_) {}
+      if (!ids.length) ids = [event.dataTransfer.getData('text/plain')].filter(Boolean);
+      if (!ids.length) return;
+      try {
+        if (folder.dataset.technicalFolder) await API.patch(`/api/commercial-folders/${folder.dataset.technicalFolder}/units`, { unitIds:ids });
+        else await API.patch('/api/commercial-folders/unassigned/units', { unitIds:ids, projectId:id });
+        await loadTechnicalWorkspace({ force:true, preserveSelection:true });
+        await window.loadUnits?.();
+      } catch (error) { alert(error.message || 'No se pudieron mover las unidades.'); }
+    });
+  });
+  gridHost.querySelectorAll('[data-technical-folder-toggle]').forEach(button => button.addEventListener('click', event => {
+    event.preventDefault(); event.stopPropagation();
+    const key = button.dataset.technicalFolderToggle;
+    const folder = button.closest('.commercial-folder');
+    const collapsed = !folder.classList.contains('collapsed');
+    localStorage.setItem(`bank73_com_folder_closed_${id}_${key}`, collapsed ? '1' : '0');
+    folder.classList.toggle('collapsed', collapsed);
+    button.textContent = collapsed ? 'Mostrar' : 'Ocultar';
+  }));
+}
+
+function renderTechnicalDocuments() {
+  const plansHost = document.getElementById('technicalPlansList');
+  const policiesHost = document.getElementById('technicalPoliciesList');
+  if (!plansHost || !policiesHost) return;
+  document.getElementById('technicalPlansCount').textContent = technicalWorkspace.plans.length;
+  document.getElementById('technicalPoliciesCount').textContent = projectInsurancePolicies().length;
+  plansHost.innerHTML = technicalWorkspace.plans.length ? technicalWorkspace.plans.map(doc => `<div class="technical-library-row"><div><strong>${escapeHtml(doc.originalname || doc.name || doc.title || 'Plano arquitectónico')}</strong><span>${escapeHtml(doc.subfolder || doc.folder || 'Planos')} · ${escapeHtml(String(doc.createdAt || '').slice(0,10) || 'Sin fecha')}</span></div><a class="btn btn-ghost btn-xs js-secure-file" href="#" data-url="${secureDocUrl(doc._id)}" data-filename="${escapeHtml(doc.originalname || 'plano')}" data-action="view">Ver</a></div>`).join('') : '<div class="technical-empty">No hay planos arquitectónicos adjuntos.</div>';
+  const unitsById = new Map(technicalWorkspace.units.map(unit => [String(unit._id), unit]));
+  policiesHost.innerHTML = projectInsurancePolicies().length ? projectInsurancePolicies().map(policy => {
+    const coverage = policy.appliesToAllUnits !== false ? 'Todas las unidades' : (policy.unitIds || []).map(value => technicalUnitReference(unitsById.get(String(value)) || {}) || value).join(', ') || (policy.unitRefs || []).join(', ') || 'Sin unidades';
+    const days = technicalDaysUntil(policy.expiryDate);
+    const due = days === null ? 'Sin vencimiento' : days < 0 ? `Vencida hace ${Math.abs(days)} días` : `${days} días restantes`;
+    return `<div class="technical-library-row"><div><strong>${escapeHtml(policy.type || 'Póliza')} · ${escapeHtml(policy.policyNumber || 'Sin número')}</strong><span>${escapeHtml(policy.insurer || 'Aseguradora no informada')} · ${escapeHtml(due)}</span><span>${escapeHtml(coverage)}</span></div>${policy.documentId ? `<a class="btn btn-ghost btn-xs js-secure-file" href="#" data-url="${secureDocUrl(policy.documentId)}" data-filename="${escapeHtml(policy.documentName || 'poliza')}" data-action="view">Ver</a>` : ''}</div>`;
+  }).join('') : '<div class="technical-empty">No hay pólizas CAR o incendio registradas.</div>';
+}
+
+async function loadTechnicalWorkspace({ force = false, preserveSelection = false } = {}) {
+  if (!document.getElementById('tab-tecnico')) return;
+  if (technicalWorkspace.loading) {
+    await technicalWorkspace.loading;
+    if (!force) return;
+  }
+  const previousSelection = preserveSelection ? new Set(technicalWorkspace.selected) : new Set();
+  technicalWorkspace.loading = (async () => {
+    const [units, ventas, folderData, permits, templates, plans] = await Promise.all([
+      API.get(`/api/units?projectId=${encodeURIComponent(id)}&estado=&q=`),
+      API.get(`/api/ventas?projectId=${encodeURIComponent(id)}`).catch(() => []),
+      API.get(`/api/commercial-folders?projectId=${encodeURIComponent(id)}`).catch(() => ({ folders:[], unassigned:{ name:'Sin carpeta', color:'#0f172a' } })),
+      apiPermitsGetProject(true).catch(() => null),
+      apiPermitsGetTemplates().catch(() => []),
+      API.get(`/api/documents?projectId=${encodeURIComponent(id)}&category=architecturalPlans&ts=${Date.now()}`).catch(() => [])
+    ]);
+    technicalWorkspace.units = units || [];
+    technicalWorkspace.ventas = new Map((ventas || []).map(venta => [String(venta.unitId), venta]));
+    technicalWorkspace.folders = Array.isArray(folderData) ? folderData : (folderData.folders || []);
+    technicalWorkspace.unassigned = folderData.unassigned || { name:'Sin carpeta', color:'#0f172a' };
+    technicalWorkspace.permits = permits;
+    technicalWorkspace.templates = templates || [];
+    technicalWorkspace.plans = plans || [];
+    technicalWorkspace.selected = new Set([...previousSelection].filter(unitId => technicalWorkspace.units.some(unit => String(unit._id) === unitId)));
+    INSURANCE_UNITS_CACHE = technicalWorkspace.units;
+    renderTechnicalTemplatePicker();
+    renderTechnicalKpis();
+    renderTechnicalPermits();
+    renderTechnicalUnits();
+    renderTechnicalDocuments();
+    if (permits) __permits = permits;
+    technicalWorkspace.loaded = true;
+    updatePermitsByInstitutionChart();
+  })();
+  try { await technicalWorkspace.loading; } finally { technicalWorkspace.loading = null; }
+}
+window.refreshTechnicalWorkspace = loadTechnicalWorkspace;
+
+function openTechnicalBatchEditor() {
+  if (!technicalWorkspace.selected.size) return alert('Selecciona al menos una unidad.');
+  const policies = projectInsurancePolicies();
+  openModal('Editar selección técnica', `<div class="technical-batch-form">
+    <label>Estado comercial<select id="technicalBatchState"><option value="">(no cambiar)</option>${TECHNICAL_UNIT_STATES.map(item => `<option value="${item.v}">${item.l}</option>`).join('')}</select></label>
+    <label>En construcción<select id="technicalBatchInConstruction"><option value="">(no cambiar)</option><option value="true">Sí</option><option value="false">No</option></select></label>
+    <label>Estado de construcción<select id="technicalBatchConstructionStatus"><option value="">(no cambiar)</option><option>Pendiente</option><option>Obra gris</option><option>Acabados</option><option>Culminada</option></select></label>
+    <label>Constructora<input id="technicalBatchBuilder" placeholder="(no cambiar)"></label>
+    <label>Permiso de construcción<select id="technicalBatchConstructionPermit"><option value="">(no cambiar)</option><option value="true">Sí</option><option value="false">No</option></select></label>
+    <label>Resolución construcción<input id="technicalBatchConstructionNumber" placeholder="(no cambiar)"></label>
+    <label>Permiso de ocupación<select id="technicalBatchOccupationPermit"><option value="">(no cambiar)</option><option value="true">Sí</option><option value="false">No</option></select></label>
+    <label>Resolución ocupación<input id="technicalBatchOccupationNumber" placeholder="(no cambiar)"></label>
+    <label>Fecha emisión ocupación<input id="technicalBatchOccupationDate" type="date"></label>
+    <label class="technical-batch-wide">Póliza<select id="technicalBatchPolicy"><option value="">(no cambiar)</option>${policies.map(policy => `<option value="${escapeHtml(policy._id)}">${escapeHtml(policy.type || 'Póliza')} · ${escapeHtml(policy.policyNumber || 'Sin número')}</option>`).join('')}</select></label>
+    <label class="technical-batch-wide">Acción sobre la póliza<select id="technicalBatchPolicyAction"><option value="add">Asignar a las unidades seleccionadas</option><option value="remove">Desasignar de las unidades seleccionadas</option></select></label>
+    <div class="technical-batch-wide small muted">Solo se modificarán los campos completados. Las pólizas siguen siendo únicas y compartidas.</div>
+    <div class="technical-batch-wide row" style="justify-content:flex-end"><button id="technicalBatchSave" class="btn" type="button">Aplicar a ${technicalWorkspace.selected.size} unidades</button></div>
+  </div>`, 'Cancelar', () => { modalBackdrop.style.display = 'none'; });
+
+  document.getElementById('technicalBatchSave')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    const ids = [...technicalWorkspace.selected];
+    const read = elementId => String(document.getElementById(elementId)?.value || '').trim();
+    const unitUpdate = {};
+    const ventaUpdate = {};
+    if (read('technicalBatchState')) unitUpdate.estado = read('technicalBatchState');
+    if (read('technicalBatchInConstruction')) ventaUpdate.enConstruccion = read('technicalBatchInConstruction') === 'true';
+    if (read('technicalBatchConstructionStatus')) ventaUpdate.estatusConstruccion = read('technicalBatchConstructionStatus');
+    if (read('technicalBatchBuilder')) ventaUpdate.constructora = read('technicalBatchBuilder');
+    if (read('technicalBatchConstructionPermit')) ventaUpdate.permisoConstruccionMunicipal = read('technicalBatchConstructionPermit') === 'true';
+    if (read('technicalBatchConstructionNumber')) ventaUpdate.permisoConstruccionNum = read('technicalBatchConstructionNumber');
+    if (read('technicalBatchOccupationPermit')) ventaUpdate.permisoOcupacion = read('technicalBatchOccupationPermit') === 'true';
+    if (read('technicalBatchOccupationNumber')) ventaUpdate.permisoOcupacionNum = read('technicalBatchOccupationNumber');
+    if (read('technicalBatchOccupationDate')) ventaUpdate.fechaEmisionPermisoOcupacion = read('technicalBatchOccupationDate');
+    button.disabled = true; button.textContent = 'Guardando…';
+    try {
+      if (Object.keys(unitUpdate).length) await API.patch('/api/units/batch', { ids, update:unitUpdate, projectId:id });
+      if (Object.keys(ventaUpdate).length) await API.patch('/api/ventas/batch', { unitIds:ids, update:ventaUpdate, upsert:true, projectId:id });
+      const policyId = read('technicalBatchPolicy');
+      if (policyId) {
+        const action = read('technicalBatchPolicyAction');
+        const selectedSet = new Set(ids);
+        const allUnits = technicalWorkspace.units;
+        const changedPolicies = policies.map(policy => {
+          if (String(policy._id) !== policyId) return policy;
+          const coverageIds = policy.appliesToAllUnits !== false ? allUnits.map(unit => String(unit._id)) : (policy.unitIds || []).map(String);
+          const nextIds = action === 'add' ? new Set([...coverageIds, ...ids]) : new Set(coverageIds.filter(value => !selectedSet.has(value)));
+          const selectedUnits = allUnits.filter(unit => nextIds.has(String(unit._id)));
+          return { ...policy, appliesToAllUnits:false, unitIds:selectedUnits.map(unit => unit._id), unitRefs:selectedUnits.map(technicalUnitReference) };
+        }).filter(policy => policy.appliesToAllUnits !== false || (policy.unitIds || []).length);
+        const result = await API.put(`/api/projects/${id}/insurance-policies`, { insurancePolicies:changedPolicies });
+        state.project.technicalData ||= {};
+        state.project.technicalData.insurancePolicies = result.insurancePolicies || changedPolicies;
+      }
+      modalBackdrop.style.display = 'none';
+      technicalWorkspace.selected.clear();
+      await window.loadUnits?.();
+      await loadTechnicalWorkspace({ force:true });
+      await markProjectDataChanged();
+    } catch (error) {
+      alert(error.message || 'No se pudo actualizar la selección.');
+      button.disabled = false; button.textContent = 'Aplicar cambios';
+    }
+  });
+}
+
+function openTechnicalDeleteUnits() {
+  const count = technicalWorkspace.selected.size;
+  if (!count) return alert('Selecciona al menos una unidad.');
+  openModal('Eliminar unidades seleccionadas', `<div class="technical-delete-confirm">
+    <p>Se eliminarán <strong>${count}</strong> ${count === 1 ? 'unidad' : 'unidades'} de Técnico y Comercial. Esta acción requiere la contraseña de seguridad.</p>
+    <label>Contraseña<input id="technicalDeletePin" type="password" inputmode="numeric" autocomplete="off" placeholder="Introduce la contraseña"></label>
+    <span class="small muted">El borrado es lógico y queda protegido también en el servidor.</span>
+  </div>`, 'Eliminar unidades', async () => {
+    const pin = String(document.getElementById('technicalDeletePin')?.value || '').trim();
+    if (!pin) return alert('La contraseña es obligatoria.');
+    const ids = [...technicalWorkspace.selected];
+    modalPrimary.disabled = true;
+    modalPrimary.textContent = 'Eliminando…';
+    try {
+      const response = await fetch('/api/units/batch', {
+        method:'DELETE',
+        headers:{ 'Content-Type':'application/json', ...authHeadersFromApp() },
+        credentials:'include',
+        body:JSON.stringify({ ids, pin, projectId:id })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'No se pudieron eliminar las unidades.');
+      technicalWorkspace.selected.clear();
+      modalBackdrop.style.display = 'none';
+      await window.loadUnits?.();
+      await loadTechnicalWorkspace({ force:true });
+      await markProjectDataChanged();
+    } catch (error) {
+      alert(error.message || 'No se pudieron eliminar las unidades.');
+    } finally {
+      modalPrimary.disabled = false;
+      modalPrimary.textContent = 'Eliminar unidades';
+    }
+  });
+}
+
+document.querySelectorAll('[data-technical-jump]').forEach(button => button.addEventListener('click', () => document.getElementById(button.dataset.technicalJump)?.scrollIntoView({ behavior:'smooth', block:'start' })));
+document.querySelectorAll('[data-technical-permit-filter]').forEach(button => button.addEventListener('click', () => {
+  technicalWorkspace.permitFilter = button.dataset.technicalPermitFilter;
+  document.querySelectorAll('[data-technical-permit-filter]').forEach(item => item.classList.toggle('is-active', item === button));
+  renderTechnicalPermits();
+}));
+document.getElementById('technicalPermitsBoard')?.addEventListener('change', event => {
+  const select = event.target.closest('.technical-permit-state');
+  if (select) technicalUpdatePermitStatus(select.dataset.code, select.value, select);
+});
+document.getElementById('technicalPermitsBoard')?.addEventListener('click', event => {
+  const button = event.target.closest('.js-technical-permit-detail');
+  if (button) openTechnicalPermitDetail(button.dataset.code);
+});
+document.getElementById('technicalApplyPermitTemplate')?.addEventListener('click', async event => {
+  const templateId = document.getElementById('technicalPermitTemplate')?.value;
+  if (!templateId) return alert('Selecciona una plantilla.');
+  const hasExisting = (technicalWorkspace.permits?.items || []).length > 0;
+  if (hasExisting && !confirm('La plantilla se fusionará con la ruta actual. Se conservarán estados, fechas y documentos existentes. ¿Continuar?')) return;
+  const button = event.currentTarget; button.disabled = true; button.textContent = 'Aplicando…';
+  try {
+    const result = await apiPermitsInit(templateId);
+    technicalWorkspace.permits = result;
+    __permits = result;
+    renderTechnicalPermits(); renderTechnicalKpis();
+    const info = result?._mergeInfo;
+    if (info) alert(`Plantilla aplicada: ${info.added || 0} permisos nuevos y ${info.updated || 0} actualizados.`);
+  } catch (error) { alert(error.message || 'No se pudo aplicar la plantilla.'); }
+  finally { button.disabled = false; button.textContent = 'Aplicar plantilla'; }
+});
+['technicalConstructionFilter','technicalPermitFilter'].forEach(elementId => document.getElementById(elementId)?.addEventListener('change', renderTechnicalUnits));
+document.getElementById('technicalUnitSearch')?.addEventListener('input', () => { clearTimeout(window.__technicalSearchTimer); window.__technicalSearchTimer = setTimeout(renderTechnicalUnits, 180); });
+document.getElementById('technicalSelectAll')?.addEventListener('click', () => {
+  const cards = [...document.querySelectorAll('#technicalUnitsGrid [data-technical-unit]')];
+  const allSelected = cards.length && cards.every(card => technicalWorkspace.selected.has(card.dataset.technicalUnit));
+  cards.forEach(card => { if (allSelected) technicalWorkspace.selected.delete(card.dataset.technicalUnit); else technicalWorkspace.selected.add(card.dataset.technicalUnit); });
+  renderTechnicalUnits();
+});
+document.getElementById('technicalBatchEdit')?.addEventListener('click', openTechnicalBatchEditor);
+document.getElementById('technicalCreateUnits')?.addEventListener('click', () => window.openSharedCreateUnits?.('technical'));
+document.getElementById('technicalCreateModel')?.addEventListener('click', () => window.openSharedModelsManager?.('technical'));
+document.getElementById('technicalDeleteUnits')?.addEventListener('click', openTechnicalDeleteUnits);
+document.getElementById('technicalRefreshDocuments')?.addEventListener('click', () => loadTechnicalWorkspace({ force:true, preserveSelection:true }));
+document.getElementById('technicalUploadPlans')?.addEventListener('click', () => document.getElementById('technicalPlansInput')?.click());
+document.getElementById('technicalPlansInput')?.addEventListener('change', async event => {
+  const files = [...(event.target.files || [])];
+  if (!files.length) return;
+  const button = document.getElementById('technicalUploadPlans');
+  button.disabled = true; button.textContent = `Subiendo ${files.length}…`;
+  try {
+    for (const file of files) {
+      const formData = new FormData();
+      formData.append('files', file);
+      formData.append('projectId', id);
+      formData.append('category', 'architecturalPlans');
+      formData.append('folder', 'tecnico');
+      await API.upload('/api/documents/upload?category=architecturalPlans', formData);
+    }
+    event.target.value = '';
+    await loadTechnicalWorkspace({ force:true, preserveSelection:true });
+    invalidateProjectDocsCache?.();
+    await markProjectDataChanged();
+  } catch (error) { alert(error.message || 'No se pudieron subir los planos.'); }
+  finally { button.disabled = false; button.textContent = 'Añadir planos'; }
+});
 
 
   // ======================
@@ -14983,10 +15788,19 @@ if (chatLoadMore) {
 try {
 applyRoleVisibility();
 await syncProvidersModuleVisibility();
-await loadCommercialTemplateStatus();
+if (!['tecnico','legal'].includes(myRole)) await loadCommercialTemplateStatus();
 
-if (['tecnico','legal'].includes(myRole)) {
-  // Estos roles SOLO pueden ver checklists y docs (RBAC)
+if (myRole === 'tecnico') {
+  await loadProject();
+  await loadUnits();
+  await loadTechnicalWorkspace({ force:true });
+  await loadProyectoData();
+  renderProyecto();
+  await loadDocs();
+  await refreshCommercialDossier(true);
+  await loadChatMessages();
+} else if (myRole === 'legal') {
+  // Legal conserva su vista de checklists y documentos.
   await loadProyectoData();   // /api/projects/:id/checklists  ✅ permitido
   renderProyecto();
   await loadDocs();           // /api/documents?projectId=...  ✅ permitido

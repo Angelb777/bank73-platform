@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="/js/branding.js"></script>
   <link href="/css/base.css" rel="stylesheet" />
-  <link href="/css/theme.css?v=commercial-units-v4" rel="stylesheet" />
+  <link href="/css/theme.css?v=technical-units-v1" rel="stylesheet" />
   <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
 
   <style>
@@ -1837,6 +1837,7 @@ body.light-theme .provider-exclusive {
       <button type="button" class="tab" data-tab="proyecto" id="tabBtn-proyecto">Avances</button>
       <button type="button" class="tab" data-tab="finanzas" id="tabBtn-finanzas">Finanzas</button>
       <button type="button" class="tab" data-tab="comercial" id="tabBtn-comercial">Comercial</button>
+      <button type="button" class="tab" data-tab="tecnico" id="tabBtn-tecnico">Técnico</button>
       <button type="button" class="tab" data-tab="proveedores" id="tabBtn-proveedores">Proveedores</button>
       <button type="button" class="tab" data-tab="docs" id="tabBtn-docs">Docs</button>
       <button type="button" class="tab" data-tab="avaluadores" id="tabBtn-avaluadores" style="display:none;">Avaluadores</button>
@@ -2768,7 +2769,6 @@ body.light-theme .provider-exclusive {
               <option value="Acabados">Acabados</option>
               <option value="Culminada">Culminada</option>
             </select>
-            <label>Fase construccion</label><input id="b-faseConstruccion" />
             <label>Permiso construccion municipal</label>
             <select id="b-permisoConstruccionMunicipal"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
             <label>Resolucion permiso construccion</label><input id="b-permisoConstruccionNum" />
@@ -2833,6 +2833,117 @@ body.light-theme .provider-exclusive {
     </div>
   </div>
 </div>
+
+
+    <div class="tabpane" id="tab-tecnico">
+      <div class="technical-shell">
+        <section class="technical-hero">
+          <div>
+            <span class="technical-eyebrow">CONTROL TÉCNICO · DATO ÚNICO</span>
+            <h2>Estado técnico del proyecto</h2>
+            <p>Permisos, construcción, planos y pólizas conectados con las mismas unidades de Comercial.</p>
+          </div>
+          <nav class="technical-jump-nav" aria-label="Secciones técnicas">
+            <button type="button" data-technical-jump="technicalPermitsSection">Permisos</button>
+            <button type="button" data-technical-jump="technicalUnitsSection">Unidades</button>
+            <button type="button" data-technical-jump="technicalDocumentsSection">Planos y pólizas</button>
+          </nav>
+        </section>
+
+        <section id="technicalKpis" class="technical-kpis" aria-live="polite"></section>
+
+        <section id="technicalPermitsSection" class="technical-section technical-permits-section">
+          <header class="technical-section-head">
+            <div>
+              <span class="technical-section-kicker">Permisología del proyecto</span>
+              <h3>Ruta de permisos</h3>
+              <p>Cambia el estado desde cada tarjeta. Abre la ficha solo para consultar requisitos, dependencias y documentos.</p>
+            </div>
+            <div class="technical-section-actions">
+              <select id="technicalPermitTemplate" aria-label="Plantilla de permisos"></select>
+              <button id="technicalApplyPermitTemplate" class="btn btn-ghost" type="button">Aplicar plantilla</button>
+            </div>
+          </header>
+          <div class="technical-permit-toolbar">
+            <div id="technicalPermitProgress" class="technical-permit-progress"></div>
+            <div class="technical-filter-pills" role="group" aria-label="Filtrar permisos">
+              <button class="is-active" type="button" data-technical-permit-filter="all">Todos</button>
+              <button type="button" data-technical-permit-filter="attention">Requieren atención</button>
+              <button type="button" data-technical-permit-filter="in_progress">En curso</button>
+              <button type="button" data-technical-permit-filter="approved">Aprobados</button>
+            </div>
+          </div>
+          <div id="technicalPermitsBoard" class="technical-permits-board"></div>
+        </section>
+
+        <section id="technicalUnitsSection" class="technical-section technical-units-section">
+          <header class="technical-section-head">
+            <div>
+              <span class="technical-section-kicker">Ejecución por unidad</span>
+              <h3>Unidades y etapas</h3>
+              <p>La misma estructura y orden de Comercial, con el color priorizando el estado de obra.</p>
+            </div>
+            <div class="technical-section-actions technical-selection-actions">
+              <button id="technicalCreateUnits" class="btn technical-action-primary" type="button">Crear en lote</button>
+              <button id="technicalCreateModel" class="btn btn-ghost" type="button">Crear modelo</button>
+              <span id="technicalSelectionCount" class="technical-selection-count">0 seleccionadas</span>
+              <button id="technicalSelectAll" class="btn btn-ghost" type="button">Seleccionar todo</button>
+              <button id="technicalBatchEdit" class="btn" type="button">Editar selección</button>
+              <button id="technicalDeleteUnits" class="btn btn-danger" type="button" disabled>Eliminar selección</button>
+            </div>
+          </header>
+          <div class="technical-unit-filters">
+            <select id="technicalConstructionFilter" aria-label="Filtrar por estado de construcción">
+              <option value="">Todos los estados de obra</option>
+              <option value="Pendiente">Pendiente</option>
+              <option value="Obra gris">Obra gris</option>
+              <option value="Acabados">Acabados</option>
+              <option value="Culminada">Culminada</option>
+            </select>
+            <select id="technicalPermitFilter" aria-label="Filtrar por permisos de unidad">
+              <option value="">Todos los permisos</option>
+              <option value="missing-construction">Sin permiso de construcción</option>
+              <option value="missing-occupation">Sin permiso de ocupación</option>
+              <option value="complete">Permisos completos</option>
+            </select>
+            <input id="technicalUnitSearch" type="search" placeholder="Buscar unidad, modelo, estado o constructora">
+          </div>
+          <div id="technicalUnitKpis" class="technical-unit-kpis"></div>
+          <div id="technicalUnitsGrid" class="grid technical-units-grid"></div>
+        </section>
+
+        <section id="technicalDocumentsSection" class="technical-section technical-documents-section">
+          <header class="technical-section-head">
+            <div>
+              <span class="technical-section-kicker">Documentación y cobertura</span>
+              <h3>Planos arquitectónicos y pólizas</h3>
+              <p>Vista global complementaria a la cobertura mostrada dentro de cada unidad.</p>
+            </div>
+            <div class="technical-section-actions">
+              <input id="technicalPlansInput" type="file" accept=".pdf,.jpg,.jpeg,.png" multiple hidden>
+              <button id="technicalUploadPlans" class="btn" type="button">Añadir planos</button>
+              <button id="technicalRefreshDocuments" class="btn btn-ghost" type="button">Actualizar</button>
+            </div>
+          </header>
+          <div class="technical-documents-grid">
+            <article class="technical-library-card">
+              <div class="technical-library-head">
+                <div><span class="technical-library-icon" aria-hidden="true">⌁</span><h4>Planos arquitectónicos</h4></div>
+                <span id="technicalPlansCount" class="technical-count-badge">0</span>
+              </div>
+              <div id="technicalPlansList" class="technical-library-list"></div>
+            </article>
+            <article class="technical-library-card">
+              <div class="technical-library-head">
+                <div><span class="technical-library-icon" aria-hidden="true">◈</span><h4>Pólizas globales</h4></div>
+                <span id="technicalPoliciesCount" class="technical-count-badge">0</span>
+              </div>
+              <div id="technicalPoliciesList" class="technical-library-list"></div>
+            </article>
+          </div>
+        </section>
+      </div>
+    </div>
 
 
     <div class="tabpane" id="tab-proveedores">
@@ -2943,7 +3054,7 @@ body.light-theme .provider-exclusive {
   <script src="/lib/chart.umd.min.js"></script>
   <script src="/js/theme-toggle.js"></script>
   <script src="/js/project-3d.js?v=viewer-editor-v3"></script>
-  <script src="/js/project.js?v=commercial-units-v5"><!-- ROLE-SEP: bump --></script>
+  <script src="/js/project.js?v=technical-units-v1"><!-- ROLE-SEP: bump --></script>
   <script src="/js/avaluadores.js?v=2"></script>
 
 </body>

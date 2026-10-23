@@ -30,6 +30,18 @@ const VALID_UNIT_ESTADOS = [
   'cancelado'
 ];
 
+const TECHNICAL_UNIT_UPDATE_FIELDS = new Set([
+  'manzana', 'lote', 'estado', 'modelId', 'modelo', 'm2',
+  'costoUnidad', 'costoUnidadManual', 'numeroFinca', 'codigoUbicacion', 'calle',
+  'metrosExtra', 'precioM2Extra', 'areaAbierta', 'areaCerrada', 'recamaras', 'banos',
+  'valorMejoras', 'valorTerreno'
+]);
+
+function sanitizeUnitUpdateForRole(update = {}, role = '') {
+  if (String(role || '').toLowerCase() !== 'tecnico') return update;
+  return Object.fromEntries(Object.entries(update).filter(([key]) => TECHNICAL_UNIT_UPDATE_FIELDS.has(key)));
+}
+
 function normalizeUnitEstado(estado) {
   const e = String(estado || '').trim();
   return VALID_UNIT_ESTADOS.includes(e) ? e : 'disponible';
@@ -226,6 +238,12 @@ router.post(
 
       const lotes = Array.from({ length: parseInt(cantidad, 10) }, (_, i) => String(i + 1));
       const modelFields = unitModelFieldsFromBody(req.project, req.body);
+      if (String(req.user?.role || '').toLowerCase() === 'tecnico') {
+        // Técnico comparte la biblioteca y las unidades, pero no puede introducir
+        // ni heredar el precio de lista desde estos flujos.
+        delete modelFields.precioLista;
+        delete modelFields.price;
+      }
 
       const docs = lotes.map(lote => ({
         tenantKey: req.tenantKey,
@@ -315,9 +333,10 @@ router.patch(
       const { ids = [], update = {} } = req.body || {};
       if (!ids.length) return res.status(400).json({ error: 'ids requerido' });
 
-      const set = { ...update };
+      let set = sanitizeUnitUpdateForRole({ ...update }, req.user?.role);
       if (set.modelId || set.modelo) {
         Object.assign(set, unitModelFieldsFromBody(req.project, set));
+        set = sanitizeUnitUpdateForRole(set, req.user?.role);
       }
       if (update.costoUnidad !== undefined) {
         set.costoUnidad = Math.max(0, Number(update.costoUnidad || 0));
@@ -472,11 +491,12 @@ router.patch(
   requireProjectAccess({ promoterCanEditAssigned: true }),
   async (req, res) => {
     try {
-      const update = { ...req.body };
+      let update = sanitizeUnitUpdateForRole({ ...req.body }, req.user?.role);
       const estadoAnterior = req._unit?.estado;
 
       if (update.modelId || update.modelo) {
         Object.assign(update, unitModelFieldsFromBody(req.project, update));
+        update = sanitizeUnitUpdateForRole(update, req.user?.role);
       }
       if (req.body.costoUnidad !== undefined) {
         update.costoUnidad = Math.max(0, Number(req.body.costoUnidad || 0));

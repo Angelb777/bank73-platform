@@ -2095,6 +2095,17 @@ router.put('/:id/housing-models', requireProjectAccess({ commercialOnlySales: fa
     if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
 
     const models = sanitizeHousingModels(req.body.housingModels);
+    if (String(req.user?.role || '').toLowerCase() === 'tecnico') {
+      const existingModels = project.housingModels || [];
+      models.forEach((model, index) => {
+        const submitted = req.body.housingModels[index] || {};
+        const existing = existingModels.find(item =>
+          (submitted._id && String(item._id) === String(submitted._id)) ||
+          String(item.name || '').trim().toLowerCase() === String(model.name || '').trim().toLowerCase()
+        );
+        model.price = Number(existing?.price || 0);
+      });
+    }
     validateHousingModelStatuses(models);
 
     // Mantener los ids de los modelos existentes evita romper la relación

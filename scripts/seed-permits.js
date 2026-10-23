@@ -117,8 +117,7 @@ function withType(items, type) {
           'Planos de construcción completos, firmados por los idóneos.'
         ],
         observations: [
-          'Adjuntar factura de pago del anteproyecto y memorial de revisión de Bomberos.',
-          'Si el plano no pasa de 10 kVA no necesita (según criterio local).'
+          'Adjuntar factura de pago del anteproyecto y memorial de revisión de Bomberos.'
         ],
         slaDays: 15
       },
@@ -128,7 +127,11 @@ function withType(items, type) {
         institution: 'Fenosa (Distribuidora)',
         dependencies: ['ru-anteproy-bomberos', 'ru-anteproy-municipio'],
         requirements: [
-          'Nota de solicitud de revisión, firmada y sellada por idóneo y propietario.'
+          'Nota de solicitud de revisión, firmada y sellada por idóneo y propietario.',
+          'Original y copia del plano de electricidad.'
+        ],
+        observations: [
+          'Si el plano no supera 10 kVA, puede no requerir sello de la empresa distribuidora según el criterio local.'
         ],
         slaDays: 5
       }
@@ -174,7 +177,7 @@ function withType(items, type) {
           'Paz y salvo municipal del dueño y contratista.',
           'Pago y sello de tasa de aseo de la finca (SACH).',
           'Paz y salvo de seguro social del constructor.',
-          'Certificación del registro público de la sociedad.',
+          'Certificación del Registro Público de la propiedad o de la sociedad, según corresponda.',
           'Planos aprobados (civiles/eléctricos/sanitarios).',
           'Permiso de salud (MINSA) para inicio de obra.',
           'Permiso de seguridad (Bomberos).',
@@ -202,6 +205,7 @@ function withType(items, type) {
         ],
         observations: [
           'Para urbanizaciones: anexar plano de segregación del lote aprobado y carta de aceptación del MOP.',
+          'Presentar también la carta de aceptación de IDAAN.',
           'Si es una empresa constructora, presentar certificación actualizada de la constructora.'
         ],
         slaDays: 7
@@ -211,7 +215,7 @@ function withType(items, type) {
 
   const tplRU = await PermitTemplate.findOneAndUpdate(
     { tenantKey, name: 'Residencia Unifamiliar' },
-    { tenantKey, name: 'Residencia Unifamiliar', version: 1, items: RU_items },
+    { tenantKey, name: 'Residencia Unifamiliar', version: 2, projectTypes: ['Residencia Unifamiliar', 'Unifamiliar'], items: RU_items },
     { upsert: true, new: true }
   );
   console.log('Plantilla RU creada/actualizada:', tplRU._id, 'Items:', tplRU.items.length);
@@ -271,9 +275,12 @@ function withType(items, type) {
           'Solicitud formal (papel 8½" x 13") dirigida a la Dirección Nacional de Ventanilla Única del MIVIOT, para revisión de planos de urbanización.',
           'Formulario de Solicitud de Anteproyecto de Urbanización (cartón), disponible en Ventanilla Única.',
           'Certificado del Registro Público (existencia de la propiedad: número de finca, tomo/folio/documento).',
+          'Memoria explicativa del proyecto conforme al Reglamento Nacional de Urbanizaciones y la guía técnica de Ventanilla Única.',
           'Plano catastral y linderos (medidas, superficies, propietarios colindantes).',
           'Plano Catastral del polígono a segregar (si aplica) y acceso legal a servidumbre/vía aprobada.',
-          'Cotejo de copias: 1 para la Dirección Nacional, 1 para cada institución, 1 para Regional, 1 para Municipio (según requisitos locales).',
+          'Ocho copias de la lotificación propuesta y dos copias adicionales del diseño preliminar de las áreas de uso público para MIVIOT.',
+          'Los planos deben reservar una franja libre de 10 cm para sellos y anotaciones institucionales.',
+          'Entregar los documentos en fólderes largos identificados por institución, con los planos doblados dentro de cada fólder.',
           'Copia de Resolución del EIA aprobado (si aplica).'
         ],
         observations: [
@@ -290,10 +297,12 @@ function withType(items, type) {
         requirements: [
           'Memorial en papel 8½" x 13" dirigido a Ventanilla Única del MIVIOT para revisión de los planos de construcción.',
           'Copia del anteproyecto previamente aprobado.',
-          'Juego completo de planos generales: planta de lotificación, drenaje pluvial, alineamiento de calles, terrazas de lotes, topografía, perfiles de calles, detalles constructivos y cálculos hidráulicos del sistema pluvial; estudio de suelos.'
+          'Juego completo de planos generales: planta de lotificación, drenaje pluvial, alineamiento de calles, terrazas de lotes, topografía, perfiles de calles, detalles constructivos y cálculos hidráulicos del sistema pluvial; estudio de suelos.',
+          'Plano topográfico que sobrepase al menos 20 m los límites de la propiedad e identifique las estructuras pluviales existentes.'
         ],
         observations: [
-          'Si hay cauces naturales cercanos: anexar estudio hidrológico e hidráulico del área con cálculos (seguridad de terracerías frente a inundaciones).'
+          'Si hay cauces naturales cercanos: anexar estudio hidrológico e hidráulico del área con cálculos (seguridad de terracerías frente a inundaciones).',
+          'Presentar la resolución del Estudio de Impacto Ambiental.'
         ],
         slaDays: 15
       },
@@ -305,7 +314,8 @@ function withType(items, type) {
           'Memorial 8½" x 13" dirigido a Ventanilla Única del MIVIOT para revisión de planos.',
           'Copia del anteproyecto aprobado.',
           'Hojas de sistemas de tratamiento de aguas residuales y memorias con Manual de Operación y Mantenimiento, firmadas por profesional idóneo.',
-          'Prueba de percolación y copia de resultados de análisis fisicoquímicos y bacteriológicos.',
+          'Prueba de percolación y copia de la resolución del EIA.',
+          'Cuando existan pozos, resultados de análisis fisicoquímicos, bacteriológicos y de capacidad o rendimiento.',
           'En caso de planta de tratamiento: compromiso de operación y mantenimiento y aceptación de IDAAN.'
         ],
         observations: [
@@ -320,7 +330,8 @@ function withType(items, type) {
         requirements: [
           'Formulario “Información Previa Básica” o Solicitud de Sistemas de Acueductos y Alcantarillados Sanitarios, sellado y firmado por Gerencia Regional.',
           'Juego completo de planos de sistemas de acueducto y alcantarillado con cálculos hidráulicos y memorias.',
-          'Gráfica de presión con punto de interconexión (si aplica).'
+          'Gráfica de presión original, firmada y sellada, con el punto de interconexión o indicación de abastecimiento alternativo (si aplica).',
+          'Copia del anteproyecto aprobado por MIVIOT.'
         ],
         slaDays: 15
       },
@@ -331,10 +342,14 @@ function withType(items, type) {
         requirements: [
           'Copia del anteproyecto aprobado por MIVIOT.',
           'Copia de Resolución de aprobación del Estudio de Impacto Ambiental.',
+          'Copia del Estudio de Impacto Ambiental para cotejo.',
+          'Plano de lotificación.',
           'Plano de letrero (categoría y formato según normativa).'
         ],
         observations: [
-          'Para categorías II y III, seguir los formatos y requisitos adicionales establecidos por MiAmbiente.'
+          'Para categorías II y III, seguir los formatos y requisitos adicionales establecidos por MiAmbiente.',
+          'La información de los planos debe coincidir con la del EIA y su resolución.',
+          'Si existen ríos, quebradas, lagos u otros afluentes, delimitar el área de protección conforme a la normativa aplicable.'
         ],
         slaDays: 15
       },
@@ -344,9 +359,10 @@ function withType(items, type) {
         institution: 'ATTT',
         requirements: [
           'Copia del plano del anteproyecto aprobado.',
-          'Plano de lotificación aprobado.',
+          'Plano de localización regional.',
           'Plano de alineamiento de calles.',
-          'Plano de señalización vial.'
+          'Planta de señalización vial.',
+          'Hojas típicas de señalización vertical, horizontal, preventiva de obra y paradas de autobús.'
         ],
         observations: [
           'Si el proyecto genera tráfico considerable o afecta intersecciones: presentar estudio de tránsito con propuesta de solución física (Ley 34 / Ley Forestal y demás).'
@@ -456,9 +472,12 @@ function withType(items, type) {
         requirements: [
           'Memorial solicitando movimiento de tierra, dirigido al Municipio.',
           'Plano de la finca aprobada.',
+          'Documento de propiedad.',
           'Original y copia de plano de movimiento de tierra con detalles (cortes/rellenos en m³).',
           'Copia del plano de urbanización aprobado por MOP.',
-          'Estudio de suelos y cálculos estructurales preliminares.'
+          'Estudio de suelos y cálculos estructurales preliminares.',
+          'Resolución del Estudio de Impacto Ambiental.',
+          'Paz y salvo municipal.'
         ],
         observations: [
           'Inspección municipal para verificar área a trabajar y cálculo de impuestos por corte/relleno.'
@@ -513,6 +532,7 @@ function withType(items, type) {
         institution: 'Registro Público',
         requirements: [
           'Plano aprobado por la Dirección de Catastro del MEF y por el MIVIOT (sello de revisión).',
+          'Paz y salvo de inmueble y de IDAAN de la finca que se segrega.',
           'Documentación legal para inscripción de los lotes segregados.'
         ],
         slaDays: 20
@@ -527,7 +547,10 @@ function withType(items, type) {
           'Acta de la Junta Directiva autorizando el traspaso (para persona jurídica).',
           'Nota descriptiva de áreas a traspasar.',
           'Certificado del registro público donde conste el propietario (o existencia de la persona jurídica).',
-          'Nota de aceptación de las calles por parte del MOP (con cumplimiento de garantías).'
+          'Nota de aceptación de las calles por parte del MOP (con cumplimiento de tres años de garantía).',
+          'Nota de certificación de IDAAN aceptando poner en servicio el sistema de acueductos y alcantarillado.',
+          'Dos copias del plano de las áreas a traspasar aprobado por Catastro y MIVIOT.',
+          'Paz y salvo del inmueble, de IDAAN y personal.'
         ],
         observations: [
           'Si la finca tiene hipoteca: presentar oficio del banco con autorización para traspaso a la Nación del área pública.',
@@ -552,7 +575,7 @@ function withType(items, type) {
 
   const tplURB = await PermitTemplate.findOneAndUpdate(
     { tenantKey, name: 'Urbanización' },
-    { tenantKey, name: 'Urbanización', version: 1, items: U_items },
+    { tenantKey, name: 'Urbanización', version: 2, projectTypes: ['Urbanización'], items: U_items },
     { upsert: true, new: true }
   );
   console.log('Plantilla URB creada/actualizada:', tplURB._id, 'Items:', tplURB.items.length);

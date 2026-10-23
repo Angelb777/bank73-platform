@@ -16,6 +16,8 @@ const permitTemplateSchema = new mongoose.Schema({
   tenantKey:   { type: String, index: true },
   name:        { type: String, required: true },
   version:     { type: Number, default: 1 },
+  // Tipologías de proyecto recomendadas para esta ruta. Vacío = plantilla general.
+  projectTypes:[{ type: String, trim: true }],
   items:       [permitItemSchema],
 }, { timestamps: true });
 
