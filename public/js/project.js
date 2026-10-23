@@ -14332,6 +14332,14 @@ function renderTechnicalTemplatePicker() {
     : '<option value="">No hay plantillas disponibles</option>';
 }
 
+function technicalPermitPhaseStorageKey(phase) {
+  return `bank73_technical_permit_phase_${id}_${String(phase || 'sin-etapa')}`;
+}
+
+function technicalPermitPhaseExpanded(phase) {
+  return localStorage.getItem(technicalPermitPhaseStorageKey(phase)) === '1';
+}
+
 function renderTechnicalPermits() {
   const board = document.getElementById('technicalPermitsBoard');
   const progressHost = document.getElementById('technicalPermitProgress');
@@ -14350,11 +14358,35 @@ function renderTechnicalPermits() {
   });
   const index = buildIndexByCode(items);
   const grouped = groupByPhase(filtered);
+  const allPhasesExpanded = grouped.order.length > 0 && grouped.order.every(technicalPermitPhaseExpanded);
+  const phaseToggle = document.getElementById('technicalTogglePermitPhases');
+  if (phaseToggle) {
+    phaseToggle.textContent = allPhasesExpanded ? 'Contraer etapas' : 'Desplegar etapas';
+    phaseToggle.dataset.expanded = allPhasesExpanded ? 'true' : 'false';
+  }
   board.innerHTML = filtered.length ? grouped.order.map(phase => {
     const phaseItems = grouped.groups[phase] || [];
     const phaseApproved = phaseItems.filter(item => technicalPermitEffectiveStatus(item) === 'approved').length;
-    return `<section class="technical-permit-phase">
-      <header><div><span>Etapa</span><h4>${escapeHtml(phase)}</h4></div><strong>${phaseApproved}/${phaseItems.length} aprobados</strong></header>
+    const phaseAttention = phaseItems.filter(item => {
+      const status = technicalPermitEffectiveStatus(item);
+      return ['pending','rejected'].includes(status) || (technicalDaysUntil(item.dueDate) ?? 999) < 0;
+    }).length;
+    const phaseInProgress = phaseItems.filter(item => ['in_progress','submitted'].includes(technicalPermitEffectiveStatus(item))).length;
+    const phaseProgress = phaseItems.length ? Math.round(phaseApproved / phaseItems.length * 100) : 0;
+    const expanded = technicalPermitPhaseExpanded(phase);
+    return `<section class="technical-permit-phase ${expanded ? 'is-expanded' : 'is-collapsed'}" data-technical-permit-phase="${escapeHtml(phase)}">
+      <header><button class="technical-permit-phase-toggle" type="button" aria-expanded="${expanded ? 'true' : 'false'}">
+        <span class="technical-permit-phase-index">Etapa</span>
+        <span class="technical-permit-phase-title"><strong>${escapeHtml(phase)}</strong><small>${phaseItems.length} ${phaseItems.length === 1 ? 'trámite' : 'trámites'}</small></span>
+        <span class="technical-permit-phase-summary">
+          ${phaseAttention ? `<em class="is-attention">${phaseAttention} requieren atención</em>` : ''}
+          ${phaseInProgress ? `<em class="is-progress">${phaseInProgress} en curso</em>` : ''}
+          ${phaseApproved === phaseItems.length && phaseItems.length ? '<em class="is-complete">Etapa completa</em>' : ''}
+          <b>${phaseApproved}/${phaseItems.length} aprobados</b>
+        </span>
+        <span class="technical-permit-phase-meter" aria-label="${phaseProgress}% aprobado"><i style="width:${phaseProgress}%"></i></span>
+        <span class="technical-permit-phase-chevron" aria-hidden="true">⌄</span>
+      </button></header>
       <div class="technical-permit-phase-grid">${phaseItems.map((item, itemIndex) => {
         const status = technicalPermitEffectiveStatus(item);
         const meta = TECHNICAL_PERMIT_META[status] || TECHNICAL_PERMIT_META.pending;
@@ -14702,6 +14734,16 @@ document.getElementById('technicalPermitsBoard')?.addEventListener('change', eve
   if (select) technicalUpdatePermitStatus(select.dataset.code, select.value, select);
 });
 document.getElementById('technicalPermitsBoard')?.addEventListener('click', event => {
+  const phaseToggle = event.target.closest('.technical-permit-phase-toggle');
+  if (phaseToggle) {
+    const phase = phaseToggle.closest('[data-technical-permit-phase]')?.dataset.technicalPermitPhase;
+    if (phase) {
+      const expanded = !technicalPermitPhaseExpanded(phase);
+      localStorage.setItem(technicalPermitPhaseStorageKey(phase), expanded ? '1' : '0');
+      renderTechnicalPermits();
+    }
+    return;
+  }
   const button = event.target.closest('.js-technical-permit-detail');
   if (button) openTechnicalPermitDetail(button.dataset.code);
 });
@@ -14720,6 +14762,19 @@ document.getElementById('technicalApplyPermitTemplate')?.addEventListener('click
     if (info) alert(`Plantilla aplicada: ${info.added || 0} permisos nuevos y ${info.updated || 0} actualizados.`);
   } catch (error) { alert(error.message || 'No se pudo aplicar la plantilla.'); }
   finally { button.disabled = false; button.textContent = 'Aplicar plantilla'; }
+});
+document.getElementById('technicalTogglePermitPhases')?.addEventListener('click', event => {
+  const items = technicalWorkspace.permits?.items || [];
+  const filtered = items.filter(item => {
+    if (technicalWorkspace.permitFilter === 'all') return true;
+    const status = technicalPermitEffectiveStatus(item);
+    if (technicalWorkspace.permitFilter === 'attention') return ['pending','rejected'].includes(status) || (technicalDaysUntil(item.dueDate) ?? 999) < 0;
+    return status === technicalWorkspace.permitFilter;
+  });
+  const phases = groupByPhase(filtered).order;
+  const expand = event.currentTarget.dataset.expanded !== 'true';
+  phases.forEach(phase => localStorage.setItem(technicalPermitPhaseStorageKey(phase), expand ? '1' : '0'));
+  renderTechnicalPermits();
 });
 ['technicalConstructionFilter','technicalPermitFilter'].forEach(elementId => document.getElementById(elementId)?.addEventListener('change', renderTechnicalUnits));
 document.getElementById('technicalUnitSearch')?.addEventListener('input', () => { clearTimeout(window.__technicalSearchTimer); window.__technicalSearchTimer = setTimeout(renderTechnicalUnits, 180); });

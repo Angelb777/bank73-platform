@@ -42,3 +42,15 @@ test('permit cards have compact and explicit light and dark theme styles', () =>
   assert.match(themeCss, /body\.light-theme #tab-tecnico \.technical-permits-section\{[^}]*background:#fff/);
   assert.match(themeCss, /body:not\(\.light-theme\) #tab-tecnico \.technical-permit-state\{[^}]*color:#f8fafc[^}]*color-scheme:dark/);
 });
+
+test('permit stages are collapsed summaries that expand on demand', () => {
+  const renderFlow = sourceBetween('function renderTechnicalPermits', 'function technicalUnitMatchesFilters');
+
+  assert.match(projectJs, /function technicalPermitPhaseExpanded/);
+  assert.match(renderFlow, /technical-permit-phase-toggle/);
+  assert.match(renderFlow, /is-collapsed/);
+  assert.match(renderFlow, /requieren atención/);
+  assert.match(projectJs, /technicalPermitPhaseStorageKey\(phase\)/);
+  assert.match(themeCss, /\.technical-permit-phase\.is-collapsed \.technical-permit-phase-grid\{display:none\}/);
+  assert.match(themeCss, /\.technical-permit-phase-toggle\{display:grid/);
+});

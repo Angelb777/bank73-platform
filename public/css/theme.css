@@ -8680,11 +8680,30 @@ body:not(.light-theme) #tab-tecnico .technical-permit-detail-button{color:#7dd3f
 #tab-tecnico .technical-permit-progress{min-width:245px;gap:9px}
 #tab-tecnico .technical-progress-ring{width:52px;height:52px;flex-basis:52px}
 #tab-tecnico .technical-progress-ring::before{width:39px;height:39px}
-#tab-tecnico .technical-permit-phase{grid-template-columns:minmax(118px,145px) minmax(0,1fr);gap:12px;padding-top:12px;border-top:1px solid var(--technical-line)}
-#tab-tecnico .technical-permit-phase:first-child{padding-top:0;border-top:0}
-#tab-tecnico .technical-permit-phase>header{display:block;align-self:start;padding:4px 0}
-#tab-tecnico .technical-permit-phase>header>strong{display:block;margin-top:7px;line-height:1.35}
-#tab-tecnico .technical-permit-phase-grid{grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:9px}
+#tab-tecnico .technical-permits-board{gap:8px}
+#tab-tecnico .technical-permit-phase{display:block;overflow:hidden;border:1px solid var(--technical-line);border-radius:13px;background:rgba(148,163,184,.035);transition:border-color .18s ease,box-shadow .18s ease}
+#tab-tecnico .technical-permit-phase:hover{border-color:rgba(14,165,233,.34)}
+#tab-tecnico .technical-permit-phase.is-expanded{border-color:rgba(14,165,233,.38);box-shadow:0 8px 22px rgba(15,23,42,.065)}
+#tab-tecnico .technical-permit-phase>header{display:block;padding:0}
+#tab-tecnico .technical-permit-phase-toggle{display:grid;grid-template-columns:52px minmax(170px,1fr) auto minmax(90px,130px) 28px;align-items:center;gap:12px;width:100%;min-height:64px;padding:10px 13px;border:0;color:var(--text,var(--technical-ink));background:transparent;text-align:left;font:inherit;cursor:pointer}
+#tab-tecnico .technical-permit-phase-toggle:hover{background:rgba(14,165,233,.055)}
+#tab-tecnico .technical-permit-phase-toggle:focus-visible{outline:3px solid rgba(14,165,233,.3);outline-offset:-3px}
+#tab-tecnico .technical-permit-phase-index{color:#0284c7;font-size:.62rem;font-weight:950;letter-spacing:.12em;text-transform:uppercase}
+#tab-tecnico .technical-permit-phase-title{display:grid;gap:3px;min-width:0}
+#tab-tecnico .technical-permit-phase-title strong{overflow:hidden;color:var(--text,var(--technical-ink));font-size:.91rem;text-overflow:ellipsis;white-space:nowrap}
+#tab-tecnico .technical-permit-phase-title small{color:var(--muted,var(--technical-muted));font-size:.67rem}
+#tab-tecnico .technical-permit-phase-summary{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
+#tab-tecnico .technical-permit-phase-summary em,#tab-tecnico .technical-permit-phase-summary b{padding:5px 8px;border-radius:999px;font-size:.63rem;font-style:normal;font-weight:850;white-space:nowrap}
+#tab-tecnico .technical-permit-phase-summary b{color:var(--muted,var(--technical-muted));background:rgba(148,163,184,.1)}
+#tab-tecnico .technical-permit-phase-summary .is-attention{color:#b45309;background:#fff7ed}
+#tab-tecnico .technical-permit-phase-summary .is-progress{color:#0369a1;background:#e0f2fe}
+#tab-tecnico .technical-permit-phase-summary .is-complete{color:#15803d;background:#dcfce7}
+#tab-tecnico .technical-permit-phase-meter{height:6px;overflow:hidden;border-radius:999px;background:rgba(148,163,184,.2)}
+#tab-tecnico .technical-permit-phase-meter i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#06b6d4,#16a34a)}
+#tab-tecnico .technical-permit-phase-chevron{display:grid;place-items:center;width:27px;height:27px;border-radius:8px;color:#0284c7;background:rgba(14,165,233,.09);font-size:1.08rem;font-weight:900;transition:transform .18s ease}
+#tab-tecnico .technical-permit-phase.is-expanded .technical-permit-phase-chevron{transform:rotate(180deg)}
+#tab-tecnico .technical-permit-phase-grid{grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:9px;padding:4px 12px 12px}
+#tab-tecnico .technical-permit-phase.is-collapsed .technical-permit-phase-grid{display:none}
 #tab-tecnico .technical-permit-card{min-height:230px;padding:12px;border-radius:12px}
 #tab-tecnico .technical-permit-card-sequence{margin-bottom:7px}
 #tab-tecnico .technical-permit-card-head{align-items:flex-start}
@@ -8708,12 +8727,12 @@ body:not(.light-theme) #tab-tecnico .technical-permit-detail-button{color:#7dd3f
 body:not(.light-theme) #tab-tecnico .technical-permits-section{color:#e2e8f0;background:#0f172a}
 body:not(.light-theme) #tab-tecnico .technical-permits-section .technical-section-head h3,
 body:not(.light-theme) #tab-tecnico .technical-progress-copy strong,
-body:not(.light-theme) #tab-tecnico .technical-permit-phase>header h4,
+body:not(.light-theme) #tab-tecnico .technical-permit-phase-title strong,
 body:not(.light-theme) #tab-tecnico .technical-permit-card h5,
 body:not(.light-theme) #tab-tecnico .technical-permit-facts strong{color:#f8fafc}
 body:not(.light-theme) #tab-tecnico .technical-permits-section .technical-section-head p,
 body:not(.light-theme) #tab-tecnico .technical-progress-copy span,
-body:not(.light-theme) #tab-tecnico .technical-permit-phase>header>strong,
+body:not(.light-theme) #tab-tecnico .technical-permit-phase-summary b,
 body:not(.light-theme) #tab-tecnico .technical-permit-state-label{color:#94a3b8}
 body:not(.light-theme) #tab-tecnico .technical-filter-pills button{color:#cbd5e1;border-color:#334155;background:#172033}
 body:not(.light-theme) #tab-tecnico .technical-filter-pills button:hover,
@@ -8726,12 +8745,12 @@ body:not(.light-theme) #tab-tecnico .technical-permit-state option{color:#f8fafc
 body.light-theme #tab-tecnico .technical-permits-section{color:#0f172a;border-color:#dbe3ee;background:#fff;box-shadow:0 12px 34px rgba(15,23,42,.06)}
 body.light-theme #tab-tecnico .technical-permits-section .technical-section-head h3,
 body.light-theme #tab-tecnico .technical-progress-copy strong,
-body.light-theme #tab-tecnico .technical-permit-phase>header h4,
+body.light-theme #tab-tecnico .technical-permit-phase-title strong,
 body.light-theme #tab-tecnico .technical-permit-card h5,
 body.light-theme #tab-tecnico .technical-permit-facts strong{color:#0f172a}
 body.light-theme #tab-tecnico .technical-permits-section .technical-section-head p,
 body.light-theme #tab-tecnico .technical-progress-copy span,
-body.light-theme #tab-tecnico .technical-permit-phase>header>strong,
+body.light-theme #tab-tecnico .technical-permit-phase-summary b,
 body.light-theme #tab-tecnico .technical-permit-state-label{color:#64748b}
 body.light-theme #tab-tecnico .technical-permit-card{border-color:#dbe3ee;background:#fff;box-shadow:0 5px 16px rgba(15,23,42,.06)}
 body.light-theme #tab-tecnico .technical-permit-facts span{background:#f1f5f9}
@@ -8745,9 +8764,9 @@ body.light-theme #tab-tecnico .technical-permit-state option{color:#0f172a;backg
 /* ===== Responsive ===== */
 
 @media(max-width:900px){
-  #tab-tecnico .technical-permit-phase{grid-template-columns:1fr}
-  #tab-tecnico .technical-permit-phase>header{display:flex;align-items:flex-end}
-  #tab-tecnico .technical-permit-phase>header>strong{margin-top:0}
+  #tab-tecnico .technical-permit-phase-toggle{grid-template-columns:42px minmax(130px,1fr) auto 26px}
+  #tab-tecnico .technical-permit-phase-meter{display:none}
+  #tab-tecnico .technical-permit-phase-summary em{display:none}
 }
 
 @media(max-width:1050px){
@@ -8759,6 +8778,13 @@ body.light-theme #tab-tecnico .technical-permit-state option{color:#0f172a;backg
   .technical-jump-nav,.technical-section-actions{justify-content:flex-start}
   .technical-kpis,.technical-unit-kpis,.technical-permits-board,.technical-unit-filters,.technical-documents-grid,.technical-batch-form{grid-template-columns:1fr}
   .technical-batch-form .technical-batch-wide{grid-column:auto}
+  #tab-tecnico .technical-permit-phase-toggle{grid-template-columns:1fr auto;gap:5px;min-height:62px;padding:10px}
+  #tab-tecnico .technical-permit-phase-index{display:none}
+  #tab-tecnico .technical-permit-phase-title{grid-column:1}
+  #tab-tecnico .technical-permit-phase-summary{grid-column:1;justify-content:flex-start}
+  #tab-tecnico .technical-permit-phase-summary em{display:inline-flex}
+  #tab-tecnico .technical-permit-phase-chevron{grid-column:2;grid-row:1/3}
+  #tab-tecnico .technical-permit-phase-grid{padding:4px 8px 8px}
 }
 
 /* ==========================================================
