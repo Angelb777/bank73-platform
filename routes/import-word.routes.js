@@ -23,6 +23,7 @@ const Unit = require('../models/Unit');
 const Project = require('../models/Project');
 const { requireProjectAccess } = require('../middleware/rbac');
 const { recomputeCommercialKpis } = require('../services/comercial_kpis');
+const { syncUnitCommercialState } = require('../services/unitCommercialState');
 
 const ALLOWED_FIELDS = new Set([
   // resumen
@@ -820,6 +821,13 @@ router.post(
           runValidators: true,
         }
       );
+
+      await syncUnitCommercialState({
+        tenantKey: req.tenantKey,
+        projectId: req.projectId,
+        unitId,
+        venta: venta.toObject ? venta.toObject() : venta
+      });
 
       await syncProjectKpisSafe(req, req.projectId);
 

@@ -485,6 +485,9 @@ body.light-theme .provider-exclusive {
 #tab-comercial .unit-card .unit-card-expiry-alerts .insurance-alert{
   background:#ea580c; box-shadow:0 2px 10px rgba(234,88,12,.42);
 }
+#tab-comercial .unit-card .unit-card-expiry-alerts .reservation-alert{
+  background:#d97706; box-shadow:0 2px 10px rgba(217,119,6,.42);
+}
 
 /* selección: checkbox bonito + glow */
 #tab-comercial .sel-wrap{ position:relative; width:22px; height:22px; display:inline-block; }
@@ -2480,13 +2483,12 @@ body.light-theme .provider-exclusive {
     <div class="commercial-filter-bar">
     <select id="filtroEstado">
   <option value="">Todos</option>
-  <option value="disponible">Disponible</option>
+  <option value="disponible">Lote libre</option>
 <option value="inventario">Inventario</option>
 <option value="reservado">Reservado</option>
-  <option value="con_cpp">Con CPP o venta al contado</option>
-  <option value="tramite_legal_activado">Trámite legal activado</option>
-  <option value="escriturado_traspasado">Escriturado / Traspasado</option>
-  <option value="vivienda_entregada">Vivienda entregada</option>
+  <option value="con_cpp">Con CPP</option>
+  <option value="tramite_legal_activado">Trámite legal</option>
+  <option value="escriturado_traspasado">Traspasado</option>
 </select>
     <input id="buscarUnidad" placeholder="Buscar (manzana/lote/modelo/cliente/banco/CPP)" />
     </div>
@@ -2523,19 +2525,18 @@ body.light-theme .provider-exclusive {
         <input id="cl-recamaras" type="number" min="0" value="0" />
         <label>Banos</label>
         <input id="cl-banos" type="number" min="0" value="0" />
-        <label>Precio lista</label>
+        <label>Precio de venta</label>
         <input id="cl-precio" type="text" inputmode="decimal" value="100,000.00" />
         <label>Ubicacion</label>
         <input id="cl-ubicacion" type="text" />
         <label>Estado inicial</label>
         <select id="cl-estado">
-  <option value="disponible">Disponible</option>
+  <option value="disponible">Lote libre</option>
 <option value="inventario">Inventario</option>
 <option value="reservado">Reservado</option>
-  <option value="con_cpp">Con CPP o venta al contado</option>
-  <option value="tramite_legal_activado">Trámite legal activado</option>
-  <option value="escriturado_traspasado">Escriturado / Traspasado</option>
-  <option value="vivienda_entregada">Vivienda entregada</option>
+  <option value="con_cpp">Con CPP</option>
+  <option value="tramite_legal_activado">Trámite legal</option>
+  <option value="escriturado_traspasado">Traspasado</option>
 </select>
       </div>
       <div class="commercial-create-footer">
@@ -2579,8 +2580,9 @@ body.light-theme .provider-exclusive {
       <div class="modal-body" id="fichaContenido">
         <!-- se rellena por JS -->
       </div>
-      <div class="row" style="justify-content:flex-end; gap:8px;">
-        <button class="btn" id="fichaGuardar">Guardar</button>
+      <div class="unit-save-footer">
+        <span id="fichaSaveStatus" class="unit-save-status" role="status" aria-live="polite">Autoguardado activo</span>
+        <button class="btn unit-save-primary" id="fichaGuardar" type="button">Guardar cambios</button>
       </div>
     </div>
   </div>
@@ -2600,17 +2602,16 @@ body.light-theme .provider-exclusive {
             <label>Estado</label>
             <select id="b-estado">
   <option value="">(no cambiar)</option>
-  <option value="disponible">Disponible</option>
+  <option value="disponible">Lote libre</option>
 <option value="inventario">Inventario</option>
 <option value="reservado">Reservado</option>
-  <option value="con_cpp">Con CPP o venta al contado</option>
-  <option value="tramite_legal_activado">Trámite legal activado</option>
-  <option value="escriturado_traspasado">Escriturado / Traspasado</option>
-  <option value="vivienda_entregada">Vivienda entregada</option>
+  <option value="con_cpp">Con CPP</option>
+  <option value="tramite_legal_activado">Trámite legal</option>
+  <option value="escriturado_traspasado">Traspasado</option>
 </select>
             <label>Modelo</label><input id="b-modelo" />
             <label>m²</label><input id="b-m2" type="number" />
-            <label>Precio lista</label><input id="b-precio" type="text" inputmode="decimal" />
+            <label>Precio de venta</label><input id="b-precio" type="text" inputmode="decimal" />
             <h4>Datos del inmueble</h4>
             <label>Numero de finca</label><input id="b-numeroFinca" />
             <label>Codigo ubicacion</label><input id="b-codigoUbicacion" />
@@ -3054,8 +3055,8 @@ body.light-theme .provider-exclusive {
   <script src="/js/banks.js"></script>
   <script src="/lib/chart.umd.min.js"></script>
   <script src="/js/theme-toggle.js"></script>
-  <script src="/js/project-3d.js?v=viewer-editor-v3"></script>
-  <script src="/js/project.js?v=technical-permits-accordion-v1"><!-- ROLE-SEP: bump --></script>
+  <script src="/js/project-3d.js?v=commercial-six-states-v4"></script>
+  <script src="/js/project.js?v=unit-autosave-v5"><!-- ROLE-SEP: bump --></script>
   <script src="/js/avaluadores.js?v=2"></script>
 
 </body>

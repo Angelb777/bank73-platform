@@ -44,7 +44,7 @@ test('complete project evidence scores higher than an empty project', () => {
     },
     promoter: { promoterProfile: { yearsExperience: 15, deliveredProjects: 15, developedVolume: 50000000 } },
     permits: [{ items: [{ status: 'approved' }] }],
-    units: [{ precioLista: 250000 }], sales: [{}]
+    units: [{}], sales: [{ precioVenta: 250000 }]
   });
   assert.ok(complete.automaticScore > empty.automaticScore);
   assert.ok(complete.automaticScore >= 95);
@@ -102,7 +102,7 @@ test('marketplace metrics come from the existing financial structure', () => {
 });
 
 test('average sale price uses commercial units and falls back to housing models', () => {
-  assert.equal(averageProjectSalePrice({}, [{ precioLista: 200000 }, { precioLista: 300000 }]), 250000);
+  assert.equal(averageProjectSalePrice({}, [{ precioVenta: 200000 }, { precioVenta: 300000 }]), 250000);
   assert.equal(averageProjectSalePrice({ housingModels: [{ price: 100000, unitsCount: 1 }, { price: 200000, unitsCount: 3 }] }), 175000);
 });
 

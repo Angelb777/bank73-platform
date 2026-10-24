@@ -38,24 +38,26 @@ test('la tarjeta técnica usa el estado de obra como acento y conserva el estado
   assert.match(css, /\.technical-signal/);
 });
 
-test('faseConstruccion deja de ser un campo editable en Comercial y Técnico', () => {
+test('la fase de construcción se edita una sola vez desde la ficha por proceso', () => {
   const html = read('public/project.html');
   const js = read('public/js/project.js');
   const ventas = read('routes/ventas.js');
 
   assert.doesNotMatch(html, /id="b-faseConstruccion"/);
   assert.doesNotMatch(js, /id="technicalBatchPhase"/);
-  assert.doesNotMatch(js, /fv-faseConstruccion/);
-  assert.doesNotMatch(ventas.match(/const TECHNICAL_FIELDS[\s\S]*?\]\);/)?.[0] || '', /faseConstruccion/);
+  assert.match(js, /id="fv-estatusConstruccion"|fv-estatusConstruccion/);
+  assert.match(ventas.match(/const TECHNICAL_FIELDS[\s\S]*?\]\);/)?.[0] || '', /faseConstruccion/);
 });
 
-test('los flujos técnicos no pueden sobrescribir el precio de lista', () => {
+test('precioVenta es la fuente comercial única y no vive en Unit', () => {
   const units = read('routes/units.js');
   const projects = read('routes/projects.js');
   const css = read('public/css/theme.css');
 
-  assert.match(units, /delete modelFields\.precioLista/);
-  assert.match(units, /delete modelFields\.price/);
+  const unitModel = read('models/Unit.js');
+  assert.doesNotMatch(unitModel, /precioLista/);
+  assert.match(units, /precioVenta/);
+  assert.doesNotMatch(units, /precioLista/);
   assert.match(projects, /model\.price = Number\(existing\?\.price \|\| 0\)/);
   assert.match(css, /data-launch-context="technical"/);
 });

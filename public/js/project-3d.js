@@ -48,13 +48,12 @@
       ['#e86b9a', 'Venta bajo coste']
     ],
     commercial: [
-      ['#32d6a0', 'Disponible'],
+      ['#32d6a0', 'Lote libre'],
       ['#22c7d6', 'Inventario'],
       ['#ffbe55', 'Reservado'],
-      ['#ab7ee8', 'Con CPP o venta al contado'],
-      ['#eab308', 'Trámite legal activado'],
-      ['#ef4444', 'Escriturado / Traspasado'],
-      ['#3b82f6', 'Vivienda entregada']
+      ['#ab7ee8', 'Con CPP'],
+      ['#eab308', 'Trámite legal'],
+      ['#ef4444', 'Traspasado']
     ]
   };
 

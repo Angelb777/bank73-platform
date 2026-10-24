@@ -28,8 +28,18 @@ function normalizeHeader(value) {
   return normalizeText(value).replace(/[º°]/g, '°');
 }
 
-const UNIT_HEADER_NAMES = ['LOTE', 'UNIDAD APTO', 'APTO', 'APARTAMENTO'];
-const GROUP_HEADER_NAMES = ['MANZANA', 'NIVEL'];
+const UNIT_HEADER_NAMES = ['LOTE', 'UNIDAD', 'UNIDAD APTO', 'APTO', 'APARTAMENTO'];
+const GROUP_HEADER_NAMES = ['MANZANA', 'ETAPA', 'TORRE', 'NIVEL'];
+
+function unitIdentityFromRow(row, get) {
+  const etapa = clean(get(row, ['ETAPA']));
+  const torre = clean(get(row, ['TORRE']));
+  const nivel = clean(get(row, ['NIVEL']));
+  const legacyGroup = clean(get(row, ['MANZANA']));
+  const lote = clean(get(row, UNIT_HEADER_NAMES));
+  const manzana = legacyGroup || [etapa, torre, nivel].filter(Boolean).join(' · ');
+  return { etapa, torre, nivel, manzana, lote };
+}
 
 function findTable(workbook) {
   const preferredNames = ['EXPEDIENTES-BANCO', 'BASE DATOS'];
@@ -105,13 +115,13 @@ function readDatoUnicoTable(buffer) {
     return { row, values, sourceRow: sourceIndex + headerIndex + 2 };
   }).filter(({ row, values }) => {
     if (!Array.isArray(values) || !values.some(value => clean(value))) return false;
-    const lote = clean(get(row, UNIT_HEADER_NAMES));
-    const manzana = clean(get(row, GROUP_HEADER_NAMES));
+    const { lote, manzana } = unitIdentityFromRow(row, get);
     const loteNormalized = normalizeText(lote);
     const manzanaNormalized = normalizeText(manzana);
     if (!lote && !manzana) return false;
     if (loteNormalized === 'TOTAL' || manzanaNormalized === 'TOTAL') return false;
-    if (loteNormalized.startsWith('ETAPA') || manzanaNormalized.startsWith('ETAPA')) return false;
+    if (loteNormalized.startsWith('ETAPA')) return false;
+    if (!lote && manzanaNormalized.startsWith('ETAPA')) return false;
     return true;
   });
 
@@ -141,7 +151,7 @@ function freeStatus(value) {
 
 function inferStatus(row, get) {
   const client = clean(get(row, ['CLIENTE', 'CLIENTE ', 'NICKNAME', 'RESUMEN CLIENTE', 'CLIENTE RESUMEN']));
-  const bank = clean(get(row, ['BANCO']));
+  const bank = clean(get(row, ['BANCO', 'BANCO DEL CLIENTE']));
   const cpp = clean(get(row, ['N° CPP', 'Nº CPP', 'NUM CPP', 'NUMERO CPP']));
   const bankStatus = normalizeText(get(row, ['STATUS EN BANCO', 'STATUS  EN BANCO', 'ESTATUS BANCO']));
   const lotStatus = normalizeText(get(row, [
@@ -186,8 +196,7 @@ function summarizeDatoUnico(buffer) {
   let unnamedUnits = 0;
 
   for (const { row, sourceRow } of dataRows) {
-    const manzana = clean(get(row, GROUP_HEADER_NAMES));
-    const lote = clean(get(row, UNIT_HEADER_NAMES));
+    const { manzana, lote } = unitIdentityFromRow(row, get);
     const unitKey = `${normalizeText(manzana)}|${normalizeText(lote)}`;
     if (seenUnits.has(unitKey)) {
       duplicates.push({ manzana, lote, rows: [seenUnits.get(unitKey), sourceRow] });
@@ -195,7 +204,7 @@ function summarizeDatoUnico(buffer) {
       seenUnits.set(unitKey, sourceRow);
     }
 
-    const name = clean(get(row, ['MODELO', 'MODELO ']));
+    const name = clean(get(row, ['MODELO', 'MODELO ', 'MODELO VIVIENDA']));
     if (!name) {
       unnamedUnits += 1;
       continue;
@@ -262,7 +271,10 @@ function summarizeDatoUnico(buffer) {
 
 module.exports = {
   STATUS_FIELDS,
+  UNIT_HEADER_NAMES,
+  GROUP_HEADER_NAMES,
   normalizeText,
+  unitIdentityFromRow,
   readDatoUnicoTable,
   summarizeDatoUnico
 };

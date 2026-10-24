@@ -1569,7 +1569,7 @@
       modelo: name,
       ubicacion: document.getElementById('pLocation')?.value?.trim() || '',
       m2: open + closed,
-      precioLista: numberFromCreate(row.querySelector('[data-create-model="price"]')?.value),
+      precioVenta: numberFromCreate(row.querySelector('[data-create-model="price"]')?.value),
       costoUnidad: numberFromCreate(row.querySelector('[data-create-model="cost"]')?.value),
       costoUnidadManual: false,
       areaAbierta: open,
@@ -1586,7 +1586,7 @@
       const field = input.dataset.createUnit;
       const raw = String(input.value ?? '').trim();
       if (!raw && !['code', 'estado', 'ubicacion'].includes(field)) return;
-      out[field] = ['m2','precioLista','metrosExtra','precioLoteEsquina','precioM2Extra','areaAbierta','areaCerrada','areaTotalConstruccion','recamaras','banos','valorMejoras','valorTerreno'].includes(field)
+      out[field] = ['m2','precioVenta','metrosExtra','precioLoteEsquina','precioM2Extra','areaAbierta','areaCerrada','areaTotalConstruccion','recamaras','banos','valorMejoras','valorTerreno'].includes(field)
         ? numberFromCreate(raw)
         : raw;
     });

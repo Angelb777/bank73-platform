@@ -44,7 +44,7 @@ function financingMetrics(project = {}, finance = {}) {
 }
 
 function averageProjectSalePrice(project = {}, units = []) {
-  const unitPrices = (units || []).map(unit => money(unit?.precioLista || unit?.price)).filter(value => value > 0);
+  const unitPrices = (units || []).map(unit => money(unit?.precioVenta)).filter(value => value > 0);
   if (unitPrices.length) return unitPrices.reduce((sum, value) => sum + value, 0) / unitPrices.length;
   const weighted = (project.housingModels || []).reduce((acc, model) => {
     const price = money(model?.price);

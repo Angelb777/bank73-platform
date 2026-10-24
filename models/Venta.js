@@ -77,6 +77,8 @@ const VentaSchema = new mongoose.Schema({
   cliente2IngresoMensual:    { type: Number, default: 0 },
   cliente2Cargo:             { type: String, default: '' },
   cliente2AntiguedadLaboral: { type: String, default: '' },
+  cliente2PerfilCliente:     { type: String, default: '' },
+  cliente2TipoEmpresa:       { type: String, default: '' },
 
   // =========================================================
   // PARIENTES / REFERENCIAS
@@ -125,6 +127,7 @@ const VentaSchema = new mongoose.Schema({
   valorTerreno: { type: Number, default: 0 },
 
   fechaProbableEntrega: { type: Date },
+  fechaReserva:         { type: Date },
 
   // =========================================================
   // BANCO / CPP / FINANCIAMIENTO
@@ -179,6 +182,7 @@ const VentaSchema = new mongoose.Schema({
   fechaActivacionTramite: { type: Date },
 
   protocoloFirmaCliente:      { type: Boolean, default: false },
+  protocoloFirmaPromotora:    { type: Boolean, default: false },
   fechaEntregaBanco:          { type: Date },
   protocoloFirmaRLBancoInter: { type: Boolean, default: false },
   fechaRegresoBanco:          { type: Date },
@@ -217,9 +221,11 @@ const VentaSchema = new mongoose.Schema({
   enConstruccion:         { type: Boolean, default: false },
   estatusConstruccion:    { type: String, default: '' },
   faseConstruccion:       { type: String, default: '' },
+  avanceConstruccionPct:  { type: Number, min: 0, max: 100, default: 0 },
 
   permisoConstruccionMunicipal: { type: Boolean, default: false },
   permisoConstruccionNum:       { type: String, default: '' },
+  permisoConstruccionVencimiento: { type: Date },
 
   permisoOcupacion:              { type: Boolean, default: false },
   permisoOcupacionNum:           { type: String, default: '' },

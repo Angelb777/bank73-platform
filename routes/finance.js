@@ -679,7 +679,7 @@ async function getFinanceCommercialUnits(projectId, tenantKey) {
   }
 
   const [units, ventas] = await Promise.all([
-    Unit.find(unitFilter).select('_id manzana lote estado precioLista modelo recamaras banos areaAbierta areaCerrada').sort({ manzana: 1, lote: 1 }).lean(),
+    Unit.find(unitFilter).select('_id manzana lote estado modelo recamaras banos areaAbierta areaCerrada').sort({ manzana: 1, lote: 1 }).lean(),
     Venta.find(ventaFilter).select('unitId clienteNombre primerNombre segundoNombre primerApellido segundoApellido apellidoCasada banco valor montoFinanciamientoCPP precioVenta abonoInicial abonoCliente numCPP estatusCPP statusBanco').lean()
   ]);
 
@@ -700,7 +700,7 @@ async function getFinanceCommercialUnits(projectId, tenantKey) {
       buyerBank: venta.banco || '',
       cppAmount: toNum(venta.montoFinanciamientoCPP || venta.valor),
       initialPayment: toNum(venta.abonoInicial || venta.abonoCliente),
-      salePrice: toNum(venta.precioVenta || u.precioLista),
+      salePrice: toNum(venta.precioVenta),
       financeBaseAmount: toNum(venta.montoFinanciamientoCPP || venta.valor),
       financeBaseAmountWithInitial: toNum(venta.montoFinanciamientoCPP || venta.valor) + toNum(venta.abonoInicial || venta.abonoCliente),
       cppNumber: venta.numCPP || '',

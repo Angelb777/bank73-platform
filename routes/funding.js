@@ -73,7 +73,7 @@ function summarizeOpportunityUnits(units = [], project = {}) {
   const summary = { unitsTotal: 0, unitsSold: 0, presalesPct: 0, potentialSalesValue: 0 };
   (units || []).forEach(unit => {
     summary.unitsTotal += 1;
-    summary.potentialSalesValue += money(unit.precioLista);
+    summary.potentialSalesValue += money(unit.precioVenta);
     const status = String(unit.estado ?? unit.status ?? '').toLowerCase();
     if (PORTFOLIO_SOLD_STATUSES.has(status)) summary.unitsSold += 1;
   });
@@ -126,18 +126,18 @@ router.get('/admin', async (req, res) => {
   if (!canManageFunding(req)) return res.status(403).json({ error: 'Acceso solo para administradores y bancos' });
   const projects = await Project.find(fundingProjectFilter(req)).sort({ createdAt: -1 }).lean();
   const projectIds = projects.map(p => p._id);
-  const [fundings, finances, units] = await Promise.all([
+  const [fundings, finances, sales] = await Promise.all([
     ProjectFunding.find({ tenantKey: req.tenantKey, project: { $in: projectIds } }).lean(),
     ProjectFinance.find({ project: { $in: projectIds }, tenantKey: req.tenantKey }).lean(),
-    Unit.find({ projectId: { $in: projectIds }, $and: [{ $or: [{ tenantKey: req.tenantKey }, { tenantKey: { $exists: false } }] }, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] }).select('projectId precioLista').lean()
+    Venta.find({ projectId: { $in: projectIds }, $and: [{ $or: [{ tenantKey: req.tenantKey }, { tenantKey: { $exists: false } }] }, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] }).select('projectId unitId precioVenta').lean()
   ]);
   const byProject = new Map(fundings.map(f => [String(f.project), f]));
   const financeByProject = new Map(finances.map(f => [String(f.project), f]));
-  const unitsByProject = new Map();
-  units.forEach(unit => {
-    const key = String(unit.projectId);
-    if (!unitsByProject.has(key)) unitsByProject.set(key, []);
-    unitsByProject.get(key).push(unit);
+  const salesByProject = new Map();
+  sales.forEach(sale => {
+    const key = String(sale.projectId);
+    if (!salesByProject.has(key)) salesByProject.set(key, []);
+    salesByProject.get(key).push(sale);
   });
   const interests = await FundingInterest.find({ projectTenantKey: req.tenantKey, project: { $in: projectIds } })
     .select('project bankName bankTenantKey amount comment status notificationPending notificationReviewedAt createdAt')
@@ -155,7 +155,7 @@ router.get('/admin', async (req, res) => {
   res.json(projects.map(p => {
     const stored = byProject.get(String(p._id));
     const projectInterests = interestsByProject.get(String(p._id)) || [];
-    return { ...publicDto(p, stored || { publicFields: [] }, financeByProject.get(String(p._id)) || {}), publishStatus: p.publishStatus, fundingStatus: stored?.status || 'pending_review', automaticScore: stored?.automaticScore || 0, finalScore: stored?.finalScore ?? null, marketAnalysis: { ...(stored?.marketAnalysis || {}), averageProjectSalePrice: averageProjectSalePrice(p, unitsByProject.get(String(p._id)) || []) }, interestCount: projectInterests.length, pendingNotificationCount: pendingCounts.get(String(p._id)) || 0 };
+    return { ...publicDto(p, stored || { publicFields: [] }, financeByProject.get(String(p._id)) || {}), publishStatus: p.publishStatus, fundingStatus: stored?.status || 'pending_review', automaticScore: stored?.automaticScore || 0, finalScore: stored?.finalScore ?? null, marketAnalysis: { ...(stored?.marketAnalysis || {}), averageProjectSalePrice: averageProjectSalePrice(p, salesByProject.get(String(p._id)) || []) }, interestCount: projectInterests.length, pendingNotificationCount: pendingCounts.get(String(p._id)) || 0 };
   }));
 });
 
@@ -165,15 +165,15 @@ router.get('/admin/:projectId', async (req, res) => {
   if (!project || !project.seeksFinancing) return res.status(404).json({ error: 'Solicitud no encontrada' });
   const funding = await ensureFunding(project);
   const promoterId = project.assignedPromoters?.[0];
-  const [interests, documents, finance, units, promoter, publishedByUser] = await Promise.all([
+  const [interests, documents, finance, sales, promoter, publishedByUser] = await Promise.all([
     FundingInterest.find({ project: project._id, projectTenantKey: req.tenantKey }).sort({ createdAt: -1 }).lean(),
     Document.find({ projectId: project._id, tenantKey: project.tenantKey }).select('originalname title mimetype size').sort({ createdAt: -1 }).lean(),
     ProjectFinance.findOne({ project: project._id, tenantKey: project.tenantKey }).lean(),
-    Unit.find({ projectId: project._id, $and: [{ $or: [{ tenantKey: project.tenantKey }, { tenantKey: { $exists: false } }] }, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] }).select('precioLista').lean(),
+    Venta.find({ projectId: project._id, $and: [{ $or: [{ tenantKey: project.tenantKey }, { tenantKey: { $exists: false } }] }, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] }).select('precioVenta').lean(),
     promoterId ? User.findById(promoterId).select('name companyName promoterProfile promoterCategory').lean() : null,
     funding.publishedBy ? User.findById(funding.publishedBy).select('name email').lean() : null
   ]);
-  const derivedAverageSalePrice = averageProjectSalePrice(project, units);
+  const derivedAverageSalePrice = averageProjectSalePrice(project, sales);
   const metrics = financingMetrics(project, finance || {});
   const request = requestMetrics(funding.toObject ? funding.toObject() : funding, metrics);
   const financialSummary = {
@@ -239,7 +239,7 @@ router.patch('/admin/:projectId', async (req, res) => {
   if (req.body.finalScore !== undefined) funding.finalScore = Math.max(0, Math.min(100, Number(req.body.finalScore) || 0));
   if (req.body.marketAssessment !== undefined) funding.marketAssessment = cleanText(req.body.marketAssessment);
   if (req.body.marketAnalysis && typeof req.body.marketAnalysis === 'object') {
-    const units = await Unit.find({ projectId: project._id, $and: [{ $or: [{ tenantKey: project.tenantKey }, { tenantKey: { $exists: false } }] }, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] }).select('precioLista').lean();
+    const units = await Venta.find({ projectId: project._id, $and: [{ $or: [{ tenantKey: project.tenantKey }, { tenantKey: { $exists: false } }] }, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] }).select('precioVenta').lean();
     const input = req.body.marketAnalysis;
     const income = money(input.targetHouseholdMonthlyIncome);
     const payment = money(input.estimatedMonthlyMortgagePayment);
@@ -333,7 +333,7 @@ router.get('/opportunities', async (req, res) => {
   const byProject = new Map(projects.map(p => [String(p._id), p]));
   const projectIds = projects.map(p => p._id);
   const projectTenantKeys = [...new Set(projects.map(p => String(p.tenantKey || '')).filter(Boolean))];
-  const [finances, units] = await Promise.all([
+  const [finances, units, sales] = await Promise.all([
     ProjectFinance.find({ project: { $in: projectIds } }).lean(),
     Unit.find({
       projectId: { $in: projectIds },
@@ -341,12 +341,14 @@ router.get('/opportunities', async (req, res) => {
         { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] },
         { $or: [{ tenantKey: { $in: projectTenantKeys } }, { tenantKey: { $exists: false } }, { tenantKey: null }] }
       ]
-    }).select('projectId estado status precioLista').lean()
+    }).select('projectId estado status').lean(),
+    Venta.find({ projectId: { $in: projectIds }, deletedAt: null, $or: [{ tenantKey: { $in: projectTenantKeys } }, { tenantKey: { $exists: false } }, { tenantKey: null }] }).select('projectId unitId precioVenta').lean()
   ]);
+  const priceByUnit = new Map(sales.map(sale => [String(sale.unitId), Number(sale.precioVenta || 0)]));
   const financeByProject = new Map(finances.map(f => [String(f.project), f]));
   const unitsByProject = new Map(projectIds.map(id => [String(id), []]));
   units.forEach(unit => {
-    unitsByProject.get(String(unit.projectId))?.push(unit);
+    unitsByProject.get(String(unit.projectId))?.push({ ...unit, precioVenta: priceByUnit.get(String(unit._id)) || 0 });
   });
   res.json(fundings.map(f => {
     const project = byProject.get(String(f.project));
@@ -363,14 +365,17 @@ router.get('/opportunities/:id', async (req, res) => {
   if (!funding) return res.status(404).json({ error: 'Oportunidad no encontrada' });
   const project = await Project.findOne({ _id: funding.project, publishStatus: 'approved', seeksFinancing: true }).lean();
   if (!project) return res.status(404).json({ error: 'Oportunidad no encontrada' });
-  const [finance, opportunityUnits] = await Promise.all([
+  const [finance, opportunityUnits, opportunitySales] = await Promise.all([
     ProjectFinance.findOne({ project: project._id, tenantKey: project.tenantKey }).lean(),
-    Unit.find({ projectId: project._id, $and: [{ $or: [{ tenantKey: project.tenantKey }, { tenantKey: { $exists: false } }, { tenantKey: null }] }, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] }).select('modelo manzana lote m2 precioLista estado status').lean()
+    Unit.find({ projectId: project._id, $and: [{ $or: [{ tenantKey: project.tenantKey }, { tenantKey: { $exists: false } }, { tenantKey: null }] }, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] }).select('modelo manzana lote m2 estado status').lean(),
+    Venta.find({ projectId: project._id, deletedAt: null, $or: [{ tenantKey: project.tenantKey }, { tenantKey: { $exists: false } }, { tenantKey: null }] }).select('unitId precioVenta').lean()
   ]);
+  const opportunityPriceByUnit = new Map(opportunitySales.map(sale => [String(sale.unitId), Number(sale.precioVenta || 0)]));
+  opportunityUnits.forEach(unit => { unit.precioVenta = opportunityPriceByUnit.get(String(unit._id)) || 0; });
   const dto = publicDto(project, funding, finance || {}, { detail: true });
   Object.assign(dto, summarizeOpportunityUnits(opportunityUnits, project));
   if ((funding.publicFields || []).some(field => ['units','prices'].includes(field))) {
-    dto.units = opportunityUnits.map(unit => ({ model: unit.modelo || '', reference: [unit.manzana, unit.lote].filter(Boolean).join('-'), areaM2: unit.m2 || 0, price: (funding.publicFields || []).includes('prices') ? Number(unit.precioLista || 0) : undefined, status: unit.estado || unit.status || '' }));
+    dto.units = opportunityUnits.map(unit => ({ model: unit.modelo || '', reference: [unit.manzana, unit.lote].filter(Boolean).join('-'), areaM2: unit.m2 || 0, price: (funding.publicFields || []).includes('prices') ? Number(unit.precioVenta || 0) : undefined, status: unit.estado || unit.status || '' }));
   }
   if ((funding.publicFields || []).includes('documents') && funding.publicDocumentIds?.length) {
     const docs = await Document.find({ _id: { $in: funding.publicDocumentIds }, projectId: project._id, tenantKey: project.tenantKey }).select('originalname title mimetype size').lean();

@@ -163,7 +163,7 @@ function commercialPresalesInformation(project = {}, commercialUnits = []) {
     if (status === 'vivienda_entregada' || status === 'entregado') result.delivered += 1;
     if (COMMERCIAL_PRESALE_STATUSES.has(status)) {
       result.presales += 1;
-      result.saleValue += Number(unit.salePrice || unit.precioLista || 0);
+      result.saleValue += Number(unit.salePrice || 0);
       result.cppAmount += Number(unit.cppAmount || 0);
     }
     return result;

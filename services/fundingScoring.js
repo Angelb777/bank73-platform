@@ -14,7 +14,7 @@ function calculateFundingScore({ project = {}, promoter = {}, permits = [], unit
   const requested = num(requestedAmount) || metrics.requestedAmount;
   const own = metrics.promoterContribution;
   const already = metrics.alreadyFinanced;
-  const revenue = units.reduce((sum, unit) => sum + num(unit.precioLista || unit.price), 0);
+  const revenue = sales.reduce((sum, sale) => sum + num(sale.precioVenta), 0);
   const items = [];
   const add = (key, label, category, score, maxScore, reason) => items.push({ key, label, category, automaticScore: Math.round(score * 100) / 100, maxScore, manualScore: null, reason });
   add('experience', 'Experiencia del promotor', 'promoter', ratio(num(profile.yearsExperience), 15, 10), 10, `${num(profile.yearsExperience)} años`);

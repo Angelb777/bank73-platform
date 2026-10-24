@@ -255,7 +255,7 @@ router.get('/ficha-cliente/:unitId', attachProjectByUnitId, requireProjectAccess
       ['Lote', `${unit.manzana || ''}-${unit.lote || ''}`],
       ['Modelo', unit.modelo],
       ['M² unidad', unit.m2],
-      ['Precio lista', projectMoney(unit.precioLista)],
+      ['Precio de venta', projectMoney(venta.precioVenta)],
       ['Estado', unit.estado],
       ['Número de finca', venta.numeroFinca],
       ['Código ubicación', venta.codigoUbicacion],
@@ -346,7 +346,7 @@ router.get('/ficha-cliente/:unitId', attachProjectByUnitId, requireProjectAccess
 
     sectionTitle(doc, 'Precio de vivienda / promotora');
     grid(doc, [
-      ['Precio de venta', projectMoney(venta.precioVenta || unit.precioLista)],
+      ['Precio de venta', projectMoney(venta.precioVenta)],
       ['Monto hipoteca', projectMoney(venta.montoFinanciamientoCPP || venta.valor)],
       ['Precio m² extra', projectMoney(venta.precioM2Extra)],
       ['Abono del financiamiento', projectMoney(venta.abonoCliente)],
@@ -358,7 +358,7 @@ router.get('/ficha-cliente/:unitId', attachProjectByUnitId, requireProjectAccess
 
     sectionTitle(doc, 'Precio de vivienda / entidad bancaria');
     grid(doc, [
-      ['Precio de venta', projectMoney(venta.precioVenta || unit.precioLista)],
+      ['Precio de venta', projectMoney(venta.precioVenta)],
       ['Banco', venta.banco],
       ['Monto hipoteca / CPP', projectMoney(venta.montoFinanciamientoCPP || venta.valor)],
       ['Oficial de crédito', venta.oficialBanco],
@@ -481,7 +481,7 @@ router.get('/proforma/:unitId', attachProjectByUnitId, requireProjectAccess(), a
       ['Área total construcción', venta.areaTotalConstruccion],
       ['Área cerrada', venta.areaCerrada],
       ['Área abierta', venta.areaAbierta],
-      ['Precio total de venta', projectMoney(venta.precioVenta || unit.precioLista)],
+      ['Precio total de venta', projectMoney(venta.precioVenta)],
       ['Valor de mejoras', projectMoney(venta.valorMejoras)],
       ['Valor de terreno', projectMoney(venta.valorTerreno)],
       ['Finca', venta.numeroFinca],

@@ -7,11 +7,16 @@ const {
   buildViewer3DUnitRecord
 } = require('../services/viewer3d_unit_record');
 
-test('the viewer exposes exactly the seven statuses from Commercial', () => {
+test('the viewer exposes exactly the six approved statuses from Commercial', () => {
   assert.deepEqual(Object.keys(COMMERCIAL_STATUS_BY_UNIT_STATUS), [
     'disponible', 'inventario', 'reservado', 'con_cpp',
-    'tramite_legal_activado', 'escriturado_traspasado', 'vivienda_entregada'
+    'tramite_legal_activado', 'escriturado_traspasado'
   ]);
+});
+
+test('legacy delivered units remain compatible as transferred without exposing a seventh status', () => {
+  const record = buildViewer3DUnitRecord({ unit: { estado: 'vivienda_entregada' } });
+  assert.equal(record.commercial.status, 'transferred');
 });
 
 test('maps every visible 3D value from the Commercial unit record', () => {
@@ -19,7 +24,7 @@ test('maps every visible 3D value from the Commercial unit record', () => {
     unit: {
       _id: 'unit-1', manzana: '-100', lote: 'L-408', modelo: 'D',
       recamaras: 3, banos: 2, areaAbierta: 10, areaCerrada: 99.27,
-      areaTotalConstruccion: 109.27, precioLista: 250000, costoUnidad: 145000,
+      areaTotalConstruccion: 109.27, costoUnidad: 145000,
       estado: 'escriturado_traspasado',
       viewer3D: {
         geometryKey: 'L-408', tower: 'C', progressStatus: 'pending',
@@ -34,7 +39,7 @@ test('maps every visible 3D value from the Commercial unit record', () => {
   });
 
   assert.equal(record.commercial.status, 'transferred');
-  assert.equal(record.commercial.listPrice, 250000);
+  assert.equal(record.commercial.askingPrice, 245000);
   assert.equal(record.commercial.salePrice, 245000);
   assert.equal(record.progress.status, 'finishing');
   assert.equal(record.progress.phase, 'Pintura');
@@ -56,7 +61,7 @@ test('does not invent missing values or use legacy viewer business data', () => 
   });
 
   assert.equal(record.commercial.status, 'unknown');
-  assert.equal(record.commercial.listPrice, null);
+  assert.equal(record.commercial.askingPrice, null);
   assert.equal(record.finance.budgetCost, null);
   assert.equal(record.finance.salePrice, null);
   assert.equal(record.progress.status, 'unknown');

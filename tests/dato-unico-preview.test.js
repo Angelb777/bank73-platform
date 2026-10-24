@@ -89,3 +89,44 @@ test('Dato Único reconoce BASE DATOS con unidades de apartamentos', () => {
   assert.equal(preview.models[1].initialStatuses.disponible, 1);
   assert.equal(preview.models[2].initialStatuses.inventario, 1);
 });
+
+test('Dato Único reconoce el modelo definitivo con ETAPA, TORRE, NIVEL y UNIDAD', () => {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['DATO ÚNICO'],
+    ['DATOS BÁSICOS'],
+    ['ETAPA', 'TORRE', 'NIVEL', 'UNIDAD', 'CLIENTE', 'ESTATUS', 'PRECIO DE VENTA', 'MONTO CPP', 'PORCENTAJE DE FINANCIAMIENTO2', 'BANCO DEL CLIENTE', 'AREA TERRENO M2', 'MODELO VIVIENDA', 'AREA ABIERTA VIVIENDA', 'AREA CERRADA VIVIENDA', 'RECÁMARAS', 'BAÑOS'],
+    ['Etapa 1', 'Torre A', '03', 'A-301', 'Cliente Uno', 'CON CPP', 180000, 144000, 80, 'Banco General', 92, 'Modelo A', 8, 84, 3, 2]
+  ]), 'EXPEDIENTES-BANCO');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['LOTE', 'CLIENTE'],
+    [0, 0]
+  ]), 'ABONOS');
+
+  const preview = summarizeDatoUnico(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
+
+  assert.equal(preview.valid, true);
+  assert.equal(preview.sheet, 'EXPEDIENTES-BANCO');
+  assert.equal(preview.unitsTotal, 1);
+  assert.equal(preview.models[0].name, 'Modelo A');
+  assert.equal(preview.models[0].price, 180000);
+  assert.equal(preview.models[0].initialStatuses.con_cpp, 1);
+});
+
+test('Dato Único no cae en ABONOS cuando la plantilla definitiva todavía está vacía', () => {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['DATO ÚNICO'],
+    ['DATOS BÁSICOS'],
+    ['ETAPA', 'TORRE', 'NIVEL', 'UNIDAD', 'CLIENTE', 'ESTATUS']
+  ]), 'EXPEDIENTES-BANCO');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['LOTE', 'CLIENTE'],
+    [0, 0]
+  ]), 'ABONOS');
+
+  assert.throws(
+    () => summarizeDatoUnico(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })),
+    /No se encontraron unidades válidas/
+  );
+});

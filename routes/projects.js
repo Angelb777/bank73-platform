@@ -20,6 +20,7 @@ const { buildViewer3DUnitRecord } = require('../services/viewer3d_unit_record');
 const { normalizePhaseRequirements } = require('../services/phaseRequirements');
 const { dateInReportPeriod, anyDateInReportPeriod, buildPeriodActivity } = require('../services/reportActivity');
 const { buildFinanceControlSummary } = require('../services/financeReportContext');
+const { syncUnitCommercialState } = require('../services/unitCommercialState');
 const audit             = require('../utils/audit');
 const { normalizeProjectCurrency, parsePanamaNumber, formatProjectMoney, currencySymbol } = require('../utils/currency');
 
@@ -373,7 +374,7 @@ function sanitizeInitialUnits(raw = []) {
         modelo: String(item?.modelo || '').trim(),
         ubicacion: String(item?.ubicacion || item?.location || '').trim(),
         m2: Math.max(0, parsePanamaNumber(item?.m2 ?? item?.m2Unidad) || 0),
-        precioLista: Math.max(0, parsePanamaNumber(item?.precioLista ?? item?.precio) || 0),
+        precioVenta: Math.max(0, parsePanamaNumber(item?.precioVenta ?? item?.precio) || 0),
         costoUnidad: Math.max(0, parsePanamaNumber(item?.costoUnidad ?? item?.costo) || 0),
         costoUnidadManual: Boolean(item?.costoUnidadManual),
         numeroFinca: String(item?.numeroFinca || '').trim(),
@@ -774,6 +775,8 @@ async function createInitialUnitsFromModels({ req, project, initialUnits = [] })
     initialUnits.forEach((unit, idx) => {
       const manzana = unit.manzana || unit.modelo || 'Modelo';
       const lote = unit.lote || String(idx + 1);
+      const estado = normalizeUnitStatusKey(unit.estado);
+      const estadoModo = ['disponible', 'inventario'].includes(estado) ? 'automatico' : 'manual';
       docs.push({
         tenantKey: req.tenantKey,
         projectId: project._id,
@@ -782,7 +785,6 @@ async function createInitialUnitsFromModels({ req, project, initialUnits = [] })
         modelo: unit.modelo || '',
         ubicacion: unit.ubicacion || projectLocation,
         m2: unit.m2 || unit.areaTotalConstruccion || 0,
-        precioLista: unit.precioLista || 0,
         costoUnidad: unit.costoUnidad || 0,
         costoUnidadManual: Boolean(unit.costoUnidadManual),
         numeroFinca: unit.numeroFinca || '',
@@ -799,11 +801,17 @@ async function createInitialUnitsFromModels({ req, project, initialUnits = [] })
         banos: unit.banos || 0,
         valorMejoras: unit.valorMejoras || 0,
         valorTerreno: unit.valorTerreno || 0,
-        estado: normalizeUnitStatusKey(unit.estado),
+        estado,
+        estadoModo,
+        estadoAutomaticoSugerido: estadoModo === 'automatico' ? estado : 'disponible',
+        estadoAutomaticoBase: estado === 'inventario' ? 'inventario' : 'disponible',
+        estadoAutomaticoMotivo: estadoModo === 'automatico'
+          ? 'Unidad nueva sin avance comercial'
+          : 'Estado inicial definido en la creación del proyecto',
+        ...(estadoModo === 'manual' ? { estadoManualAt: new Date(), estadoManualBy: req.user?._id || req.user?.id || null } : {}),
         deletedAt: null,
         code: unit.code || `${manzana}-${lote}`,
-        status: normalizeUnitStatusKey(unit.estado).toUpperCase(),
-        price: unit.precioLista || 0
+        status: estado.toUpperCase()
       });
     });
   } else {
@@ -835,14 +843,21 @@ async function createInitialUnitsFromModels({ req, project, initialUnits = [] })
         areaCerrada: model.closedAreaM2 || 0,
         recamaras: model.bedrooms || 0,
         banos: model.bathrooms || 0,
-        precioLista: model.price || 0,
         costoUnidad: model.cost || 0,
         costoUnidadManual: false,
         estado,
+        estadoModo: ['disponible', 'inventario'].includes(estado) ? 'automatico' : 'manual',
+        estadoAutomaticoSugerido: ['disponible', 'inventario'].includes(estado) ? estado : 'disponible',
+        estadoAutomaticoBase: estado === 'inventario' ? 'inventario' : 'disponible',
+        estadoAutomaticoMotivo: ['disponible', 'inventario'].includes(estado)
+          ? 'Unidad nueva sin avance comercial'
+          : 'Estado inicial definido en la creación del proyecto',
+        ...(!['disponible', 'inventario'].includes(estado)
+          ? { estadoManualAt: new Date(), estadoManualBy: req.user?._id || req.user?.id || null }
+          : {}),
         deletedAt: null,
         code: `${String(model.name || 'Modelo').slice(0, 24)}-${lote}`,
-        status: estado.toUpperCase(),
-        price: model.price || 0
+        status: estado.toUpperCase()
       });
       sequence++;
     }
@@ -851,7 +866,7 @@ async function createInitialUnitsFromModels({ req, project, initialUnits = [] })
 
   if (!docs.length) return [];
   const created = await Unit.insertMany(docs, { ordered: false });
-  const ventas = created.map(unit => ({
+  const ventas = created.map((unit, index) => ({
     tenantKey: req.tenantKey,
     projectId: project._id,
     unitId: unit._id,
@@ -872,8 +887,11 @@ async function createInitialUnitsFromModels({ req, project, initialUnits = [] })
     banos: unit.banos || 0,
     valorMejoras: unit.valorMejoras || 0,
     valorTerreno: unit.valorTerreno || 0,
-    precioVenta: unit.precioLista || 0,
-    valor: unit.precioLista || 0
+    precioVenta: Number(
+      initialUnits[index]?.precioVenta ??
+      models.find(model => String(model.name || '') === String(unit.modelo || ''))?.price ??
+      0
+    )
   }));
   if (ventas.length) await Venta.insertMany(ventas, { ordered: false });
   return created;
@@ -1815,7 +1833,7 @@ router.get('/:id/viewer-3d', requireProjectAccess({ commercialOnlySales: false }
 
     const [units, ventas] = await Promise.all([
       Unit.find({ projectId: project._id, tenantKey, deletedAt: null })
-        .select('manzana lote modelo m2 areaAbierta areaCerrada areaTotalConstruccion recamaras banos precioLista costoUnidad estado viewer3D')
+        .select('manzana lote modelo m2 areaAbierta areaCerrada areaTotalConstruccion recamaras banos costoUnidad estado viewer3D')
         .sort({ manzana: 1, lote: 1 })
         .lean(),
       Venta.find({ projectId: project._id, tenantKey, deletedAt: null })
@@ -2823,12 +2841,6 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       const ventaPrecio = toNum(venta?.precioVenta);
       if (ventaPrecio > 0) return ventaPrecio;
 
-      const unitValor = toNum(unit?.precioLista);
-      if (unitValor > 0) return unitValor;
-
-      const ventaValorLegacy = toNum(venta?.valor);
-      if (ventaValorLegacy > 0) return ventaValorLegacy;
-
       return 0;
     };
 
@@ -2967,7 +2979,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       { status: 'Reserva', count: U.reserved },
       { status: 'Con CPP', count: U.conCpp },
       { status: 'Trámite legal', count: U.tramiteLegal },
-      { status: 'Escriturado / Traspasado', count: U.escrituradas },
+      { status: 'Traspasado', count: U.escrituradas },
       { status: 'Vivienda entregada', count: U.entregadas },
       { status: 'Cancelada', count: U.canceladas }
     ];
@@ -3512,10 +3524,13 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
       : 0;
 
-    // "Valor total" es el precio lista acumulado de todas las unidades.
+    // "Valor total" usa exclusivamente el precio de venta del Dato Único.
     // Debe coincidir con el total mostrado en la pestaña Comercial.
     const inventoryValue = reportingUnits
-      .reduce((acc, u) => acc + toNum(u.precioLista ?? u.price), 0);
+      .reduce((acc, u) => {
+        const venta = ventas.find(item => String(item.unitId) === String(u._id));
+        return acc + toNum(venta?.precioVenta);
+      }, 0);
 
     const absorption3m = (() => {
       const cutoff = now - 90 * 24 * 3600 * 1000;
@@ -5381,11 +5396,11 @@ if (isSoldLikeStatus(st)) U.sold++;
         ws.addRow([]);
         ws.addRow(['Unidades', 'Cantidad']);
         ws.addRow(['Total', summary.units.total]);
-        ws.addRow(['Disponibles', summary.units.available]);
+        ws.addRow(['Lotes libres', summary.units.available]);
         ws.addRow(['Reservadas', summary.units.reserved]);
         ws.addRow(['Con CPP', summary.units.conCpp]);
-        ws.addRow(['Trámite legal activado', summary.units.tramiteLegal]);
-        ws.addRow(['Escriturado / Traspasado', summary.units.escrituradas]);
+        ws.addRow(['Trámite legal', summary.units.tramiteLegal]);
+        ws.addRow(['Traspasados', summary.units.escrituradas]);
         ws.addRow(['Vivienda entregada', summary.units.entregadas]);
         ws.addRow(['Vendidas / no disponibles', summary.units.sold]);
         ws.addRow(['Canceladas', summary.units.canceladas]);
@@ -5763,6 +5778,7 @@ const XLSX = require('xlsx');
 const {
   readDatoUnicoTable,
   summarizeDatoUnico,
+  unitIdentityFromRow,
   normalizeText: normalizeDatoUnicoText
 } = require('../services/datoUnicoPreview');
 const {
@@ -5973,6 +5989,16 @@ router.post(
         return false;
       };
 
+      const parseCaptureChannel = (v) => {
+        const t = normTxt(v);
+        return {
+          oficina: t.includes('OFICINA'),
+          internet: t.includes('MAIL') || t.includes('INTERNET') || t.includes('WEB'),
+          proyecto: t.includes('PROYECTO'),
+          mercadeo: t.includes('MERCADEO') || t.includes('PROSPECT')
+        };
+      };
+
       const calcDays = (a, b) => {
         const d1 = asDate(a);
         const d2 = asDate(b);
@@ -6007,13 +6033,23 @@ router.post(
       let unitsUpserted = 0;
       let ventasUpserted = 0;
 
-      const setUnitEstado = async (unitId, estadoValue) => {
+      const setUnitEstado = async (unitId, estadoValue, estadoModo = 'manual') => {
         await Unit.updateOne(
           { _id: unitId },
           {
             $set: {
               estado: estadoValue,
-              status: String(estadoValue || '').toUpperCase()
+              status: String(estadoValue || '').toUpperCase(),
+              estadoModo,
+              estadoAutomaticoSugerido: estadoValue,
+              estadoAutomaticoBase: estadoValue === 'inventario' ? 'inventario' : 'disponible',
+              estadoAutomaticoMotivo: estadoModo === 'manual'
+                ? 'Estado indicado expresamente en la importación'
+                : 'Estado calculado a partir de los datos importados',
+              estadoAutomaticoActualizadoAt: new Date(),
+              ...(estadoModo === 'manual'
+                ? { estadoManualAt: new Date(), estadoManualBy: req.user?._id || req.user?.id || null }
+                : { estadoManualAt: null, estadoManualBy: null })
             }
           }
         );
@@ -6054,7 +6090,7 @@ router.post(
 
       function inferEstado(rowObj, r) {
         const clienteNombre = clean(get(rowObj, ['CLIENTE', 'CLIENTE ', 'NICKNAME', 'RESUMEN CLIENTE']));
-        const banco = clean(get(rowObj, ['BANCO']));
+        const banco = clean(get(rowObj, ['BANCO', 'BANCO DEL CLIENTE']));
         const numCPP = clean(get(rowObj, ['N° CPP', 'Nº CPP', 'NUM CPP', 'NUMERO CPP']));
         const statusBanco = normTxt(get(rowObj, ['STATUS EN BANCO', 'STATUS  EN BANCO', 'ESTATUS BANCO']));
         const estatusLote = normTxt(get(rowObj, [
@@ -6135,14 +6171,18 @@ router.post(
         const rowObj = {};
         header.forEach((h, i) => { rowObj[h] = r[i] ?? ''; });
 
-        const manzana = clean(get(rowObj, ['MANZANA', 'NIVEL']));
-        const lote = clean(get(rowObj, ['LOTE', 'UNIDAD APTO', 'APTO', 'APARTAMENTO']));
+        const { etapa, torre, nivel, manzana, lote } = unitIdentityFromRow(rowObj, get);
 
         if (!manzana && !lote) continue;
 
         const uKey = unitKey(manzana, lote);
         let unit = unitMap.get(uKey);
 
+        const explicitEstado = clean(get(rowObj, [
+          'ESTATUS', 'ESTATUS LOTE', 'ESTADO LOTE', 'RESERVADAS, VENDIDAS',
+          'RESERVAS, VENDIDAS', 'ESTATUS2', 'ESTATUS6'
+        ]));
+        const estadoModo = explicitEstado ? 'manual' : 'automatico';
         const estado = inferEstado(rowObj, r);
 
         const precioVentaExcel = toNum0(get(rowObj, [
@@ -6170,11 +6210,15 @@ router.post(
           'VALOR '
         ]));
 
-        const porcentajeFinanciamientoExcel = toNum0(get(rowObj, [
+        const porcentajeFinanciamientoRaw = toNum0(get(rowObj, [
           '% FINANCIAMIENTO',
           'PORCENTAJE FINANCIAMIENTO',
-          'PORCENTAJE DE FINANCIAMIENTO'
+          'PORCENTAJE DE FINANCIAMIENTO',
+          'PORCENTAJE DE FINANCIAMIENTO2'
         ]));
+        const porcentajeFinanciamientoExcel = porcentajeFinanciamientoRaw > 0 && porcentajeFinanciamientoRaw <= 1
+          ? porcentajeFinanciamientoRaw * 100
+          : porcentajeFinanciamientoRaw;
 
         const precioVentaFinal = precioVentaExcel > 0
           ? precioVentaExcel
@@ -6194,7 +6238,6 @@ router.post(
 
         const abonoInicialFinal = Math.max(precioVentaFinal - montoFinanciamientoCPPFinal, 0);
         const valorLegacyFinal = montoFinanciamientoCPPFinal;
-        const precioLista = precioVentaFinal;
 
         const areaAbiertaExcel = toNum0(get(rowObj, [
           'AREA ABIERTA',
@@ -6222,6 +6265,8 @@ router.post(
           ]));
 
         const m2UnidadFinal = toNum0(get(rowObj, [
+          'AREA TERRENO M2',
+          'ÁREA TERRENO M2',
           'M2 UNIDAD',
           'M² UNIDAD',
           'M2',
@@ -6230,6 +6275,35 @@ router.post(
           'ÁREA UNIDAD',
           'AREA TOTAL CUANTIFICABLE'
         ]));
+
+        const modeloExcel = clean(get(rowObj, ['MODELO', 'MODELO ', 'MODELO VIVIENDA']));
+        const numeroFincaExcel = clean(get(rowObj, ['NUMERO DE FINCA', 'NÚMERO DE FINCA', 'FINCA']));
+        const codigoUbicacionExcel = clean(get(rowObj, ['CODIGO UBICACION', 'CÓDIGO UBICACIÓN', 'CODIGO DE UBICACION']));
+        const calleExcel = clean(get(rowObj, ['CALLE']));
+        const recamarasExcel = toNum0(get(rowObj, ['RECAMARAS', 'RECÁMARAS', 'HABITACIONES']));
+        const banosExcel = toNum0(get(rowObj, ['BANOS', 'BAÑOS']));
+        const valorMejorasExcel = toNum0(get(rowObj, ['VALOR MEJORAS', 'VALOR DE MEJORAS']));
+        const valorTerrenoExcel = toNum0(get(rowObj, ['VALOR TERRENO', 'VALOR DE TERRENO']));
+
+        const importedUnitFields = {
+          etapa,
+          torre,
+          nivel,
+          manzana,
+          lote,
+          modelo: modeloExcel,
+          m2: m2UnidadFinal,
+          numeroFinca: numeroFincaExcel,
+          codigoUbicacion: codigoUbicacionExcel,
+          calle: calleExcel,
+          areaAbierta: areaAbiertaExcel,
+          areaCerrada: areaCerradaExcel,
+          areaTotalConstruccion: areaTotalConstruccionFinal,
+          recamaras: recamarasExcel,
+          banos: banosExcel,
+          valorMejoras: valorMejorasExcel,
+          valorTerreno: valorTerrenoExcel
+        };
 
         const entregaExpedienteBanco = asDate(get(rowObj, [
           'ENTREGA DE EXPEDIENTE A BANCO',
@@ -6251,14 +6325,10 @@ router.post(
           unit = await Unit.create({
             tenantKey,
             projectId: id,
-            manzana,
-            lote,
-            modelo: clean(get(rowObj, ['MODELO', 'MODELO '])),
-            m2: m2UnidadFinal,
-            precioLista
+            ...importedUnitFields
           });
 
-          await setUnitEstado(unit._id, estado);
+          await setUnitEstado(unit._id, estado, estadoModo);
 
           unitMap.set(uKey, unit.toObject ? unit.toObject() : unit);
           unitsUpserted++;
@@ -6267,15 +6337,32 @@ router.post(
             { _id: unit._id },
             {
               $set: {
-                precioLista,
-                modelo: clean(get(rowObj, ['MODELO', 'MODELO '])) || unit.modelo || '',
-                ...(m2UnidadFinal > 0 ? { m2: m2UnidadFinal } : {})
+                ...importedUnitFields,
+                modelo: modeloExcel || unit.modelo || '',
+                ...(m2UnidadFinal > 0 ? { m2: m2UnidadFinal } : { m2: unit.m2 || 0 })
               }
             }
           );
 
-          await setUnitEstado(unit._id, estado);
+          await setUnitEstado(unit._id, estado, estadoModo);
         }
+
+        const captureChannel = parseCaptureChannel(get(rowObj, ['CAPTACION DE CLIENTE', 'CAPTACIÓN DE CLIENTE']));
+        const ingresoRegistroRaw = get(rowObj, ['FECHA INGRESO RP', 'FECHA DE INGRESO RP', 'INGRESO REGISTRO']);
+        const fechaDesembolsoExcel = asDate(get(rowObj, ['FECHA DESEMBOLSO', 'FECHA DE DESEMBOLSO', 'DESEMBOLSO']));
+        const permisoConstruccionNumExcel = clean(get(rowObj, [
+          'PERMISOS DE CONSTRUCCION N° RESOLUCION',
+          'PERMISO DE CONSTRUCCION N° RESOLUCION',
+          'PERMISOS DE CONSTRUCCION NRO RESOLUCION',
+          'PERMISOS DE CONSTRUCCION Nº RESOLUCION',
+          'RESOLUCION PERMISO CONSTRUCCION'
+        ]));
+        const permisoOcupacionNumExcel = clean(get(rowObj, [
+          'N° PERMISO DE OCUPACION',
+          'Nº PERMISO DE OCUPACION',
+          'NUMERO PERMISO DE OCUPACION',
+          'RESOLUCION PERMISO OCUPACION'
+        ]));
 
         const payload = {
           tenantKey,
@@ -6304,7 +6391,7 @@ router.post(
 
           telefonoResidencial: clean(get(rowObj, ['TELEFONO RESIDENCIAL', 'TELÉFONO RESIDENCIAL', 'TEL RESIDENCIAL'])),
           telefonoOficina: clean(get(rowObj, ['TELEFONO OFICINA', 'TELÉFONO OFICINA', 'TEL OFICINA'])),
-          celular: clean(get(rowObj, ['CELULAR', 'TELEFONO CELULAR', 'TELÉFONO CELULAR'])),
+          celular: clean(get(rowObj, ['CELULAR', 'TELEFONO', 'TELÉFONO', 'TELEFONO CELULAR', 'TELÉFONO CELULAR'])),
           correo: clean(get(rowObj, ['CORREO', 'EMAIL', 'E-MAIL'])),
 
           perfilCliente: clean(get(rowObj, ['PERFIL CLIENTE', 'PERFIL', 'PERFIL DE INGRESOS'])),
@@ -6331,9 +6418,11 @@ router.post(
 
           cliente2TelefonoResidencial: clean(get(rowObj, ['CLIENTE 2 - TELEFONO RESIDENCIAL', 'CLIENTE 2 TEL RESIDENCIAL'])),
           cliente2TelefonoOficina: clean(get(rowObj, ['CLIENTE 2 - TELEFONO OFICINA', 'CLIENTE 2 TEL OFICINA'])),
-          cliente2Celular: clean(get(rowObj, ['CLIENTE 2 - CELULAR', 'CLIENTE 2 CELULAR'])),
+          cliente2Celular: clean(get(rowObj, ['CLIENTE 2 - CELULAR', 'CLIENTE 2 CELULAR', 'CLIENTE 2 TELEFONO', 'CLIENTE 2 TELÉFONO'])),
           cliente2Correo: clean(get(rowObj, ['CLIENTE 2 - CORREO', 'CLIENTE 2 EMAIL', 'CLIENTE 2 E-MAIL'])),
 
+          cliente2PerfilCliente: clean(get(rowObj, ['CLIENTE 2 - PERFIL', 'CLIENTE 2 PERFIL'])),
+          cliente2TipoEmpresa: clean(get(rowObj, ['CLIENTE 2 - TIPO EMPRESA', 'CLIENTE 2 TIPO EMPRESA', 'TIPO DE EMPRESA2'])),
           cliente2IngresoMensual: asNum(get(rowObj, ['CLIENTE 2 - INGRESO MENSUAL', 'CLIENTE 2 INGRESO MENSUAL'])),
           cliente2Cargo: clean(get(rowObj, ['CLIENTE 2 - CARGO', 'CLIENTE 2 CARGO'])),
           cliente2AntiguedadLaboral: clean(get(rowObj, ['CLIENTE 2 - ANTIGUEDAD LABORAL', 'CLIENTE 2 ANTIGÜEDAD LABORAL'])),
@@ -6342,7 +6431,7 @@ router.post(
           // Referencias personales
           // =========================
           referencia1Nombre: clean(get(rowObj, ['REFERENCIA 1 - NOMBRE', 'REFERENCIA 1 NOMBRE'])),
-          referencia1Relacion: clean(get(rowObj, ['REFERENCIA 1 - RELACION', 'REFERENCIA 1 - RELACIÓN', 'REFERENCIA 1 RELACION'])),
+          referencia1Relacion: clean(get(rowObj, ['REFERENCIA 1 - RELACION', 'REFERENCIA 1 - RELACIÓN', 'REFERENCIA 1- RELACION', 'REFERENCIA 1- RELACIÓN', 'REFERENCIA 1 RELACION'])),
           referencia1Telefono: clean(get(rowObj, ['REFERENCIA 1 - TELEFONO', 'REFERENCIA 1 - TELÉFONO', 'REFERENCIA 1 TELEFONO'])),
           referencia1TelefonoTrabajo: clean(get(rowObj, ['REFERENCIA 1 - TEL. TRABAJO', 'REFERENCIA 1 TEL TRABAJO', 'REFERENCIA 1 TELEFONO TRABAJO'])),
 
@@ -6354,9 +6443,10 @@ router.post(
           // =========================
           // Unidad / inmueble
           // =========================
-          numeroFinca: clean(get(rowObj, ['NUMERO DE FINCA', 'NÚMERO DE FINCA', 'FINCA'])),
-          codigoUbicacion: clean(get(rowObj, ['CODIGO UBICACION', 'CÓDIGO UBICACIÓN', 'CODIGO DE UBICACION'])),
-          calle: clean(get(rowObj, ['CALLE'])),
+          numeroFinca: numeroFincaExcel,
+          codigoUbicacion: codigoUbicacionExcel,
+          calle: calleExcel,
+          metrajeLote: m2UnidadFinal,
 
           loteEsquina: clean(get(rowObj, ['LOTE ESQUINA'])),
           metrosExtra: asNum(get(rowObj, ['M2 EXTRA', 'M² EXTRA', 'METROS EXTRA'])),
@@ -6367,16 +6457,16 @@ router.post(
           areaCerrada: areaCerradaExcel,
           areaTotalConstruccion: areaTotalConstruccionFinal,
 
-          recamaras: asNum(get(rowObj, ['RECAMARAS', 'RECÁMARAS', 'HABITACIONES'])),
-          banos: asNum(get(rowObj, ['BANOS', 'BAÑOS'])),
+          recamaras: recamarasExcel,
+          banos: banosExcel,
 
-          valorMejoras: asNum(get(rowObj, ['VALOR MEJORAS', 'VALOR DE MEJORAS'])),
-          valorTerreno: asNum(get(rowObj, ['VALOR TERRENO', 'VALOR DE TERRENO'])),
+          valorMejoras: valorMejorasExcel,
+          valorTerreno: valorTerrenoExcel,
 
           // =========================
           // Financiamiento / proforma
           // =========================
-          banco: clean(get(rowObj, ['BANCO'])),
+          banco: clean(get(rowObj, ['BANCO', 'BANCO DEL CLIENTE'])),
           oficialBanco: clean(get(rowObj, ['OFICIAL DE BANCO', 'OFICIAL BANCO', 'OFICIAL DE TRÁMITE'])),
           statusBanco: clean(get(rowObj, ['STATUS EN BANCO', 'STATUS  EN BANCO', 'ESTATUS BANCO'])),
           estatusCPP: clean(get(rowObj, ['ESTATUS CPP', 'STATUS CPP'])),
@@ -6391,6 +6481,7 @@ router.post(
 
           cesionAFavorDe: clean(get(rowObj, ['CESION A FAVOR DE', 'CESIÓN A FAVOR DE'])),
           fechaProbableEntrega: asDate(get(rowObj, ['FECHA PROBABLE ENTREGA', 'FECHA PROBABLE DE ENTREGA'])),
+          fechaReserva: asDate(get(rowObj, ['FECHA RESERVA', 'FECHA DE RESERVA'])),
 
           fechaEntregaProformaBanco: asDate(get(rowObj, ['ENTREGA DE PROFORMA AL BANCO', 'FECHA ENTREGA PROFORMA BANCO'])),
           fechaProforma: asDate(get(rowObj, ['FECHA PROFORMA'])),
@@ -6398,7 +6489,7 @@ router.post(
           entregaExpedienteBanco,
           recibidoCPP,
           plazoAprobacionDias: asNum(get(rowObj, ['PLAZO APROBACION', 'PLAZO APROBACIÓN'])),
-          fechaValorCPP: asDate(get(rowObj, ['FECHA VALOR DE CPP', 'FECHA VALOR CPP'])),
+          fechaValorCPP: asDate(get(rowObj, ['FECHA VALOR DE CPP', 'FECHA VALOR CPP', 'FECHA DE CPP', 'FECHA CPP'])),
           fechaVencimientoCPP: asDate(get(rowObj, [
             'FECHA DE VENCIMIENTO CPP',
             'FECHA DE VENCIMIENTO CCP',
@@ -6426,14 +6517,15 @@ router.post(
           estatusContrato: clean(get(rowObj, ['ESTATUS CTTO', 'ESTATUS CONTRATO', 'RESERVAS, VENDIDAS'])),
           montoContrato: asNum(get(rowObj, ['MONTO CONTRATO', 'MONTO DEL CONTRATO', 'PRECIO DE CONTRATO DE COMPRA Y VENTA'])),
           pagare: clean(get(rowObj, ['PAGARE', 'PAGARÉ'])),
-          fechaFirma: asDate(get(rowObj, ['FECHA FIRMA'])),
+          fechaFirma: asDate(get(rowObj, ['FECHA FIRMA', 'FECHA DE ESCRITURA', 'FECHA ESCRITURA'])),
           contratoFirmado: parseBool(get(rowObj, ['CONTRATO FIRMADO'])),
 
           fechaActivacionTramite: asDate(get(rowObj, ['FECHA ACTIVACION TRAMITE', 'FECHA ACTIVACIÓN TRÁMITE LEGAL', 'ACTIVACIÓN DE TRAMITE'])),
 
           protocoloFirmaCliente: parseBool(get(rowObj, ['PROTOCOLO FIRMA CLIENTE', 'PROTOCOLO FIRMA DE CLIENTE'])),
+          protocoloFirmaPromotora: parseBool(get(rowObj, ['PROTOCOLO FIRMA PROMOTOR', 'PROTOCOLO FIRMA PROMOTORA'])),
           fechaEntregaBanco: asDate(get(rowObj, ['FECHA DE ENTREGA A BANCO', 'FECHA ENTREGA BANCO'])),
-          protocoloFirmaRLBancoInter: parseBool(get(rowObj, ['PROTOCOLO FIRMA RL BANCO INTER', 'PROTOC. FIRMA DE RL, BANCO INTER'])),
+          protocoloFirmaRLBancoInter: parseBool(get(rowObj, ['PROTOCOLO FIRMA RL BANCO INTER', 'PROTOC. FIRMA DE RL, BANCO INTER', 'FIRMA PROTOCOLO BANCO INTERINO'])),
           fechaRegresoBanco: asDate(get(rowObj, ['FECHA REGRESO BANCO'])),
           diasTranscurridosBanco: asNum(idxDiasTrans[0] !== undefined ? r[idxDiasTrans[0]] : undefined),
 
@@ -6451,12 +6543,12 @@ router.post(
           pagoImpuestos: parseBool(get(rowObj, ['PAGO DE IMPUESTOS', 'PAGO IMPUESTOS'])),
           cierreNotaria: parseBool(get(rowObj, ['CIERRE DE NOTARIA'])),
           fechaPagoImpuesto: asDate(get(rowObj, ['FECHA DE PAGO DE IMPUESTO', 'FECHA PAGO IMPUESTO'])),
-          ingresoRP: parseBool(get(rowObj, ['INGRESO AL RP', 'INGRESO RP'])),
-          fechaIngresoRP: asDate(get(rowObj, ['FECHA INGRESO RP', 'FECHA DE INGRESO RP', 'INGRESO REGISTRO'])),
+          ingresoRP: parseBool(get(rowObj, ['INGRESO AL RP', 'INGRESO RP'])) || !!asDate(ingresoRegistroRaw),
+          fechaIngresoRP: asDate(ingresoRegistroRaw),
           fechaInscripcion: asDate(get(rowObj, ['FECHA DE INSCRIPCION', 'FECHA INSCRIPCION', 'INSCRIPCIÓN REGISTRO'])),
 
-          solicitudDesembolso: parseBool(get(rowObj, ['SOLICITUD DE DESEMBOLSO'])),
-          fechaDesembolso: asDate(get(rowObj, ['FECHA DESEMBOLSO', 'FECHA DE DESEMBOLSO', 'DESEMBOLSO'])),
+          solicitudDesembolso: parseBool(get(rowObj, ['SOLICITUD DE DESEMBOLSO'])) || !!fechaDesembolsoExcel,
+          fechaDesembolso: fechaDesembolsoExcel,
           fechaRecibidoCheque: asDate(get(rowObj, ['FECHA DE RECIBIDO DE CK', 'FECHA RECIBIDO CHEQUE'])),
 
           // =========================
@@ -6481,22 +6573,12 @@ router.post(
           estatusConstruccion: clean(get(rowObj, ['ESTATUS CONSTRUCCION', 'ESTATUS CONSTRUCCIÓN'])),
           faseConstruccion: clean(get(rowObj, ['FASE CONSTRUCCION', 'FASE CONSTRUCCIÓN'])),
 
-          permisoConstruccionMunicipal: parseBool(get(rowObj, ['PERMISO CONSTRUCCION MUNICIPAL', 'PERMISO CONSTRUCCIÓN MUNICIPAL'])),
-          permisoConstruccionNum: clean(get(rowObj, [
-            'PERMISOS DE CONSTRUCCION N° RESOLUCION',
-            'PERMISO DE CONSTRUCCION N° RESOLUCION',
-            'PERMISOS DE CONSTRUCCION NRO RESOLUCION',
-            'PERMISOS DE CONSTRUCCION Nº RESOLUCION',
-            'RESOLUCION PERMISO CONSTRUCCION'
-          ])),
-          permisoOcupacion: parseBool(get(rowObj, ['PERMISO DE OCUPACION', 'PERMISO OCUPACION'])),
-          permisoOcupacionNum: clean(get(rowObj, [
-            'N° PERMISO DE OCUPACION',
-            'Nº PERMISO DE OCUPACION',
-            'NUMERO PERMISO DE OCUPACION',
-            'RESOLUCION PERMISO OCUPACION'
-          ])),
-          fechaEmisionPermisoOcupacion: asDate(get(rowObj, ['FECHA EMISION PERMISO OCUPACION', 'FECHA EMISIÓN PERMISO OCUPACIÓN'])),
+          permisoConstruccionNum: permisoConstruccionNumExcel,
+          permisoConstruccionMunicipal: parseBool(get(rowObj, ['PERMISO CONSTRUCCION MUNICIPAL', 'PERMISO CONSTRUCCIÓN MUNICIPAL'])) || !!permisoConstruccionNumExcel,
+          permisoConstruccionVencimiento: asDate(get(rowObj, ['FECHA VENCIMIENTO PERMISO CONSTRUCCION', 'FECHA VENCIMIENTO PERMISO CONSTRUCCIÓN'])),
+          permisoOcupacion: parseBool(get(rowObj, ['PERMISO DE OCUPACION', 'PERMISO OCUPACION'])) || !!permisoOcupacionNumExcel,
+          permisoOcupacionNum: permisoOcupacionNumExcel,
+          fechaEmisionPermisoOcupacion: asDate(get(rowObj, ['FECHA EMISION PERMISO OCUPACION', 'FECHA EMISIÓN PERMISO OCUPACIÓN', 'FECHA PERMISO OCUPACION', 'FECHA PERMISO OCUPACIÓN'])),
           constructora: clean(get(rowObj, ['CONSTUCTOR', 'CONSTRUCTOR', 'CONSTRUCTORA'])),
 
           // =========================
@@ -6521,22 +6603,30 @@ router.post(
           entregaANATI: clean(get(rowObj, ['ENTREGA ANATI'])),
           fechaEntregaVivienda: asDate(get(rowObj, ['FECHA ENTREGA VIVIENDA', 'FECHA DE ENTREGA VIVIENDA', 'FECHA DE ENTREGA'])),
 
-          captadoAtencionOficina: parseBool(get(rowObj, ['CAPTADO ATENCION OFICINA', 'CAPTADO ATENCIÓN OFICINA'])),
-          captadoMailInternet: parseBool(get(rowObj, ['CAPTADO MAIL INTERNET', 'CAPTADO MAIL / INTERNET'])),
-          captadoEnProyecto: parseBool(get(rowObj, ['CAPTADO EN PROYECTO'])),
-          captadoMercadeoProspecto: parseBool(get(rowObj, ['CAPTADO MERCADEO PROSPECTO', 'CAPTADO MERCADEO / PROSPECTO'])),
+          captadoAtencionOficina: parseBool(get(rowObj, ['CAPTADO ATENCION OFICINA', 'CAPTADO ATENCIÓN OFICINA'])) || captureChannel.oficina,
+          captadoMailInternet: parseBool(get(rowObj, ['CAPTADO MAIL INTERNET', 'CAPTADO MAIL / INTERNET'])) || captureChannel.internet,
+          captadoEnProyecto: parseBool(get(rowObj, ['CAPTADO EN PROYECTO'])) || captureChannel.proyecto,
+          captadoMercadeoProspecto: parseBool(get(rowObj, ['CAPTADO MERCADEO PROSPECTO', 'CAPTADO MERCADEO / PROSPECTO'])) || captureChannel.mercadeo,
 
           proformaSolicitadaPor: clean(get(rowObj, ['PROFORMA SOLICITADA POR'])),
           referidoPor: clean(get(rowObj, ['REFERIDO POR'])),
           observacionCliente: clean(get(rowObj, ['OBSERVACION CLIENTE', 'OBSERVACIÓN CLIENTE'])),
-          comentario: clean(get(rowObj, ['COMENTARIO', 'COMENTARIO INTERNO']))
+          comentario: clean(get(rowObj, ['COMENTARIO', 'COMENTARIOS', 'COMENTARIO INTERNO']))
         };
 
-        await Venta.findOneAndUpdate(
+        const savedVenta = await Venta.findOneAndUpdate(
           { tenantKey, projectId: id, unitId: unit._id },
           { $set: payload },
           { upsert: true, new: true, runValidators: true }
         );
+
+        await syncUnitCommercialState({
+          tenantKey,
+          projectId: id,
+          unitId: unit._id,
+          venta: savedVenta.toObject ? savedVenta.toObject() : savedVenta,
+          resetAutomatic: estadoModo === 'automatico'
+        });
 
         ventasUpserted++;
       }
@@ -6576,18 +6666,12 @@ router.post(
         })
       ]);
 
-      const unitById2 = new Map((unitsForProject || []).map(u => [String(u._id), u]));
-
       const soldVals = (ventasForProject || [])
         .map(v => {
           const vvPrecio = toNum0(v.precioVenta);
           if (vvPrecio > 0) return vvPrecio;
 
-          const u = unitById2.get(String(v.unitId));
-          const unitPrecio = toNum0(u?.precioLista);
-          if (unitPrecio > 0) return unitPrecio;
-
-          return toNum0(v.valor);
+          return 0;
         })
         .filter(n => n > 0);
 

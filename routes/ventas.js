@@ -7,6 +7,10 @@ const Project = require('../models/Project'); // ROLE-SEP
 const Unit = require('../models/Unit'); // ROLE-SEP
 const { requireProjectAccess } = require('../middleware/rbac'); // ROLE-SEP
 const { recomputeCommercialKpis } = require('../services/comercial_kpis');
+const {
+  syncUnitCommercialState,
+  syncManyUnitCommercialStates
+} = require('../services/unitCommercialState');
 
 // --- Whitelist de campos permitidos (coincide con tu schema Venta) ---
 const ALLOWED_FIELDS = new Set([
@@ -29,6 +33,7 @@ const ALLOWED_FIELDS = new Set([
   'cliente2Sexo', 'cliente2Profesion', 'cliente2EstadoCivil', 'cliente2Direccion',
   'cliente2TelefonoResidencial', 'cliente2TelefonoOficina', 'cliente2Celular', 'cliente2Correo',
   'cliente2LugarTrabajo', 'cliente2IngresoMensual', 'cliente2Cargo', 'cliente2AntiguedadLaboral',
+  'cliente2PerfilCliente', 'cliente2TipoEmpresa',
 
   // parientes / referencias
   'pariente1Nombre', 'pariente1Parentesco', 'pariente1Telefono', 'pariente1TelefonoTrabajo',
@@ -40,7 +45,7 @@ const ALLOWED_FIELDS = new Set([
   'numeroFinca', 'codigoUbicacion', 'ubicacion', 'calle',
   'metrajeLote', 'loteEsquina', 'metrosExtra', 'precioLoteEsquina', 'precioM2Extra',
   'areaAbierta', 'areaCerrada', 'areaTotalConstruccion', 'recamaras', 'banos',
-  'valorMejoras', 'valorTerreno', 'fechaProbableEntrega',
+  'valorMejoras', 'valorTerreno', 'fechaProbableEntrega', 'fechaReserva',
 
   // banco / cpp / financiación
   'banco', 'oficialBanco', 'statusBanco', 'estatusCPP', 'numCPP',
@@ -55,7 +60,7 @@ const ALLOWED_FIELDS = new Set([
   // contrato / protocolo / notaría / RP
   'fechaContratoCliente', 'estatusContrato', 'montoContrato', 'pagare',
   'fechaFirma', 'contratoFirmado', 'fechaActivacionTramite',
-  'protocoloFirmaCliente', 'fechaEntregaBanco',
+  'protocoloFirmaCliente', 'protocoloFirmaPromotora', 'fechaEntregaBanco',
   'protocoloFirmaRLBancoInter', 'fechaRegresoBanco', 'diasTranscurridosBanco',
   'fechaEntregaProtocoloBancoCli', 'firmaProtocoloBancoCliente',
   'fechaRegresoProtocoloBancoCli', 'diasTranscurridosProtocolo',
@@ -69,8 +74,9 @@ const ALLOWED_FIELDS = new Set([
   'desembolsoMivi', 'fechaPagoMivi',
 
   // técnico / obra / permisos
-  'enConstruccion', 'estatusConstruccion',
+  'enConstruccion', 'estatusConstruccion', 'faseConstruccion', 'avanceConstruccionPct',
   'permisoConstruccionMunicipal', 'permisoConstruccionNum',
+  'permisoConstruccionVencimiento',
   'permisoOcupacion', 'permisoOcupacionNum', 'fechaEmisionPermisoOcupacion',
   'constructora',
 
@@ -92,8 +98,9 @@ const TECHNICAL_FIELDS = new Set([
   'manzana', 'lote', 'numeroFinca', 'codigoUbicacion', 'ubicacion', 'calle',
   'metrajeLote', 'metrosExtra', 'precioM2Extra', 'areaAbierta', 'areaCerrada',
   'areaTotalConstruccion', 'recamaras', 'banos', 'valorMejoras', 'valorTerreno',
-  'enConstruccion', 'estatusConstruccion',
+  'enConstruccion', 'estatusConstruccion', 'faseConstruccion', 'avanceConstruccionPct',
   'permisoConstruccionMunicipal', 'permisoConstruccionNum',
+  'permisoConstruccionVencimiento',
   'permisoOcupacion', 'permisoOcupacionNum', 'fechaEmisionPermisoOcupacion',
   'constructora'
 ]);
@@ -269,6 +276,7 @@ router.post(
   async (req, res) => {
     try {
       const { projectId, unitId } = req.body || {};
+      const resetAutomaticState = req.body?.resetAutomaticState === true;
       if (!projectId || !unitId) {
         return res.status(400).json({ error: 'projectId y unitId requeridos' });
       }
@@ -304,6 +312,14 @@ router.post(
         { new: true, upsert: true, runValidators: true }
       );
 
+      await syncUnitCommercialState({
+        tenantKey: req.tenantKey,
+        projectId,
+        unitId,
+        venta: saved.toObject ? saved.toObject() : saved,
+        resetAutomatic: resetAutomaticState
+      });
+
       await syncProjectKpisSafe(req, projectId);
 
       const dto = await Venta.findById(saved._id).lean();
@@ -324,6 +340,7 @@ router.post(
   async (req, res) => {
     try {
       const { projectId, unitId, ...data } = req.body || {};
+      const resetAutomaticState = data.resetAutomaticState === true;
       if (!projectId || !unitId) {
         return res.status(400).json({ error: 'projectId y unitId requeridos' });
       }
@@ -357,6 +374,14 @@ router.post(
         },
         { new: true, upsert: true, runValidators: true }
       );
+
+      await syncUnitCommercialState({
+        tenantKey: req.tenantKey,
+        projectId,
+        unitId,
+        venta: updated.toObject ? updated.toObject() : updated,
+        resetAutomatic: resetAutomaticState
+      });
 
       await syncProjectKpisSafe(req, projectId);
 
@@ -429,6 +454,12 @@ router.patch(
         modified = r.modifiedCount || 0;
       }
 
+      await syncManyUnitCommercialStates({
+        tenantKey: req.tenantKey,
+        projectId,
+        unitIds
+      });
+
       await syncProjectKpisSafe(req, projectId);
 
       res.json({ modified, created });
@@ -464,6 +495,13 @@ router.patch(
       );
 
       if (!updated) return res.status(404).json({ error: 'No existe' });
+
+      await syncUnitCommercialState({
+        tenantKey: req.tenantKey,
+        projectId: updated.projectId,
+        unitId: updated.unitId,
+        venta: updated.toObject ? updated.toObject() : updated
+      });
 
       await syncProjectKpisSafe(req, updated.projectId);
 

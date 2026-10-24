@@ -24,13 +24,15 @@ const UnitSchema = new mongoose.Schema({
   },
 
   // Comercial
+  etapa:   { type: String, default: '' },
+  torre:   { type: String, default: '' },
+  nivel:   { type: String, default: '' },
   manzana: { type: String, default: '' },
   lote:    { type: String, default: '' },
   modelId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
   modelo:  { type: String, default: '' },
   ubicacion: { type: String, default: '' },
   m2:      { type: Number, default: 0 },
-  precioLista: { type: Number, default: 0 },
   // Coste base heredado del modelo. Puede sobrescribirse en la ficha de la unidad.
   costoUnidad: { type: Number, min: 0, default: 0 },
   costoUnidadManual: { type: Boolean, default: false },
@@ -90,13 +92,43 @@ const UnitSchema = new mongoose.Schema({
     index: true
   },
 
+  // El estado efectivo sigue viviendo en `estado`. Estos campos permiten que
+  // el proceso comercial lo avance automáticamente sin sobrescribir una
+  // decisión expresa del usuario.
+  estadoModo: {
+    type: String,
+    enum: ['automatico', 'manual'],
+    default: 'manual',
+    index: true
+  },
+  estadoAutomaticoSugerido: {
+    type: String,
+    enum: [
+      'disponible',
+      'inventario',
+      'reservado',
+      'con_cpp',
+      'tramite_legal_activado',
+      'escriturado_traspasado'
+    ],
+    default: 'disponible'
+  },
+  estadoAutomaticoBase: {
+    type: String,
+    enum: ['disponible', 'inventario'],
+    default: 'disponible'
+  },
+  estadoAutomaticoMotivo: { type: String, default: '' },
+  estadoAutomaticoActualizadoAt: { type: Date, default: null },
+  estadoManualAt: { type: Date, default: null },
+  estadoManualBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+
   clienteId: { type: mongoose.Schema.Types.ObjectId, ref: 'Cliente' },
   deletedAt: { type: Date, default: null },
 
   // Legacy compat
   code:   { type: String },
   status: { type: String, default: 'DISPONIBLE' },
-  price:  { type: Number, default: 0 }
 }, { timestamps: true });
 
 UnitSchema.index({ projectId: 1, manzana: 1, lote: 1 }, { unique: false });
@@ -111,11 +143,10 @@ UnitSchema.pre('save', function(next) {
     if (m || l) this.code = `${m}-${l}`;
   }
 
-  if (this.isModified('precioLista')) {
-    this.price = this.precioLista;
-  }
-
-  if (this.isModified('areaAbierta') || this.isModified('areaCerrada')) {
+  if (
+    (this.isModified('areaAbierta') || this.isModified('areaCerrada')) &&
+    (!this.isModified('areaTotalConstruccion') || !Number(this.areaTotalConstruccion || 0))
+  ) {
     this.areaTotalConstruccion = Number(this.areaAbierta || 0) + Number(this.areaCerrada || 0);
   }
 

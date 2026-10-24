@@ -6,13 +6,13 @@ import { RealEstateViewer } from './viewer/viewer.js';
 const LABELS = {
   completed: 'Finalizado', inProgress: 'En ejecución', finishing: 'Acabados', pending: 'Pendiente',
   onTrack: 'Margen positivo', attention: 'Sin margen', deviation: 'Venta bajo coste',
-  available: 'Disponible', inventory: 'Inventario', reserved: 'Reservado', sold: 'Trámite legal activado',
-  transferred: 'Escriturado / Traspasado', delivered: 'Vivienda entregada', cpp: 'Con CPP o venta al contado', unknown: 'Sin datos'
+  available: 'Lote libre', inventory: 'Inventario', reserved: 'Reservado', sold: 'Trámite legal',
+  transferred: 'Traspasado', cpp: 'Con CPP', unknown: 'Sin datos'
 };
 const LEGENDS = {
   progress: [['completed', 'Finalizada'], ['inProgress', 'En ejecución'], ['finishing', 'Acabados'], ['pending', 'Pendiente']],
   finance: [['onTrack', 'Margen positivo'], ['attention', 'Sin margen'], ['deviation', 'Venta bajo coste']],
-  commercial: [['available', 'Disponible'], ['inventory', 'Inventario'], ['reserved', 'Reservado'], ['cpp', 'Con CPP o venta al contado'], ['sold', 'Trámite legal activado'], ['transferred', 'Escriturado / Traspasado'], ['delivered', 'Vivienda entregada']]
+  commercial: [['available', 'Lote libre'], ['inventory', 'Inventario'], ['reserved', 'Reservado'], ['cpp', 'Con CPP'], ['sold', 'Trámite legal'], ['transferred', 'Traspasado']]
 };
 const COLORS = {
   completed: '#39ca78', inProgress: '#f2c94c', finishing: '#ab7ee8', pending: '#ef5b63',

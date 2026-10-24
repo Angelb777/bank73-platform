@@ -8,8 +8,7 @@ const COMMERCIAL_STATUS_BY_UNIT_STATUS = Object.freeze({
   reservado: 'reserved',
   con_cpp: 'cpp',
   tramite_legal_activado: 'sold',
-  escriturado_traspasado: 'transferred',
-  vivienda_entregada: 'delivered'
+  escriturado_traspasado: 'transferred'
 });
 
 function positiveNumber(value) {
@@ -19,7 +18,9 @@ function positiveNumber(value) {
 }
 
 function commercialStatus(status) {
-  return COMMERCIAL_STATUS_BY_UNIT_STATUS[String(status || '').trim()] || 'unknown';
+  const normalized = String(status || '').trim();
+  if (normalized === 'vivienda_entregada' || normalized === 'entregado') return 'transferred';
+  return COMMERCIAL_STATUS_BY_UNIT_STATUS[normalized] || 'unknown';
 }
 
 function progressStatusFromConstruction(venta = {}) {
@@ -37,7 +38,6 @@ function progressStatusFromConstruction(venta = {}) {
 }
 
 function buildViewer3DUnitRecord({ unit = {}, venta = {}, project = {} }) {
-  const listPrice = positiveNumber(unit.precioLista);
   const salePrice = positiveNumber(venta.precioVenta);
   const unitCost = positiveNumber(unit.costoUnidad);
   const margin = salePrice != null && unitCost != null ? salePrice - unitCost : null;
@@ -79,8 +79,7 @@ function buildViewer3DUnitRecord({ unit = {}, venta = {}, project = {} }) {
     commercial: {
       status: commercialStatus(unit.estado),
       sourceStatus: unit.estado || '',
-      askingPrice: listPrice,
-      listPrice,
+      askingPrice: salePrice,
       salePrice,
       currency
     },

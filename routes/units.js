@@ -11,6 +11,7 @@ const { requireProjectAccess } = require('../middleware/rbac'); // ROLE-SEP
 
 // ✅ recalcular KPIs comerciales y persistir en Project
 const { recomputeCommercialKpis } = require('../services/comercial_kpis');
+const { syncUnitCommercialState } = require('../services/unitCommercialState');
 
 // ROLE-SEP: marcar este router como "units" para el guard de comerciales
 router.use((req, _res, next) => { req.isUnitsRoute = true; next(); }); // ROLE-SEP
@@ -31,7 +32,7 @@ const VALID_UNIT_ESTADOS = [
 ];
 
 const TECHNICAL_UNIT_UPDATE_FIELDS = new Set([
-  'manzana', 'lote', 'estado', 'modelId', 'modelo', 'm2',
+  'etapa', 'torre', 'nivel', 'manzana', 'lote', 'estado', 'modelId', 'modelo', 'm2',
   'costoUnidad', 'costoUnidadManual', 'numeroFinca', 'codigoUbicacion', 'calle',
   'metrosExtra', 'precioM2Extra', 'areaAbierta', 'areaCerrada', 'recamaras', 'banos',
   'valorMejoras', 'valorTerreno'
@@ -43,8 +44,34 @@ function sanitizeUnitUpdateForRole(update = {}, role = '') {
 }
 
 function normalizeUnitEstado(estado) {
-  const e = String(estado || '').trim();
+  const raw = String(estado || '').trim().toLowerCase();
+  const plain = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const aliases = {
+    'lote libre': 'disponible',
+    'con cpp': 'con_cpp',
+    'tramite legal': 'tramite_legal_activado',
+    'traspasado': 'escriturado_traspasado'
+  };
+  const e = aliases[plain] || raw;
   return VALID_UNIT_ESTADOS.includes(e) ? e : 'disponible';
+}
+
+function automaticModeForInitialState(estado) {
+  return ['disponible', 'inventario'].includes(normalizeUnitEstado(estado))
+    ? 'automatico'
+    : 'manual';
+}
+
+function stripManagedStateFields(update = {}) {
+  delete update.estadoControl;
+  delete update.estadoModo;
+  delete update.estadoAutomaticoSugerido;
+  delete update.estadoAutomaticoBase;
+  delete update.estadoAutomaticoMotivo;
+  delete update.estadoAutomaticoActualizadoAt;
+  delete update.estadoManualAt;
+  delete update.estadoManualBy;
+  return update;
 }
 
 function modelPayloadFromProject(project, modelIdOrName) {
@@ -64,8 +91,7 @@ function modelPayloadFromProject(project, modelIdOrName) {
     areaCerrada: Number(model.closedAreaM2 || 0),
     recamaras: Number(model.bedrooms || 0),
     banos: Number(model.bathrooms || 0),
-    precioLista: Number(model.price || 0),
-    price: Number(model.price || 0),
+    precioVenta: Number(model.price || 0),
     costoUnidad: Number(model.cost || 0),
     costoUnidadManual: false
   };
@@ -84,10 +110,7 @@ function unitModelFieldsFromBody(project, body = {}) {
   } else if (!out.ubicacion) {
     out.ubicacion = String(project?.location || project?.address || '').trim();
   }
-  if (body.precioLista !== undefined) {
-    out.precioLista = Number(body.precioLista || 0);
-    out.price = out.precioLista;
-  }
+  if (body.precioVenta !== undefined) out.precioVenta = Number(body.precioVenta || 0);
   if (body.costoUnidad !== undefined) {
     out.costoUnidad = Math.max(0, Number(body.costoUnidad || 0));
     out.costoUnidadManual = body.costoUnidadManual !== undefined ? Boolean(body.costoUnidadManual) : true;
@@ -97,6 +120,9 @@ function unitModelFieldsFromBody(project, body = {}) {
   if (body.areaAbierta !== undefined || body.areaCerrada !== undefined) {
     out.areaTotalConstruccion = Number(out.areaAbierta || 0) + Number(out.areaCerrada || 0);
     if (!out.m2) out.m2 = out.areaTotalConstruccion;
+  }
+  if (body.areaTotalConstruccion !== undefined) {
+    out.areaTotalConstruccion = Number(body.areaTotalConstruccion || 0);
   }
   if (body.recamaras !== undefined) out.recamaras = Number(body.recamaras || 0);
   if (body.banos !== undefined) out.banos = Number(body.banos || 0);
@@ -126,10 +152,7 @@ function ventaSyncPayloadFromUnitSet(set = {}, fallback = {}) {
     if (set[field] != null) ventaSet[field] = set[field];
   });
   if (set.ubicacion != null) ventaSet.ubicacion = String(set.ubicacion || '').trim();
-  if (set.precioLista != null) {
-    ventaSet.valor = Number(set.precioLista || 0);
-    ventaSet.precioVenta = Number(set.precioLista || 0);
-  }
+  if (set.precioVenta != null) ventaSet.precioVenta = Number(set.precioVenta || 0);
   if (set.areaAbierta != null || set.areaCerrada != null) {
     ventaSet.areaTotalConstruccion =
       Number((set.areaAbierta ?? fallback.areaAbierta) || 0) +
@@ -149,7 +172,7 @@ const ESTADOS_VENTA_CAIBLE = [
 function esCambioAVentaCaida(estadoAnterior, estadoNuevo) {
   return (
     ESTADOS_VENTA_CAIBLE.includes(normalizeUnitEstado(estadoAnterior)) &&
-    normalizeUnitEstado(estadoNuevo) === 'disponible'
+    ['disponible', 'inventario'].includes(normalizeUnitEstado(estadoNuevo))
   );
 }
 
@@ -166,7 +189,7 @@ async function marcarVentaCaida({ tenantKey, projectId, unitId, motivo }) {
       $set: {
         estadoVenta: 'caida',
         fechaCaida: new Date(),
-        motivoCaida: motivo || 'Unidad volvió a disponible'
+        motivoCaida: motivo || 'Unidad liberada para una nueva venta'
       }
     },
     {
@@ -238,13 +261,13 @@ router.post(
 
       const lotes = Array.from({ length: parseInt(cantidad, 10) }, (_, i) => String(i + 1));
       const modelFields = unitModelFieldsFromBody(req.project, req.body);
-      if (String(req.user?.role || '').toLowerCase() === 'tecnico') {
-        // Técnico comparte la biblioteca y las unidades, pero no puede introducir
-        // ni heredar el precio de lista desde estos flujos.
-        delete modelFields.precioLista;
-        delete modelFields.price;
-      }
+      const precioVenta = String(req.user?.role || '').toLowerCase() === 'tecnico'
+        ? 0
+        : Number(modelFields.precioVenta || 0);
+      delete modelFields.precioVenta;
 
+      const initialState = normalizeUnitEstado(estado);
+      const initialMode = automaticModeForInitialState(initialState);
       const docs = lotes.map(lote => ({
         tenantKey: req.tenantKey,
         projectId,
@@ -252,19 +275,23 @@ router.post(
         lote,
         ...modelFields,
         ubicacion: modelFields.ubicacion || String(req.project?.location || req.project?.address || '').trim(),
-        estado: normalizeUnitEstado(estado),
+        estado: initialState,
+        estadoModo: initialMode,
+        estadoAutomaticoSugerido: initialState,
+        estadoAutomaticoBase: initialState === 'inventario' ? 'inventario' : 'disponible',
+        estadoAutomaticoMotivo: initialMode === 'automatico'
+          ? 'Unidad nueva sin avance comercial'
+          : 'Estado inicial fijado manualmente',
+        ...(initialMode === 'manual' ? { estadoManualAt: new Date(), estadoManualBy: req.user?._id || req.user?.id || null } : {}),
         deletedAt: null,
 
         // legacy
         code: `${manzana}-${lote}`,
-        status: normalizeUnitEstado(estado).toUpperCase(),
-        price: modelFields.precioLista || modelFields.price || 0
+        status: initialState.toUpperCase()
       }));
 
       const created = await Unit.insertMany(docs, { ordered: false });
-      const ventas = created
-        .filter(unit => unit.areaAbierta || unit.areaCerrada || unit.recamaras || unit.banos || unit.precioLista)
-        .map(unit => ({
+      const ventas = created.map(unit => ({
           tenantKey: req.tenantKey,
           projectId,
           unitId: unit._id,
@@ -276,8 +303,7 @@ router.post(
           areaTotalConstruccion: Number(unit.areaAbierta || 0) + Number(unit.areaCerrada || 0),
           recamaras: unit.recamaras || 0,
           banos: unit.banos || 0,
-          precioVenta: unit.precioLista || 0,
-          valor: unit.precioLista || 0
+          precioVenta
         }));
       if (ventas.length) await Venta.insertMany(ventas, { ordered: false });
 
@@ -333,22 +359,29 @@ router.patch(
       const { ids = [], update = {} } = req.body || {};
       if (!ids.length) return res.status(400).json({ error: 'ids requerido' });
 
-      let set = sanitizeUnitUpdateForRole({ ...update }, req.user?.role);
+      let set = stripManagedStateFields(sanitizeUnitUpdateForRole({ ...update }, req.user?.role));
       if (set.modelId || set.modelo) {
         Object.assign(set, unitModelFieldsFromBody(req.project, set));
-        set = sanitizeUnitUpdateForRole(set, req.user?.role);
+        set = stripManagedStateFields(sanitizeUnitUpdateForRole(set, req.user?.role));
       }
       if (update.costoUnidad !== undefined) {
         set.costoUnidad = Math.max(0, Number(update.costoUnidad || 0));
         set.costoUnidadManual = update.costoUnidadManual !== undefined ? Boolean(update.costoUnidadManual) : true;
       }
-      if (set.precioLista != null) set.price = set.precioLista;
+      const precioVenta = set.precioVenta;
+      delete set.precioVenta;
 
       let unitsAntes = [];
 
       if (set.estado) {
         set.estado = normalizeUnitEstado(set.estado);
         set.status = set.estado.toUpperCase();
+        if (['disponible', 'inventario'].includes(set.estado)) {
+          set.estadoAutomaticoBase = set.estado;
+        }
+        set.estadoModo = 'manual';
+        set.estadoManualAt = new Date();
+        set.estadoManualBy = req.user?._id || req.user?.id || null;
 
         unitsAntes = await Unit.find({
           tenantKey: req.tenantKey,
@@ -368,22 +401,22 @@ router.patch(
 
             // ✅ Detectar ventas caídas en batch:
       // si una unidad estaba vendida/reservada y vuelve a disponible
-      if (set.estado === 'disponible' && unitsAntes.length) {
+      if (['disponible', 'inventario'].includes(set.estado) && unitsAntes.length) {
         for (const oldUnit of unitsAntes) {
           if (esCambioAVentaCaida(oldUnit.estado, set.estado)) {
             await marcarVentaCaida({
               tenantKey: req.tenantKey,
               projectId: req.project._id,
               unitId: oldUnit._id,
-              motivo: 'Cambio batch a disponible'
+              motivo: `Cambio batch a ${set.estado}`
             });
           }
         }
       }
 
-      // ✅ si cambia el precio de la unidad, sincronizamos también Venta.valor
+      // Si cambia el precio comercial, se guarda exclusivamente en Venta.precioVenta.
       if (
-        set.precioLista != null ||
+        precioVenta != null ||
         set.areaAbierta != null ||
         set.areaCerrada != null ||
         set.recamaras != null ||
@@ -391,7 +424,7 @@ router.patch(
         set.ubicacion != null ||
         UNIT_VENTA_SYNC_FIELDS.some(field => set[field] != null)
       ) {
-        const ventaSet = ventaSyncPayloadFromUnitSet(set);
+        const ventaSet = ventaSyncPayloadFromUnitSet({ ...set, precioVenta });
         await Venta.updateMany(
           {
             tenantKey: req.tenantKey,
@@ -491,22 +524,35 @@ router.patch(
   requireProjectAccess({ promoterCanEditAssigned: true }),
   async (req, res) => {
     try {
-      let update = sanitizeUnitUpdateForRole({ ...req.body }, req.user?.role);
+      const estadoControl = String(req.body?.estadoControl || '').trim().toLowerCase();
+      let update = stripManagedStateFields(sanitizeUnitUpdateForRole({ ...req.body }, req.user?.role));
       const estadoAnterior = req._unit?.estado;
 
       if (update.modelId || update.modelo) {
         Object.assign(update, unitModelFieldsFromBody(req.project, update));
-        update = sanitizeUnitUpdateForRole(update, req.user?.role);
+        update = stripManagedStateFields(sanitizeUnitUpdateForRole(update, req.user?.role));
       }
       if (req.body.costoUnidad !== undefined) {
         update.costoUnidad = Math.max(0, Number(req.body.costoUnidad || 0));
         update.costoUnidadManual = req.body.costoUnidadManual !== undefined ? Boolean(req.body.costoUnidadManual) : true;
       }
-      if (update.precioLista != null) update.price = update.precioLista;
+      const precioVenta = update.precioVenta;
+      delete update.precioVenta;
 
-      if (update.estado) {
+      if (estadoControl === 'automatico') {
+        delete update.estado;
+        update.estadoModo = 'automatico';
+        update.estadoManualAt = null;
+        update.estadoManualBy = null;
+      } else if (update.estado) {
         update.estado = normalizeUnitEstado(update.estado);
         update.status = update.estado.toUpperCase();
+        if (['disponible', 'inventario'].includes(update.estado)) {
+          update.estadoAutomaticoBase = update.estado;
+        }
+        update.estadoModo = 'manual';
+        update.estadoManualAt = new Date();
+        update.estadoManualBy = req.user?._id || req.user?.id || null;
       }
 
       if (update.manzana !== undefined || update.lote !== undefined) {
@@ -521,7 +567,7 @@ router.patch(
         }
       }
 
-      const u = await Unit.findOneAndUpdate(
+      let u = await Unit.findOneAndUpdate(
         { _id: req.params.id, tenantKey: req.tenantKey, projectId: req.project._id },
         { $set: update },
         { new: true }
@@ -536,14 +582,14 @@ router.patch(
           tenantKey: req.tenantKey,
           projectId: u.projectId,
           unitId: u._id,
-          motivo: update.motivoCaida || 'Unidad volvió a disponible'
+          motivo: update.motivoCaida || `Unidad liberada como ${update.estado}`
         });
       }
       
 
-      // ✅ si cambia el precio de la unidad, sincronizamos también Venta.valor
+      // Si cambia el precio comercial, se guarda exclusivamente en Venta.precioVenta.
       if (
-        update.precioLista != null ||
+        precioVenta != null ||
         update.areaAbierta != null ||
         update.areaCerrada != null ||
         update.recamaras != null ||
@@ -551,7 +597,7 @@ router.patch(
         update.ubicacion != null ||
         UNIT_VENTA_SYNC_FIELDS.some(field => update[field] != null)
       ) {
-        const ventaSet = ventaSyncPayloadFromUnitSet(update, req._unit || {});
+        const ventaSet = ventaSyncPayloadFromUnitSet({ ...update, precioVenta }, req._unit || {});
         await Venta.findOneAndUpdate(
           {
             tenantKey: req.tenantKey,
@@ -564,6 +610,16 @@ router.patch(
           { upsert: true, new: true }
         );
       }
+
+      const syncedUnit = await syncUnitCommercialState({
+        tenantKey: req.tenantKey,
+        projectId: u.projectId,
+        unitId: u._id,
+        resetAutomatic: estadoControl === 'automatico',
+        activateAutomaticAtBase:
+          estadoControl !== 'automatico' && ['disponible', 'inventario'].includes(update.estado)
+      });
+      if (syncedUnit) u = syncedUnit;
 
       await syncProjectKpisSafe(req, u.projectId);
 

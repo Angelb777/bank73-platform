@@ -29,7 +29,7 @@ function distribute(total, ratios) {
 }
 
 function unitMetrics(unit) {
-  const price = Number(unit.precioLista || unit.price || 0);
+  const price = Number(unit.precioVenta || 0);
   const numericId = Number(String(unit.lote || '').replace(/\D/g, '')) || 0;
   const varianceFactors = [0.97, 0.99, 1, 1.02, 1.04, 1.06];
   const budgetCost = roundMoney(price * 0.58);
@@ -62,7 +62,7 @@ function modelSummary(units) {
     bathrooms: Math.round(sum(group.units.map(unit => unit.banos)) / group.units.length) || 0,
     openAreaM2: roundMoney(sum(group.units.map(unit => unit.areaAbierta)) / group.units.length),
     closedAreaM2: roundMoney(sum(group.units.map(unit => unit.areaCerrada || unit.m2)) / group.units.length),
-    price: roundMoney(sum(group.units.map(unit => unit.precioLista)) / group.units.length),
+    price: roundMoney(sum(group.units.map(unit => unit.precioVenta)) / group.units.length),
     cost: roundMoney(sum(group.units.map(unit => unitMetrics(unit).budgetCost)) / group.units.length),
     unitsCount: group.units.length,
     initialStatuses: {
@@ -175,13 +175,15 @@ async function main() {
   ]);
   if (units.length !== 57) throw new Error(`Se esperaban 57 unidades y existen ${units.length}`);
   if (ventas.length !== 57) throw new Error(`Se esperaban 57 expedientes y existen ${ventas.length}`);
+  const ventasByUnit = new Map(ventas.map(venta => [String(venta.unitId), venta]));
+  units.forEach(unit => { unit.precioVenta = Number(ventasByUnit.get(String(unit._id))?.precioVenta || 0); });
 
   const metrics = new Map(units.map(unit => [String(unit._id), unitMetrics(unit)]));
   const totalBudget = sum([...metrics.values()].map(item => item.budgetCost));
   const totalActual = sum([...metrics.values()].map(item => item.actualCost));
   const soldStates = new Set(['reservado', 'con_cpp', 'tramite_legal_activado', 'escriturado_traspasado', 'vivienda_entregada']);
   const soldUnits = units.filter(unit => soldStates.has(unit.estado));
-  const soldValue = sum(soldUnits.map(unit => unit.precioLista));
+  const soldValue = sum(soldUnits.map(unit => unit.precioVenta));
   const plans = financePlan(totalBudget, totalActual, soldValue);
   const totalDisbursed = sum(plans.phases.map(phase => phase.disbActual));
   const totalAmortized = sum(plans.phases.flatMap(phase => phase.financingLines).map(line => line.amortizedAmount));
@@ -189,7 +191,7 @@ async function main() {
   const preview = {
     apply,
     project: { id: PROJECT_ID, name: project.name, tenantKey: project.tenantKey },
-    inventory: { units: units.length, sold: soldUnits.length, available: units.length - soldUnits.length, salesValue: sum(units.map(unit => unit.precioLista)) },
+    inventory: { units: units.length, sold: soldUnits.length, available: units.length - soldUnits.length, salesValue: sum(units.map(unit => unit.precioVenta)) },
     illustrativeFinance: { totalBudget, totalActual, bankApproved: plans.bankApproved, bankDisbursed: totalDisbursed, bankBalance: roundMoney(totalDisbursed - totalAmortized), phases: plans.phases.length },
     technicalFlow: Object.fromEntries([...new Set(checklists.map(item => item.phase))].map(phase => [phase, checklists.filter(item => item.phase === phase).length])),
     dataVersion: DATA_VERSION

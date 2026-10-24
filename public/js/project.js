@@ -10143,13 +10143,20 @@ const payload = {
 
 function normalizeUnitEstadoFrontend(v) {
   const s = String(v || '').trim().toLowerCase();
+  const plain = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
   if (s === 'inventory') return 'inventario';
   if (s === 'inventario') return 'inventario';
+  if (plain === 'lote libre') return 'disponible';
+  if (plain === 'con cpp') return 'con_cpp';
+  if (plain === 'tramite legal') return 'tramite_legal_activado';
+  if (plain === 'traspasado') return 'escriturado_traspasado';
 
   if (s === 'en_escrituracion') return 'tramite_legal_activado';
   if (s === 'escriturado') return 'escriturado_traspasado';
-  if (s === 'entregado') return 'vivienda_entregada';
+  // "Vivienda entregada" ya no es un estado comercial. Los registros
+  // históricos entregados se muestran dentro del último estado aprobado.
+  if (s === 'entregado' || s === 'vivienda_entregada') return 'escriturado_traspasado';
 
   return s || 'disponible';
 }
@@ -10405,10 +10412,217 @@ const selectRow = (id, label, optionsHtml='') =>
    </select>`;
 
 // Lectores seguros para guardar
-function vVal(id){ const el = document.getElementById(id); return el ? el.value : null; }
-function vNum(id){ const v = parseInputNumber(id, vVal(id)); return Number.isFinite(v) ? v : null; }
-function vDate(id){ const s = vVal(id); return s ? new Date(s).toISOString() : null; }
-function vChk(id){ const el = document.getElementById(id); return !!(el && el.checked); }
+function vVal(id){ const el = document.getElementById(id); return el ? el.value : undefined; }
+function vNum(id){ const raw = vVal(id); if (raw === undefined) return undefined; const v = parseInputNumber(id, raw); return Number.isFinite(v) ? v : null; }
+function vDate(id){ const s = vVal(id); if (s === undefined) return undefined; return s ? new Date(s).toISOString() : null; }
+function vChk(id){ const el = document.getElementById(id); return el ? !!el.checked : undefined; }
+function unitNamePartsFromInput() {
+  const input = document.getElementById('fu-nombreUnidad');
+  const value = String(input?.value || '').trim();
+  const originalManzana = String(input?.dataset.originalManzana || '').trim();
+  const originalLote = String(input?.dataset.originalLote || '').trim();
+  if (!value) return { manzana: originalManzana, lote: originalLote };
+  if (!value.includes('-')) {
+    return originalLote && !originalManzana
+      ? { manzana: '', lote: value }
+      : { manzana: value, lote: '' };
+  }
+  const loteConPrefijo = value.match(/^(.*?)-(L-.+)$/i);
+  if (loteConPrefijo) return { manzana: loteConPrefijo[1].trim(), lote: loteConPrefijo[2].trim() };
+  const separator = value.lastIndexOf('-');
+  return { manzana: value.slice(0, separator).trim(), lote: value.slice(separator + 1).trim() };
+}
+
+function reservationAgeInfo(u = {}, v = {}) {
+  if (normalizeUnitEstadoFrontend(u.estado) !== 'reservado') return null;
+  if (!v.fechaReserva) return { days: null, label: 'Reserva sin fecha registrada' };
+
+  const reservedAt = new Date(v.fechaReserva);
+  if (Number.isNaN(reservedAt.getTime())) return { days: null, label: 'Fecha de reserva no válida' };
+  const today = new Date();
+  const start = new Date(reservedAt.getFullYear(), reservedAt.getMonth(), reservedAt.getDate());
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const days = Math.max(0, Math.floor((end - start) / 86400000));
+  return { days, label: days === 0 ? 'Reservada hoy' : `Reservada hace ${days} ${days === 1 ? 'día' : 'días'}` };
+}
+
+function commercialStageStates(stageValues) {
+  const present = value => value !== undefined && value !== null && value !== '' && value !== false;
+  const states = stageValues.map((values, index) => {
+    const filled = values.filter(present).length;
+    const laterStageStarted = stageValues.slice(index + 1).some(nextValues => nextValues.some(present));
+    return { filled, complete: filled === values.length || laterStageStarted };
+  });
+  const currentStageIndex = states.findIndex(state => !state.complete);
+  states.forEach((state, index) => {
+    state.cls = state.complete ? 'is-complete' : index === currentStageIndex ? 'is-current' : 'is-pending';
+    state.label = state.complete ? 'Completa' : index === currentStageIndex ? 'En curso' : 'Pendiente';
+  });
+  return states;
+}
+
+function renderCommercialProcessFicha(u = {}, v = {}) {
+  const options = (items, value = '') => {
+    const current = String(value || '');
+    const known = items.some(item => item.v === current);
+    return `${!known && current ? `<option value="${safeVal(current)}" selected>${safeVal(current)}</option>` : ''}${items.map(item =>
+      `<option value="${item.v}" ${current === item.v ? 'selected' : ''}>${item.l}</option>`
+    ).join('')}`;
+  };
+  const field = (id, label, value = '', type = 'text', extra = '') => `
+    <div class="unit-process-field"><label for="${id}">${label}</label>
+    <input id="${id}" type="${type}" value="${safeVal(value)}" ${extra}></div>`;
+  const number = (id, label, value = 0, extra = '') => field(id, label, formatInputNumber(id, value), 'text', `inputmode="decimal" data-number-input ${extra}`);
+  const dateValue = value => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+    const local = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (local) return `${local[3]}-${local[2].padStart(2, '0')}-${local[1].padStart(2, '0')}`;
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10);
+  };
+  const date = (id, label, value) => field(id, label, dateValue(value), 'date');
+  const check = (id, label, value) => `<div class="unit-process-field"><label class="unit-process-check" for="${id}"><input id="${id}" type="checkbox" ${value ? 'checked' : ''}><span>${label}</span></label></div>`;
+  const select = (id, label, items, value = '') => `<div class="unit-process-field"><label for="${id}">${label}</label><select id="${id}">${options(items, value)}</select></div>`;
+  const stage = (num, title, values, body, state) => {
+    return `<details class="unit-process-stage ${state.cls}" data-stage-index="${num - 1}" ${state.cls === 'is-current' ? 'open' : ''}><summary>
+      <span class="unit-stage-number">${state.cls === 'is-complete' ? '✓' : num}</span>
+      <span class="unit-stage-copy"><strong>${title}</strong><small>${state.filled} de ${values.length} campos</small></span>
+      <span class="unit-stage-status">${state.label}</span><span class="unit-stage-chevron">⌄</span>
+    </summary><div class="unit-stage-body">${body}</div></details>`;
+  };
+  const profileOpts = [{v:'',l:'—'},{v:'Independiente',l:'Independiente'},{v:'Asalariado',l:'Asalariado'}];
+  const companyOpts = [{v:'',l:'—'},{v:'Privada',l:'Privada'},{v:'Gubernamental',l:'Gubernamental'}];
+  const sexOpts = [{v:'',l:'—'},{v:'Masculino',l:'Masculino'},{v:'Femenino',l:'Femenino'}];
+  const civilOpts = [{v:'',l:'—'},{v:'Soltero',l:'Soltero/a'},{v:'Casado',l:'Casado/a'}];
+  const minuteOpts = [{v:'',l:'—'},{v:'Solicitada',l:'Solicitada'},{v:'Lista',l:'Firmada / lista'},{v:'No aplica',l:'No aplica'}];
+  const client = second => {
+    const composedName = second
+      ? [v.cliente2PrimerNombre,v.cliente2SegundoNombre,v.cliente2PrimerApellido,v.cliente2SegundoApellido].filter(Boolean).join(' ')
+      : (v.clienteNombre || [v.primerNombre,v.segundoNombre,v.primerApellido,v.segundoApellido].filter(Boolean).join(' '));
+    const exists = second && !![composedName,v.cliente2Cedula,v.cliente2Celular,v.cliente2Correo].find(Boolean);
+    const phoneId = second
+      ? (v.cliente2Celular ? 'fv-cliente2Celular' : 'fv-cliente2TelefonoResidencial')
+      : (v.celular ? 'fv-celular' : 'fv-telefonoResidencial');
+    const phoneValue = second ? (v.cliente2Celular||v.cliente2TelefonoResidencial) : (v.celular||v.telefonoResidencial);
+    return `<details class="unit-side-card" ${!second || exists ? 'open' : ''}><summary><strong>Datos del cliente ${second ? '2' : '1'}</strong>${second ? '<span class="optional-chip">Si aplica</span>' : ''}<span>⌄</span></summary><div class="unit-side-grid">
+      ${field(second?'fv-cliente2NombreCompleto':'fv-clienteNombre','Nombre completo',composedName,'text',`data-original="${safeVal(composedName)}" data-persisted="${second || !!v.clienteNombre}"`)}
+      ${field(second?'fv-cliente2ApellidoCasada':'fv-apellidoCasada','Apellido de casada',second?v.cliente2ApellidoCasada:v.apellidoCasada)}${field(second?'fv-cliente2Cedula':'fv-cedula','Cédula',second?v.cliente2Cedula:v.cedula)}
+      ${select(second?'fv-cliente2Sexo':'fv-sexo','Sexo',sexOpts,second?v.cliente2Sexo:v.sexo)}${select(second?'fv-cliente2EstadoCivil':'fv-estadoCivil','Estado civil',civilOpts,second?v.cliente2EstadoCivil:v.estadoCivil)}
+      ${field(phoneId,'Teléfono',phoneValue)}${field(second?'fv-cliente2Correo':'fv-correo','Email',second?v.cliente2Correo:v.correo)}
+      ${field(second?'fv-cliente2Direccion':'fv-direccion','Dirección',second?v.cliente2Direccion:v.direccion)}
+      ${select(second?'fv-cliente2PerfilCliente':'fv-perfilCliente','Perfil',profileOpts,second?v.cliente2PerfilCliente:v.perfilCliente)}
+      ${select(second?'fv-cliente2TipoEmpresa':'fv-tipoEmpresa','Tipo de empresa',companyOpts,second?v.cliente2TipoEmpresa:v.tipoEmpresa)}
+      ${field(second?'fv-cliente2Profesion':'fv-profesion','Profesión',second?v.cliente2Profesion:v.profesion)}
+      ${number(second?'fv-cliente2IngresoMensual':'fv-ingresoMensual','Ingreso mensual',second?v.cliente2IngresoMensual:v.ingresoMensual)}
+      ${field(second?'fv-cliente2AntiguedadLaboral':'fv-antiguedadLaboral','Antigüedad laboral',second?v.cliente2AntiguedadLaboral:v.antiguedadLaboral)}
+    </div></details>`;
+  };
+  const stageValues = [
+    [v.fechaReserva,v.fechaProforma,v.fechaProbableEntrega,v.cesionAFavorDe,v.estatusCPP],
+    [v.numCPP,v.fechaValorCPP,v.fechaVencimientoCPP,v.aperturaCtaBanco,v.polizas,v.tipoPoliza,v.fechaContratoCliente,v.montoContrato,u.valorMejoras,u.valorTerreno,v.mLiberacion,v.mSegregacion],
+    [v.solicitudAvaluo,v.fechaAvaluo,v.empresaAvaluadora],
+    [v.mPrestamo,v.fechaFirma,v.protocoloFirmaCliente,v.protocoloFirmaPromotora,v.protocoloFirmaRLBancoInter,v.firmaProtocoloBancoCliente],
+    [v.fechaPagoImpuesto,v.fechaIngresoRP,v.fechaInscripcion],
+    [v.fechaDesembolso,v.fechaRecibidoCheque,v.fechaEntregaVivienda]
+  ];
+  // Si una etapa posterior ya contiene datos, las anteriores se consideran
+  // cerradas aunque el histórico no tuviera todos sus campos antiguos.
+  const stageStates = commercialStageStates(stageValues);
+  const complete = stageStates.filter(state => state.complete).length;
+  const reservationAge = reservationAgeInfo(u, v);
+  const stages = [
+    stage(1,'Reserva',stageValues[0],`${date('fv-fechaReserva','Fecha de reserva',v.fechaReserva)}${date('fv-fechaProforma','Fecha proforma',v.fechaProforma)}${date('fv-fechaProbableEntrega','Fecha probable de entrega',v.fechaProbableEntrega)}${field('fv-cesionAFavorDe','Cesión a favor de',v.cesionAFavorDe)}${select('fv-estatusCPP','Estatus de CPP',[{v:'',l:'—'},{v:'Documentación entregada',l:'Documentación entregada'},{v:'En comité',l:'En comité'},{v:'Aprobado',l:'Aprobado'},{v:'CPP recibida',l:'CPP recibida'}],v.estatusCPP)}`,stageStates[0]),
+    stage(2,'Carta promesa de pago y contrato',stageValues[1],`<h4>Carta promesa de pago</h4>${field('fv-numCPP','No. de CPP',v.numCPP)}${date('fv-fechaValorCPP','Fecha de CPP',v.fechaValorCPP)}${date('fv-fechaVencimientoCPP','Vencimiento de CPP',v.fechaVencimientoCPP)}${check('fv-aperturaCtaBanco','Apertura de cuenta en banco',v.aperturaCtaBanco)}${check('fv-polizas','Pólizas entregadas',v.polizas)}${field('fv-tipoPoliza','Tipo de póliza',v.tipoPoliza)}<h4>Contrato</h4>${date('fv-fechaContratoCliente','Fecha de contrato',v.fechaContratoCliente)}${number('fv-montoContrato','Monto de contrato',v.montoContrato)}${number('fv-valorMejoras','Valor mejoras',u.valorMejoras||v.valorMejoras)}${number('fv-valorTerreno','Valor terreno',u.valorTerreno||v.valorTerreno)}<h4>Minutas</h4>${select('fv-mLiberacion','Minuta de liberación / desafectación',minuteOpts,v.mLiberacion)}${select('fv-mSegregacion','Minuta de segregación / venta',minuteOpts,v.mSegregacion)}`,stageStates[1]),
+    stage(3,'Avalúo',stageValues[2],`${date('fv-solicitudAvaluo','Solicitud avalúo (fecha)',v.solicitudAvaluo)}${date('fv-fechaAvaluo','Avalúo (fecha)',v.fechaAvaluo)}${field('fv-empresaAvaluadora','Empresa avaluadora',v.empresaAvaluadora)}`,stageStates[2]),
+    stage(4,'Protocolo / Escrituras',stageValues[3],`${select('fv-mPrestamo','Minuta préstamo / hipoteca',minuteOpts,v.mPrestamo)}${date('fv-fechaFirma','Fecha de escritura',v.fechaFirma)}${check('fv-protocoloFirmaCliente','Firmado por cliente',v.protocoloFirmaCliente)}${check('fv-protocoloFirmaPromotora','Firmado por promotor',v.protocoloFirmaPromotora)}${check('fv-protocoloFirmaRLBancoInter','Firmado por banco interino',v.protocoloFirmaRLBancoInter)}${check('fv-firmaProtocoloBancoCliente','Firmado por banco del cliente',v.firmaProtocoloBancoCliente)}`,stageStates[3]),
+    stage(5,'Cierre notarial / Registro Público',stageValues[4],`${date('fv-fechaPagoImpuesto','Fecha de pago de impuestos',v.fechaPagoImpuesto)}${date('fv-fechaIngresoRP','Ingreso al Registro Público',v.fechaIngresoRP)}${date('fv-fechaInscripcion','Fecha de inscripción',v.fechaInscripcion)}`,stageStates[4]),
+    stage(6,'Desembolso y entrega',stageValues[5],`${date('fv-fechaDesembolso','Fecha de desembolso',v.fechaDesembolso)}${date('fv-fechaRecibidoCheque','Fecha de cheque de desembolso',v.fechaRecibidoCheque)}${date('fv-fechaEntregaVivienda','Fecha de entrega de vivienda',v.fechaEntregaVivienda)}${!v.fechaEmisionPermisoOcupacion?'<div class="unit-stage-warning">Falta el permiso de ocupación. Es un aviso y no bloquea este paso.</div>':''}`,stageStates[5])
+  ].join('');
+  const captureChannel = v.captadoAtencionOficina ? 'Atención en oficina'
+    : v.captadoMailInternet ? 'Mail / internet'
+      : v.captadoEnProyecto ? 'En proyecto'
+        : v.captadoMercadeoProspecto ? 'Mercadeo / prospecto' : '';
+  const price = Number(v.precioVenta || 0);
+  const cpp = Number(v.montoFinanciamientoCPP || 0);
+  const financingPct = price > 0 ? (cpp / price) * 100 : 0;
+  const statusKey = normalizeUnitEstadoFrontend(u.estado);
+  const cppStatus = String(v.estatusCPP || '').trim();
+  const cppTone = /aprob|recibid/i.test(cppStatus) ? 'is-positive' : /venc|rechaz/i.test(cppStatus) ? 'is-danger' : 'is-neutral';
+  return `<div class="unit-process-shell unit-status-${statusKey}">
+  <div class="unit-process-summary">
+    <section class="unit-summary-card is-money"><span>Precio de venta</span>${number('fv-precioVenta','',price)}<small>Dato comercial único</small></section>
+    <section class="unit-summary-card is-money"><span>Monto CPP</span>${number('fv-montoFinanciamientoCPP','',cpp)}<small>${financingPct.toFixed(1)} % de financiación</small></section>
+    <section class="unit-summary-card"><span>Banco del cliente</span><div class="bank-select-field">${window.BankSelect?.bankSelectHtml?.('fv-banco',v.banco||'')||`<input id="fv-banco" type="text" value="${safeVal(v.banco||'')}">`}</div><small>Entidad que financia</small></section>
+    <section class="unit-summary-card"><span>Estatus de CPP</span><strong class="unit-summary-status ${cppTone}">${safeVal(cppStatus || 'Sin definir')}</strong><small>${v.fechaVencimientoCPP ? `Vence el ${safeVal(dateValue(v.fechaVencimientoCPP).split('-').reverse().join('/'))}` : 'Sin vencimiento registrado'}</small></section>
+    <input id="fv-abonoInicial" type="hidden" value="${safeVal(v.abonoInicial || Math.max(price-cpp,0))}">
+    <input id="fv-porcentajeFinanciamiento" type="hidden" value="${safeVal(financingPct)}">
+  </div><div class="unit-process-layout">
+    <aside class="unit-process-left"><details class="unit-side-card" open><summary><strong>Datos de la unidad</strong><span>⌄</span></summary><div class="unit-side-grid">
+      ${field('fu-etapa','Etapa',u.etapa)}${field('fu-torre','Torre',u.torre)}${field('fu-nivel','Nivel',u.nivel)}${field('fu-modelo','Modelo de vivienda',u.modelo)}${number('fu-m2','Área de terreno',u.m2)}${field('fv-numeroFinca','Número de finca',u.numeroFinca)}${field('fv-codigoUbicacion','Código de ubicación',u.codigoUbicacion)}${field('fv-calle','Calle',u.calle)}${number('fv-areaAbierta','Área abierta',u.areaAbierta)}${number('fv-areaCerrada','Área cerrada',u.areaCerrada)}${number('fv-areaTotalConstruccion','Área total de construcción',Number(u.areaTotalConstruccion||0)||Number(u.areaAbierta||0)+Number(u.areaCerrada||0),'readonly aria-readonly="true"')}${number('fv-recamaras','Recámaras',u.recamaras)}${number('fv-banos','Baños',u.banos)}<input id="fu-costo" type="hidden" value="${safeVal(u.costoUnidad||0)}">
+    </div></details><details class="unit-side-card construction-card" open><summary><strong>Construcción de la vivienda</strong><span class="parallel-chip">En paralelo</span><span>⌄</span></summary><div class="unit-side-grid">
+      ${number('fv-avanceConstruccionPct','Avance de obra (%)',v.avanceConstruccionPct||0)}${select('fv-estatusConstruccion','Fase de obra',[{v:'',l:'Pendiente de construir'},{v:'Obra gris',l:'Obra gris'},{v:'Acabados',l:'Acabados'},{v:'Terminada',l:'Terminada'}],v.estatusConstruccion)}${check('fv-permisoConstruccionMunicipal','Permiso de construcción',v.permisoConstruccionMunicipal)}${field('fv-permisoConstruccionNum','Resolución construcción',v.permisoConstruccionNum)}${date('fv-permisoConstruccionVencimiento','Vencimiento construcción',v.permisoConstruccionVencimiento)}${check('fv-permisoOcupacion','Permiso de ocupación',v.permisoOcupacion)}${field('fv-permisoOcupacionNum','Resolución ocupación',v.permisoOcupacionNum)}${date('fv-fechaEmisionPermisoOcupacion','Fecha permiso ocupación',v.fechaEmisionPermisoOcupacion)}${field('fv-constructora','Constructora / contratista',v.constructora)}
+    </div></details></aside>
+    <main class="unit-process-main"><section class="unit-process-heading"><div><h2>Proceso de venta</h2><span>${complete} de 6 etapas completas</span></div>${reservationAge ? `<strong class="unit-reservation-age">${safeVal(reservationAge.label)}</strong>` : ''}<div class="unit-process-progress"><i style="width:${Math.round(complete/6*100)}%"></i></div></section><div class="unit-stages">${stages}</div><section class="unit-comments"><h3>Comentarios</h3><textarea id="fv-comentario" rows="3" placeholder="Añade información útil para el seguimiento">${safeVal(v.comentario)}</textarea></section></main>
+    <aside class="unit-process-right">${client(false)}${client(true)}<details class="unit-side-card" open><summary><strong>Referencias personales</strong><span>⌄</span></summary><div class="unit-side-grid">${field('fv-referencia1Nombre','Referencia 1',v.referencia1Nombre)}${field('fv-referencia1Relacion','Relación',v.referencia1Relacion)}${field('fv-referencia1Telefono','Teléfono',v.referencia1Telefono)}${field('fv-referencia2Nombre','Referencia 2',v.referencia2Nombre)}${field('fv-referencia2Relacion','Relación',v.referencia2Relacion)}${field('fv-referencia2Telefono','Teléfono',v.referencia2Telefono)}${select('fv-canalCaptacion','Captación del cliente',[{v:'',l:'—'},{v:'Atención en oficina',l:'Atención en oficina'},{v:'Mail / internet',l:'Mail / internet'},{v:'En proyecto',l:'En proyecto'},{v:'Mercadeo / prospecto',l:'Mercadeo / prospecto'}],captureChannel)}</div></details></aside>
+  </div></div>`;
+}
+
+const COMMERCIAL_STAGE_FIELD_IDS = [
+  ['fv-fechaReserva','fv-fechaProforma','fv-fechaProbableEntrega','fv-cesionAFavorDe','fv-estatusCPP'],
+  ['fv-numCPP','fv-fechaValorCPP','fv-fechaVencimientoCPP','fv-aperturaCtaBanco','fv-polizas','fv-tipoPoliza','fv-fechaContratoCliente','fv-montoContrato','fv-valorMejoras','fv-valorTerreno','fv-mLiberacion','fv-mSegregacion'],
+  ['fv-solicitudAvaluo','fv-fechaAvaluo','fv-empresaAvaluadora'],
+  ['fv-mPrestamo','fv-fechaFirma','fv-protocoloFirmaCliente','fv-protocoloFirmaPromotora','fv-protocoloFirmaRLBancoInter','fv-firmaProtocoloBancoCliente'],
+  ['fv-fechaPagoImpuesto','fv-fechaIngresoRP','fv-fechaInscripcion'],
+  ['fv-fechaDesembolso','fv-fechaRecibidoCheque','fv-fechaEntregaVivienda']
+];
+
+function refreshCommercialProcessProgress() {
+  const cards = [...document.querySelectorAll('#fichaUnidadModal .unit-process-stage[data-stage-index]')];
+  if (!cards.length) return;
+  const values = COMMERCIAL_STAGE_FIELD_IDS.map(ids => ids.map(id => {
+    const control = document.getElementById(id);
+    return control?.type === 'checkbox' ? !!control.checked : String(control?.value || '').trim();
+  }));
+  const states = commercialStageStates(values);
+  cards.forEach((card, index) => {
+    const state = states[index];
+    card.classList.remove('is-complete', 'is-current', 'is-pending');
+    card.classList.add(state.cls);
+    const number = card.querySelector('.unit-stage-number');
+    const counter = card.querySelector('.unit-stage-copy small');
+    const status = card.querySelector('.unit-stage-status');
+    if (number) number.textContent = state.complete ? '✓' : String(index + 1);
+    if (counter) counter.textContent = `${state.filled} de ${values[index].length} campos`;
+    if (status) status.textContent = state.label;
+  });
+  const complete = states.filter(state => state.complete).length;
+  const headingCount = document.querySelector('#fichaUnidadModal .unit-process-heading > div > span');
+  const progress = document.querySelector('#fichaUnidadModal .unit-process-progress i');
+  if (headingCount) headingCount.textContent = `${complete} de 6 etapas completas`;
+  if (progress) progress.style.width = `${Math.round(complete / 6 * 100)}%`;
+}
+
+function refreshReservationAgeNotice() {
+  const heading = document.querySelector('#fichaUnidadModal .unit-process-heading');
+  if (!heading) return;
+  const info = reservationAgeInfo(
+    { estado: document.getElementById('fu-estado')?.value },
+    { fechaReserva: document.getElementById('fv-fechaReserva')?.value }
+  );
+  let badge = heading.querySelector('.unit-reservation-age');
+  if (!info) {
+    badge?.remove();
+    return;
+  }
+  if (!badge) {
+    badge = document.createElement('strong');
+    badge.className = 'unit-reservation-age';
+    heading.querySelector('.unit-process-progress')?.before(badge);
+  }
+  badge.textContent = info.label;
+}
 
 if (!window.__PROJECT_NUMBER_INPUT_FORMAT_BOUND__) {
   window.__PROJECT_NUMBER_INPUT_FORMAT_BOUND__ = true;
@@ -10727,18 +10941,47 @@ function collectChecklistPayload() {
 
 // Estados comerciales de unidad
 const UNIT_ESTADOS = [
-  { v: 'disponible', l: 'Disponible' },
+  { v: 'disponible', l: 'Lote libre' },
   { v: 'inventario', l: 'Inventario' },
   { v: 'reservado', l: 'Reservado' },
-  { v: 'con_cpp', l: 'Con CPP o venta al contado' },
-  { v: 'tramite_legal_activado', l: 'Trámite legal activado' },
-  { v: 'escriturado_traspasado', l: 'Escriturado / Traspasado' },
-  { v: 'vivienda_entregada', l: 'Vivienda entregada' },
+  { v: 'con_cpp', l: 'Con CPP' },
+  { v: 'tramite_legal_activado', l: 'Trámite legal' },
+  { v: 'escriturado_traspasado', l: 'Traspasado' },
 ];
 
 function estadoLabel(v) {
   const estado = normalizeUnitEstadoFrontend(v);
   return (UNIT_ESTADOS.find(e => e.v === estado)?.l) || estado.replace(/_/g, ' ');
+}
+
+function applyOpenFichaStateVisual(unitState = {}) {
+  if (unitState.estadoModo) {
+    fichaEstadoModo = unitState.estadoModo === 'automatico' ? 'automatico' : 'manual';
+  }
+  const stateValue = normalizeUnitEstadoFrontend(unitState.estado || document.getElementById('fu-estado')?.value);
+  const nextClass = `unit-status-${stateValue}`;
+  const stateSelect = document.getElementById('fu-estado');
+  if (stateSelect && stateValue) stateSelect.value = stateValue;
+  [document.querySelector('#fichaUnidadModal .unit-process-shell'), document.querySelector('#fichaUnidadModal .unit-title-status')]
+    .filter(Boolean)
+    .forEach(element => {
+      [...element.classList].filter(name => name.startsWith('unit-status-')).forEach(name => element.classList.remove(name));
+      element.classList.add(nextClass);
+    });
+  const badge = document.getElementById('fichaEstadoModeBadge');
+  if (badge) {
+    badge.textContent = fichaEstadoModo === 'automatico' ? 'Automático' : 'Manual';
+    badge.title = unitState.estadoAutomaticoMotivo || badge.title;
+    badge.classList.toggle('is-auto', fichaEstadoModo === 'automatico');
+    badge.classList.toggle('is-manual', fichaEstadoModo !== 'automatico');
+  }
+  const resetButton = document.getElementById('btnFichaEstadoAutomatico');
+  if (resetButton) {
+    resetButton.hidden = fichaEstadoModo === 'automatico';
+    const suggestion = unitState.estadoAutomaticoSugerido;
+    if (suggestion) resetButton.title = `Aplicar ahora el estado recomendado: ${estadoLabel(suggestion)}`;
+  }
+  refreshReservationAgeNotice();
 }
 
   // Estado
@@ -10747,6 +10990,14 @@ function estadoLabel(v) {
   let selected = new Set();
   let fichaUnitId = null;
   let fichaMode = 'commercial';
+  let fichaAutosaveTimer = null;
+  let fichaAutosaveReady = false;
+  let fichaDirty = false;
+  let fichaSaving = false;
+  let fichaChangeVersion = 0;
+  let fichaCloseRequested = false;
+  let fichaEstadoControl = '';
+  let fichaEstadoModo = 'manual';
   let foldersCache = [];
   let unitDocDepartment = 'commercial';
   let unitDocFolderId = '';
@@ -10926,7 +11177,7 @@ function estadoLabel(v) {
             <input id="cl-banos" type="number" min="0" value="0" />
           </label>
           <label class="technical-commercial-sensitive">
-            <span>Precio lista</span>
+            <span>Precio de venta</span>
             <input id="cl-precio" type="text" inputmode="decimal" value="100,000.00" />
           </label>
           <label>
@@ -10940,13 +11191,12 @@ function estadoLabel(v) {
           <label class="commercial-field-wide">
             <span>Estado inicial</span>
             <select id="cl-estado">
-              <option value="disponible">Disponible</option>
+              <option value="disponible">Lote libre</option>
               <option value="inventario">Inventario</option>
               <option value="reservado">Reservado</option>
-              <option value="con_cpp">Con CPP o venta al contado</option>
-              <option value="tramite_legal_activado">Tramite legal activado</option>
-              <option value="escriturado_traspasado">Escriturado / Traspasado</option>
-              <option value="vivienda_entregada">Vivienda entregada</option>
+              <option value="con_cpp">Con CPP</option>
+              <option value="tramite_legal_activado">Trámite legal</option>
+              <option value="escriturado_traspasado">Traspasado</option>
             </select>
           </label>
         </div>
@@ -11020,7 +11270,7 @@ function estadoLabel(v) {
       modelId: model._id || '',
       modelo: model.name || '',
       m2: Number(model.openAreaM2 || 0) + Number(model.closedAreaM2 || 0),
-      precioLista: Number(model.price || 0),
+      precioVenta: Number(model.price || 0),
       costoUnidad: Number(model.cost || 0),
       areaAbierta: Number(model.openAreaM2 || 0),
       areaCerrada: Number(model.closedAreaM2 || 0),
@@ -11039,7 +11289,7 @@ function estadoLabel(v) {
     };
     setValue('cl-modelo', defaults.modelo);
     setValue('cl-m2', formatInputNumber('cl-m2', defaults.m2));
-    setValue('cl-precio', formatInputNumber('cl-precio', defaults.precioLista));
+    setValue('cl-precio', formatInputNumber('cl-precio', defaults.precioVenta));
     setValue('cl-costo', formatInputNumber('cl-costo', defaults.costoUnidad));
     setValue('cl-areaAbierta', formatInputNumber('cl-areaAbierta', defaults.areaAbierta));
     setValue('cl-areaCerrada', formatInputNumber('cl-areaCerrada', defaults.areaCerrada));
@@ -11059,7 +11309,7 @@ function estadoLabel(v) {
     };
     setValue('fu-modelo', defaults.modelo);
     setValue('fu-m2', formatInputNumber('fu-m2', defaults.m2));
-    setValue('fu-precio', formatInputNumber('fu-precio', defaults.precioLista));
+    setValue('fu-precio', formatInputNumber('fu-precio', defaults.precioVenta));
     setValue('fu-costo', formatInputNumber('fu-costo', defaults.costoUnidad));
     const costInput = document.getElementById('fu-costo');
     if (costInput) costInput.dataset.manual = 'false';
@@ -11177,18 +11427,18 @@ try { await loadCommercialFolders(); } catch(e){ console.warn('folders err', e);
 units.forEach(u => {
   const estado = normalizeUnitEstadoFrontend(u.estado);
 resumen[estado] = (resumen[estado] || 0) + 1;
-  resumen.valor += Number(u.precioLista ?? u.price ?? 0);
+  resumen.valor += Number(ventasMap.get(String(u._id))?.precioVenta || 0);
 });
 
 kpisDiv.innerHTML = [
-  { key: 'disponible', label: 'Disponibles', value: resumen.disponible || 0, sub: 'Listas para venta' },
+  { key: 'disponible', label: 'Lotes libres', value: resumen.disponible || 0, sub: 'Listos para venta' },
   { key: 'inventario', label: 'Inventario', value: resumen.inventario || 0, sub: 'En cartera' },
   { key: 'reservado', label: 'Reservados', value: resumen.reservado || 0, sub: 'Separadas' },
   { key: 'cpp', label: 'Con CPP', value: resumen.con_cpp || 0, sub: 'Contrato activo' },
   { key: 'legal', label: 'Trámite legal', value: resumen.tramite_legal_activado || 0, sub: 'En proceso' },
-  { key: 'escriturado', label: 'Escriturado / Traspasado', value: resumen.escriturado_traspasado || 0, sub: 'Cerradas' },
+  { key: 'escriturado', label: 'Traspasados', value: resumen.escriturado_traspasado || 0, sub: 'Cerradas' },
   { key: 'entregada', label: 'Vivienda entregada', value: resumen.vivienda_entregada || 0, sub: 'Entregas' },
-  { key: 'valor', label: 'Valor total', value: formatProjectMoney(resumen.valor || 0), sub: 'Precio lista acumulado' }
+  { key: 'valor', label: 'Valor total', value: formatProjectMoney(resumen.valor || 0), sub: 'Precio de venta acumulado' }
 ].map(item => `
   <div class="commercial-kpi-card commercial-kpi-${item.key}">
     <span class="commercial-kpi-label">${item.label}</span>
@@ -11624,11 +11874,12 @@ if (projectAlertsBtn) {
     // Grid
     // ----- Render grid mejorado -----
 function getDisplayClienteName(venta, unit) {
-  const nickname = String(venta?.clienteNombre || '').trim();
-  if (nickname) return nickname;
+  const summaryName = String(venta?.clienteNombre || '').trim();
+  if (summaryName) return summaryName;
 
   const fullName = [
     venta?.primerNombre,
+    venta?.segundoNombre,
     venta?.primerApellido,
     venta?.segundoApellido
   ].map(x => String(x || '').trim()).filter(Boolean).join(' ');
@@ -11645,6 +11896,7 @@ function renderUnitCard(u) {
   const estadoTxt = estadoLabel(u.estado || 'disponible');
   const impago = /mora|impago|rechaz|atras|vencid|moros/i.test(venta?.statusBanco || '');
   const cppAlert = getCppExpiryAlert(u, venta);
+  const reservationAlert = reservationAgeInfo(u, venta);
   const applicablePolicies = effectivePoliciesForUnit(u);
   const carAlert = applicablePolicies
     .filter(policy => String(policy.type || 'CAR').toUpperCase() === 'CAR')
@@ -11657,7 +11909,8 @@ function renderUnitCard(u) {
          data-id="${idu}"
          draggable="true">
       ${impago ? `<span class="alert-ribbon">Impago</span>` : ``}
-      ${(cppAlert || carAlert) ? `<div class="unit-card-expiry-alerts">
+      ${(cppAlert || carAlert || reservationAlert) ? `<div class="unit-card-expiry-alerts">
+        ${reservationAlert ? `<span class="alert-ribbon reservation-alert">${safeVal(reservationAlert.label)}</span>` : ''}
         ${cppAlert ? `<span class="alert-ribbon">CPP vence en ${cppAlert.days} días</span>` : ''}
         ${carAlert ? `<span class="alert-ribbon insurance-alert">CAR vence en ${carAlert.days} días</span>` : ''}
       </div>` : ''}
@@ -11675,7 +11928,7 @@ function renderUnitCard(u) {
       </div>
 
       <div class="meta">${u.modelo || '—'} — ${u.m2 || 0} m²</div>
-      <div class="price">${formatProjectMoney(u.precioLista || 0)}</div>
+      <div class="price">${formatProjectMoney(venta?.precioVenta || 0)}</div>
 
       <div class="badges">
         ${cliente ? `<span class="chip">${cliente}</span>` : `<span class="chip ghost">Sin cliente</span>`}
@@ -12667,12 +12920,38 @@ async function aplicarImportWord(unitId) {
   await loadUnits();
 }
 
+function setFichaSaveStatus(text, state = '') {
+  const status = document.getElementById('fichaSaveStatus');
+  if (!status) return;
+  status.textContent = text;
+  status.classList.remove('is-pending', 'is-saving', 'is-saved', 'is-error');
+  if (state) status.classList.add(`is-${state}`);
+}
+
+function scheduleFichaAutosave(delay = 1400) {
+  if (!fichaAutosaveReady || fichaMode !== 'commercial' || !fichaUnitId) return;
+  fichaDirty = true;
+  fichaChangeVersion += 1;
+  setFichaSaveStatus('Cambios pendientes · se guardarán automáticamente', 'pending');
+  clearTimeout(fichaAutosaveTimer);
+  fichaAutosaveTimer = setTimeout(() => {
+    guardarFicha({ close: false, silent: true });
+  }, delay);
+}
+
   async function abrirFichaUnidad(unitId, options = {}) {
   // La ficha es global: fuera de pantalla completa vive en <body>; dentro del
   // visor fullscreen debe ser hija del elemento fullscreen para poder mostrarse.
   const viewerPanel = document.getElementById('project3dPanel');
   const modalHost = document.fullscreenElement === viewerPanel ? viewerPanel : document.body;
   if (modalFicha && modalFicha.parentElement !== modalHost) modalHost.appendChild(modalFicha);
+  clearTimeout(fichaAutosaveTimer);
+  fichaAutosaveReady = false;
+  fichaDirty = false;
+  fichaSaving = false;
+  fichaChangeVersion = 0;
+  fichaCloseRequested = false;
+  fichaEstadoControl = '';
   fichaUnitId = unitId;
   fichaMode = options.mode === 'technical' ? 'technical' : 'commercial';
 
@@ -12705,16 +12984,71 @@ async function aplicarImportWord(unitId) {
   `;
 
   const tituloUnidad = document.getElementById('fichaTitulo');
+  const unitName = [u.manzana, u.lote].map(value => String(value || '').trim()).filter(Boolean).join('-') || 'Sin nombre';
+  const clientName =
+    String(v.clienteNombre || '').trim() ||
+    [v.primerNombre, v.segundoNombre, v.primerApellido, v.segundoApellido]
+      .map(value => String(value || '').trim())
+      .filter(Boolean)
+      .join(' ') ||
+    String(v.cliente?.nombre || u.clienteId?.nombre || '').trim() ||
+    'Sin cliente';
+  const unitStatus = normalizeUnitEstadoFrontend(u.estado);
+  fichaEstadoModo = u.estadoModo === 'automatico' ? 'automatico' : 'manual';
+  const automaticStatus = normalizeUnitEstadoFrontend(u.estadoAutomaticoSugerido || u.estado);
+  const automaticReason = String(u.estadoAutomaticoMotivo || 'Se calculará con los datos del proceso comercial.').trim();
 
 tituloUnidad.innerHTML = `
-  <span>Unidad</span>
-  <input
-    id="fu-nombreUnidad"
-    class="unit-title-input"
-    value="${safeVal(`${u.manzana || ''}-${u.lote || ''}`)}"
-    title="Haz click para editar el nombre de la unidad"
-  >
+  <span class="unit-title-identity">
+    <span class="unit-title-kicker">Unidad</span>
+    <input id="fu-nombreUnidad" class="unit-title-input" value="${safeVal(unitName)}" data-original-manzana="${safeVal(u.manzana||'')}" data-original-lote="${safeVal(u.lote||'')}" title="Haz click para editar el nombre de la unidad">
+    <small>${safeVal(u.modelo || 'Sin modelo')} <i>·</i> ${safeVal(clientName)}</small>
+  </span>
+  <div class="unit-title-status unit-status-${unitStatus}">
+    <span>Estado de la unidad</span>
+    <select id="fu-estado">${UNIT_ESTADOS.map(s => `<option value="${s.v}" ${unitStatus === s.v ? 'selected' : ''}>${s.l}</option>`).join('')}</select>
+    <span id="fichaEstadoModeBadge" class="unit-state-mode ${fichaEstadoModo === 'automatico' ? 'is-auto' : 'is-manual'}" title="${safeVal(automaticReason)}">${fichaEstadoModo === 'automatico' ? 'Automático' : 'Manual'}</span>
+    <button type="button" id="btnFichaEstadoAutomatico" class="unit-state-auto-button" ${fichaEstadoModo === 'automatico' ? 'hidden' : ''} title="Aplicar ahora el estado recomendado: ${safeVal(estadoLabel(automaticStatus))}">Volver a automático</button>
+    <span class="unit-status-info">
+      <button type="button" class="unit-status-info-button" aria-label="Información sobre los estados comerciales" aria-expanded="false" aria-controls="unitStatusInfoPopover">i</button>
+      <span class="unit-status-info-popover" id="unitStatusInfoPopover" role="tooltip">
+        <strong>Estados comerciales</strong>
+        <span><b>Lote libre:</b> Terreno disponible, sin construcción iniciada y sin cliente asignado.</span>
+        <span><b>Inventario:</b> Vivienda construida que todavía no tiene comprador asignado.</span>
+        <span><b>Reservado:</b> Unidad apartada para un cliente mediante una reserva, pendiente de formalizar la compraventa.</span>
+        <span><b>Con CPP:</b> Unidad que cuenta con una Carta Promesa de Pago emitida por la entidad financiera del comprador.</span>
+        <span><b>Trámite legal:</b> Unidad que ha iniciado los trámites legales necesarios para formalizar la compraventa y el traspaso.</span>
+        <span><b>Traspasado:</b> Unidad cuya compraventa y traspaso de propiedad se han formalizado a favor del comprador.</span>
+      </span>
+    </span>
+  </div>
 `;
+
+  const statusInfo = tituloUnidad.querySelector('.unit-status-info');
+  const statusInfoButton = tituloUnidad.querySelector('.unit-status-info-button');
+  const closeStatusInfo = () => {
+    statusInfo?.classList.remove('is-open');
+    statusInfoButton?.setAttribute('aria-expanded', 'false');
+  };
+  statusInfoButton?.addEventListener('click', event => {
+    event.stopPropagation();
+    const willOpen = !statusInfo.classList.contains('is-open');
+    statusInfo.classList.toggle('is-open', willOpen);
+    statusInfoButton.setAttribute('aria-expanded', String(willOpen));
+  });
+  statusInfo?.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      closeStatusInfo();
+      statusInfoButton?.focus();
+    }
+  });
+  if (window.__unitStatusInfoOutsideHandler) {
+    document.removeEventListener('click', window.__unitStatusInfoOutsideHandler);
+  }
+  window.__unitStatusInfoOutsideHandler = event => {
+    if (!statusInfo?.contains(event.target)) closeStatusInfo();
+  };
+  document.addEventListener('click', window.__unitStatusInfoOutsideHandler);
 
   const cont = document.getElementById('fichaContenido');
   cont.innerHTML = `
@@ -12741,7 +13075,6 @@ tituloUnidad.innerHTML = `
    <select id="fu-modeloSelect">${projectModelOptions(u.modelId || u.modelo || '')}</select>
    ${input('fu-modelo', `Modelo ${info('Modelo de vivienda asignado. Según el modelo seleccionado deberían completarse automáticamente áreas, recámaras y baños definidos por administración.')}`, u.modelo || '')}
 ${inputNum('fu-m2', `m² unidad ${info('Área general de la unidad. Puede servir como referencia rápida, aunque el modelo Bank73 separa metraje de lote, área abierta, área cerrada y área total de construcción.')}`, u.m2 || 0)}
-${inputNum('fu-precio', `Precio lista ${info('Precio comercial base de la unidad antes de ajustes, abonos o financiamiento.')}`, u.precioLista || 0)}
 ${inputNum('fu-costo', `Coste de la unidad ${info('Coste base heredado del modelo. Puedes modificarlo solo para esta unidad sin cambiar las demÃ¡s.')}`, u.costoUnidad || 0)}
 
 ${input('fv-numeroFinca', `Número de finca ${info('Identificador registral del inmueble. Según el modelo, este dato debería ser gestionado principalmente por administración.')}`, u.numeroFinca || '')}
@@ -12893,7 +13226,7 @@ ${input('fv-referencia2TelefonoTrabajo', `Referencia 2 - Tel. trabajo ${info('Te
 `, 'form-grid-2');
 
 const htmlFinanciamiento = seccion('Financiamiento / Proforma', `
-${inputNum('fv-precioVenta', `Precio de venta ${info('Precio comercial de venta de la unidad. Según el modelo, es un dato principalmente administrativo.')}`, v.precioVenta || u.precioLista || 0)}
+${inputNum('fv-precioVenta', `Precio de venta ${info('Precio comercial único de la unidad.')}`, v.precioVenta || 0)}
 ${inputDate('fv-fechaProbableEntrega', `Fecha probable de entrega ${info('Fecha estimada de entrega de la vivienda. Se mueve a financiamiento por seguimiento de crédito/desembolsos.')}`, v.fechaProbableEntrega)}
 ${inputNum('fv-montoFinanciamientoCPP', `Monto financiamiento CPP / hipoteca ${info('Monto financiado mediante Carta Promesa de Pago o hipoteca aprobada.')}`, v.montoFinanciamientoCPP || v.valor || 0)}
 ${inputNum('fv-abonoInicial', `Abono inicial ${info('Se usa para calcular automáticamente el monto de financiamiento como precio de venta menos abono inicial.')}`, v.abonoInicial || 0)}
@@ -13036,8 +13369,7 @@ ${input('fv-comentario', `Comentario interno ${info('Comentario interno para seg
 
   const fichaHTML = fichaMode === 'technical'
     ? htmlUnidadTechnical + htmlInsurance + htmlTecnico
-    : htmlUnidad + htmlInsurance + htmlCliente1 + htmlCliente2 + htmlReferencias +
-      htmlFinanciamiento + htmlContrato + htmlTecnico + htmlLegal + htmlEntregaOtros;
+    : renderCommercialProcessFicha(u, v);
 
   const docsHTML = (typeof renderUnidadDocsSkeleton === 'function')
     ? renderUnidadDocsSkeleton(u)
@@ -13235,6 +13567,39 @@ document.getElementById('fv-abonoInicial')?.addEventListener('input', () => refr
 document.getElementById('fv-porcentajeFinanciamiento')?.addEventListener('input', () => refreshFinanciamientoAuto('pct'));
 document.getElementById('fv-areaAbierta')?.addEventListener('input', refreshAreaTotalConstruccion);
 document.getElementById('fv-areaCerrada')?.addEventListener('input', refreshAreaTotalConstruccion);
+document.getElementById('fu-estado')?.addEventListener('change', event => {
+  fichaEstadoControl = 'manual';
+  fichaEstadoModo = 'manual';
+  applyOpenFichaStateVisual({ estado: event.target.value, estadoModo: 'manual' });
+});
+document.getElementById('btnFichaEstadoAutomatico')?.addEventListener('click', () => {
+  fichaEstadoControl = 'automatico';
+  fichaEstadoModo = 'automatico';
+  const stateSelect = document.getElementById('fu-estado');
+  if (stateSelect) stateSelect.value = automaticStatus;
+  applyOpenFichaStateVisual({
+    estado: stateSelect?.value || automaticStatus,
+    estadoModo: 'automatico',
+    estadoAutomaticoSugerido: automaticStatus,
+    estadoAutomaticoMotivo: automaticReason
+  });
+  scheduleFichaAutosave(150);
+});
+const commercialProcessView = document.getElementById('view-ficha');
+if (commercialProcessView && fichaMode === 'commercial') {
+  commercialProcessView.addEventListener('input', event => {
+    if (!event.target.closest?.('.unit-process-stage')) return;
+    refreshCommercialProcessProgress();
+    if (event.target.id === 'fv-fechaReserva') refreshReservationAgeNotice();
+  });
+  commercialProcessView.addEventListener('change', event => {
+    if (!event.target.closest?.('.unit-process-stage')) return;
+    refreshCommercialProcessProgress();
+    if (event.target.id === 'fv-fechaReserva') refreshReservationAgeNotice();
+  });
+  refreshCommercialProcessProgress();
+  refreshReservationAgeNotice();
+}
 document.getElementById('fu-modeloSelect')?.addEventListener('change', (event) => applyProjectModelToFicha(event.target.value));
 const unitCostInput = document.getElementById('fu-costo');
 if (unitCostInput) {
@@ -13312,48 +13677,52 @@ if (btnImportWord && importWordInput) {
     fichaExpandir.title = 'Pantalla completa';
     fichaExpandir.setAttribute('aria-label', 'Pantalla completa');
   }
+  fichaAutosaveReady = fichaMode === 'commercial';
+  setFichaSaveStatus(fichaAutosaveReady ? 'Autoguardado activo' : 'Guarda los cambios antes de cerrar');
   modalFicha.style.display = 'flex';
 }
 
 
   window.abrirFichaUnidad = abrirFichaUnidad;
 
-  async function guardarFicha() {
+  async function guardarFicha(options = {}) {
+  const closeAfterSave = options.close !== false;
+  const silent = options.silent === true;
+  if (fichaSaving) {
+    if (closeAfterSave) fichaCloseRequested = true;
+    return false;
+  }
   // ROLE-SEP: bloqueo para commercial si proyecto no aprobado
   if (myRole === 'commercial' && window.__COMMERCIAL_LOCKED) {
     alert('Este proyecto aún no está aprobado. Edición comercial bloqueada.');
-    return;
+    return false;
   }
 
-  if (!fichaUnitId) return;
+  if (!fichaUnitId) return false;
 
+  clearTimeout(fichaAutosaveTimer);
+  fichaSaving = true;
+  const saveVersion = fichaChangeVersion;
+  let saveSucceeded = false;
   fichaGuardar.disabled = true;
 
   const oldText = fichaGuardar.textContent;
   fichaGuardar.textContent = 'Guardando...';
   fichaGuardar.classList.add('is-loading');
+  setFichaSaveStatus(silent ? 'Guardando automáticamente…' : 'Guardando cambios…', 'saving');
 
   try {
     if (fichaMode === 'technical') {
-      const nombreUnidad = (document.getElementById('fu-nombreUnidad')?.value || '').trim();
-      let manzana = nombreUnidad;
-      let lote = '';
-      const loteConPrefijo = nombreUnidad.match(/^(.*?)-(L-.+)$/i);
-      if (loteConPrefijo) {
-        manzana = loteConPrefijo[1].trim();
-        lote = loteConPrefijo[2].trim();
-      } else {
-        const separator = nombreUnidad.lastIndexOf('-');
-        if (separator > 0) {
-          manzana = nombreUnidad.slice(0, separator).trim();
-          lote = nombreUnidad.slice(separator + 1).trim();
-        }
-      }
+      const { manzana, lote } = unitNamePartsFromInput();
 
       await apiPatch(`/api/units/${fichaUnitId}`, {
         manzana,
         lote,
-        estado: vVal('fu-estado'),
+        ...(fichaEstadoControl === 'manual'
+          ? { estado: vVal('fu-estado'), estadoControl: 'manual' }
+          : fichaEstadoControl === 'automatico'
+            ? { estadoControl: 'automatico' }
+            : {}),
         modelId: vVal('fu-modeloSelect') || undefined,
         modelo: vVal('fu-modelo'),
         m2: vNum('fu-m2'),
@@ -13375,6 +13744,7 @@ if (btnImportWord && importWordInput) {
       await apiPost('/api/ventas/upsert-by-unit', {
         projectId: id,
         unitId: fichaUnitId,
+        resetAutomaticState: fichaEstadoControl === 'automatico',
         numeroFinca: vVal('fv-numeroFinca'),
         codigoUbicacion: vVal('fv-codigoUbicacion'),
         calle: vVal('fv-calle'),
@@ -13397,42 +13767,36 @@ if (btnImportWord && importWordInput) {
         constructora: vVal('fv-constructora')
       });
 
-      modalFicha.style.display = 'none';
+      fichaEstadoControl = '';
+      saveSucceeded = true;
+      fichaDirty = fichaChangeVersion !== saveVersion;
+      setFichaSaveStatus('Guardado', 'saved');
+      if (closeAfterSave && !fichaDirty) modalFicha.style.display = 'none';
       await loadUnits();
+      applyOpenFichaStateVisual(unitsCache.find(unit => String(unit._id) === String(fichaUnitId)) || {});
       await window.refreshTechnicalWorkspace?.({ preserveSelection:true });
       await markProjectDataChanged();
-      return;
+      return true;
     }
 
     // 1) Actualizar la unidad
-    const nombreUnidad = (document.getElementById('fu-nombreUnidad')?.value || '').trim();
-
-let manzana = nombreUnidad;
-let lote = '';
-
-// Conserva correctamente niveles negativos y lotes con guion:
-// "-100-L-408" => manzana "-100", lote "L-408".
-const loteConPrefijo = nombreUnidad.match(/^(.*?)-(L-.+)$/i);
-if (loteConPrefijo) {
-  manzana = loteConPrefijo[1].trim();
-  lote = loteConPrefijo[2].trim();
-} else {
-  const separator = nombreUnidad.lastIndexOf('-');
-  if (separator > 0) {
-    manzana = nombreUnidad.slice(0, separator).trim();
-    lote = nombreUnidad.slice(separator + 1).trim();
-  }
-}
+    const { manzana, lote } = unitNamePartsFromInput();
 
 const uBody = {
+  etapa: vVal('fu-etapa'),
+  torre: vVal('fu-torre'),
+  nivel: vVal('fu-nivel'),
   manzana,
   lote,
-  estado: document.getElementById('fu-estado').value,
-  modelId: document.getElementById('fu-modeloSelect')?.value || undefined,
-  modelo: document.getElementById('fu-modelo').value,
-  m2: parseInputNumber('fu-m2', document.getElementById('fu-m2').value),
-  precioLista: parsePanamaNumber(document.getElementById('fu-precio').value),
-  costoUnidad: parsePanamaNumber(document.getElementById('fu-costo').value),
+  ...(fichaEstadoControl === 'manual'
+    ? { estado: vVal('fu-estado'), estadoControl: 'manual' }
+    : fichaEstadoControl === 'automatico'
+      ? { estadoControl: 'automatico' }
+      : {}),
+  modelId: vVal('fu-modeloSelect') || undefined,
+  modelo: vVal('fu-modelo'),
+  m2: vNum('fu-m2'),
+  costoUnidad: vNum('fu-costo'),
   costoUnidadManual: document.getElementById('fu-costo')?.dataset.manual === 'true',
   numeroFinca: vVal('fv-numeroFinca'),
   codigoUbicacion: vVal('fv-codigoUbicacion'),
@@ -13443,6 +13807,7 @@ const uBody = {
   precioM2Extra: vNum('fv-precioM2Extra'),
   areaAbierta: vNum('fv-areaAbierta'),
   areaCerrada: vNum('fv-areaCerrada'),
+  areaTotalConstruccion: vNum('fv-areaTotalConstruccion'),
   recamaras: vNum('fv-recamaras'),
   banos: vNum('fv-banos'),
   valorMejoras: vNum('fv-valorMejoras'),
@@ -13463,6 +13828,7 @@ const uBody = {
     const vBody = {
       projectId: id,
       unitId: fichaUnitId,
+      resetAutomaticState: fichaEstadoControl === 'automatico',
 
       // =====================================================
       // Cliente 1 / solicitante principal
@@ -13520,6 +13886,8 @@ const uBody = {
       cliente2IngresoMensual: vNum('fv-cliente2IngresoMensual'),
       cliente2Cargo: vVal('fv-cliente2Cargo'),
       cliente2AntiguedadLaboral: vVal('fv-cliente2AntiguedadLaboral'),
+      cliente2PerfilCliente: vVal('fv-cliente2PerfilCliente'),
+      cliente2TipoEmpresa: vVal('fv-cliente2TipoEmpresa'),
 
       // =====================================================
       // Parientes / referencias
@@ -13558,6 +13926,7 @@ const uBody = {
       valorMejoras: vNum('fv-valorMejoras'),
       valorTerreno: vNum('fv-valorTerreno'),
       fechaProbableEntrega: vDate('fv-fechaProbableEntrega'),
+      fechaReserva: vDate('fv-fechaReserva'),
 
       // =====================================================
       // Banco / CPP / financiamiento
@@ -13616,6 +13985,7 @@ const uBody = {
       fechaActivacionTramite: vDate('fv-fechaActivacionTramite'),
 
       protocoloFirmaCliente: vChk('fv-protocoloFirmaCliente'),
+      protocoloFirmaPromotora: vChk('fv-protocoloFirmaPromotora'),
       fechaEntregaBanco: vDate('fv-fechaEntregaBanco'),
       protocoloFirmaRLBancoInter: vChk('fv-protocoloFirmaRLBancoInter'),
       fechaRegresoBanco: vDate('fv-fechaRegresoBanco'),
@@ -13653,8 +14023,11 @@ const uBody = {
       // =====================================================
       enConstruccion: vChk('fv-enConstruccion'),
       estatusConstruccion: vVal('fv-estatusConstruccion'),
+      faseConstruccion: vVal('fv-estatusConstruccion'),
+      avanceConstruccionPct: vNum('fv-avanceConstruccionPct'),
       permisoConstruccionMunicipal: vChk('fv-permisoConstruccionMunicipal'),
       permisoConstruccionNum: vVal('fv-permisoConstruccionNum'),
+      permisoConstruccionVencimiento: vDate('fv-permisoConstruccionVencimiento'),
 
       permisoOcupacion: vChk('fv-permisoOcupacion'),
       permisoOcupacionNum: vVal('fv-permisoOcupacionNum'),
@@ -13699,20 +14072,79 @@ const uBody = {
       observacionCliente: vVal('fv-observacionCliente'),
     };
 
+    // La ficha muestra un solo nombre completo para el segundo cliente, pero
+    // conserva los campos históricos existentes y solo los consolida si se edita.
+    const client2NameEl = document.getElementById('fv-cliente2NombreCompleto');
+    if (client2NameEl && client2NameEl.value !== client2NameEl.dataset.original) {
+      vBody.cliente2PrimerNombre = client2NameEl.value.trim();
+      vBody.cliente2SegundoNombre = '';
+      vBody.cliente2PrimerApellido = '';
+      vBody.cliente2SegundoApellido = '';
+    }
+    const clientNameEl = document.getElementById('fv-clienteNombre');
+    if (clientNameEl && clientNameEl.value !== clientNameEl.dataset.original) {
+      vBody.clienteNombre = clientNameEl.value.trim();
+      vBody.primerNombre = '';
+      vBody.segundoNombre = '';
+      vBody.primerApellido = '';
+      vBody.segundoApellido = '';
+    }
+    if (clientNameEl?.dataset.persisted !== 'true' && clientNameEl?.value === clientNameEl?.dataset.original) {
+      vBody.clienteNombre = undefined;
+    }
+
+    // Captación reutiliza los cuatro indicadores existentes: no persiste un
+    // segundo campo de canal que pueda contradecirlos.
+    const captureChannel = vVal('fv-canalCaptacion');
+    if (captureChannel !== undefined) {
+      vBody.captadoAtencionOficina = captureChannel === 'Atención en oficina';
+      vBody.captadoMailInternet = captureChannel === 'Mail / internet';
+      vBody.captadoEnProyecto = captureChannel === 'En proyecto';
+      vBody.captadoMercadeoProspecto = captureChannel === 'Mercadeo / prospecto';
+    }
+    if (vBody.fechaContratoCliente !== undefined) vBody.contratoFirmado = !!vBody.fechaContratoCliente;
+    if (vBody.fechaPagoImpuesto !== undefined) vBody.pagoImpuestos = !!vBody.fechaPagoImpuesto;
+    if (vBody.fechaIngresoRP !== undefined) vBody.ingresoRP = !!vBody.fechaIngresoRP;
+    if (vBody.fechaRecibidoCheque !== undefined) vBody.solicitudDesembolso = !!vBody.fechaRecibidoCheque;
+    if (vBody.fechaEntregaVivienda !== undefined) vBody.entregaCasa = vBody.fechaEntregaVivienda ? 'Sí' : '';
+    if (vBody.avanceConstruccionPct !== undefined) vBody.enConstruccion = vBody.avanceConstruccionPct > 0 && vBody.avanceConstruccionPct < 100;
+
     await apiPost('/api/ventas/upsert-by-unit', vBody);
 
-    modalFicha.style.display = 'none';
+    fichaEstadoControl = '';
+    saveSucceeded = true;
+    fichaDirty = fichaChangeVersion !== saveVersion;
+    setFichaSaveStatus('Guardado hace un momento', 'saved');
+    if (closeAfterSave && !fichaDirty) modalFicha.style.display = 'none';
+    if (closeAfterSave && fichaDirty) fichaCloseRequested = true;
 
     await loadUnits();
+    applyOpenFichaStateVisual(unitsCache.find(unit => String(unit._id) === String(fichaUnitId)) || {});
     await markProjectDataChanged();
+    return true;
 
   } catch (e) {
     console.error(e);
-    alert('Error guardando la ficha');
+    fichaDirty = true;
+    setFichaSaveStatus('No se pudo guardar · pulsa Guardar cambios', 'error');
+    if (!silent) alert('Error guardando la ficha');
+    return false;
   } finally {
+    fichaSaving = false;
     fichaGuardar.disabled = false;
     fichaGuardar.textContent = oldText;
     fichaGuardar.classList.remove('is-loading');
+    if (saveSucceeded && fichaDirty) {
+      clearTimeout(fichaAutosaveTimer);
+      fichaAutosaveTimer = setTimeout(() => {
+        guardarFicha({ close: fichaCloseRequested, silent: true });
+      }, 500);
+    } else if (saveSucceeded && fichaCloseRequested) {
+      modalFicha.style.display = 'none';
+      fichaCloseRequested = false;
+    } else if (saveSucceeded) {
+      fichaCloseRequested = false;
+    }
   }
 }
 
@@ -13920,11 +14352,11 @@ const uBody = {
     const e = document.getElementById('b-estado').value; if (e) updUnit.estado = e;
     const mo = document.getElementById('b-modelo').value; if (mo) updUnit.modelo = mo;
     const m2 = document.getElementById('b-m2').value; if (m2) updUnit.m2 = parseInputNumber('b-m2', m2);
-    const pr = document.getElementById('b-precio').value; if (pr) updUnit.precioLista = parsePanamaNumber(pr);
     if (Object.keys(updUnit).length) await apiPatch('/api/units/batch', { ids, update: updUnit, projectId: id });
 
     // Venta updates
     const updVenta = collectBatchVentaUpdate();
+    const pr = document.getElementById('b-precio').value; if (pr) updVenta.precioVenta = parsePanamaNumber(pr);
     if (Object.keys(updVenta).length) await apiPatch('/api/ventas/batch', { unitIds: ids, update: updVenta, upsert: true, projectId: id });
 
     closeBatch();
@@ -13952,7 +14384,14 @@ const uBody = {
   }
 
   // === Eventos ===
-  function cerrarFichaUnidadModal() {
+  async function cerrarFichaUnidadModal() {
+    clearTimeout(fichaAutosaveTimer);
+    if (fichaMode === 'commercial' && (fichaDirty || fichaSaving)) {
+      fichaCloseRequested = true;
+      setFichaSaveStatus('Guardando antes de cerrar…', 'saving');
+      if (!fichaSaving) await guardarFicha({ close: true, silent: true });
+      return;
+    }
     modalFicha.classList.remove('is-fullscreen');
     modalFicha.style.display = 'none';
   }
@@ -13967,9 +14406,28 @@ const uBody = {
     }
   }
 
-  if (fichaGuardar) fichaGuardar.addEventListener('click', guardarFicha);
+  if (fichaGuardar) fichaGuardar.addEventListener('click', () => {
+    clearTimeout(fichaAutosaveTimer);
+    guardarFicha({ close: true, silent: false });
+  });
   if (fichaCerrarX) fichaCerrarX.addEventListener('click', cerrarFichaUnidadModal);
   if (fichaExpandir) fichaExpandir.addEventListener('click', toggleFichaFullscreen);
+  if (modalFicha) {
+    const handleFichaEdit = event => {
+      const control = event.target;
+      if (!fichaAutosaveReady || !control?.matches?.('input, select, textarea')) return;
+      if (control.disabled || control.readOnly || ['hidden', 'file'].includes(control.type)) return;
+      if (!control.closest('#view-ficha') && !control.closest('#fichaTitulo')) return;
+      scheduleFichaAutosave();
+    };
+    modalFicha.addEventListener('input', handleFichaEdit);
+    modalFicha.addEventListener('change', handleFichaEdit);
+  }
+  window.addEventListener('beforeunload', event => {
+    if (!fichaDirty) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
 
   if (filtroEstado) filtroEstado.addEventListener('change', loadUnits);
   if (buscarInput) buscarInput.addEventListener('input', () => { clearTimeout(window.__deb); window.__deb = setTimeout(loadUnits, 250); });
@@ -14046,7 +14504,7 @@ if (btnExportarExcel) {
         areaCerrada: parseInputNumber('cl-areaCerrada', document.getElementById('cl-areaCerrada')?.value || 0),
         recamaras: parseInputNumber('cl-recamaras', document.getElementById('cl-recamaras')?.value || 0),
         banos: parseInputNumber('cl-banos', document.getElementById('cl-banos')?.value || 0),
-        precioLista: parsePanamaNumber(document.getElementById('cl-precio').value || 0),
+        precioVenta: parsePanamaNumber(document.getElementById('cl-precio').value || 0),
         costoUnidad: parsePanamaNumber(document.getElementById('cl-costo')?.value || 0),
         costoUnidadManual: false,
         estado: document.getElementById('cl-estado').value || 'disponible'
@@ -14102,16 +14560,15 @@ const TECHNICAL_PERMIT_META = {
   waived:      { label:'Exonerado', color:'#64748b' }
 };
 const TECHNICAL_UNIT_STATES = [
-  { v:'disponible', l:'Disponible' }, { v:'inventario', l:'Inventario' },
-  { v:'reservado', l:'Reservado' }, { v:'con_cpp', l:'Con CPP o venta al contado' },
-  { v:'tramite_legal_activado', l:'Trámite legal activado' },
-  { v:'escriturado_traspasado', l:'Escriturado / Traspasado' },
-  { v:'vivienda_entregada', l:'Vivienda entregada' }
+  { v:'disponible', l:'Lote libre' }, { v:'inventario', l:'Inventario' },
+  { v:'reservado', l:'Reservado' }, { v:'con_cpp', l:'Con CPP' },
+  { v:'tramite_legal_activado', l:'Trámite legal' },
+  { v:'escriturado_traspasado', l:'Traspasado' }
 ];
 
 function technicalUnitState(value) {
   const stateValue = String(value || 'disponible').toLowerCase().trim();
-  const aliases = { reservado_separado:'reservado', cpp_recibida:'con_cpp', venta_contado:'con_cpp', en_escrituracion:'tramite_legal_activado', escriturado:'escriturado_traspasado', entregado:'vivienda_entregada' };
+  const aliases = { reservado_separado:'reservado', cpp_recibida:'con_cpp', venta_contado:'con_cpp', en_escrituracion:'tramite_legal_activado', escriturado:'escriturado_traspasado', entregado:'escriturado_traspasado', vivienda_entregada:'escriturado_traspasado' };
   return aliases[stateValue] || stateValue || 'disponible';
 }
 
