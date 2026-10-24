@@ -11580,6 +11580,25 @@ async function getPeriodicRequirementAlerts() {
   }
 }
 
+async function getResolvedExpiryAlertKeys() {
+  let resolutions = Array.isArray(state.project?.expiryAlertResolutions)
+    ? state.project.expiryAlertResolutions
+    : [];
+
+  try {
+    const response = await API.get(`/api/projects/${id}/expiry-alerts/resolutions?ts=${Date.now()}`);
+    resolutions = Array.isArray(response?.resolutions) ? response.resolutions : [];
+    if (!state.project) state.project = {};
+    state.project.expiryAlertResolutions = resolutions;
+  } catch (error) {
+    console.warn('[Finance] no se pudieron cargar las alertas resueltas; se usa el estado local', error);
+  }
+
+  return new Set(
+    resolutions.map(item => String(item?.key || '')).filter(Boolean)
+  );
+}
+
 async function refreshProjectExpiryAlerts() {
   const cppAlerts = unitsCache
     .map(unit => getCppExpiryAlert(unit, ventasMap.get(String(unit._id)), { includeOverdue: true }))
@@ -11588,9 +11607,7 @@ async function refreshProjectExpiryAlerts() {
   const insurancePolicyAlerts = getInsurancePolicyExpiryAlerts();
   const requirementBondAlerts = await getRequirementBondExpiryAlerts();
   const periodicRequirementAlerts = await getPeriodicRequirementAlerts();
-  const resolvedExpiryAlertKeys = new Set(
-    (state.project?.expiryAlertResolutions || []).map(item => String(item?.key || '')).filter(Boolean)
-  );
+  const resolvedExpiryAlertKeys = await getResolvedExpiryAlertKeys();
   showCppExpiryPopup(
     [...cppAlerts, ...creditLineAlerts, ...insurancePolicyAlerts, ...requirementBondAlerts, ...periodicRequirementAlerts]
       .filter(alertItem => !resolvedExpiryAlertKeys.has(alertItem.alertKey))

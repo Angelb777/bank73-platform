@@ -2004,6 +2004,21 @@ router.post('/:id/expiry-alerts/resolve', requireProjectAccess({ commercialOnlyS
   }
 });
 
+router.get('/:id/expiry-alerts/resolutions', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
+  try {
+    const projectTenantKey = req.project?.tenantKey || req.tenantKey;
+    const project = await Project.findOne({ _id: req.params.id, tenantKey: projectTenantKey })
+      .select('expiryAlertResolutions')
+      .lean();
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+
+    res.json({ resolutions: project.expiryAlertResolutions || [] });
+  } catch (error) {
+    console.error('[GET /projects/:id/expiry-alerts/resolutions] error:', error);
+    res.status(500).json({ error: 'No se pudieron cargar las alertas resueltas' });
+  }
+});
+
 
 // === Checklists por proyecto, filtrados por rol del usuario ===
 // === Checklists por proyecto, filtrados por rol del usuario (roleOwner / visibleToRoles) ===
