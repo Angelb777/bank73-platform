@@ -10534,9 +10534,9 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
     [v.fechaReserva,v.fechaProforma,v.fechaProbableEntrega,v.cesionAFavorDe,v.estatusCPP],
     [v.numCPP,v.fechaValorCPP,v.fechaVencimientoCPP,v.aperturaCtaBanco,lifePolicyDelivered,lifePolicyType,firePolicyDelivered,firePolicyType,v.fechaContratoCliente,v.montoContrato,u.valorMejoras,u.valorTerreno,v.mLiberacion,v.mSegregacion],
     [v.solicitudAvaluo,v.fechaAvaluo,v.empresaAvaluadora],
-    [v.mPrestamo,v.fechaFirma,v.protocoloFirmaCliente,v.protocoloFirmaPromotora,v.protocoloFirmaRLBancoInter,v.firmaProtocoloBancoCliente],
-    [v.fechaPagoImpuesto,v.fechaIngresoRP,v.fechaInscripcion],
-    [v.fechaDesembolso,v.fechaRecibidoCheque,v.fechaEntregaVivienda]
+    [v.mPrestamo,v.fechaProtocoloFirmaCliente,v.fechaProtocoloFirmaPromotora,v.fechaProtocoloFirmaBancoInterino,v.fechaProtocoloFirmaBancoCliente],
+    [v.fechaPagoImpuesto,v.fechaCierreEscritura,v.fechaIngresoRP,v.fechaInscripcion],
+    [v.fechaDesembolso,v.fechaEntregaVivienda]
   ];
   // Si una etapa posterior ya contiene datos, las anteriores se consideran
   // cerradas aunque el histórico no tuviera todos sus campos antiguos.
@@ -10547,9 +10547,9 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
     stage(1,'Reserva',stageValues[0],`${date('fv-fechaReserva','Fecha de reserva',v.fechaReserva)}${date('fv-fechaProforma','Fecha proforma',v.fechaProforma)}${date('fv-fechaProbableEntrega','Fecha probable de entrega',v.fechaProbableEntrega)}${field('fv-cesionAFavorDe','Cesión a favor de',v.cesionAFavorDe)}${select('fv-estatusCPP','Estatus de CPP',[{v:'',l:'—'},{v:'Documentación entregada',l:'Documentación entregada'},{v:'En comité',l:'En comité'},{v:'Aprobado',l:'Aprobado'},{v:'CPP recibida',l:'CPP recibida'}],v.estatusCPP)}`,stageStates[0]),
     stage(2,'Carta promesa de pago y contrato',stageValues[1],`<h4>Carta promesa de pago</h4>${field('fv-numCPP','No. de CPP',v.numCPP)}${date('fv-fechaValorCPP','Fecha de CPP',v.fechaValorCPP)}${date('fv-fechaVencimientoCPP','Vencimiento de CPP',v.fechaVencimientoCPP)}${check('fv-aperturaCtaBanco','Apertura de cuenta en banco',v.aperturaCtaBanco)}<h4>Pólizas</h4>${check('fv-polizaVidaEntregada','Póliza de vida entregada',lifePolicyDelivered)}${select('fv-tipoPolizaVida','Modalidad de póliza de vida',policyTypeOpts,lifePolicyType)}${check('fv-polizaIncendioEntregada','Póliza de incendio entregada',firePolicyDelivered)}${select('fv-tipoPolizaIncendio','Modalidad de póliza de incendio',policyTypeOpts,firePolicyType)}<div class="unit-process-field is-wide"><label class="unit-process-check unit-policy-summary" for="fv-polizas"><input id="fv-polizas" type="checkbox" ${allPoliciesDelivered ? 'checked' : ''} disabled aria-readonly="true"><span>Pólizas entregadas <small>Se marca automáticamente al recibir ambas</small></span></label></div><h4>Contrato</h4>${date('fv-fechaContratoCliente','Fecha de contrato',v.fechaContratoCliente)}${number('fv-montoContrato','Monto de contrato',v.montoContrato)}${number('fv-valorMejoras','Valor mejoras',u.valorMejoras||v.valorMejoras)}${number('fv-valorTerreno','Valor terreno',u.valorTerreno||v.valorTerreno)}<h4>Minutas</h4>${select('fv-mLiberacion','Minuta de liberación / desafectación',minuteOpts,v.mLiberacion)}${select('fv-mSegregacion','Minuta de segregación / venta',minuteOpts,v.mSegregacion)}`,stageStates[1]),
     stage(3,'Avalúo',stageValues[2],`${date('fv-solicitudAvaluo','Solicitud avalúo (fecha)',v.solicitudAvaluo)}${date('fv-fechaAvaluo','Avalúo (fecha)',v.fechaAvaluo)}${field('fv-empresaAvaluadora','Empresa avaluadora',v.empresaAvaluadora)}`,stageStates[2]),
-    stage(4,'Protocolo / Escrituras',stageValues[3],`${select('fv-mPrestamo','Minuta préstamo / hipoteca',minuteOpts,v.mPrestamo)}${date('fv-fechaFirma','Fecha de escritura',v.fechaFirma)}${check('fv-protocoloFirmaCliente','Firmado por cliente',v.protocoloFirmaCliente)}${check('fv-protocoloFirmaPromotora','Firmado por promotor',v.protocoloFirmaPromotora)}${check('fv-protocoloFirmaRLBancoInter','Firmado por banco interino',v.protocoloFirmaRLBancoInter)}${check('fv-firmaProtocoloBancoCliente','Firmado por banco del cliente',v.firmaProtocoloBancoCliente)}`,stageStates[3]),
-    stage(5,'Cierre notarial / Registro Público',stageValues[4],`${date('fv-fechaPagoImpuesto','Fecha de pago de impuestos',v.fechaPagoImpuesto)}${date('fv-fechaIngresoRP','Ingreso al Registro Público',v.fechaIngresoRP)}${date('fv-fechaInscripcion','Fecha de inscripción',v.fechaInscripcion)}`,stageStates[4]),
-    stage(6,'Desembolso y entrega',stageValues[5],`${date('fv-fechaDesembolso','Fecha de desembolso',v.fechaDesembolso)}${date('fv-fechaRecibidoCheque','Fecha de cheque de desembolso',v.fechaRecibidoCheque)}${date('fv-fechaEntregaVivienda','Fecha de entrega de vivienda',v.fechaEntregaVivienda)}${!v.fechaEmisionPermisoOcupacion?'<div class="unit-stage-warning">Falta el permiso de ocupación. Es un aviso y no bloquea este paso.</div>':''}`,stageStates[5])
+    stage(4,'Protocolo / Escrituras',stageValues[3],`${select('fv-mPrestamo','Minuta préstamo / hipoteca',minuteOpts,v.mPrestamo)}${date('fv-fechaProtocoloFirmaCliente','Firma del cliente',v.fechaProtocoloFirmaCliente)}${date('fv-fechaProtocoloFirmaPromotora','Firma del promotor',v.fechaProtocoloFirmaPromotora)}${date('fv-fechaProtocoloFirmaBancoInterino','Firma del banco interino',v.fechaProtocoloFirmaBancoInterino)}${date('fv-fechaProtocoloFirmaBancoCliente','Firma del banco del cliente',v.fechaProtocoloFirmaBancoCliente)}`,stageStates[3]),
+    stage(5,'Cierre notarial / Registro Público',stageValues[4],`${date('fv-fechaPagoImpuesto','Fecha de pago de impuestos',v.fechaPagoImpuesto)}${date('fv-fechaCierreEscritura','Cierre de notaría (fecha de escritura)',v.fechaCierreEscritura||v.fechaFirma)}${date('fv-fechaIngresoRP','Ingreso al Registro Público',v.fechaIngresoRP)}${date('fv-fechaInscripcion','Fecha de inscripción',v.fechaInscripcion)}`,stageStates[4]),
+    stage(6,'Desembolso y entrega',stageValues[5],`${date('fv-fechaDesembolso','Fecha de desembolso',v.fechaDesembolso)}${date('fv-fechaEntregaVivienda','Fecha de entrega de vivienda',v.fechaEntregaVivienda)}${!v.fechaEmisionPermisoOcupacion?'<div class="unit-stage-warning">Falta el permiso de ocupación. Es un aviso y no bloquea este paso.</div>':''}`,stageStates[5])
   ].join('');
   const captureChannel = v.captadoAtencionOficina ? 'Atención en oficina'
     : v.captadoMailInternet ? 'Mail / internet'
@@ -10573,7 +10573,7 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
     <aside class="unit-process-left"><details class="unit-side-card" open><summary><strong>Datos de la unidad</strong><span>⌄</span></summary><div class="unit-side-grid">
       ${field('fu-etapa','Etapa',u.etapa)}${field('fu-torre','Torre',u.torre)}${field('fu-nivel','Nivel',u.nivel)}<div class="unit-process-field"><label for="fu-modeloSelect">Modelo de vivienda</label><select id="fu-modeloSelect">${projectModelOptions(u.modelId||u.modelo||'',{includeEmpty:true})}</select><input id="fu-modelo" type="hidden" value="${safeVal(u.modelo||'')}"></div>${number('fu-m2','Área de terreno',u.m2)}${field('fv-numeroFinca','Número de finca',u.numeroFinca)}${field('fv-codigoUbicacion','Código de ubicación',u.codigoUbicacion)}${field('fv-calle','Calle',u.calle)}${number('fv-areaAbierta','Área abierta',u.areaAbierta)}${number('fv-areaCerrada','Área cerrada',u.areaCerrada)}${number('fv-areaTotalConstruccion','Área total de construcción',Number(u.areaTotalConstruccion||0)||Number(u.areaAbierta||0)+Number(u.areaCerrada||0),'readonly aria-readonly="true"')}${number('fv-recamaras','Recámaras',u.recamaras)}${number('fv-banos','Baños',u.banos)}<input id="fu-costo" type="hidden" value="${safeVal(u.costoUnidad||0)}">
     </div></details><details class="unit-side-card construction-card" open><summary><strong>Construcción de la vivienda</strong><span class="parallel-chip">En paralelo</span><span>⌄</span></summary><div class="unit-side-grid">
-      ${number('fv-avanceConstruccionPct','Avance de obra (%)',v.avanceConstruccionPct||0)}${select('fv-estatusConstruccion','Fase de obra',[{v:'',l:'Pendiente de construir'},{v:'Obra gris',l:'Obra gris'},{v:'Acabados',l:'Acabados'},{v:'Terminada',l:'Terminada'}],v.estatusConstruccion)}${check('fv-permisoConstruccionMunicipal','Permiso de construcción',v.permisoConstruccionMunicipal)}${field('fv-permisoConstruccionNum','Resolución construcción',v.permisoConstruccionNum)}${date('fv-permisoConstruccionVencimiento','Vencimiento construcción',v.permisoConstruccionVencimiento)}${check('fv-permisoOcupacion','Permiso de ocupación',v.permisoOcupacion)}${field('fv-permisoOcupacionNum','Resolución ocupación',v.permisoOcupacionNum)}${date('fv-fechaEmisionPermisoOcupacion','Fecha permiso ocupación',v.fechaEmisionPermisoOcupacion)}${field('fv-constructora','Constructora / contratista',v.constructora)}
+      ${number('fv-avanceConstruccionPct','Avance de obra (%)',v.avanceConstruccionPct||0)}${select('fv-estatusConstruccion','Fase de obra',[{v:'',l:'Pendiente de construir'},{v:'Obra gris',l:'Obra gris'},{v:'Acabados',l:'Acabados'},{v:'Terminada',l:'Terminada'}],v.estatusConstruccion)}${check('fv-permisoConstruccionMunicipal','Permiso de construcción',v.permisoConstruccionMunicipal)}${field('fv-permisoConstruccionNum','Resolución construcción',v.permisoConstruccionNum)}${date('fv-fechaPermisoConstruccion','Fecha permiso construcción',v.fechaPermisoConstruccion)}${date('fv-permisoConstruccionVencimiento','Vencimiento construcción',v.permisoConstruccionVencimiento)}${check('fv-permisoOcupacion','Permiso de ocupación',v.permisoOcupacion)}${field('fv-permisoOcupacionNum','Resolución ocupación',v.permisoOcupacionNum)}${date('fv-fechaEmisionPermisoOcupacion','Fecha permiso ocupación',v.fechaEmisionPermisoOcupacion)}${field('fv-constructora','Constructora / contratista',v.constructora)}
     </div></details></aside>
     <main class="unit-process-main"><section class="unit-process-heading"><div><h2>Proceso de venta</h2><span>${complete} de 6 etapas completas</span></div>${reservationAge ? `<strong class="unit-reservation-age">${safeVal(reservationAge.label)}</strong>` : ''}<div class="unit-process-progress"><i style="width:${Math.round(complete/6*100)}%"></i></div></section><div class="unit-stages">${stages}</div><section class="unit-comments"><h3>Comentarios</h3><textarea id="fv-comentario" rows="3" placeholder="Añade información útil para el seguimiento">${safeVal(v.comentario)}</textarea></section></main>
     <aside class="unit-process-right">${client(false)}${client(true)}<details class="unit-side-card" open><summary><strong>Referencias personales</strong><span>⌄</span></summary><div class="unit-side-grid">${field('fv-referencia1Nombre','Referencia 1',v.referencia1Nombre)}${field('fv-referencia1Relacion','Relación',v.referencia1Relacion)}${field('fv-referencia1Telefono','Teléfono',v.referencia1Telefono)}${field('fv-referencia2Nombre','Referencia 2',v.referencia2Nombre)}${field('fv-referencia2Relacion','Relación',v.referencia2Relacion)}${field('fv-referencia2Telefono','Teléfono',v.referencia2Telefono)}${select('fv-canalCaptacion','Captación del cliente',[{v:'',l:'—'},{v:'Atención en oficina',l:'Atención en oficina'},{v:'Mail / internet',l:'Mail / internet'},{v:'En proyecto',l:'En proyecto'},{v:'Mercadeo / prospecto',l:'Mercadeo / prospecto'}],captureChannel)}</div></details></aside>
@@ -10604,7 +10604,7 @@ function renderTechnicalUnitFicha(u = {}, v = {}, unitId = '') {
   const select = (id, label, items, value = '') => `<div class="unit-process-field"><label for="${id}">${label}</label><select id="${id}">${options(items, value)}</select></div>`;
   const informed = values => values.filter(value => value !== null && value !== undefined && String(value).trim() !== '' && Number(value) !== 0).length;
   const unitValues = [u.etapa,u.torre,u.nivel,u.modelId||u.modelo,u.m2,u.numeroFinca,u.codigoUbicacion,u.calle,u.areaAbierta,u.areaCerrada,u.recamaras,u.banos];
-  const constructionValues = [v.avanceConstruccionPct,v.estatusConstruccion,v.permisoConstruccionMunicipal,v.permisoConstruccionNum,v.permisoConstruccionVencimiento,v.permisoOcupacion,v.permisoOcupacionNum,v.fechaEmisionPermisoOcupacion,v.constructora];
+  const constructionValues = [v.avanceConstruccionPct,v.estatusConstruccion,v.permisoConstruccionMunicipal,v.permisoConstruccionNum,v.fechaPermisoConstruccion,v.permisoConstruccionVencimiento,v.permisoOcupacion,v.permisoOcupacionNum,v.fechaEmisionPermisoOcupacion,v.constructora];
   const policies = effectivePoliciesForUnit(u);
   const statusKey = normalizeUnitEstadoFrontend(u.estado);
   const phase = v.estatusConstruccion || 'Pendiente de construir';
@@ -10633,7 +10633,7 @@ function renderTechnicalUnitFicha(u = {}, v = {}, unitId = '') {
             ${number('fv-avanceConstruccionPct','Avance de obra (%)',progress,'min="0" max="100"')}
             ${select('fv-estatusConstruccion','Fase de obra',[{v:'',l:'Pendiente de construir'},{v:'Obra gris',l:'Obra gris'},{v:'Acabados',l:'Acabados'},{v:'Terminada',l:'Terminada'}],v.estatusConstruccion)}
             ${check('fv-permisoConstruccionMunicipal','Permiso de construcción',v.permisoConstruccionMunicipal)}${field('fv-permisoConstruccionNum','Resolución construcción',v.permisoConstruccionNum)}
-            ${date('fv-permisoConstruccionVencimiento','Vencimiento construcción',v.permisoConstruccionVencimiento)}${check('fv-permisoOcupacion','Permiso de ocupación',v.permisoOcupacion)}
+            ${date('fv-fechaPermisoConstruccion','Fecha permiso construcción',v.fechaPermisoConstruccion)}${date('fv-permisoConstruccionVencimiento','Vencimiento construcción',v.permisoConstruccionVencimiento)}${check('fv-permisoOcupacion','Permiso de ocupación',v.permisoOcupacion)}
             ${field('fv-permisoOcupacionNum','Resolución ocupación',v.permisoOcupacionNum)}${date('fv-fechaEmisionPermisoOcupacion','Fecha permiso ocupación',v.fechaEmisionPermisoOcupacion)}${field('fv-constructora','Constructora / contratista',v.constructora)}
           </div>
         </details>
@@ -10659,9 +10659,9 @@ const COMMERCIAL_STAGE_FIELD_IDS = [
   ['fv-fechaReserva','fv-fechaProforma','fv-fechaProbableEntrega','fv-cesionAFavorDe','fv-estatusCPP'],
   ['fv-numCPP','fv-fechaValorCPP','fv-fechaVencimientoCPP','fv-aperturaCtaBanco','fv-polizaVidaEntregada','fv-tipoPolizaVida','fv-polizaIncendioEntregada','fv-tipoPolizaIncendio','fv-fechaContratoCliente','fv-montoContrato','fv-valorMejoras','fv-valorTerreno','fv-mLiberacion','fv-mSegregacion'],
   ['fv-solicitudAvaluo','fv-fechaAvaluo','fv-empresaAvaluadora'],
-  ['fv-mPrestamo','fv-fechaFirma','fv-protocoloFirmaCliente','fv-protocoloFirmaPromotora','fv-protocoloFirmaRLBancoInter','fv-firmaProtocoloBancoCliente'],
-  ['fv-fechaPagoImpuesto','fv-fechaIngresoRP','fv-fechaInscripcion'],
-  ['fv-fechaDesembolso','fv-fechaRecibidoCheque','fv-fechaEntregaVivienda']
+  ['fv-mPrestamo','fv-fechaProtocoloFirmaCliente','fv-fechaProtocoloFirmaPromotora','fv-fechaProtocoloFirmaBancoInterino','fv-fechaProtocoloFirmaBancoCliente'],
+  ['fv-fechaPagoImpuesto','fv-fechaCierreEscritura','fv-fechaIngresoRP','fv-fechaInscripcion'],
+  ['fv-fechaDesembolso','fv-fechaEntregaVivienda']
 ];
 
 function refreshPolicyDeliverySummary() {
@@ -14177,24 +14177,23 @@ const uBody = {
       estatusContrato: vVal('fv-estatusContrato'),
       montoContrato: vNum('fv-montoContrato'),
       pagare: vVal('fv-pagare'),
-      fechaFirma: vDate('fv-fechaFirma'),
       contratoFirmado: vChk('fv-contratoFirmado'),
 
       fechaActivacionTramite: vDate('fv-fechaActivacionTramite'),
 
-      protocoloFirmaCliente: vChk('fv-protocoloFirmaCliente'),
-      protocoloFirmaPromotora: vChk('fv-protocoloFirmaPromotora'),
+      fechaProtocoloFirmaCliente: vDate('fv-fechaProtocoloFirmaCliente'),
+      fechaProtocoloFirmaPromotora: vDate('fv-fechaProtocoloFirmaPromotora'),
       fechaEntregaBanco: vDate('fv-fechaEntregaBanco'),
-      protocoloFirmaRLBancoInter: vChk('fv-protocoloFirmaRLBancoInter'),
+      fechaProtocoloFirmaBancoInterino: vDate('fv-fechaProtocoloFirmaBancoInterino'),
       fechaRegresoBanco: vDate('fv-fechaRegresoBanco'),
       diasTranscurridosBanco: vNum('fv-diasTranscurridosBanco'),
 
       fechaEntregaProtocoloBancoCli: vDate('fv-fechaEntregaProtocoloBancoCli'),
-      firmaProtocoloBancoCliente: vChk('fv-firmaProtocoloBancoCliente'),
+      fechaProtocoloFirmaBancoCliente: vDate('fv-fechaProtocoloFirmaBancoCliente'),
       fechaRegresoProtocoloBancoCli: vDate('fv-fechaRegresoProtocoloBancoCli'),
       diasTranscurridosProtocolo: vNum('fv-diasTranscurridosProtocolo'),
 
-      cierreNotaria: vChk('fv-cierreNotaria'),
+      fechaCierreEscritura: vDate('fv-fechaCierreEscritura'),
       pagoImpuestos: vChk('fv-pagoImpuestos'),
       fechaPagoImpuesto: vDate('fv-fechaPagoImpuesto'),
       ingresoRP: vChk('fv-ingresoRP'),
@@ -14203,7 +14202,6 @@ const uBody = {
 
       solicitudDesembolso: vChk('fv-solicitudDesembolso'),
       fechaDesembolso: vDate('fv-fechaDesembolso'),
-      fechaRecibidoCheque: vDate('fv-fechaRecibidoCheque'),
 
       // =====================================================
       // MIVI (retirado)
@@ -14225,6 +14223,7 @@ const uBody = {
       avanceConstruccionPct: vNum('fv-avanceConstruccionPct'),
       permisoConstruccionMunicipal: vChk('fv-permisoConstruccionMunicipal'),
       permisoConstruccionNum: vVal('fv-permisoConstruccionNum'),
+      fechaPermisoConstruccion: vDate('fv-fechaPermisoConstruccion'),
       permisoConstruccionVencimiento: vDate('fv-permisoConstruccionVencimiento'),
 
       permisoOcupacion: vChk('fv-permisoOcupacion'),
@@ -14236,7 +14235,7 @@ const uBody = {
       // =====================================================
       // Legal / minutas / avalúo / paz y salvo
       // =====================================================
-      solicitudAvaluo: vVal('fv-solicitudAvaluo'),
+      solicitudAvaluo: vDate('fv-solicitudAvaluo'),
       avaluoRealizado: vVal('fv-avaluoRealizado'),
       fechaAvaluo: vDate('fv-fechaAvaluo'),
       empresaAvaluadora: vVal('fv-empresaAvaluadora'),
@@ -14287,9 +14286,14 @@ const uBody = {
       vBody.captadoMercadeoProspecto = captureChannel === 'Mercadeo / prospecto';
     }
     if (vBody.fechaContratoCliente !== undefined) vBody.contratoFirmado = !!vBody.fechaContratoCliente;
+    if (vBody.fechaProtocoloFirmaCliente !== undefined) vBody.protocoloFirmaCliente = !!vBody.fechaProtocoloFirmaCliente;
+    if (vBody.fechaProtocoloFirmaPromotora !== undefined) vBody.protocoloFirmaPromotora = !!vBody.fechaProtocoloFirmaPromotora;
+    if (vBody.fechaProtocoloFirmaBancoInterino !== undefined) vBody.protocoloFirmaRLBancoInter = !!vBody.fechaProtocoloFirmaBancoInterino;
+    if (vBody.fechaProtocoloFirmaBancoCliente !== undefined) vBody.firmaProtocoloBancoCliente = !!vBody.fechaProtocoloFirmaBancoCliente;
+    if (vBody.fechaCierreEscritura !== undefined) vBody.cierreNotaria = !!vBody.fechaCierreEscritura;
     if (vBody.fechaPagoImpuesto !== undefined) vBody.pagoImpuestos = !!vBody.fechaPagoImpuesto;
     if (vBody.fechaIngresoRP !== undefined) vBody.ingresoRP = !!vBody.fechaIngresoRP;
-    if (vBody.fechaRecibidoCheque !== undefined) vBody.solicitudDesembolso = !!vBody.fechaRecibidoCheque;
+    if (vBody.fechaDesembolso !== undefined) vBody.solicitudDesembolso = !!vBody.fechaDesembolso;
     if (vBody.fechaEntregaVivienda !== undefined) vBody.entregaCasa = vBody.fechaEntregaVivienda ? 'Sí' : '';
     if (vBody.avanceConstruccionPct !== undefined) vBody.enConstruccion = vBody.avanceConstruccionPct > 0 && vBody.avanceConstruccionPct < 100;
 

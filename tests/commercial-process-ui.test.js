@@ -86,6 +86,16 @@ test('la ficha comercial sigue el proceso de venta propuesto y mantiene sus camp
   for (const fieldId of ['fu-etapa', 'fu-torre', 'fu-nivel', 'fv-fechaDesembolso']) {
     assert.match(js, new RegExp(fieldId));
   }
+  for (const fieldId of [
+    'fv-solicitudAvaluo', 'fv-fechaProtocoloFirmaCliente',
+    'fv-fechaProtocoloFirmaPromotora', 'fv-fechaProtocoloFirmaBancoInterino',
+    'fv-fechaProtocoloFirmaBancoCliente', 'fv-fechaCierreEscritura',
+    'fv-fechaEntregaVivienda'
+  ]) {
+    assert.match(js, new RegExp(`date\\('${fieldId}'`));
+  }
+  const processFicha = js.slice(js.indexOf('function renderCommercialProcessFicha'), js.indexOf('function renderTechnicalUnitFicha'));
+  assert.doesNotMatch(processFicha, /fv-fechaRecibidoCheque|Fecha de cheque de desembolso/);
 
   const openModalStart = js.indexOf('async function abrirFichaUnidad');
   const openModalEnd = js.indexOf('window.abrirFichaUnidad = abrirFichaUnidad', openModalStart);
@@ -110,6 +120,9 @@ test('el importador cubre los encabezados del Dato Único definitivo y sincroniz
     'POLIZA DE VIDA',
     'POLIZA DE INCENDIO',
     'FECHA VENCIMIENTO PERMISO CONSTRUCCIÓN',
+    'FECHA PERMISO CONSTRUCCIÓN',
+    'PORCENTAJE AVANCE DE OBRA',
+    'SOLICITUD AVALUO',
     'PROTOCOLO FIRMA PROMOTOR',
     'FIRMA PROTOCOLO BANCO INTERINO',
     'FECHA DE ESCRITURA',
@@ -122,6 +135,10 @@ test('el importador cubre los encabezados del Dato Único definitivo y sincroniz
   assert.match(route, /tipoPolizaIncendio:\s*firePolicyType/);
   assert.match(route, /polizaVidaEntregada:\s*policiesDelivered/);
   assert.match(route, /polizaIncendioEntregada:\s*policiesDelivered/);
+  assert.match(route, /solicitudAvaluo:\s*asDate/);
+  assert.match(route, /fechaProtocoloFirmaCliente:\s*asDate/);
+  assert.match(route, /fechaCierreEscritura:\s*asDate/);
+  assert.match(route, /fechaEntregaVivienda:\s*asDate/);
   assert.match(unit, /etapa:\s+\{ type: String/);
   assert.match(unit, /torre:\s+\{ type: String/);
   assert.match(unit, /nivel:\s+\{ type: String/);

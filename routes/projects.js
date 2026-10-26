@@ -6531,15 +6531,18 @@ router.post(
           estatusContrato: clean(get(rowObj, ['ESTATUS CTTO', 'ESTATUS CONTRATO', 'RESERVAS, VENDIDAS'])),
           montoContrato: asNum(get(rowObj, ['MONTO CONTRATO', 'MONTO DEL CONTRATO', 'PRECIO DE CONTRATO DE COMPRA Y VENTA'])),
           pagare: clean(get(rowObj, ['PAGARE', 'PAGARÉ'])),
-          fechaFirma: asDate(get(rowObj, ['FECHA FIRMA', 'FECHA DE ESCRITURA', 'FECHA ESCRITURA'])),
+          fechaFirma: asDate(get(rowObj, ['FECHA FIRMA'])),
           contratoFirmado: parseBool(get(rowObj, ['CONTRATO FIRMADO'])),
 
           fechaActivacionTramite: asDate(get(rowObj, ['FECHA ACTIVACION TRAMITE', 'FECHA ACTIVACIÓN TRÁMITE LEGAL', 'ACTIVACIÓN DE TRAMITE'])),
 
-          protocoloFirmaCliente: parseBool(get(rowObj, ['PROTOCOLO FIRMA CLIENTE', 'PROTOCOLO FIRMA DE CLIENTE'])),
-          protocoloFirmaPromotora: parseBool(get(rowObj, ['PROTOCOLO FIRMA PROMOTOR', 'PROTOCOLO FIRMA PROMOTORA'])),
+          fechaProtocoloFirmaCliente: asDate(get(rowObj, ['PROTOCOLO FIRMA CLIENTE', 'PROTOCOLO FIRMA DE CLIENTE'])),
+          fechaProtocoloFirmaPromotora: asDate(get(rowObj, ['PROTOCOLO FIRMA PROMOTOR', 'PROTOCOLO FIRMA PROMOTORA'])),
+          protocoloFirmaCliente: !!asDate(get(rowObj, ['PROTOCOLO FIRMA CLIENTE', 'PROTOCOLO FIRMA DE CLIENTE'])),
+          protocoloFirmaPromotora: !!asDate(get(rowObj, ['PROTOCOLO FIRMA PROMOTOR', 'PROTOCOLO FIRMA PROMOTORA'])),
           fechaEntregaBanco: asDate(get(rowObj, ['FECHA DE ENTREGA A BANCO', 'FECHA ENTREGA BANCO'])),
-          protocoloFirmaRLBancoInter: parseBool(get(rowObj, ['PROTOCOLO FIRMA RL BANCO INTER', 'PROTOC. FIRMA DE RL, BANCO INTER', 'FIRMA PROTOCOLO BANCO INTERINO'])),
+          fechaProtocoloFirmaBancoInterino: asDate(get(rowObj, ['PROTOCOLO FIRMA RL BANCO INTER', 'PROTOC. FIRMA DE RL, BANCO INTER', 'FIRMA PROTOCOLO BANCO INTERINO'])),
+          protocoloFirmaRLBancoInter: !!asDate(get(rowObj, ['PROTOCOLO FIRMA RL BANCO INTER', 'PROTOC. FIRMA DE RL, BANCO INTER', 'FIRMA PROTOCOLO BANCO INTERINO'])),
           fechaRegresoBanco: asDate(get(rowObj, ['FECHA REGRESO BANCO'])),
           diasTranscurridosBanco: asNum(idxDiasTrans[0] !== undefined ? r[idxDiasTrans[0]] : undefined),
 
@@ -6547,7 +6550,8 @@ router.post(
             'FECHA ENTREGA PROTOCOLO BANCO CLIENTE',
             'FECHA ENTREGA PROTOCOLO BANCO CLI'
           ])),
-          firmaProtocoloBancoCliente: parseBool(get(rowObj, ['FIRMA PROTOCOLO BANCO CLIENTE', 'FIRMA PROTOC. BANCO CLIENT'])),
+          fechaProtocoloFirmaBancoCliente: asDate(get(rowObj, ['FIRMA PROTOCOLO BANCO CLIENTE', 'FIRMA PROTOC. BANCO CLIENT'])),
+          firmaProtocoloBancoCliente: !!asDate(get(rowObj, ['FIRMA PROTOCOLO BANCO CLIENTE', 'FIRMA PROTOC. BANCO CLIENT'])),
           fechaRegresoProtocoloBancoCli: asDate(get(rowObj, [
             'FECHA REGRESO PROTOCOLO BANCO CLIENTE',
             'FECHA REGRESO PROTOCOLO BANCO CLI'
@@ -6555,7 +6559,8 @@ router.post(
           diasTranscurridosProtocolo: asNum(idxDiasTrans[1] !== undefined ? r[idxDiasTrans[1]] : undefined),
 
           pagoImpuestos: parseBool(get(rowObj, ['PAGO DE IMPUESTOS', 'PAGO IMPUESTOS'])),
-          cierreNotaria: parseBool(get(rowObj, ['CIERRE DE NOTARIA'])),
+          fechaCierreEscritura: asDate(get(rowObj, ['FECHA DE ESCRITURA', 'FECHA ESCRITURA', 'CIERRE DE NOTARIA'])),
+          cierreNotaria: parseBool(get(rowObj, ['CIERRE DE NOTARIA'])) || !!asDate(get(rowObj, ['FECHA DE ESCRITURA', 'FECHA ESCRITURA', 'CIERRE DE NOTARIA'])),
           fechaPagoImpuesto: asDate(get(rowObj, ['FECHA DE PAGO DE IMPUESTO', 'FECHA PAGO IMPUESTO'])),
           ingresoRP: parseBool(get(rowObj, ['INGRESO AL RP', 'INGRESO RP'])) || !!asDate(ingresoRegistroRaw),
           fechaIngresoRP: asDate(ingresoRegistroRaw),
@@ -6586,9 +6591,11 @@ router.post(
           enConstruccion: parseBool(get(rowObj, ['EN CONSTRUCCION', 'EN CONSTRUCCIÓN'])),
           estatusConstruccion: clean(get(rowObj, ['ESTATUS CONSTRUCCION', 'ESTATUS CONSTRUCCIÓN'])),
           faseConstruccion: clean(get(rowObj, ['FASE CONSTRUCCION', 'FASE CONSTRUCCIÓN'])),
+          avanceConstruccionPct: asNum(get(rowObj, ['PORCENTAJE AVANCE DE OBRA', 'AVANCE DE OBRA (%)', 'AVANCE CONSTRUCCION (%)'])),
 
           permisoConstruccionNum: permisoConstruccionNumExcel,
           permisoConstruccionMunicipal: parseBool(get(rowObj, ['PERMISO CONSTRUCCION MUNICIPAL', 'PERMISO CONSTRUCCIÓN MUNICIPAL'])) || !!permisoConstruccionNumExcel,
+          fechaPermisoConstruccion: asDate(get(rowObj, ['FECHA PERMISO CONSTRUCCION', 'FECHA PERMISO CONSTRUCCIÓN'])),
           permisoConstruccionVencimiento: asDate(get(rowObj, ['FECHA VENCIMIENTO PERMISO CONSTRUCCION', 'FECHA VENCIMIENTO PERMISO CONSTRUCCIÓN'])),
           permisoOcupacion: parseBool(get(rowObj, ['PERMISO DE OCUPACION', 'PERMISO OCUPACION'])) || !!permisoOcupacionNumExcel,
           permisoOcupacionNum: permisoOcupacionNumExcel,
@@ -6598,7 +6605,7 @@ router.post(
           // =========================
           // Legal / avalúo / minutas / paz y salvo
           // =========================
-          solicitudAvaluo: clean(get(rowObj, ['SOLICITUD DE AVALUO', 'SOLICITUD AVALUO', 'SOLICITUD DE AVALÚO'])),
+          solicitudAvaluo: asDate(get(rowObj, ['SOLICITUD DE AVALUO', 'SOLICITUD AVALUO', 'SOLICITUD DE AVALÚO'])),
           avaluoRealizado: clean(get(rowObj, ['AVALUO REALIZADO', 'AVALÚO REALIZADO'])),
           fechaAvaluo: asDate(get(rowObj, ['FECHA AVALUO', 'FECHA AVALÚO', 'FECHA DE INSPECCIÓN DE AVALUO'])),
           empresaAvaluadora: clean(get(rowObj, ['EMPRESA AVALUADORA', 'ENCARGADO DE AVALUO'])),

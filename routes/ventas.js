@@ -63,10 +63,13 @@ const ALLOWED_FIELDS = new Set([
   'fechaContratoCliente', 'estatusContrato', 'montoContrato', 'pagare',
   'fechaFirma', 'contratoFirmado', 'fechaActivacionTramite',
   'protocoloFirmaCliente', 'protocoloFirmaPromotora', 'fechaEntregaBanco',
+  'fechaProtocoloFirmaCliente', 'fechaProtocoloFirmaPromotora',
   'protocoloFirmaRLBancoInter', 'fechaRegresoBanco', 'diasTranscurridosBanco',
+  'fechaProtocoloFirmaBancoInterino',
   'fechaEntregaProtocoloBancoCli', 'firmaProtocoloBancoCliente',
+  'fechaProtocoloFirmaBancoCliente',
   'fechaRegresoProtocoloBancoCli', 'diasTranscurridosProtocolo',
-  'cierreNotaria', 'pagoImpuestos', 'fechaPagoImpuesto',
+  'cierreNotaria', 'fechaCierreEscritura', 'pagoImpuestos', 'fechaPagoImpuesto',
   'ingresoRP', 'fechaIngresoRP', 'fechaInscripcion',
   'solicitudDesembolso', 'fechaDesembolso', 'fechaRecibidoCheque',
 
@@ -78,7 +81,7 @@ const ALLOWED_FIELDS = new Set([
   // técnico / obra / permisos
   'enConstruccion', 'estatusConstruccion', 'faseConstruccion', 'avanceConstruccionPct',
   'permisoConstruccionMunicipal', 'permisoConstruccionNum',
-  'permisoConstruccionVencimiento',
+  'fechaPermisoConstruccion', 'permisoConstruccionVencimiento',
   'permisoOcupacion', 'permisoOcupacionNum', 'fechaEmisionPermisoOcupacion',
   'constructora',
 
@@ -102,7 +105,7 @@ const TECHNICAL_FIELDS = new Set([
   'areaTotalConstruccion', 'recamaras', 'banos', 'valorMejoras', 'valorTerreno',
   'enConstruccion', 'estatusConstruccion', 'faseConstruccion', 'avanceConstruccionPct',
   'permisoConstruccionMunicipal', 'permisoConstruccionNum',
-  'permisoConstruccionVencimiento',
+  'fechaPermisoConstruccion', 'permisoConstruccionVencimiento',
   'permisoOcupacion', 'permisoOcupacionNum', 'fechaEmisionPermisoOcupacion',
   'constructora'
 ]);

@@ -11,8 +11,8 @@ const {
 const { summarizeDatoUnico } = require('../services/datoUnicoPreview');
 const exportRouter = require('../routes/export');
 
-test('exportación Dato Único conserva las 98 columnas definitivas en orden', () => {
-  assert.equal(DATO_UNICO_HEADERS.length, 98);
+test('exportación Dato Único conserva las 100 columnas definitivas en orden', () => {
+  assert.equal(DATO_UNICO_HEADERS.length, 100);
   assert.deepEqual(DATO_UNICO_HEADERS.slice(0, 10), [
     'ETAPA', 'TORRE', 'NIVEL', 'UNIDAD', 'CLIENTE', 'ESTATUS',
     'PRECIO DE VENTA', 'MONTO CPP', 'PORCENTAJE DE FINANCIAMIENTO2',
@@ -26,6 +26,13 @@ test('exportación Dato Único conserva las 98 columnas definitivas en orden', (
     'PÓLIZAS', 'POLIZA DE VIDA', 'POLIZA DE INCENDIO'
   ]);
   assert.equal(DATO_UNICO_HEADERS[77], ' RESOLUCION PERMISO CONSTRUCCION ');
+  assert.deepEqual(DATO_UNICO_HEADERS.slice(84, 99), [
+    'CONSTRUCTOR', 'SOLICITUD AVALUO', 'FECHA AVALUO', 'EMPRESA AVALUADORA',
+    'MINUTA PRÉSTAMO', 'PROTOCOLO FIRMA CLIENTE', 'PROTOCOLO FIRMA PROMOTOR',
+    'FIRMA PROTOCOLO BANCO INTERINO', 'FIRMA PROTOCOLO BANCO CLIENTE',
+    'FECHA PAGO IMPUESTO', 'FECHA DE ESCRITURA', 'INGRESO REGISTRO',
+    'FECHA DE INSCRIPCION', 'FECHA DESEMBOLSO', 'FECHA DE ENTREGA DE VIVIENDA'
+  ]);
 });
 
 test('exportación Dato Único combina correctamente unidad, cliente y expediente comercial', () => {
@@ -46,6 +53,13 @@ test('exportación Dato Único combina correctamente unidad, cliente y expedient
     polizaVidaEntregada: true, tipoPolizaVida: 'Endosada',
     polizaIncendioEntregada: true, tipoPolizaIncendio: 'Colectiva',
     permisoConstruccionNum: 'PC-12', permisoOcupacionNum: 'PO-6',
+    fechaPermisoConstruccion: '2026-01-05T00:00:00.000Z', avanceConstruccionPct: 40,
+    solicitudAvaluo: '2026-02-10T00:00:00.000Z',
+    fechaProtocoloFirmaCliente: '2026-03-01T00:00:00.000Z',
+    fechaProtocoloFirmaPromotora: '2026-03-02T00:00:00.000Z',
+    fechaProtocoloFirmaBancoInterino: '2026-03-03T00:00:00.000Z',
+    fechaProtocoloFirmaBancoCliente: '2026-03-04T00:00:00.000Z',
+    fechaCierreEscritura: '2026-04-20T00:00:00.000Z',
     fechaDesembolso: '2026-12-15T00:00:00.000Z', comentario: 'Expediente completo'
   };
 
@@ -66,6 +80,10 @@ test('exportación Dato Único combina correctamente unidad, cliente y expedient
   assert.equal(row['POLIZA DE VIDA'], 'Endosada');
   assert.equal(row['POLIZA DE INCENDIO'], 'Colectiva');
   assert.equal(row[' RESOLUCION PERMISO CONSTRUCCION '], 'PC-12');
+  assert.equal(row['PORCENTAJE AVANCE DE OBRA'], 40);
+  assert.equal(row['SOLICITUD AVALUO'].toISOString(), '2026-02-10T00:00:00.000Z');
+  assert.equal(row['PROTOCOLO FIRMA CLIENTE'].toISOString(), '2026-03-01T00:00:00.000Z');
+  assert.equal(row['FECHA DE ESCRITURA'].toISOString(), '2026-04-20T00:00:00.000Z');
   assert.equal(row['FECHA DESEMBOLSO'].toISOString(), '2026-12-15T00:00:00.000Z');
 
   const withoutSale = buildDatoUnicoExportRow({ costoUnidad: 99999 }, {});
@@ -91,7 +109,7 @@ test('XLSX comercial usa la hoja y fila de cabeceras del modelo definitivo', asy
   assert.equal(exportedSheet.getCell('A4').value, 'E1');
   assert.equal(exportedSheet.getCell('D4').value, '101');
   assert.ok(exportedSheet.getCell('BH4').value instanceof Date);
-  assert.equal(exportedSheet.autoFilter, 'A3:CT3');
+  assert.equal(exportedSheet.autoFilter, 'A3:CV3');
 
   const reimportPreview = summarizeDatoUnico(Buffer.from(buffer));
   assert.equal(reimportPreview.sheet, 'EXPEDIENTES-BANCO');

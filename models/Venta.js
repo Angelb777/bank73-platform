@@ -187,17 +187,22 @@ const VentaSchema = new mongoose.Schema({
 
   protocoloFirmaCliente:      { type: Boolean, default: false },
   protocoloFirmaPromotora:    { type: Boolean, default: false },
+  fechaProtocoloFirmaCliente: { type: Date },
+  fechaProtocoloFirmaPromotora: { type: Date },
   fechaEntregaBanco:          { type: Date },
   protocoloFirmaRLBancoInter: { type: Boolean, default: false },
+  fechaProtocoloFirmaBancoInterino: { type: Date },
   fechaRegresoBanco:          { type: Date },
   diasTranscurridosBanco:     { type: Number },
 
   fechaEntregaProtocoloBancoCli: { type: Date },
   firmaProtocoloBancoCliente:    { type: Boolean, default: false },
+  fechaProtocoloFirmaBancoCliente: { type: Date },
   fechaRegresoProtocoloBancoCli: { type: Date },
   diasTranscurridosProtocolo:    { type: Number },
 
   cierreNotaria:     { type: Boolean, default: false },
+  fechaCierreEscritura: { type: Date },
   pagoImpuestos:     { type: Boolean, default: false },
   fechaPagoImpuesto: { type: Date },
   ingresoRP:         { type: Boolean, default: false },
@@ -229,6 +234,7 @@ const VentaSchema = new mongoose.Schema({
 
   permisoConstruccionMunicipal: { type: Boolean, default: false },
   permisoConstruccionNum:       { type: String, default: '' },
+  fechaPermisoConstruccion:     { type: Date },
   permisoConstruccionVencimiento: { type: Date },
 
   permisoOcupacion:              { type: Boolean, default: false },
@@ -240,7 +246,7 @@ const VentaSchema = new mongoose.Schema({
   // =========================================================
   // LEGAL / MINUTAS / AVALÚO
   // =========================================================
-  solicitudAvaluo: { type: String, default: '' },
+  solicitudAvaluo: { type: Date },
   avaluoRealizado: { type: String, default: '' },
   fechaAvaluo:     { type: Date },
   empresaAvaluadora: { type: String, default: '' },
