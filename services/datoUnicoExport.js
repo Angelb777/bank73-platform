@@ -18,8 +18,9 @@ const DATO_UNICO_HEADERS = [
   'REFERENCIA 2 - NOMBRE', 'REFERENCIA 2 - RELACIÓN', 'REFERENCIA 2 - TELÉFONO',
   'CAPTACIÓN DE CLIENTE', 'FECHA RESERVA', 'FECHA PROFORMA',
   'FECHA PROBABLE DE ENTREGA', 'CESIÓN A FAVOR DE', 'ESTATUS CPP', 'NUMERO CPP',
-  'FECHA DE CPP', 'VENCIMIENTO CPP', 'APERTURA CUENTA BANCO', 'PÓLIZAS',
-  'POLIZA DE VIDA', 'POLIZA DE INCENDIO', 'FECHA DE CONTRATO', 'MONTO CONTRATO', 'VALOR MEJORAS',
+  'FECHA DE CPP', 'VENCIMIENTO CPP', 'APERTURA CUENTA BANCO',
+  'POLIZA VIDA', 'TIPO POLIZA DE VIDA', 'POLIZA INCENDIO', 'TIPO POLIZA DE INCENDIO',
+  'FECHA DE CONTRATO', 'MONTO CONTRATO', 'VALOR MEJORAS',
   'VALOR TERRENO', 'MINUTA LIBERACIÓN', 'MINUTA SEGREGACIÓN',
   ' RESOLUCION PERMISO CONSTRUCCION ', 'FECHA PERMISO CONSTRUCCIÓN',
   'FECHA VENCIMIENTO PERMISO CONSTRUCCION', 'PORCENTAJE AVANCE DE OBRA',
@@ -55,12 +56,12 @@ const DATO_UNICO_GROUPS = [
   { title: 'DATOS DEL CLIENTE 2 (SI APLICA)', from: 37, to: 52 },
   { title: 'REFERENCIAS PERSONALES', from: 53, to: 59 },
   { title: 'RESERVA', from: 60, to: 64 },
-  { title: 'CARTA PROMESA DE PAGO Y CONTRATO', from: 65, to: 77 },
-  { title: 'CONSTRUCCIÓN', from: 78, to: 85 },
-  { title: 'AVALÚO', from: 86, to: 88 },
-  { title: 'PROTOCOLO / ESCRITURAS', from: 89, to: 93 },
-  { title: 'CIERRE NOTARIAL / REGISTRO PÚBLICO', from: 94, to: 97 },
-  { title: 'DESEMBOLSO Y ENTREGA', from: 98, to: 99 }
+  { title: 'CARTA PROMESA DE PAGO Y CONTRATO', from: 65, to: 78 },
+  { title: 'CONSTRUCCIÓN', from: 79, to: 86 },
+  { title: 'AVALÚO', from: 87, to: 89 },
+  { title: 'PROTOCOLO / ESCRITURAS', from: 90, to: 94 },
+  { title: 'CIERRE NOTARIAL / REGISTRO PÚBLICO', from: 95, to: 98 },
+  { title: 'DESEMBOLSO Y ENTREGA', from: 99, to: 100 }
 ];
 
 function text(value) {
@@ -133,8 +134,6 @@ function buildDatoUnicoExportRow(unit, venta = {}) {
   const firePolicyDelivered = venta.polizaIncendioEntregada === undefined
     ? Boolean(venta.polizas)
     : Boolean(venta.polizaIncendioEntregada);
-  const allPoliciesDelivered = lifePolicyDelivered && firePolicyDelivered;
-
   return {
     'ETAPA': text(unit.etapa),
     'TORRE': text(unit.torre || unit.viewer3D?.tower),
@@ -204,9 +203,10 @@ function buildDatoUnicoExportRow(unit, venta = {}) {
     'FECHA DE CPP': date(venta.fechaValorCPP || venta.recibidoCPP),
     'VENCIMIENTO CPP': date(venta.fechaVencimientoCPP),
     'APERTURA CUENTA BANCO': yesNo(venta.aperturaCtaBanco),
-    'PÓLIZAS': yesNo(allPoliciesDelivered),
-    'POLIZA DE VIDA': text(venta.tipoPolizaVida || venta.polizaVida || venta.tipoPoliza),
-    'POLIZA DE INCENDIO': text(venta.tipoPolizaIncendio || venta.tipoPoliza),
+    'POLIZA VIDA': yesNo(lifePolicyDelivered),
+    'TIPO POLIZA DE VIDA': text(venta.tipoPolizaVida || venta.polizaVida || venta.tipoPoliza),
+    'POLIZA INCENDIO': yesNo(firePolicyDelivered),
+    'TIPO POLIZA DE INCENDIO': text(venta.tipoPolizaIncendio || venta.tipoPoliza),
     'FECHA DE CONTRATO': date(venta.fechaContratoCliente),
     'MONTO CONTRATO': firstNumber(venta.montoContrato, price),
     'VALOR MEJORAS': firstNumber(unit.valorMejoras, venta.valorMejoras),

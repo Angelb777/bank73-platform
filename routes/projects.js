@@ -5970,6 +5970,12 @@ router.post(
         return Number.isFinite(n) ? n : undefined;
       };
 
+      const asPercentage = (v) => {
+        const n = asNum(v);
+        if (!Number.isFinite(n)) return undefined;
+        return n > 0 && n <= 1 ? n * 100 : n;
+      };
+
       const toNum0 = (v) => {
         const n = asNum(v);
         return Number.isFinite(n) ? n : 0;
@@ -6325,11 +6331,15 @@ router.post(
         const policiesDelivered = parseBool(get(rowObj, ['POLIZAS', 'PÓLIZAS']));
         const legacyPolicyType = normalizePolicyType(get(rowObj, ['TIPO POLIZA', 'TIPO PÓLIZA']));
         const lifePolicyType = normalizePolicyType(get(rowObj, [
-          'POLIZA DE VIDA', 'PÓLIZA DE VIDA', 'POLIZA VIDA', 'PÓLIZA VIDA'
+          'TIPO POLIZA DE VIDA', 'TIPO PÓLIZA DE VIDA', 'POLIZA DE VIDA', 'PÓLIZA DE VIDA'
         ])) || legacyPolicyType;
         const firePolicyType = normalizePolicyType(get(rowObj, [
-          'POLIZA DE INCENDIO', 'PÓLIZA DE INCENDIO', 'POLIZA INCENDIO', 'PÓLIZA INCENDIO'
+          'TIPO POLIZA DE INCENDIO', 'TIPO PÓLIZA DE INCENDIO', 'POLIZA DE INCENDIO', 'PÓLIZA DE INCENDIO'
         ])) || legacyPolicyType;
+        const lifePolicyRaw = get(rowObj, ['POLIZA VIDA', 'PÓLIZA VIDA', 'POLIZA DE VIDA ENTREGADA', 'PÓLIZA DE VIDA ENTREGADA']);
+        const firePolicyRaw = get(rowObj, ['POLIZA INCENDIO', 'PÓLIZA INCENDIO', 'POLIZA DE INCENDIO ENTREGADA', 'PÓLIZA DE INCENDIO ENTREGADA']);
+        const lifePolicyDelivered = clean(lifePolicyRaw) ? parseBool(lifePolicyRaw) : policiesDelivered;
+        const firePolicyDelivered = clean(firePolicyRaw) ? parseBool(firePolicyRaw) : policiesDelivered;
 
         if (!unit) {
           unit = await Unit.create({
@@ -6360,6 +6370,12 @@ router.post(
         const captureChannel = parseCaptureChannel(get(rowObj, ['CAPTACION DE CLIENTE', 'CAPTACIÓN DE CLIENTE']));
         const ingresoRegistroRaw = get(rowObj, ['FECHA INGRESO RP', 'FECHA DE INGRESO RP', 'INGRESO REGISTRO']);
         const fechaDesembolsoExcel = asDate(get(rowObj, ['FECHA DESEMBOLSO', 'FECHA DE DESEMBOLSO', 'DESEMBOLSO']));
+        const fechaEntregaViviendaExcel = asDate(get(rowObj, [
+          'FECHA DE ENTREGA DE VIVIENDA',
+          'FECHA ENTREGA DE VIVIENDA',
+          'FECHA ENTREGA VIVIENDA',
+          'FECHA DE ENTREGA'
+        ]));
         const permisoConstruccionNumExcel = clean(get(rowObj, [
           'PERMISOS DE CONSTRUCCION N° RESOLUCION',
           'PERMISO DE CONSTRUCCION N° RESOLUCION',
@@ -6513,10 +6529,10 @@ router.post(
           aperturaCtaBanco: parseBool(get(rowObj, ['APERTURA CTA BANCO', 'APERTURA CUENTA BANCO'])),
           primeraMensual: parseBool(get(rowObj, ['1RA MENSUAL', 'PRIMERA MENSUAL'])),
           pagoMinuta: parseBool(get(rowObj, ['PAGO MINUTA'])),
-          polizas: policiesDelivered,
-          polizaVidaEntregada: policiesDelivered,
+          polizas: lifePolicyDelivered && firePolicyDelivered,
+          polizaVidaEntregada: lifePolicyDelivered,
           tipoPolizaVida: lifePolicyType,
-          polizaIncendioEntregada: policiesDelivered,
+          polizaIncendioEntregada: firePolicyDelivered,
           tipoPolizaIncendio: firePolicyType,
           tipoPoliza: legacyPolicyType || [lifePolicyType, firePolicyType].filter(Boolean).join(' / '),
           polizaVida: lifePolicyType,
@@ -6591,7 +6607,7 @@ router.post(
           enConstruccion: parseBool(get(rowObj, ['EN CONSTRUCCION', 'EN CONSTRUCCIÓN'])),
           estatusConstruccion: clean(get(rowObj, ['ESTATUS CONSTRUCCION', 'ESTATUS CONSTRUCCIÓN'])),
           faseConstruccion: clean(get(rowObj, ['FASE CONSTRUCCION', 'FASE CONSTRUCCIÓN'])),
-          avanceConstruccionPct: asNum(get(rowObj, ['PORCENTAJE AVANCE DE OBRA', 'AVANCE DE OBRA (%)', 'AVANCE CONSTRUCCION (%)'])),
+          avanceConstruccionPct: asPercentage(get(rowObj, ['PORCENTAJE AVANCE DE OBRA', 'AVANCE DE OBRA (%)', 'AVANCE CONSTRUCCION (%)'])),
 
           permisoConstruccionNum: permisoConstruccionNumExcel,
           permisoConstruccionMunicipal: parseBool(get(rowObj, ['PERMISO CONSTRUCCION MUNICIPAL', 'PERMISO CONSTRUCCIÓN MUNICIPAL'])) || !!permisoConstruccionNumExcel,
@@ -6620,9 +6636,9 @@ router.post(
           // =========================
           // Entrega / captación / observaciones
           // =========================
-          entregaCasa: clean(get(rowObj, ['ENTREGA DE CASA', 'ENTREGA CASA'])),
+          entregaCasa: fechaEntregaViviendaExcel ? 'Sí' : clean(get(rowObj, ['ENTREGA DE CASA', 'ENTREGA CASA'])),
           entregaANATI: clean(get(rowObj, ['ENTREGA ANATI'])),
-          fechaEntregaVivienda: asDate(get(rowObj, ['FECHA ENTREGA VIVIENDA', 'FECHA DE ENTREGA VIVIENDA', 'FECHA DE ENTREGA'])),
+          fechaEntregaVivienda: fechaEntregaViviendaExcel,
 
           captadoAtencionOficina: parseBool(get(rowObj, ['CAPTADO ATENCION OFICINA', 'CAPTADO ATENCIÓN OFICINA'])) || captureChannel.oficina,
           captadoMailInternet: parseBool(get(rowObj, ['CAPTADO MAIL INTERNET', 'CAPTADO MAIL / INTERNET'])) || captureChannel.internet,

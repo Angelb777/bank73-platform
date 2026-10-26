@@ -10507,7 +10507,7 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
       ? (v.cliente2Celular ? 'fv-cliente2Celular' : 'fv-cliente2TelefonoResidencial')
       : (v.celular ? 'fv-celular' : 'fv-telefonoResidencial');
     const phoneValue = second ? (v.cliente2Celular||v.cliente2TelefonoResidencial) : (v.celular||v.telefonoResidencial);
-    return `<details class="unit-side-card" ${!second || exists ? 'open' : ''}><summary><strong>Datos del cliente ${second ? '2' : '1'}</strong>${second ? '<span class="optional-chip">Si aplica</span>' : ''}<span>⌄</span></summary><div class="unit-side-grid">
+    return `<details class="unit-side-card" ${!second || exists ? 'open' : ''}><summary><strong>Datos del cliente ${second ? '2' : '1'}</strong><span>⌄</span></summary><div class="unit-side-grid">
       ${field(second?'fv-cliente2NombreCompleto':'fv-clienteNombre','Nombre completo',composedName,'text',`readonly aria-readonly="true" data-original="${safeVal(composedName)}" data-persisted="${second || !!v.clienteNombre}"`)}
       ${field(second?'fv-cliente2PrimerNombre':'fv-primerNombre','Primer nombre',second?v.cliente2PrimerNombre:v.primerNombre)}
       ${field(second?'fv-cliente2SegundoNombre':'fv-segundoNombre','Segundo nombre',second?v.cliente2SegundoNombre:v.segundoNombre)}

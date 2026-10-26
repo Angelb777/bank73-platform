@@ -96,6 +96,7 @@ test('la ficha comercial sigue el proceso de venta propuesto y mantiene sus camp
   }
   const processFicha = js.slice(js.indexOf('function renderCommercialProcessFicha'), js.indexOf('function renderTechnicalUnitFicha'));
   assert.doesNotMatch(processFicha, /fv-fechaRecibidoCheque|Fecha de cheque de desembolso/);
+  assert.doesNotMatch(processFicha, /optional-chip|Si aplica/);
 
   const openModalStart = js.indexOf('async function abrirFichaUnidad');
   const openModalEnd = js.indexOf('window.abrirFichaUnidad = abrirFichaUnidad', openModalStart);
@@ -117,8 +118,10 @@ test('el importador cubre los encabezados del Dato Único definitivo y sincroniz
     'CLIENTE 2 PERFIL',
     'TIPO DE EMPRESA2',
     'CAPTACIÓN DE CLIENTE',
-    'POLIZA DE VIDA',
-    'POLIZA DE INCENDIO',
+    'POLIZA VIDA',
+    'TIPO POLIZA DE VIDA',
+    'POLIZA INCENDIO',
+    'TIPO POLIZA DE INCENDIO',
     'FECHA VENCIMIENTO PERMISO CONSTRUCCIÓN',
     'FECHA PERMISO CONSTRUCCIÓN',
     'PORCENTAJE AVANCE DE OBRA',
@@ -133,12 +136,14 @@ test('el importador cubre los encabezados del Dato Único definitivo y sincroniz
   assert.match(route, /\.\.\.importedUnitFields/);
   assert.match(route, /tipoPolizaVida:\s*lifePolicyType/);
   assert.match(route, /tipoPolizaIncendio:\s*firePolicyType/);
-  assert.match(route, /polizaVidaEntregada:\s*policiesDelivered/);
-  assert.match(route, /polizaIncendioEntregada:\s*policiesDelivered/);
+  assert.match(route, /polizaVidaEntregada:\s*lifePolicyDelivered/);
+  assert.match(route, /polizaIncendioEntregada:\s*firePolicyDelivered/);
   assert.match(route, /solicitudAvaluo:\s*asDate/);
   assert.match(route, /fechaProtocoloFirmaCliente:\s*asDate/);
   assert.match(route, /fechaCierreEscritura:\s*asDate/);
-  assert.match(route, /fechaEntregaVivienda:\s*asDate/);
+  assert.match(route, /fechaEntregaVivienda:\s*fechaEntregaViviendaExcel/);
+  assert.match(route, /const asPercentage/);
+  assert.match(route, /avanceConstruccionPct:\s*asPercentage/);
   assert.match(unit, /etapa:\s+\{ type: String/);
   assert.match(unit, /torre:\s+\{ type: String/);
   assert.match(unit, /nivel:\s+\{ type: String/);

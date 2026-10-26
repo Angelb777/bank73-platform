@@ -11,8 +11,8 @@ const {
 const { summarizeDatoUnico } = require('../services/datoUnicoPreview');
 const exportRouter = require('../routes/export');
 
-test('exportación Dato Único conserva las 100 columnas definitivas en orden', () => {
-  assert.equal(DATO_UNICO_HEADERS.length, 100);
+test('exportación Dato Único conserva las 101 columnas definitivas en orden', () => {
+  assert.equal(DATO_UNICO_HEADERS.length, 101);
   assert.deepEqual(DATO_UNICO_HEADERS.slice(0, 10), [
     'ETAPA', 'TORRE', 'NIVEL', 'UNIDAD', 'CLIENTE', 'ESTATUS',
     'PRECIO DE VENTA', 'MONTO CPP', 'PORCENTAJE DE FINANCIAMIENTO2',
@@ -22,11 +22,11 @@ test('exportación Dato Único conserva las 100 columnas definitivas en orden', 
     'FECHA DE INSCRIPCION', 'FECHA DESEMBOLSO',
     'FECHA DE ENTREGA DE VIVIENDA', 'COMENTARIOS'
   ]);
-  assert.deepEqual(DATO_UNICO_HEADERS.slice(68, 71), [
-    'PÓLIZAS', 'POLIZA DE VIDA', 'POLIZA DE INCENDIO'
+  assert.deepEqual(DATO_UNICO_HEADERS.slice(68, 72), [
+    'POLIZA VIDA', 'TIPO POLIZA DE VIDA', 'POLIZA INCENDIO', 'TIPO POLIZA DE INCENDIO'
   ]);
-  assert.equal(DATO_UNICO_HEADERS[77], ' RESOLUCION PERMISO CONSTRUCCION ');
-  assert.deepEqual(DATO_UNICO_HEADERS.slice(84, 99), [
+  assert.equal(DATO_UNICO_HEADERS[78], ' RESOLUCION PERMISO CONSTRUCCION ');
+  assert.deepEqual(DATO_UNICO_HEADERS.slice(85, 100), [
     'CONSTRUCTOR', 'SOLICITUD AVALUO', 'FECHA AVALUO', 'EMPRESA AVALUADORA',
     'MINUTA PRÉSTAMO', 'PROTOCOLO FIRMA CLIENTE', 'PROTOCOLO FIRMA PROMOTOR',
     'FIRMA PROTOCOLO BANCO INTERINO', 'FIRMA PROTOCOLO BANCO CLIENTE',
@@ -76,9 +76,10 @@ test('exportación Dato Único combina correctamente unidad, cliente y expedient
   assert.equal(row.EMAIL, 'ana@example.com');
   assert.equal(row['CAPTACIÓN DE CLIENTE'], 'Mail / Internet');
   assert.equal(row['APERTURA CUENTA BANCO'], 'SI');
-  assert.equal(row['PÓLIZAS'], 'SI');
-  assert.equal(row['POLIZA DE VIDA'], 'Endosada');
-  assert.equal(row['POLIZA DE INCENDIO'], 'Colectiva');
+  assert.equal(row['POLIZA VIDA'], 'SI');
+  assert.equal(row['TIPO POLIZA DE VIDA'], 'Endosada');
+  assert.equal(row['POLIZA INCENDIO'], 'SI');
+  assert.equal(row['TIPO POLIZA DE INCENDIO'], 'Colectiva');
   assert.equal(row[' RESOLUCION PERMISO CONSTRUCCION '], 'PC-12');
   assert.equal(row['PORCENTAJE AVANCE DE OBRA'], 40);
   assert.equal(row['SOLICITUD AVALUO'].toISOString(), '2026-02-10T00:00:00.000Z');
@@ -109,7 +110,7 @@ test('XLSX comercial usa la hoja y fila de cabeceras del modelo definitivo', asy
   assert.equal(exportedSheet.getCell('A4').value, 'E1');
   assert.equal(exportedSheet.getCell('D4').value, '101');
   assert.ok(exportedSheet.getCell('BH4').value instanceof Date);
-  assert.equal(exportedSheet.autoFilter, 'A3:CV3');
+  assert.equal(exportedSheet.autoFilter, 'A3:CW3');
 
   const reimportPreview = summarizeDatoUnico(Buffer.from(buffer));
   assert.equal(reimportPreview.sheet, 'EXPEDIENTES-BANCO');
