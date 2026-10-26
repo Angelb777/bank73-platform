@@ -167,6 +167,10 @@ const VentaSchema = new mongoose.Schema({
   polizas:    { type: Boolean, default: false },
   tipoPoliza: { type: String, default: '' },
   polizaVida: { type: String, default: '' },
+  polizaVidaEntregada:     { type: Boolean },
+  tipoPolizaVida:          { type: String, enum: ['', 'Endosada', 'Colectiva'], default: '' },
+  polizaIncendioEntregada: { type: Boolean },
+  tipoPolizaIncendio:      { type: String, enum: ['', 'Endosada', 'Colectiva'], default: '' },
   abonoAlte:  { type: Number, default: 0 },
 
   // =========================================================

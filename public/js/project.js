@@ -10497,6 +10497,7 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
   const sexOpts = [{v:'',l:'—'},{v:'Masculino',l:'Masculino'},{v:'Femenino',l:'Femenino'}];
   const civilOpts = [{v:'',l:'—'},{v:'Soltero',l:'Soltero/a'},{v:'Casado',l:'Casado/a'}];
   const minuteOpts = [{v:'',l:'—'},{v:'Solicitada',l:'Solicitada'},{v:'Lista',l:'Firmada / lista'},{v:'No aplica',l:'No aplica'}];
+  const policyTypeOpts = [{v:'',l:'—'},{v:'Endosada',l:'Endosada'},{v:'Colectiva',l:'Colectiva'}];
   const client = second => {
     const composedName = second
       ? [v.cliente2PrimerNombre,v.cliente2SegundoNombre,v.cliente2PrimerApellido,v.cliente2SegundoApellido].filter(Boolean).join(' ')
@@ -10523,9 +10524,15 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
       ${field(second?'fv-cliente2AntiguedadLaboral':'fv-antiguedadLaboral','Antigüedad laboral',second?v.cliente2AntiguedadLaboral:v.antiguedadLaboral)}
     </div></details>`;
   };
+  const legacyPoliciesDelivered = Boolean(v.polizas);
+  const lifePolicyDelivered = v.polizaVidaEntregada === undefined ? legacyPoliciesDelivered : Boolean(v.polizaVidaEntregada);
+  const firePolicyDelivered = v.polizaIncendioEntregada === undefined ? legacyPoliciesDelivered : Boolean(v.polizaIncendioEntregada);
+  const lifePolicyType = v.tipoPolizaVida || v.tipoPoliza || '';
+  const firePolicyType = v.tipoPolizaIncendio || v.tipoPoliza || '';
+  const allPoliciesDelivered = lifePolicyDelivered && firePolicyDelivered;
   const stageValues = [
     [v.fechaReserva,v.fechaProforma,v.fechaProbableEntrega,v.cesionAFavorDe,v.estatusCPP],
-    [v.numCPP,v.fechaValorCPP,v.fechaVencimientoCPP,v.aperturaCtaBanco,v.polizas,v.tipoPoliza,v.fechaContratoCliente,v.montoContrato,u.valorMejoras,u.valorTerreno,v.mLiberacion,v.mSegregacion],
+    [v.numCPP,v.fechaValorCPP,v.fechaVencimientoCPP,v.aperturaCtaBanco,lifePolicyDelivered,lifePolicyType,firePolicyDelivered,firePolicyType,v.fechaContratoCliente,v.montoContrato,u.valorMejoras,u.valorTerreno,v.mLiberacion,v.mSegregacion],
     [v.solicitudAvaluo,v.fechaAvaluo,v.empresaAvaluadora],
     [v.mPrestamo,v.fechaFirma,v.protocoloFirmaCliente,v.protocoloFirmaPromotora,v.protocoloFirmaRLBancoInter,v.firmaProtocoloBancoCliente],
     [v.fechaPagoImpuesto,v.fechaIngresoRP,v.fechaInscripcion],
@@ -10538,7 +10545,7 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
   const reservationAge = reservationAgeInfo(u, v);
   const stages = [
     stage(1,'Reserva',stageValues[0],`${date('fv-fechaReserva','Fecha de reserva',v.fechaReserva)}${date('fv-fechaProforma','Fecha proforma',v.fechaProforma)}${date('fv-fechaProbableEntrega','Fecha probable de entrega',v.fechaProbableEntrega)}${field('fv-cesionAFavorDe','Cesión a favor de',v.cesionAFavorDe)}${select('fv-estatusCPP','Estatus de CPP',[{v:'',l:'—'},{v:'Documentación entregada',l:'Documentación entregada'},{v:'En comité',l:'En comité'},{v:'Aprobado',l:'Aprobado'},{v:'CPP recibida',l:'CPP recibida'}],v.estatusCPP)}`,stageStates[0]),
-    stage(2,'Carta promesa de pago y contrato',stageValues[1],`<h4>Carta promesa de pago</h4>${field('fv-numCPP','No. de CPP',v.numCPP)}${date('fv-fechaValorCPP','Fecha de CPP',v.fechaValorCPP)}${date('fv-fechaVencimientoCPP','Vencimiento de CPP',v.fechaVencimientoCPP)}${check('fv-aperturaCtaBanco','Apertura de cuenta en banco',v.aperturaCtaBanco)}${check('fv-polizas','Pólizas entregadas',v.polizas)}${field('fv-tipoPoliza','Tipo de póliza',v.tipoPoliza)}<h4>Contrato</h4>${date('fv-fechaContratoCliente','Fecha de contrato',v.fechaContratoCliente)}${number('fv-montoContrato','Monto de contrato',v.montoContrato)}${number('fv-valorMejoras','Valor mejoras',u.valorMejoras||v.valorMejoras)}${number('fv-valorTerreno','Valor terreno',u.valorTerreno||v.valorTerreno)}<h4>Minutas</h4>${select('fv-mLiberacion','Minuta de liberación / desafectación',minuteOpts,v.mLiberacion)}${select('fv-mSegregacion','Minuta de segregación / venta',minuteOpts,v.mSegregacion)}`,stageStates[1]),
+    stage(2,'Carta promesa de pago y contrato',stageValues[1],`<h4>Carta promesa de pago</h4>${field('fv-numCPP','No. de CPP',v.numCPP)}${date('fv-fechaValorCPP','Fecha de CPP',v.fechaValorCPP)}${date('fv-fechaVencimientoCPP','Vencimiento de CPP',v.fechaVencimientoCPP)}${check('fv-aperturaCtaBanco','Apertura de cuenta en banco',v.aperturaCtaBanco)}<h4>Pólizas</h4>${check('fv-polizaVidaEntregada','Póliza de vida entregada',lifePolicyDelivered)}${select('fv-tipoPolizaVida','Modalidad de póliza de vida',policyTypeOpts,lifePolicyType)}${check('fv-polizaIncendioEntregada','Póliza de incendio entregada',firePolicyDelivered)}${select('fv-tipoPolizaIncendio','Modalidad de póliza de incendio',policyTypeOpts,firePolicyType)}<div class="unit-process-field is-wide"><label class="unit-process-check unit-policy-summary" for="fv-polizas"><input id="fv-polizas" type="checkbox" ${allPoliciesDelivered ? 'checked' : ''} disabled aria-readonly="true"><span>Pólizas entregadas <small>Se marca automáticamente al recibir ambas</small></span></label></div><h4>Contrato</h4>${date('fv-fechaContratoCliente','Fecha de contrato',v.fechaContratoCliente)}${number('fv-montoContrato','Monto de contrato',v.montoContrato)}${number('fv-valorMejoras','Valor mejoras',u.valorMejoras||v.valorMejoras)}${number('fv-valorTerreno','Valor terreno',u.valorTerreno||v.valorTerreno)}<h4>Minutas</h4>${select('fv-mLiberacion','Minuta de liberación / desafectación',minuteOpts,v.mLiberacion)}${select('fv-mSegregacion','Minuta de segregación / venta',minuteOpts,v.mSegregacion)}`,stageStates[1]),
     stage(3,'Avalúo',stageValues[2],`${date('fv-solicitudAvaluo','Solicitud avalúo (fecha)',v.solicitudAvaluo)}${date('fv-fechaAvaluo','Avalúo (fecha)',v.fechaAvaluo)}${field('fv-empresaAvaluadora','Empresa avaluadora',v.empresaAvaluadora)}`,stageStates[2]),
     stage(4,'Protocolo / Escrituras',stageValues[3],`${select('fv-mPrestamo','Minuta préstamo / hipoteca',minuteOpts,v.mPrestamo)}${date('fv-fechaFirma','Fecha de escritura',v.fechaFirma)}${check('fv-protocoloFirmaCliente','Firmado por cliente',v.protocoloFirmaCliente)}${check('fv-protocoloFirmaPromotora','Firmado por promotor',v.protocoloFirmaPromotora)}${check('fv-protocoloFirmaRLBancoInter','Firmado por banco interino',v.protocoloFirmaRLBancoInter)}${check('fv-firmaProtocoloBancoCliente','Firmado por banco del cliente',v.firmaProtocoloBancoCliente)}`,stageStates[3]),
     stage(5,'Cierre notarial / Registro Público',stageValues[4],`${date('fv-fechaPagoImpuesto','Fecha de pago de impuestos',v.fechaPagoImpuesto)}${date('fv-fechaIngresoRP','Ingreso al Registro Público',v.fechaIngresoRP)}${date('fv-fechaInscripcion','Fecha de inscripción',v.fechaInscripcion)}`,stageStates[4]),
@@ -10650,12 +10657,21 @@ function renderTechnicalUnitFicha(u = {}, v = {}, unitId = '') {
 
 const COMMERCIAL_STAGE_FIELD_IDS = [
   ['fv-fechaReserva','fv-fechaProforma','fv-fechaProbableEntrega','fv-cesionAFavorDe','fv-estatusCPP'],
-  ['fv-numCPP','fv-fechaValorCPP','fv-fechaVencimientoCPP','fv-aperturaCtaBanco','fv-polizas','fv-tipoPoliza','fv-fechaContratoCliente','fv-montoContrato','fv-valorMejoras','fv-valorTerreno','fv-mLiberacion','fv-mSegregacion'],
+  ['fv-numCPP','fv-fechaValorCPP','fv-fechaVencimientoCPP','fv-aperturaCtaBanco','fv-polizaVidaEntregada','fv-tipoPolizaVida','fv-polizaIncendioEntregada','fv-tipoPolizaIncendio','fv-fechaContratoCliente','fv-montoContrato','fv-valorMejoras','fv-valorTerreno','fv-mLiberacion','fv-mSegregacion'],
   ['fv-solicitudAvaluo','fv-fechaAvaluo','fv-empresaAvaluadora'],
   ['fv-mPrestamo','fv-fechaFirma','fv-protocoloFirmaCliente','fv-protocoloFirmaPromotora','fv-protocoloFirmaRLBancoInter','fv-firmaProtocoloBancoCliente'],
   ['fv-fechaPagoImpuesto','fv-fechaIngresoRP','fv-fechaInscripcion'],
   ['fv-fechaDesembolso','fv-fechaRecibidoCheque','fv-fechaEntregaVivienda']
 ];
+
+function refreshPolicyDeliverySummary() {
+  const life = document.getElementById('fv-polizaVidaEntregada');
+  const fire = document.getElementById('fv-polizaIncendioEntregada');
+  const summary = document.getElementById('fv-polizas');
+  if (!life || !fire || !summary) return;
+  summary.checked = life.checked && fire.checked;
+  summary.indeterminate = life.checked !== fire.checked;
+}
 
 function refreshCommercialProcessProgress() {
   const cards = [...document.querySelectorAll('#fichaUnidadModal .unit-process-stage[data-stage-index]')];
@@ -13749,6 +13765,9 @@ document.getElementById('btnFichaEstadoAutomatico')?.addEventListener('click', (
 const commercialProcessView = document.getElementById('view-ficha');
 if (commercialProcessView && fichaMode === 'commercial') {
   const refreshCommercialLiveUi = event => {
+    if (['fv-polizaVidaEntregada','fv-polizaIncendioEntregada'].includes(event.target.id)) {
+      refreshPolicyDeliverySummary();
+    }
     if (event.target.closest?.('.unit-process-stage')) refreshCommercialProcessProgress();
     if (event.target.id === 'fv-fechaReserva') refreshReservationAgeNotice();
     if (['fv-estatusCPP','fv-fechaValorCPP','fv-fechaVencimientoCPP','fv-precioVenta','fv-montoFinanciamientoCPP'].includes(event.target.id)) {
@@ -13766,6 +13785,7 @@ if (commercialProcessView && fichaMode === 'commercial') {
   };
   commercialProcessView.addEventListener('input', refreshCommercialLiveUi);
   commercialProcessView.addEventListener('change', refreshCommercialLiveUi);
+  refreshPolicyDeliverySummary();
   refreshCommercialProcessProgress();
   refreshReservationAgeNotice();
   refreshCommercialSummaryKpis({ normalizeCpp:true });
@@ -14141,9 +14161,13 @@ const uBody = {
         vVal('fv-recibidoCPP')
       ),
 
-      polizas: vChk('fv-polizas'),
-      tipoPoliza: vVal('fv-tipoPoliza'),
-      polizaVida: vVal('fv-polizaVida'),
+      polizaVidaEntregada: vChk('fv-polizaVidaEntregada'),
+      tipoPolizaVida: vVal('fv-tipoPolizaVida'),
+      polizaIncendioEntregada: vChk('fv-polizaIncendioEntregada'),
+      tipoPolizaIncendio: vVal('fv-tipoPolizaIncendio'),
+      polizas: vChk('fv-polizaVidaEntregada') && vChk('fv-polizaIncendioEntregada'),
+      tipoPoliza: [vVal('fv-tipoPolizaVida'), vVal('fv-tipoPolizaIncendio')].filter(Boolean).join(' / '),
+      polizaVida: vVal('fv-tipoPolizaVida'),
       abonoAlte: vNum('fv-abonoAlte'),
 
       // =====================================================

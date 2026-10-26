@@ -55,7 +55,9 @@ const ALLOWED_FIELDS = new Set([
   'fechaValorCPP', 'fechaVencimientoCPP', 'vencimientoCPPBnMivi',
   'fechaEntregaProformaBanco', 'fechaProforma',
   'aperturaCtaBanco', 'primeraMensual', 'pagoMinuta', 'tiempoAprobacionDias',
-  'polizas', 'tipoPoliza', 'polizaVida', 'abonoAlte',
+  'polizas', 'tipoPoliza', 'polizaVida',
+  'polizaVidaEntregada', 'tipoPolizaVida',
+  'polizaIncendioEntregada', 'tipoPolizaIncendio', 'abonoAlte',
 
   // contrato / protocolo / notaría / RP
   'fechaContratoCliente', 'estatusContrato', 'montoContrato', 'pagare',
@@ -122,6 +124,9 @@ function pickAllowed(obj = {}) {
   const out = {};
   for (const k in obj) {
     if (ALLOWED_FIELDS.has(k)) out[k] = obj[k];
+  }
+  if (Object.hasOwn(out, 'polizaVidaEntregada') && Object.hasOwn(out, 'polizaIncendioEntregada')) {
+    out.polizas = out.polizaVidaEntregada === true && out.polizaIncendioEntregada === true;
   }
   return out;
 }

@@ -108,7 +108,7 @@ function styleDatoUnicoWorksheet(worksheet, rows) {
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
     cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
   }
-  const commentsGroupCell = worksheet.getCell(2, 97);
+  const commentsGroupCell = worksheet.getCell(2, DATO_UNICO_HEADERS.length);
   commentsGroupCell.value = 'OBSERVACIONES';
   commentsGroupCell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
   commentsGroupCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };

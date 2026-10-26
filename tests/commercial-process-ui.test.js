@@ -47,8 +47,17 @@ test('la ficha comercial sigue el proceso de venta propuesto y mantiene sus camp
   assert.match(css, /\.unit-modal-actions \{[\s\S]*?z-index: 100;/);
   assert.match(css, /grid-template-columns: minmax\(0, 1fr\) auto;/);
   assert.match(css, /@media \(max-width:1450px\)/);
-  assert.match(css, /\.unit-process-layout \{ grid-template-columns:minmax\(260px,340px\) minmax\(0,1fr\); \}/);
+  assert.match(css, /\.unit-process-layout \{ grid-template-columns:minmax\(180px,260px\) minmax\(420px,1fr\) minmax\(250px,290px\);/);
   assert.match(css, /\.modal-body \{[\s\S]*?overflow-x: hidden;/);
+  for (const fieldId of ['fv-polizaVidaEntregada','fv-tipoPolizaVida','fv-polizaIncendioEntregada','fv-tipoPolizaIncendio']) {
+    assert.match(js, new RegExp(fieldId));
+  }
+  assert.match(js, /function refreshPolicyDeliverySummary/);
+  assert.match(js, /summary\.checked = life\.checked && fire\.checked/);
+  assert.match(js, /Pólizas entregadas <small>Se marca automáticamente al recibir ambas/);
+  assert.match(read('models/Venta.js'), /polizaVidaEntregada:\s+\{ type: Boolean \}/);
+  assert.match(read('models/Venta.js'), /tipoPolizaIncendio:\s+\{ type: String, enum: \['', 'Endosada', 'Colectiva'\]/);
+  assert.match(read('routes/ventas.js'), /out\.polizas = out\.polizaVidaEntregada === true && out\.polizaIncendioEntregada === true/);
   assert.match(js, /id="fu-modeloSelect"/);
   assert.match(js, /applyProjectModelToFicha/);
   assert.match(js, /applyProjectModelToFicha\(fichaModelSelect\.value, \{ onlyMissing:true \}\)/);
@@ -98,6 +107,8 @@ test('el importador cubre los encabezados del Dato Único definitivo y sincroniz
     'CLIENTE 2 PERFIL',
     'TIPO DE EMPRESA2',
     'CAPTACIÓN DE CLIENTE',
+    'POLIZA DE VIDA',
+    'POLIZA DE INCENDIO',
     'FECHA VENCIMIENTO PERMISO CONSTRUCCIÓN',
     'PROTOCOLO FIRMA PROMOTOR',
     'FIRMA PROTOCOLO BANCO INTERINO',
@@ -107,6 +118,10 @@ test('el importador cubre los encabezados del Dato Único definitivo y sincroniz
     assert.match(route, new RegExp(header));
   }
   assert.match(route, /\.\.\.importedUnitFields/);
+  assert.match(route, /tipoPolizaVida:\s*lifePolicyType/);
+  assert.match(route, /tipoPolizaIncendio:\s*firePolicyType/);
+  assert.match(route, /polizaVidaEntregada:\s*policiesDelivered/);
+  assert.match(route, /polizaIncendioEntregada:\s*policiesDelivered/);
   assert.match(unit, /etapa:\s+\{ type: String/);
   assert.match(unit, /torre:\s+\{ type: String/);
   assert.match(unit, /nivel:\s+\{ type: String/);

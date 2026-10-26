@@ -5983,6 +5983,13 @@ router.post(
         return false;
       };
 
+      const normalizePolicyType = (v) => {
+        const normalized = normTxt(v);
+        if (normalized.includes('ENDOS')) return 'Endosada';
+        if (normalized.includes('COLECT')) return 'Colectiva';
+        return '';
+      };
+
       const parseCaptureChannel = (v) => {
         const t = normTxt(v);
         return {
@@ -6315,6 +6322,15 @@ router.post(
           asNum(get(rowObj, ['TIEMPO DE APROBACION', 'TIEMPO APROBACION'])) ??
           calcDays(entregaExpedienteBanco, recibidoCPP);
 
+        const policiesDelivered = parseBool(get(rowObj, ['POLIZAS', 'PÓLIZAS']));
+        const legacyPolicyType = normalizePolicyType(get(rowObj, ['TIPO POLIZA', 'TIPO PÓLIZA']));
+        const lifePolicyType = normalizePolicyType(get(rowObj, [
+          'POLIZA DE VIDA', 'PÓLIZA DE VIDA', 'POLIZA VIDA', 'PÓLIZA VIDA'
+        ])) || legacyPolicyType;
+        const firePolicyType = normalizePolicyType(get(rowObj, [
+          'POLIZA DE INCENDIO', 'PÓLIZA DE INCENDIO', 'POLIZA INCENDIO', 'PÓLIZA INCENDIO'
+        ])) || legacyPolicyType;
+
         if (!unit) {
           unit = await Unit.create({
             tenantKey,
@@ -6497,9 +6513,13 @@ router.post(
           aperturaCtaBanco: parseBool(get(rowObj, ['APERTURA CTA BANCO', 'APERTURA CUENTA BANCO'])),
           primeraMensual: parseBool(get(rowObj, ['1RA MENSUAL', 'PRIMERA MENSUAL'])),
           pagoMinuta: parseBool(get(rowObj, ['PAGO MINUTA'])),
-          polizas: parseBool(get(rowObj, ['POLIZAS', 'PÓLIZAS'])),
-          tipoPoliza: clean(get(rowObj, ['TIPO POLIZA', 'TIPO PÓLIZA'])),
-          polizaVida: clean(get(rowObj, ['POLIZA VIDA', 'PÓLIZA VIDA', 'POLIZA DE VIDA'])),
+          polizas: policiesDelivered,
+          polizaVidaEntregada: policiesDelivered,
+          tipoPolizaVida: lifePolicyType,
+          polizaIncendioEntregada: policiesDelivered,
+          tipoPolizaIncendio: firePolicyType,
+          tipoPoliza: legacyPolicyType || [lifePolicyType, firePolicyType].filter(Boolean).join(' / '),
+          polizaVida: lifePolicyType,
           abonoAlte: asNum(get(rowObj, ['ABONO ALTE'])),
 
           valor: valorLegacyFinal,
