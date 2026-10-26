@@ -113,5 +113,6 @@ test('Técnico conserva contraste diurno y una cabecera sin solapes', () => {
   assert.match(js, /classList\.toggle\('is-technical', fichaMode === 'technical'\)/);
   assert.match(css, /body\.light-theme #tab-tecnico \.commercial-folder-head h3/);
   assert.match(css, /#fichaUnidadModal\.is-technical \.unit-title-project-name \{ grid-column:1\/-1; grid-row:1; \}/);
+  assert.match(css, /#fichaUnidadModal\.is-technical \.unit-title-identity \{ grid-column:1; grid-row:2; justify-self:start; width:max-content; \}/);
   assert.match(css, /#fichaUnidadModal\.is-technical \.unit-title-status \{ grid-column:2; grid-row:2;/);
 });
