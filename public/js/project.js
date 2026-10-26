@@ -10507,7 +10507,11 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
       : (v.celular ? 'fv-celular' : 'fv-telefonoResidencial');
     const phoneValue = second ? (v.cliente2Celular||v.cliente2TelefonoResidencial) : (v.celular||v.telefonoResidencial);
     return `<details class="unit-side-card" ${!second || exists ? 'open' : ''}><summary><strong>Datos del cliente ${second ? '2' : '1'}</strong>${second ? '<span class="optional-chip">Si aplica</span>' : ''}<span>⌄</span></summary><div class="unit-side-grid">
-      ${field(second?'fv-cliente2NombreCompleto':'fv-clienteNombre','Nombre completo',composedName,'text',`data-original="${safeVal(composedName)}" data-persisted="${second || !!v.clienteNombre}"`)}
+      ${field(second?'fv-cliente2NombreCompleto':'fv-clienteNombre','Nombre completo',composedName,'text',`readonly aria-readonly="true" data-original="${safeVal(composedName)}" data-persisted="${second || !!v.clienteNombre}"`)}
+      ${field(second?'fv-cliente2PrimerNombre':'fv-primerNombre','Primer nombre',second?v.cliente2PrimerNombre:v.primerNombre)}
+      ${field(second?'fv-cliente2SegundoNombre':'fv-segundoNombre','Segundo nombre',second?v.cliente2SegundoNombre:v.segundoNombre)}
+      ${field(second?'fv-cliente2PrimerApellido':'fv-primerApellido','Apellido paterno',second?v.cliente2PrimerApellido:v.primerApellido)}
+      ${field(second?'fv-cliente2SegundoApellido':'fv-segundoApellido','Apellido materno',second?v.cliente2SegundoApellido:v.segundoApellido)}
       ${field(second?'fv-cliente2ApellidoCasada':'fv-apellidoCasada','Apellido de casada',second?v.cliente2ApellidoCasada:v.apellidoCasada)}${field(second?'fv-cliente2Cedula':'fv-cedula','Cédula',second?v.cliente2Cedula:v.cedula)}
       ${select(second?'fv-cliente2Sexo':'fv-sexo','Sexo',sexOpts,second?v.cliente2Sexo:v.sexo)}${select(second?'fv-cliente2EstadoCivil':'fv-estadoCivil','Estado civil',civilOpts,second?v.cliente2EstadoCivil:v.estadoCivil)}
       ${field(phoneId,'Teléfono',phoneValue)}${field(second?'fv-cliente2Correo':'fv-correo','Email',second?v.cliente2Correo:v.correo)}
@@ -10553,14 +10557,14 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
   return `<div class="unit-process-shell unit-status-${statusKey}">
   <div class="unit-process-summary">
     <section class="unit-summary-card is-money"><span>Precio de venta</span>${number('fv-precioVenta','',price)}<small>Dato comercial único</small></section>
-    <section class="unit-summary-card is-money"><span>Monto CPP</span>${number('fv-montoFinanciamientoCPP','',cpp)}<small>${financingPct.toFixed(1)} % de financiación</small></section>
+    <section class="unit-summary-card is-money"><span>Monto CPP</span>${number('fv-montoFinanciamientoCPP','',cpp)}<small id="fichaFinancingPctValue">${financingPct.toFixed(1)} % de financiación</small></section>
     <section class="unit-summary-card"><span>Banco del cliente</span><div class="bank-select-field">${window.BankSelect?.bankSelectHtml?.('fv-banco',v.banco||'')||`<input id="fv-banco" type="text" value="${safeVal(v.banco||'')}">`}</div><small>Entidad que financia</small></section>
-    <section class="unit-summary-card"><span>Estatus de CPP</span><strong class="unit-summary-status ${cppTone}">${safeVal(cppStatus || 'Sin definir')}</strong><small>${v.fechaVencimientoCPP ? `Vence el ${safeVal(dateValue(v.fechaVencimientoCPP).split('-').reverse().join('/'))}` : 'Sin vencimiento registrado'}</small></section>
+    <section class="unit-summary-card"><span>Estatus de CPP</span><strong id="fichaCppStatusValue" class="unit-summary-status ${cppTone}">${safeVal(cppStatus || 'Sin definir')}</strong><small id="fichaCppExpiryValue">${v.fechaVencimientoCPP ? `Vence el ${safeVal(dateValue(v.fechaVencimientoCPP).split('-').reverse().join('/'))}` : 'Sin vencimiento registrado'}</small></section>
     <input id="fv-abonoInicial" type="hidden" value="${safeVal(v.abonoInicial || Math.max(price-cpp,0))}">
     <input id="fv-porcentajeFinanciamiento" type="hidden" value="${safeVal(financingPct)}">
   </div><div class="unit-process-layout">
     <aside class="unit-process-left"><details class="unit-side-card" open><summary><strong>Datos de la unidad</strong><span>⌄</span></summary><div class="unit-side-grid">
-      ${field('fu-etapa','Etapa',u.etapa)}${field('fu-torre','Torre',u.torre)}${field('fu-nivel','Nivel',u.nivel)}${field('fu-modelo','Modelo de vivienda',u.modelo)}${number('fu-m2','Área de terreno',u.m2)}${field('fv-numeroFinca','Número de finca',u.numeroFinca)}${field('fv-codigoUbicacion','Código de ubicación',u.codigoUbicacion)}${field('fv-calle','Calle',u.calle)}${number('fv-areaAbierta','Área abierta',u.areaAbierta)}${number('fv-areaCerrada','Área cerrada',u.areaCerrada)}${number('fv-areaTotalConstruccion','Área total de construcción',Number(u.areaTotalConstruccion||0)||Number(u.areaAbierta||0)+Number(u.areaCerrada||0),'readonly aria-readonly="true"')}${number('fv-recamaras','Recámaras',u.recamaras)}${number('fv-banos','Baños',u.banos)}<input id="fu-costo" type="hidden" value="${safeVal(u.costoUnidad||0)}">
+      ${field('fu-etapa','Etapa',u.etapa)}${field('fu-torre','Torre',u.torre)}${field('fu-nivel','Nivel',u.nivel)}<div class="unit-process-field"><label for="fu-modeloSelect">Modelo de vivienda</label><select id="fu-modeloSelect">${projectModelOptions(u.modelId||u.modelo||'',{includeEmpty:true})}</select><input id="fu-modelo" type="hidden" value="${safeVal(u.modelo||'')}"></div>${number('fu-m2','Área de terreno',u.m2)}${field('fv-numeroFinca','Número de finca',u.numeroFinca)}${field('fv-codigoUbicacion','Código de ubicación',u.codigoUbicacion)}${field('fv-calle','Calle',u.calle)}${number('fv-areaAbierta','Área abierta',u.areaAbierta)}${number('fv-areaCerrada','Área cerrada',u.areaCerrada)}${number('fv-areaTotalConstruccion','Área total de construcción',Number(u.areaTotalConstruccion||0)||Number(u.areaAbierta||0)+Number(u.areaCerrada||0),'readonly aria-readonly="true"')}${number('fv-recamaras','Recámaras',u.recamaras)}${number('fv-banos','Baños',u.banos)}<input id="fu-costo" type="hidden" value="${safeVal(u.costoUnidad||0)}">
     </div></details><details class="unit-side-card construction-card" open><summary><strong>Construcción de la vivienda</strong><span class="parallel-chip">En paralelo</span><span>⌄</span></summary><div class="unit-side-grid">
       ${number('fv-avanceConstruccionPct','Avance de obra (%)',v.avanceConstruccionPct||0)}${select('fv-estatusConstruccion','Fase de obra',[{v:'',l:'Pendiente de construir'},{v:'Obra gris',l:'Obra gris'},{v:'Acabados',l:'Acabados'},{v:'Terminada',l:'Terminada'}],v.estatusConstruccion)}${check('fv-permisoConstruccionMunicipal','Permiso de construcción',v.permisoConstruccionMunicipal)}${field('fv-permisoConstruccionNum','Resolución construcción',v.permisoConstruccionNum)}${date('fv-permisoConstruccionVencimiento','Vencimiento construcción',v.permisoConstruccionVencimiento)}${check('fv-permisoOcupacion','Permiso de ocupación',v.permisoOcupacion)}${field('fv-permisoOcupacionNum','Resolución ocupación',v.permisoOcupacionNum)}${date('fv-fechaEmisionPermisoOcupacion','Fecha permiso ocupación',v.fechaEmisionPermisoOcupacion)}${field('fv-constructora','Constructora / contratista',v.constructora)}
     </div></details></aside>
@@ -10602,6 +10606,79 @@ function refreshCommercialProcessProgress() {
   const progress = document.querySelector('#fichaUnidadModal .unit-process-progress i');
   if (headingCount) headingCount.textContent = `${complete} de 6 etapas completas`;
   if (progress) progress.style.width = `${Math.round(complete / 6 * 100)}%`;
+}
+
+function openFichaCommercialState() {
+  const value = id => String(document.getElementById(id)?.value || '').trim();
+  if (value('fv-fechaInscripcion')) return { estado:'escriturado_traspasado', motivo:'Inscripción en Registro Público registrada' };
+  if (value('fv-solicitudAvaluo')) return { estado:'tramite_legal_activado', motivo:'Solicitud de avalúo registrada' };
+  if (value('fv-fechaValorCPP') || /cpp\s*recibid/i.test(value('fv-estatusCPP'))) {
+    return { estado:'con_cpp', motivo:'CPP recibida o fecha de CPP registrada' };
+  }
+  if (value('fv-fechaReserva')) return { estado:'reservado', motivo:'Fecha de reserva registrada' };
+  if (parsePanamaNumber(value('fv-avanceConstruccionPct')) > 0) return { estado:'inventario', motivo:'Construcción iniciada' };
+  return { estado:'disponible', motivo:'Sin construcción ni hitos comerciales; permanece como lote libre' };
+}
+
+function refreshOpenFichaCommercialStatePreview() {
+  if (fichaMode !== 'commercial') return;
+  const suggestion = openFichaCommercialState();
+  const stateSelect = document.getElementById('fu-estado');
+  const ranks = ['disponible','inventario','reservado','con_cpp','tramite_legal_activado','escriturado_traspasado'];
+  const currentRank = ranks.indexOf(normalizeUnitEstadoFrontend(stateSelect?.value));
+  const suggestionRank = ranks.indexOf(suggestion.estado);
+  const canAdvanceManual = fichaEstadoModo !== 'automatico' && suggestionRank > currentRank;
+  if (fichaEstadoModo === 'automatico' || canAdvanceManual) {
+    const nextState = fichaEstadoModo === 'automatico' &&
+      !['disponible','inventario'].includes(suggestion.estado) &&
+      currentRank > suggestionRank
+      ? normalizeUnitEstadoFrontend(stateSelect?.value)
+      : suggestion.estado;
+    fichaEstadoModo = 'automatico';
+    if (stateSelect) stateSelect.value = nextState;
+    applyOpenFichaStateVisual({
+      estado:nextState,
+      estadoModo:'automatico',
+      estadoAutomaticoSugerido:suggestion.estado,
+      estadoAutomaticoMotivo:suggestion.motivo
+    });
+  }
+}
+
+function refreshCommercialSummaryKpis({ normalizeCpp = false } = {}) {
+  const cppDate = String(document.getElementById('fv-fechaValorCPP')?.value || '').trim();
+  const cppSelect = document.getElementById('fv-estatusCPP');
+  if (normalizeCpp && cppDate && cppSelect && cppSelect.value !== 'CPP recibida') {
+    cppSelect.value = 'CPP recibida';
+  }
+  const cppStatus = String(cppSelect?.value || '').trim();
+  const statusValue = document.getElementById('fichaCppStatusValue');
+  if (statusValue) {
+    statusValue.textContent = cppStatus || 'Sin definir';
+    statusValue.classList.remove('is-positive','is-neutral','is-danger');
+    statusValue.classList.add(/cpp\s*recibid/i.test(cppStatus)
+      ? 'is-positive'
+      : /venc|rechaz/i.test(cppStatus) ? 'is-danger' : 'is-neutral');
+  }
+  const expiry = String(document.getElementById('fv-fechaVencimientoCPP')?.value || '').trim();
+  const expiryValue = document.getElementById('fichaCppExpiryValue');
+  if (expiryValue) expiryValue.textContent = expiry
+    ? `Vence el ${expiry.split('-').reverse().join('/')}`
+    : 'Sin vencimiento registrado';
+  const price = parsePanamaNumber(document.getElementById('fv-precioVenta')?.value || 0);
+  const cpp = parsePanamaNumber(document.getElementById('fv-montoFinanciamientoCPP')?.value || 0);
+  const pctValue = document.getElementById('fichaFinancingPctValue');
+  if (pctValue) pctValue.textContent = `${price > 0 ? ((cpp / price) * 100).toFixed(1) : '0.0'} % de financiación`;
+}
+
+function refreshStructuredClientName(second = false) {
+  const prefix = second ? 'fv-cliente2' : 'fv-';
+  const ids = second
+    ? ['PrimerNombre','SegundoNombre','PrimerApellido','SegundoApellido'].map(part => `${prefix}${part}`)
+    : ['primerNombre','segundoNombre','primerApellido','segundoApellido'].map(part => `${prefix}${part}`);
+  const name = ids.map(id => String(document.getElementById(id)?.value || '').trim()).filter(Boolean).join(' ');
+  const summary = document.getElementById(second ? 'fv-cliente2NombreCompleto' : 'fv-clienteNombre');
+  if (summary && name) summary.value = name;
 }
 
 function refreshReservationAgeNotice() {
@@ -10675,6 +10752,7 @@ function refreshFinanciamientoAuto(changedField = '') {
     montoEl.value = formatPanamaNumber(0);
     pctEl.value = formatPanamaNumber(0);
     if (abonoEl) abonoEl.value = formatPanamaNumber(0);
+    refreshCommercialSummaryKpis();
     return;
   }
 
@@ -10711,6 +10789,7 @@ function refreshFinanciamientoAuto(changedField = '') {
   montoEl.value = formatPanamaNumber(monto);
   pctEl.value = formatPanamaNumber(pct);
   if (abonoEl) abonoEl.value = formatPanamaNumber(abono);
+  refreshCommercialSummaryKpis();
 }
 
 function refreshAreaTotalConstruccion() {
@@ -11266,16 +11345,17 @@ function applyOpenFichaStateVisual(unitState = {}) {
 
   function modelToUnitDefaults(model) {
     if (!model) return {};
+    const decimal = value => parseDecimalMeasureNumber(value);
     return {
       modelId: model._id || '',
       modelo: model.name || '',
-      m2: Number(model.openAreaM2 || 0) + Number(model.closedAreaM2 || 0),
-      precioVenta: Number(model.price || 0),
-      costoUnidad: Number(model.cost || 0),
-      areaAbierta: Number(model.openAreaM2 || 0),
-      areaCerrada: Number(model.closedAreaM2 || 0),
-      recamaras: Number(model.bedrooms || 0),
-      banos: Number(model.bathrooms || 0)
+      m2: decimal(model.openAreaM2) + decimal(model.closedAreaM2),
+      precioVenta: parsePanamaNumber(model.price),
+      costoUnidad: parsePanamaNumber(model.cost),
+      areaAbierta: decimal(model.openAreaM2),
+      areaCerrada: decimal(model.closedAreaM2),
+      recamaras: decimal(model.bedrooms),
+      banos: decimal(model.bathrooms)
     };
   }
 
@@ -11299,16 +11379,17 @@ function applyOpenFichaStateVisual(unitState = {}) {
     if (loc && !loc.value) loc.value = state?.project?.location || state?.project?.address || '';
   }
 
-  function applyProjectModelToFicha(modelValue) {
+  function applyProjectModelToFicha(modelValue, { onlyMissing = false } = {}) {
     const model = findProjectHousingModel(modelValue);
     if (!model) return;
     const defaults = modelToUnitDefaults(model);
-    const setValue = (id, value) => {
+    const setValue = (id, value, { force = false } = {}) => {
       const el = document.getElementById(id);
-      if (el) el.value = value ?? '';
+      if (!el) return;
+      if (onlyMissing && !force && parseInputNumber(id, el.value) > 0) return;
+      el.value = value ?? '';
     };
-    setValue('fu-modelo', defaults.modelo);
-    setValue('fu-m2', formatInputNumber('fu-m2', defaults.m2));
+    setValue('fu-modelo', defaults.modelo, { force:true });
     setValue('fu-precio', formatInputNumber('fu-precio', defaults.precioVenta));
     setValue('fu-costo', formatInputNumber('fu-costo', defaults.costoUnidad));
     const costInput = document.getElementById('fu-costo');
@@ -12997,6 +13078,9 @@ function scheduleFichaAutosave(delay = 1400) {
   fichaEstadoModo = u.estadoModo === 'automatico' ? 'automatico' : 'manual';
   const automaticStatus = normalizeUnitEstadoFrontend(u.estadoAutomaticoSugerido || u.estado);
   const automaticReason = String(u.estadoAutomaticoMotivo || 'Se calculará con los datos del proceso comercial.').trim();
+  const fichaProjectName = String(
+    state?.project?.name || state?.project?.nombre || state?.project?.title || pname?.textContent || 'Proyecto'
+  ).trim();
 
 tituloUnidad.innerHTML = `
   <span class="unit-title-identity">
@@ -13004,6 +13088,7 @@ tituloUnidad.innerHTML = `
     <input id="fu-nombreUnidad" class="unit-title-input" value="${safeVal(unitName)}" data-original-manzana="${safeVal(u.manzana||'')}" data-original-lote="${safeVal(u.lote||'')}" title="Haz click para editar el nombre de la unidad">
     <small>${safeVal(u.modelo || 'Sin modelo')} <i>·</i> ${safeVal(clientName)}</small>
   </span>
+  <span class="unit-title-project-name" title="${safeVal(fichaProjectName)}">${safeVal(fichaProjectName)}</span>
   <div class="unit-title-status unit-status-${unitStatus}">
     <span>Estado de la unidad</span>
     <select id="fu-estado">${UNIT_ESTADOS.map(s => `<option value="${s.v}" ${unitStatus === s.v ? 'selected' : ''}>${s.l}</option>`).join('')}</select>
@@ -13013,12 +13098,12 @@ tituloUnidad.innerHTML = `
       <button type="button" class="unit-status-info-button" aria-label="Información sobre los estados comerciales" aria-expanded="false" aria-controls="unitStatusInfoPopover">i</button>
       <span class="unit-status-info-popover" id="unitStatusInfoPopover" role="tooltip">
         <strong>Estados comerciales</strong>
-        <span><b>Lote libre:</b> Terreno disponible, sin construcción iniciada y sin cliente asignado.</span>
-        <span><b>Inventario:</b> Vivienda construida que todavía no tiene comprador asignado.</span>
-        <span><b>Reservado:</b> Unidad apartada para un cliente mediante una reserva, pendiente de formalizar la compraventa.</span>
-        <span><b>Con CPP:</b> Unidad que cuenta con una Carta Promesa de Pago emitida por la entidad financiera del comprador.</span>
-        <span><b>Trámite legal:</b> Unidad que ha iniciado los trámites legales necesarios para formalizar la compraventa y el traspaso.</span>
-        <span><b>Traspasado:</b> Unidad cuya compraventa y traspaso de propiedad se han formalizado a favor del comprador.</span>
+        <span><b>Lote libre:</b> Sin avance de construcción y sin hitos comerciales registrados.</span>
+        <span><b>Inventario:</b> El avance de construcción es mayor que 0% y todavía no hay un hito comercial posterior.</span>
+        <span><b>Reservado:</b> Se ha registrado la fecha de reserva.</span>
+        <span><b>Con CPP:</b> El estatus indica CPP recibida o se ha registrado la fecha de CPP. La fecha cambia automáticamente el selector a CPP recibida.</span>
+        <span><b>Trámite legal:</b> Se ha registrado la solicitud de avalúo; no exige completar el resto de ese apartado.</span>
+        <span><b>Traspasado:</b> Se ha registrado la fecha de inscripción en Registro Público.</span>
       </span>
     </span>
   </div>
@@ -13587,20 +13672,35 @@ document.getElementById('btnFichaEstadoAutomatico')?.addEventListener('click', (
 });
 const commercialProcessView = document.getElementById('view-ficha');
 if (commercialProcessView && fichaMode === 'commercial') {
-  commercialProcessView.addEventListener('input', event => {
-    if (!event.target.closest?.('.unit-process-stage')) return;
-    refreshCommercialProcessProgress();
+  const refreshCommercialLiveUi = event => {
+    if (event.target.closest?.('.unit-process-stage')) refreshCommercialProcessProgress();
     if (event.target.id === 'fv-fechaReserva') refreshReservationAgeNotice();
-  });
-  commercialProcessView.addEventListener('change', event => {
-    if (!event.target.closest?.('.unit-process-stage')) return;
-    refreshCommercialProcessProgress();
-    if (event.target.id === 'fv-fechaReserva') refreshReservationAgeNotice();
-  });
+    if (['fv-estatusCPP','fv-fechaValorCPP','fv-fechaVencimientoCPP','fv-precioVenta','fv-montoFinanciamientoCPP'].includes(event.target.id)) {
+      refreshCommercialSummaryKpis({ normalizeCpp:event.target.id === 'fv-fechaValorCPP' });
+    }
+    if (['fv-fechaReserva','fv-estatusCPP','fv-fechaValorCPP','fv-solicitudAvaluo','fv-fechaInscripcion','fv-avanceConstruccionPct'].includes(event.target.id)) {
+      refreshOpenFichaCommercialStatePreview();
+    }
+    if (['fv-primerNombre','fv-segundoNombre','fv-primerApellido','fv-segundoApellido'].includes(event.target.id)) {
+      refreshStructuredClientName(false);
+    }
+    if (['fv-cliente2PrimerNombre','fv-cliente2SegundoNombre','fv-cliente2PrimerApellido','fv-cliente2SegundoApellido'].includes(event.target.id)) {
+      refreshStructuredClientName(true);
+    }
+  };
+  commercialProcessView.addEventListener('input', refreshCommercialLiveUi);
+  commercialProcessView.addEventListener('change', refreshCommercialLiveUi);
   refreshCommercialProcessProgress();
   refreshReservationAgeNotice();
+  refreshCommercialSummaryKpis({ normalizeCpp:true });
+  refreshStructuredClientName(false);
+  refreshStructuredClientName(true);
 }
-document.getElementById('fu-modeloSelect')?.addEventListener('change', (event) => applyProjectModelToFicha(event.target.value));
+const fichaModelSelect = document.getElementById('fu-modeloSelect');
+fichaModelSelect?.addEventListener('change', event => applyProjectModelToFicha(event.target.value));
+if (fichaMode === 'commercial' && fichaModelSelect?.value) {
+  applyProjectModelToFicha(fichaModelSelect.value, { onlyMissing:true });
+}
 const unitCostInput = document.getElementById('fu-costo');
 if (unitCostInput) {
   unitCostInput.dataset.manual = u.costoUnidadManual ? 'true' : 'false';
@@ -14072,26 +14172,12 @@ const uBody = {
       observacionCliente: vVal('fv-observacionCliente'),
     };
 
-    // La ficha muestra un solo nombre completo para el segundo cliente, pero
-    // conserva los campos históricos existentes y solo los consolida si se edita.
-    const client2NameEl = document.getElementById('fv-cliente2NombreCompleto');
-    if (client2NameEl && client2NameEl.value !== client2NameEl.dataset.original) {
-      vBody.cliente2PrimerNombre = client2NameEl.value.trim();
-      vBody.cliente2SegundoNombre = '';
-      vBody.cliente2PrimerApellido = '';
-      vBody.cliente2SegundoApellido = '';
-    }
+    // Los nombres completos son resúmenes de solo lectura. Se conservan los
+    // componentes del Dato Único para no perder granularidad al exportar.
     const clientNameEl = document.getElementById('fv-clienteNombre');
-    if (clientNameEl && clientNameEl.value !== clientNameEl.dataset.original) {
-      vBody.clienteNombre = clientNameEl.value.trim();
-      vBody.primerNombre = '';
-      vBody.segundoNombre = '';
-      vBody.primerApellido = '';
-      vBody.segundoApellido = '';
-    }
-    if (clientNameEl?.dataset.persisted !== 'true' && clientNameEl?.value === clientNameEl?.dataset.original) {
-      vBody.clienteNombre = undefined;
-    }
+    const structuredClientName = [vBody.primerNombre,vBody.segundoNombre,vBody.primerApellido,vBody.segundoApellido]
+      .map(value => String(value || '').trim()).filter(Boolean).join(' ');
+    vBody.clienteNombre = structuredClientName || String(clientNameEl?.value || '').trim() || undefined;
 
     // Captación reutiliza los cuatro indicadores existentes: no persiste un
     // segundo campo de canal que pueda contradecirlos.

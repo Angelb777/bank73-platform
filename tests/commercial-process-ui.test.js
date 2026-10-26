@@ -23,6 +23,11 @@ test('la ficha comercial sigue el proceso de venta propuesto y mantiene sus camp
   assert.match(css, /grid-template-columns:minmax\(250px,300px\)/);
   assert.match(js, /v\.clienteNombre \|\| \[v\.primerNombre/);
   assert.match(js, /'fv-clienteNombre','Nombre completo'/);
+  for (const fieldId of ['fv-primerNombre','fv-segundoNombre','fv-primerApellido','fv-segundoApellido','fv-cliente2PrimerNombre','fv-cliente2SegundoNombre','fv-cliente2PrimerApellido','fv-cliente2SegundoApellido']) {
+    assert.match(js, new RegExp(fieldId));
+  }
+  assert.match(js, /Nombre completo'[^\n]+readonly aria-readonly="true"/);
+  assert.doesNotMatch(js, /vBody\.primerNombre = ''/);
   assert.match(js, /const captureChannel = v\.captadoAtencionOficina/);
   assert.doesNotMatch(read('models/Venta.js'), /canalCaptacion|fechaSolicitudAvaluo/);
   assert.match(css, /unit-status-reservado[^\n]+#f59e0b/);
@@ -34,6 +39,19 @@ test('la ficha comercial sigue el proceso de venta propuesto y mantiene sus camp
   assert.doesNotMatch(stateCatalog, /vivienda_entregada|Vivienda entregada/);
   assert.doesNotMatch(read('public/project.html'), /<option value="vivienda_entregada">/);
   assert.match(css, /unit-title-status select option \{ background:#182238; color:#f8fafc;/);
+  assert.match(css, /unit-process-field select option/);
+  assert.match(css, /color-scheme:dark/);
+  assert.match(js, /class="unit-title-project-name"/);
+  assert.match(css, /\.unit-title-project-name \{ position:absolute; left:50%/);
+  assert.match(js, /id="fu-modeloSelect"/);
+  assert.match(js, /applyProjectModelToFicha/);
+  assert.match(js, /applyProjectModelToFicha\(fichaModelSelect\.value, \{ onlyMissing:true \}\)/);
+  const modelDefaults = js.slice(js.indexOf('function modelToUnitDefaults'), js.indexOf('// Carga ventas del proyecto'));
+  assert.match(modelDefaults, /parseDecimalMeasureNumber/);
+  assert.doesNotMatch(modelDefaults, /setValue\('fu-m2'/);
+  assert.match(js, /function refreshCommercialSummaryKpis/);
+  assert.match(js, /function refreshOpenFichaCommercialStatePreview/);
+  assert.match(js, /normalizeCpp:event\.target\.id === 'fv-fechaValorCPP'/);
   assert.match(js, /function reservationAgeInfo/);
   assert.match(js, /Reserva sin fecha registrada/);
   assert.match(js, /class="alert-ribbon reservation-alert"/);

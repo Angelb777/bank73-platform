@@ -12,15 +12,19 @@ const {
 } = require('../services/unitCommercialState');
 
 test('el estado automático avanza según los hitos comerciales fiables', () => {
-  assert.equal(deriveCommercialState({}, 'inventario').estado, 'inventario');
+  assert.equal(deriveCommercialState({}).estado, 'disponible');
+  assert.equal(deriveCommercialState({ avanceConstruccionPct: 1 }).estado, 'inventario');
   assert.equal(deriveCommercialState({ fechaReserva: '2026-10-24' }).estado, 'reservado');
-  assert.equal(deriveCommercialState({ clienteNombre: 'Ana', precioVenta: 180000 }).estado, 'reservado');
-  assert.equal(deriveCommercialState({ numCPP: 'CPP-20' }).estado, 'con_cpp');
-  assert.equal(deriveCommercialState({ estatusCPP: 'Aprobado' }).estado, 'con_cpp');
-  assert.equal(deriveCommercialState({ fechaContratoCliente: '2026-11-03' }).estado, 'tramite_legal_activado');
-  assert.equal(deriveCommercialState({ protocoloFirmaCliente: true }).estado, 'tramite_legal_activado');
+  assert.equal(deriveCommercialState({ clienteNombre: 'Ana', precioVenta: 180000 }).estado, 'disponible');
+  assert.equal(deriveCommercialState({ numCPP: 'CPP-20' }).estado, 'disponible');
+  assert.equal(deriveCommercialState({ estatusCPP: 'Aprobado' }).estado, 'disponible');
+  assert.equal(deriveCommercialState({ estatusCPP: 'CPP recibida' }).estado, 'con_cpp');
+  assert.equal(deriveCommercialState({ fechaValorCPP: '2026-11-03' }).estado, 'con_cpp');
+  assert.equal(deriveCommercialState({ solicitudAvaluo: '2026-11-15' }).estado, 'tramite_legal_activado');
+  assert.equal(deriveCommercialState({ fechaContratoCliente: '2026-11-03' }).estado, 'disponible');
   assert.equal(deriveCommercialState({ fechaInscripcion: '2027-01-10' }).estado, 'escriturado_traspasado');
-  assert.equal(deriveCommercialState({ fechaEntregaVivienda: '2027-02-01' }).estado, 'escriturado_traspasado');
+  assert.equal(deriveCommercialState({ fechaEntregaVivienda: '2027-02-01' }).estado, 'disponible');
+  assert.equal(deriveCommercialState({ avanceConstruccionPct: 25, fechaReserva: '2026-10-24', fechaValorCPP: '2026-11-03', solicitudAvaluo: '2026-11-15' }).estado, 'tramite_legal_activado');
 });
 
 test('un avance automático ordinario nunca hace retroceder el estado', () => {
@@ -29,8 +33,8 @@ test('un avance automático ordinario nunca hace retroceder el estado', () => {
   assert.equal(furthestState('tramite_legal_activado', 'disponible'), 'tramite_legal_activado');
 });
 
-test('el modo manual conserva el estado y solo actualiza la recomendación', async () => {
-  const originals = { findOne: Unit.findOne, findOneAndUpdate: Unit.findOneAndUpdate };
+test('un hito comercial fiable hace avanzar también una unidad manual', async () => {
+  const originals = { findOne: Unit.findOne, findOneAndUpdate: Unit.findOneAndUpdate, ventaUpdateOne: Venta.updateOne };
   let writtenSet;
   try {
     Unit.findOne = () => ({
@@ -42,18 +46,20 @@ test('el modo manual conserva el estado y solo actualiza la recomendación', asy
       writtenSet = update.$set;
       return { ...update.$set };
     };
+    Venta.updateOne = async () => ({ modifiedCount: 1 });
 
     await syncUnitCommercialState({
       tenantKey: 'demo', projectId: 'project-1', unitId: 'unit-1',
-      venta: { numCPP: 'CPP-1' }
+      venta: { estatusCPP: 'CPP recibida' }
     });
 
     assert.equal(writtenSet.estadoAutomaticoSugerido, 'con_cpp');
-    assert.equal(writtenSet.estado, undefined);
-    assert.equal(writtenSet.status, undefined);
+    assert.equal(writtenSet.estado, 'con_cpp');
+    assert.equal(writtenSet.estadoModo, 'automatico');
   } finally {
     Unit.findOne = originals.findOne;
     Unit.findOneAndUpdate = originals.findOneAndUpdate;
+    Venta.updateOne = originals.ventaUpdateOne;
   }
 });
 
@@ -91,7 +97,7 @@ test('el modo automático aplica el avance y permite recalcular al reactivarlo',
 
     assert.equal(writes[0].estado, 'con_cpp');
     assert.equal(writes[1].estado, 'reservado');
-    assert.equal(writes[2].estado, 'inventario');
+    assert.equal(writes[2].estado, 'disponible');
   } finally {
     Unit.findOne = originals.findOne;
     Unit.findOneAndUpdate = originals.findOneAndUpdate;
@@ -119,7 +125,7 @@ test('liberar una unidad limpia reactiva el modo automático y la siguiente rese
     Venta.updateOne = async () => { reactivatedVenta = true; };
 
     await syncUnitCommercialState({
-      tenantKey: 'demo', projectId: 'project-1', unitId: 'unit-3', venta: {},
+      tenantKey: 'demo', projectId: 'project-1', unitId: 'unit-3', venta: { avanceConstruccionPct: 35 },
       activateAutomaticAtBase: true
     });
     assert.equal(currentUnit.estadoModo, 'automatico');
@@ -131,6 +137,32 @@ test('liberar una unidad limpia reactiva el modo automático y la siguiente rese
     });
     assert.equal(currentUnit.estado, 'reservado');
     assert.equal(reactivatedVenta, true);
+  } finally {
+    Unit.findOne = originals.findOne;
+    Unit.findOneAndUpdate = originals.findOneAndUpdate;
+    Venta.updateOne = originals.ventaUpdateOne;
+  }
+});
+
+test('una fecha de CPP normaliza el selector a CPP recibida', async () => {
+  const originals = {
+    findOne: Unit.findOne,
+    findOneAndUpdate: Unit.findOneAndUpdate,
+    ventaUpdateOne: Venta.updateOne
+  };
+  let ventaUpdate;
+  try {
+    Unit.findOne = () => ({ lean: async () => ({ _id:'unit-4', estado:'reservado', estadoModo:'automatico' }) });
+    Unit.findOneAndUpdate = async (_filter, update) => update.$set;
+    Venta.updateOne = async (_filter, update) => { ventaUpdate = update.$set; return { modifiedCount:1 }; };
+
+    const result = await syncUnitCommercialState({
+      tenantKey:'demo', projectId:'project-1', unitId:'unit-4',
+      venta:{ fechaValorCPP:'2026-11-05', estatusCPP:'Aprobado' }
+    });
+
+    assert.equal(ventaUpdate.estatusCPP, 'CPP recibida');
+    assert.equal(result.estado, 'con_cpp');
   } finally {
     Unit.findOne = originals.findOne;
     Unit.findOneAndUpdate = originals.findOneAndUpdate;

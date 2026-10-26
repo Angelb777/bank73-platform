@@ -29,76 +29,38 @@ function isPositive(value) {
   return Number.isFinite(parsed) && parsed > 0;
 }
 
-function isAffirmative(value) {
-  if (value === true) return true;
-  return /^(si|sí|s|yes|true|1|entregad[oa]|completad[oa])$/i.test(String(value || '').trim());
-}
-
 function deriveCommercialState(venta = {}, baseState = 'disponible') {
-  const base = baseState === 'inventario' ? 'inventario' : 'disponible';
-
-  if (
-    hasDate(venta.fechaEntregaVivienda) ||
-    isAffirmative(venta.entregaCasa) ||
-    hasDate(venta.fechaInscripcion)
-  ) {
+  if (hasDate(venta.fechaInscripcion)) {
     return {
       estado: 'escriturado_traspasado',
-      motivo: hasDate(venta.fechaEntregaVivienda) || isAffirmative(venta.entregaCasa)
-        ? 'Entrega de vivienda registrada'
-        : 'Inscripción en Registro Público registrada'
+      motivo: 'Inscripción en Registro Público registrada'
     };
   }
 
-  if (
-    hasDate(venta.fechaActivacionTramite) ||
-    hasDate(venta.fechaContratoCliente) ||
-    venta.contratoFirmado === true ||
-    hasText(venta.mPrestamo) ||
-    hasDate(venta.fechaFirma) ||
-    venta.protocoloFirmaCliente === true ||
-    venta.protocoloFirmaPromotora === true ||
-    venta.protocoloFirmaRLBancoInter === true ||
-    venta.firmaProtocoloBancoCliente === true ||
-    hasDate(venta.fechaIngresoRP) ||
-    venta.ingresoRP === true ||
-    hasDate(venta.fechaPagoImpuesto)
-  ) {
-    return { estado: 'tramite_legal_activado', motivo: 'Trámite contractual o legal iniciado' };
+  if (hasText(venta.solicitudAvaluo)) {
+    return { estado: 'tramite_legal_activado', motivo: 'Solicitud de avalúo registrada' };
   }
 
   const cppStatus = String(venta.estatusCPP || '').trim();
   if (
-    hasText(venta.numCPP) ||
     hasDate(venta.fechaValorCPP) ||
     hasDate(venta.recibidoCPP) ||
-    /aprob|recibid|emitid/i.test(cppStatus)
+    /cpp\s*recibid|recibid[ao]?\s*(?:de\s*)?cpp/i.test(cppStatus)
   ) {
-    return { estado: 'con_cpp', motivo: 'Carta Promesa de Pago registrada' };
+    return { estado: 'con_cpp', motivo: 'CPP recibida o fecha de CPP registrada' };
   }
 
-  const hasClient = [
-    venta.clienteNombre,
-    venta.primerNombre,
-    venta.primerApellido,
-    venta.cedula
-  ].some(hasText);
-  const hasReservationContext =
-    hasDate(venta.fechaReserva) ||
-    hasDate(venta.fechaProforma) ||
-    isPositive(venta.precioVenta) ||
-    isPositive(venta.montoContrato) ||
-    hasText(cppStatus);
+  if (hasDate(venta.fechaReserva)) {
+    return { estado: 'reservado', motivo: 'Fecha de reserva registrada' };
+  }
 
-  if (hasDate(venta.fechaReserva) || (hasClient && hasReservationContext)) {
-    return { estado: 'reservado', motivo: 'Datos de reserva y cliente registrados' };
+  if (isPositive(venta.avanceConstruccionPct)) {
+    return { estado: 'inventario', motivo: 'Construcción iniciada' };
   }
 
   return {
-    estado: base,
-    motivo: base === 'inventario'
-      ? 'Sin avance comercial; permanece en inventario'
-      : 'Sin avance comercial; permanece disponible'
+    estado: 'disponible',
+    motivo: 'Sin construcción ni hitos comerciales; permanece como lote libre'
   };
 }
 
@@ -126,21 +88,30 @@ async function syncUnitCommercialState({
   }).lean();
   if (!unit) return null;
 
-  const commercialData = venta || await Venta.findOne({
+  let commercialData = venta || await Venta.findOne({
     tenantKey,
     projectId,
     unitId,
     deletedAt: null
   }).lean() || {};
 
-  const baseState = unit.estadoAutomaticoBase === 'inventario' ||
-    (!unit.estadoAutomaticoBase && unit.estado === 'inventario')
-    ? 'inventario'
-    : 'disponible';
+  // Una fecha de CPP acredita que la carta ya fue recibida. Se normaliza el
+  // selector para que la ficha, la exportación y el estado no se contradigan.
+  if (hasDate(commercialData.fechaValorCPP) && !/cpp\s*recibid/i.test(String(commercialData.estatusCPP || ''))) {
+    await Venta.updateOne(
+      { tenantKey, projectId, unitId, deletedAt: null },
+      { $set: { estatusCPP: 'CPP recibida' } }
+    );
+    commercialData = { ...commercialData, estatusCPP: 'CPP recibida' };
+  }
+
+  const baseState = isPositive(commercialData.avanceConstruccionPct) ? 'inventario' : 'disponible';
   const suggestion = deriveCommercialState(commercialData, baseState);
   const automaticResetFromManual = activateAutomaticAtBase &&
     ['disponible', 'inventario'].includes(unit.estado) &&
     ['disponible', 'inventario'].includes(suggestion.estado);
+  const automaticAdvanceFromManual = unit.estadoModo !== 'automatico' &&
+    (STATE_RANK.get(suggestion.estado) ?? -1) > (STATE_RANK.get(unit.estado) ?? -1);
   const set = {
     estadoAutomaticoBase: baseState,
     estadoAutomaticoSugerido: suggestion.estado,
@@ -148,9 +119,9 @@ async function syncUnitCommercialState({
     estadoAutomaticoActualizadoAt: new Date()
   };
 
-  // Las unidades antiguas que no tienen modo guardado se consideran manuales.
-  // Así una actualización de ficha nunca pisa silenciosamente su histórico.
-  if (automaticResetFromManual) {
+  // Un hito fiable puede hacer avanzar una unidad que estaba en modo manual;
+  // nunca la hace retroceder. El modo automático sigue recalculando la base.
+  if (automaticResetFromManual || automaticAdvanceFromManual) {
     set.estadoModo = 'automatico';
     set.estadoManualAt = null;
     set.estadoManualBy = null;
@@ -166,7 +137,7 @@ async function syncUnitCommercialState({
     set.status = nextState.toUpperCase();
   }
 
-  const isAutomatic = automaticResetFromManual || unit.estadoModo === 'automatico';
+  const isAutomatic = automaticResetFromManual || automaticAdvanceFromManual || unit.estadoModo === 'automatico';
   const returnedToBase =
     isAutomatic &&
     STATE_RANK.get(unit.estado) >= STATE_RANK.get('reservado') &&
