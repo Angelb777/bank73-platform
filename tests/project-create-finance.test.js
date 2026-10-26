@@ -70,3 +70,28 @@ test('financing lines cannot exceed the bank source either', () => {
     /debe coincidir con la fuente Banco/
   );
 });
+
+test('100 percent bank financing clears stale promoter values on the server', () => {
+  const phases = sanitizeFinancePhases([{
+    name: 'Fase 100% banco',
+    planUses: [{ name: 'Construccion', amount: 1000000 }],
+    financialConditions: {
+      bankFinancedAmount: 1000000,
+      bankFinancedPct: 100,
+      // Simula valores auxiliares antiguos que no deben alterar las fuentes visibles.
+      promoterContribution: 300000,
+      promoterContributionPct: 30
+    },
+    financingLines: [{ name: 'Construccion', approvedAmount: 1000000 }]
+  }], 1);
+  const conditions = deriveFinancialConditionsFromPhases({}, phases);
+  const reconciled = applyAutomaticPhaseSources(phases, conditions);
+
+  assert.deepEqual(reconciled[0].planSources, [
+    { name: 'Banco', amount: 1000000 },
+    { name: 'Promotor', amount: 0 }
+  ]);
+  assert.equal(reconciled[0].financialConditions.promoterContribution, 0);
+  assert.equal(reconciled[0].financialConditions.promoterContributionPct, 0);
+  assert.doesNotThrow(() => assertFinancePhasesBalanced(reconciled, conditions));
+});

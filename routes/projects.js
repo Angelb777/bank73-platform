@@ -567,13 +567,31 @@ function applyAutomaticPhaseSources(phases = [], conditions = {}) {
   return (phases || []).map(phase => {
     const usesTotal = sumLineItems(phase.planUses) || Number(phase.financialConditions?.phaseTotal || 0);
     const phaseConditions = phase.financialConditions || {};
-    const bankPct = Number(phaseConditions.bankFinancedPct || conditions.bankFinancedPct || 0);
-    const promoterPct = Number(phaseConditions.promoterContributionPct || conditions.promoterContributionPct || 0);
-    const bankAmount = roundMoney(Number(phaseConditions.bankFinancedAmount || 0) || usesTotal * bankPct / 100);
-    const promoterAmount = roundMoney(
-      Number(phaseConditions.promoterContribution || 0) ||
-      (promoterPct > 0 ? usesTotal * promoterPct / 100 : Math.max(0, usesTotal - bankAmount))
-    );
+    const hasPhaseBankAmount = Object.prototype.hasOwnProperty.call(phaseConditions, 'bankFinancedAmount');
+    const hasPhaseBankPct = Object.prototype.hasOwnProperty.call(phaseConditions, 'bankFinancedPct');
+    const hasPhasePromoterAmount = Object.prototype.hasOwnProperty.call(phaseConditions, 'promoterContribution');
+    const hasPhasePromoterPct = Object.prototype.hasOwnProperty.call(phaseConditions, 'promoterContributionPct');
+    const bankPct = Number(hasPhaseBankPct ? phaseConditions.bankFinancedPct : conditions.bankFinancedPct || 0);
+    const promoterPct = Number(hasPhasePromoterPct ? phaseConditions.promoterContributionPct : conditions.promoterContributionPct || 0);
+    let bankAmount;
+    if (hasPhaseBankAmount) bankAmount = Number(phaseConditions.bankFinancedAmount || 0);
+    else if (bankPct > 0) bankAmount = usesTotal * bankPct / 100;
+    else if (hasPhasePromoterAmount) bankAmount = usesTotal - Number(phaseConditions.promoterContribution || 0);
+    else if (promoterPct > 0) bankAmount = usesTotal * (100 - promoterPct) / 100;
+    else bankAmount = usesTotal * Number(conditions.bankFinancedPct || 0) / 100;
+
+    bankAmount = roundMoney(Math.min(Math.max(bankAmount, 0), usesTotal));
+    // Las fuentes son automaticas: Promotor absorbe el resto y el redondeo.
+    // Asi el servidor nunca reconstruye unas fuentes distintas a las mostradas.
+    const promoterAmount = roundMoney(Math.max(usesTotal - bankAmount, 0));
+    const reconciledConditions = {
+      ...phaseConditions,
+      phaseTotal: roundMoney(usesTotal),
+      bankFinancedAmount: bankAmount,
+      bankFinancedPct: usesTotal > 0 ? roundPct(bankAmount / usesTotal * 100) : 0,
+      promoterContribution: promoterAmount,
+      promoterContributionPct: usesTotal > 0 ? roundPct(promoterAmount / usesTotal * 100) : 0
+    };
     const nestedSources = new Map();
     (phase.planUses || []).forEach(use => (use.fundingSources || []).forEach(source => {
       const name = String(source?.name || '').trim();
@@ -585,6 +603,7 @@ function applyAutomaticPhaseSources(phases = [], conditions = {}) {
     }));
     return {
       ...phase,
+      financialConditions: reconciledConditions,
       planSources: nestedSources.size ? Array.from(nestedSources.values()).map(source => ({
         ...source,
         amount: roundMoney(source.amount)
@@ -611,7 +630,7 @@ function assertFinancePhasesBalanced(phases = [], conditions = {}) {
     const uses = sumLineItems(phase.planUses);
     const sources = sumLineItems(phase.planSources);
     if (!close(uses, sources)) {
-      fail(`En ${phase.name || 'fase'}, el total de usos debe coincidir con el total de fuentes.`);
+      fail(`En ${phase.name || 'fase'}, el total de usos (${roundMoney(uses)}) debe coincidir con el total de fuentes (${roundMoney(sources)}).`);
     }
     const bankSource = Number((phase.planSources || []).find(item => item.name === 'Banco')?.amount || 0);
     const financingLinesTotal = (phase.financingLines || []).reduce((sum, line) => sum + Number(line?.approvedAmount || 0), 0);
