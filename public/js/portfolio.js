@@ -1947,7 +1947,7 @@
         <div style="grid-column:1/-1;border:1px solid #dbeafe;background:#f8fbff;border-radius:12px;padding:10px;">
           <strong>Datos financieros de la fase</strong>
           <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:8px;">
-            <label>Total de la fase<input data-create-phase-financial="phaseTotal" data-bank-number type="text" inputmode="decimal" placeholder="Monto total fase" value="${phaseFinancial.phaseTotal ? formatBankNumber(phaseFinancial.phaseTotal) : ''}"></label>
+            <label>Total de la fase<input data-create-phase-financial="phaseTotal" data-bank-number type="text" inputmode="decimal" placeholder="Se calcula con los usos" value="${phaseFinancial.phaseTotal ? formatBankNumber(phaseFinancial.phaseTotal) : ''}" readonly aria-readonly="true"></label>
             <label>Financiacion bancaria<input data-create-phase-financial="bankFinancedAmount" data-bank-number type="text" inputmode="decimal" placeholder="Monto banco" value="${phaseFinancial.bankFinancedAmount ? formatBankNumber(phaseFinancial.bankFinancedAmount) : ''}"></label>
             <label>Aporte del promotor<input data-create-phase-financial="promoterContribution" data-bank-number type="text" inputmode="decimal" placeholder="Monto promotor" value="${phaseFinancial.promoterContribution ? formatBankNumber(phaseFinancial.promoterContribution) : ''}"></label>
             <label>% banco<input data-create-phase-financial="bankFinancedPct" type="text" inputmode="decimal" placeholder="70" value="${phaseFinancial.bankFinancedPct ? formatPercentNumber(phaseFinancial.bankFinancedPct) : ''}"></label>
@@ -2069,21 +2069,27 @@
   }
 
   function autoPhaseSourcesForUses(usesTotal, financial = {}) {
-    const baseTotal = numberFromCreate(financial.phaseTotal);
-    const bank = baseTotal * numberFromCreate(financial.bankPct) / 100;
-    const promoter = baseTotal * numberFromCreate(financial.promoterPct) / 100;
+    const baseTotal = numberFromCreate(usesTotal) || numberFromCreate(financial.phaseTotal);
+    const explicitBank = numberFromCreate(financial.bankAmount);
+    const bank = Math.round(Math.min(
+      Math.max(explicitBank || baseTotal * numberFromCreate(financial.bankPct) / 100, 0),
+      baseTotal
+    ) * 100) / 100;
+    // La segunda fuente absorbe el redondeo para que usos y fuentes siempre cuadren.
+    const promoter = Math.round(Math.max(baseTotal - bank, 0) * 100) / 100;
     return [
-      { name: 'Banco', amount: Math.round(bank * 100) / 100 },
-      { name: 'Promotor', amount: Math.round(promoter * 100) / 100 }
+      { name: 'Banco', amount: bank },
+      { name: 'Promotor', amount: promoter }
     ];
   }
 
   function syncCreatePhaseSources() {
-    const financial = currentCreateFinancialNumbers();
     let totalUsesAll = 0;
     document.querySelectorAll('[data-create-phase-row]').forEach((row, idx) => {
       const usesTotal = phaseUsesTotal(row);
-      syncPhaseFinancialTriplet(row);
+      const phaseTotalEl = row.querySelector('[data-create-phase-financial="phaseTotal"]');
+      if (phaseTotalEl) phaseTotalEl.value = usesTotal ? formatBankNumber(usesTotal) : '';
+      syncPhaseFinancialTriplet(row, 'phaseTotal');
       const phaseFinancial = currentPhaseFinancialNumbers(row);
       const sources = autoPhaseSourcesForUses(usesTotal, phaseFinancial);
       const bank = sources.find(item => item.name === 'Banco')?.amount || 0;
@@ -2094,7 +2100,7 @@
       const linesDiff = bank - linesTotal;
       const phaseTitle = lineRow?.querySelector('[data-line-phase-title]');
       if (phaseTitle) phaseTitle.textContent = row.querySelector('[data-create-phase="name"]')?.value.trim() || `Fase ${idx + 1}`;
-      totalUsesAll += numberFromCreate(phaseFinancial.phaseTotal);
+      totalUsesAll += usesTotal;
       const setText = (selector, value) => {
         const el = row.querySelector(selector);
         if (el) el.textContent = formatBankNumber(value);
@@ -2124,10 +2130,14 @@
             : 'Las lineas estan dentro de la financiacion bancaria aprobada para esta fase.';
       }
     });
+    const projectTotalEl = document.getElementById('fc-projectTotal');
+    if (projectTotalEl) projectTotalEl.value = totalUsesAll ? formatBankNumber(totalUsesAll) : '';
+    const financial = currentCreateFinancialNumbers();
     renderCreatePhasesGlobalSummary({
       totalUses: totalUsesAll,
       financial
     });
+    updateCreateFundingSummary();
   }
 
   function ensureCreatePhasesGlobalSummary() {
@@ -2672,7 +2682,9 @@
   function validateCreateFinancePhases({ alertOnError = false } = {}) {
     const financial = currentCreateFinancialNumbers();
     const phases = collectFinancePhases();
-    const usesTotal = phases.reduce((sum, phase) => sum + numberFromCreate(phase.financialConditions?.phaseTotal), 0);
+    const usesTotal = phases.reduce((sum, phase) => (
+      sum + phase.planUses.reduce((phaseSum, item) => phaseSum + numberFromCreate(item.amount), 0)
+    ), 0);
     const bankTotal = phases.reduce((sum, phase) => sum + numberFromCreate(phase.planSources.find(item => item.name === 'Banco')?.amount), 0);
     const promoterTotal = phases.reduce((sum, phase) => sum + numberFromCreate(phase.planSources.find(item => item.name === 'Promotor')?.amount), 0);
     const close = (a, b) => Math.abs(numberFromCreate(a) - numberFromCreate(b)) <= 0.05;

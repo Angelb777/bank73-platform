@@ -2242,11 +2242,11 @@ function shortProjectDescription(value, maxLength = 150) {
 
     const wrap = document.createElement('div');
     wrap.id = 'editProjectModal';
-    wrap.style.cssText = 'display:none;position:fixed;inset:0;background:#0009;z-index:9999;align-items:center;justify-content:center;';
+    wrap.className = 'admin-editor-backdrop';
     wrap.innerHTML = `
-  <div style="background:#12181f;color:#e6edf3;width:min(820px,94vw);max-height:90vh;overflow:auto;border-radius:12px;padding:16px 18px;box-shadow:0 10px 30px rgba(0,0,0,.4);">
+  <div class="admin-editor-dialog admin-editor-dialog--project" role="dialog" aria-modal="true" aria-labelledby="editProjectTitle">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;">
-      <h3 style="margin:0;font-size:1.1rem;">Editar proyecto</h3>
+      <h3 id="editProjectTitle" style="margin:0;font-size:1.1rem;">Editar proyecto</h3>
       <button id="editProjClose" class="btn small" style="background:#2a323d;">Cerrar</button>
     </div>
 
@@ -2448,12 +2448,12 @@ function shortProjectDescription(value, maxLength = 150) {
 
     const wrap = document.createElement('div');
     wrap.id = 'promoterProfileModal';
-    wrap.style.cssText = 'display:none;position:fixed;inset:0;background:#0009;z-index:10000;align-items:center;justify-content:center;';
+    wrap.className = 'admin-editor-backdrop';
     wrap.innerHTML = `
-      <div style="background:#12181f;color:#e6edf3;width:min(680px,92vw);border-radius:12px;padding:16px 18px;box-shadow:0 10px 30px rgba(0,0,0,.4);">
+      <div class="admin-editor-dialog admin-editor-dialog--profile" role="dialog" aria-modal="true" aria-labelledby="promoterProfileTitle">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;">
           <div>
-            <h3 style="margin:0;font-size:1.1rem;">Perfil del promotor</h3>
+            <h3 id="promoterProfileTitle" style="margin:0;font-size:1.1rem;">Perfil del promotor</h3>
             <div id="promoterProfileUser" class="small muted"></div>
           </div>
           <button id="promoterProfileClose" class="btn small" style="background:#2a323d;">Cerrar</button>

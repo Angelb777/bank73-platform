@@ -501,6 +501,8 @@ function sanitizeFinancePhases(raw = [], phasesCount = 0) {
       financialConditions: sanitizePhaseFinancialConditions(item.financialConditions || {}),
       financingLines: sanitizePhaseFinancingLines(item.financingLines || item.financingFacilities || [])
     };
+    const usesTotal = sumLineItems(phase.planUses);
+    if (usesTotal > 0) phase.financialConditions.phaseTotal = roundMoney(usesTotal);
     phase.requirements = normalizePhaseRequirements(item.requirements || [], { phase });
     return phase;
   });
@@ -542,8 +544,8 @@ function deriveFinancialConditionsFromPhases(conditions = {}, phases = []) {
     return sum + (explicitAmount || pctAmount || sourceAmount);
   }, 0);
 
-  const total = Number(out.projectTotal || 0) || phaseTotal;
-  if (!Number(out.projectTotal || 0) && total > 0) out.projectTotal = roundMoney(total);
+  const total = phaseTotal || Number(out.projectTotal || 0);
+  if (phaseTotal > 0) out.projectTotal = roundMoney(phaseTotal);
   if (!Number(out.bankFinancedAmount || 0) && bankTotal > 0) out.bankFinancedAmount = roundMoney(bankTotal);
   if (
     total > 0 &&
@@ -563,8 +565,7 @@ function deriveFinancialConditionsFromPhases(conditions = {}, phases = []) {
 
 function applyAutomaticPhaseSources(phases = [], conditions = {}) {
   return (phases || []).map(phase => {
-    const phaseTotal = Number(phase.financialConditions?.phaseTotal || 0);
-    const usesTotal = phaseTotal || sumLineItems(phase.planUses);
+    const usesTotal = sumLineItems(phase.planUses) || Number(phase.financialConditions?.phaseTotal || 0);
     const phaseConditions = phase.financialConditions || {};
     const bankPct = Number(phaseConditions.bankFinancedPct || conditions.bankFinancedPct || 0);
     const promoterPct = Number(phaseConditions.promoterContributionPct || conditions.promoterContributionPct || 0);
@@ -614,8 +615,8 @@ function assertFinancePhasesBalanced(phases = [], conditions = {}) {
     }
     const bankSource = Number((phase.planSources || []).find(item => item.name === 'Banco')?.amount || 0);
     const financingLinesTotal = (phase.financingLines || []).reduce((sum, line) => sum + Number(line?.approvedAmount || 0), 0);
-    if ((bankSource > 0 || financingLinesTotal > 0) && !close(bankSource, financingLinesTotal)) {
-      fail(`En ${phase.name || 'fase'}, la suma de lineas aprobadas debe coincidir con la fuente Banco de la fase.`);
+    if (financingLinesTotal > bankSource + 0.05) {
+      fail(`En ${phase.name || 'fase'}, la suma de lineas aprobadas no puede superar la fuente Banco de la fase.`);
     }
   }
   if (total > 0 && !close(totalUses, total)) {
@@ -6770,5 +6771,15 @@ router.post(
     }
   }
 );
+
+Object.defineProperty(router, '__financePhaseHelpers', {
+  value: {
+    sanitizeFinancePhases,
+    deriveFinancialConditionsFromPhases,
+    applyAutomaticPhaseSources,
+    assertFinancePhasesBalanced
+  },
+  enumerable: false
+});
 
 module.exports = router;

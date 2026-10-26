@@ -1445,8 +1445,8 @@
         <div class="financial-conditions-form" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px;">
           <section class="create-finance-section">
             <h4>1) Total del proyecto</h4>
-            <p class="small muted" style="margin:0 0 10px;">Introduce el presupuesto total del proyecto. Este importe servira para comprobar que la suma de todas las fases coincide con el presupuesto global.</p>
-            <label>Total del proyecto<input id="fc-projectTotal" type="text" inputmode="decimal"></label>
+            <p class="small muted" style="margin:0 0 10px;">Se calcula automaticamente sumando los usos de todas las fases.</p>
+            <label>Total del proyecto<input id="fc-projectTotal" type="text" inputmode="decimal" readonly aria-readonly="true"></label>
           </section>
           <label>Monto financiado por el banco<input id="fc-bankFinancedAmount" type="text" inputmode="decimal"></label>
           <label>% financiado por el banco<input id="fc-bankFinancedPct" type="text" inputmode="decimal"></label>
