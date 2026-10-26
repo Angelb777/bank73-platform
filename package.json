@@ -10,12 +10,16 @@
     "migrate:precio-venta": "node scripts/migrate-precio-venta-dato-unico.js",
     "migrate:precio-venta:apply": "node scripts/migrate-precio-venta-dato-unico.js --apply",
     "test:security": "node --test tests/security-smoke.test.js",
+    "test:remote-image-security": "node --test tests/remote-image-security.test.js",
     "test:funding": "node --test tests/funding-scoring.test.js",
     "test:viewer3d": "node --test tests/viewer3d-unit-record.test.js"
   },
   "keywords": [],
   "author": "",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.23.4 <23 || >=24.22.1 <25"
+  },
   "dependencies": {
     "axios": "^1.18.1",
     "chart.js": "^4.5.1",

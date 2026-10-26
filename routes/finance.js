@@ -30,7 +30,7 @@ router.use('/projects/:projectId/finance', requireProjectAccess({ commercialOnly
 
 const fs   = require('fs');
 const path = require('path');
-const axios = require('axios');
+const { fetchRemoteImage } = require('../utils/remoteImage');
 
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
@@ -1566,13 +1566,7 @@ async function urlToBuffer(url, req) {
   if (!/^https?:\/\//i.test(url)) return null;
 
   try {
-    const auth = req.headers.authorization;
-    const r = await axios.get(url, {
-      responseType: 'arraybuffer',
-      timeout: 15000,
-      headers: auth ? { Authorization: auth } : undefined
-    });
-    return Buffer.from(r.data);
+    return await fetchRemoteImage(url, req);
   } catch (e) {
     console.warn('[FINANCE EXPORT] No pude descargar imagen:', url, e?.message || e);
     return null;

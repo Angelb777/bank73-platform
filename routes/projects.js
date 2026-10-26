@@ -28,7 +28,7 @@ const router = express.Router();
 
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
+const { fetchRemoteImage } = require('../utils/remoteImage');
 
 
 /* =========================================================================
@@ -4195,13 +4195,7 @@ if (isSoldLikeStatus(st)) U.sold++;
 
       if (/^https?:\/\//i.test(src)) {
         try {
-          const auth = req.headers.authorization;
-          const r = await axios.get(src, {
-            responseType: 'arraybuffer',
-            timeout: 15000,
-            headers: auth ? { Authorization: auth } : undefined
-          });
-          return Buffer.from(r.data);
+          return await fetchRemoteImage(src, req);
         } catch (e) {
           console.warn('[PDF] No pude descargar imagen:', src, e?.message || e);
           return null;

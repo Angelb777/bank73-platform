@@ -2,6 +2,7 @@
 data/db
 /data/
 *.lock
+!mobile/**/pubspec.lock
 *.wt
 *.bson
 *.log

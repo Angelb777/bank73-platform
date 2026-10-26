@@ -1,5 +1,14 @@
 # Bank73 Avaluador
 
+## Toolchain de seguridad requerido
+
+- Flutter 3.47.8 o posterior dentro de la rama estable.
+- Dart 3.13.7 o posterior.
+
+El proyecto incluye `.fvmrc` para fijar Flutter 3.47.8. Los binarios Android
+deben reconstruirse y publicarse con este toolchain o uno posterior para incluir
+la correccion TLS de eMudhra.
+
 Aplicación móvil independiente para ejecutar inspecciones de obra asignadas por Bank73.
 
 ## Configuración

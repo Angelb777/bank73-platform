@@ -1,4 +1,4 @@
-FROM node:22-bookworm
+FROM node:22.23.4-bookworm
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends libreoffice \
@@ -7,7 +7,7 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+RUN npm ci --omit=dev
 
 COPY . .
 
