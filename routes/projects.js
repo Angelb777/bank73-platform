@@ -615,8 +615,8 @@ function assertFinancePhasesBalanced(phases = [], conditions = {}) {
     }
     const bankSource = Number((phase.planSources || []).find(item => item.name === 'Banco')?.amount || 0);
     const financingLinesTotal = (phase.financingLines || []).reduce((sum, line) => sum + Number(line?.approvedAmount || 0), 0);
-    if (financingLinesTotal > bankSource + 0.05) {
-      fail(`En ${phase.name || 'fase'}, la suma de lineas aprobadas no puede superar la fuente Banco de la fase.`);
+    if (!close(bankSource, financingLinesTotal)) {
+      fail(`En ${phase.name || 'fase'}, la suma de lineas aprobadas debe coincidir con la fuente Banco de la fase.`);
     }
   }
   if (total > 0 && !close(totalUses, total)) {

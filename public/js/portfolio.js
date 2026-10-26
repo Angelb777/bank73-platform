@@ -857,10 +857,15 @@
   function applyFundingModuleVisibility() {
     const choice = document.getElementById('createFundingChoice');
     const section = document.getElementById('fundingOpportunitiesSection');
-    if (choice) choice.style.display = fundingModuleEnabled ? '' : 'none';
+    // Oculto temporalmente en el alta de proyectos. Se conserva el campo para
+    // poder reactivar la funcionalidad sin cambiar el formato del formulario.
+    if (choice) {
+      choice.hidden = true;
+      choice.style.display = 'none';
+    }
+    const createSeeksFinancing = document.getElementById('pSeeksFinancing');
+    if (createSeeksFinancing) createSeeksFinancing.value = 'false';
     if (!fundingModuleEnabled) {
-      const seeks = document.getElementById('pSeeksFinancing');
-      if (seeks) seeks.value = 'false';
       if (section) section.style.display = 'none';
       document.getElementById('fundingOpportunityModal')?.remove();
     }
@@ -2127,7 +2132,7 @@
           ? 'Las lineas de financiacion superan la financiacion bancaria aprobada para esta fase.'
           : pending
             ? `Quedan B/. ${formatBankNumber(linesDiff)} pendientes de asignar a una linea de financiacion.`
-            : 'Las lineas estan dentro de la financiacion bancaria aprobada para esta fase.';
+            : 'Las lineas coinciden con la financiacion bancaria aprobada para esta fase.';
       }
     });
     const projectTotalEl = document.getElementById('fc-projectTotal');
@@ -2701,8 +2706,8 @@
       if (!close(uses, sources)) return fail(`En ${phase.name}, total usos (${formatBankNumber(uses)}) debe coincidir con total fuentes (${formatBankNumber(sources)}).`);
       const bankAmount = numberFromCreate(phase.financialConditions?.bankFinancedAmount);
       const financingLinesTotal = (phase.financingLines || []).reduce((sum, line) => sum + numberFromCreate(line.approvedAmount), 0);
-      if (financingLinesTotal > bankAmount + 0.05) {
-        return fail('Las lineas de financiacion superan la financiacion bancaria aprobada para esta fase.');
+      if (!close(financingLinesTotal, bankAmount)) {
+        return fail(`En ${phase.name}, las lineas de financiacion (${formatBankNumber(financingLinesTotal)}) deben coincidir con la financiacion bancaria (${formatBankNumber(bankAmount)}).`);
       }
     }
     return true;

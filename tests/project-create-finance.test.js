@@ -31,7 +31,9 @@ function reconciledFinance({ financingLines = [] } = {}) {
 }
 
 test('project and phase totals are derived from phase uses', () => {
-  const { conditions, phases } = reconciledFinance();
+  const { conditions, phases } = reconciledFinance({
+    financingLines: [{ name: 'Financiacion bancaria', approvedAmount: 700000 }]
+  });
 
   assert.equal(phases[0].financialConditions.phaseTotal, 1000000);
   assert.equal(conditions.projectTotal, 1000000);
@@ -42,23 +44,29 @@ test('project and phase totals are derived from phase uses', () => {
   assert.doesNotThrow(() => assertFinancePhasesBalanced(phases, conditions));
 });
 
-test('optional or partially entered financing lines do not block project creation', () => {
+test('empty or partial financing lines block creation when there is a bank source', () => {
   const empty = reconciledFinance();
-  assert.doesNotThrow(() => assertFinancePhasesBalanced(empty.phases, empty.conditions));
+  assert.throws(
+    () => assertFinancePhasesBalanced(empty.phases, empty.conditions),
+    /debe coincidir con la fuente Banco/
+  );
 
   const partial = reconciledFinance({
     financingLines: [{ name: 'Terreno', approvedAmount: 250000 }]
   });
-  assert.doesNotThrow(() => assertFinancePhasesBalanced(partial.phases, partial.conditions));
+  assert.throws(
+    () => assertFinancePhasesBalanced(partial.phases, partial.conditions),
+    /debe coincidir con la fuente Banco/
+  );
 });
 
-test('financing lines cannot exceed the bank source', () => {
+test('financing lines cannot exceed the bank source either', () => {
   const { phases, conditions } = reconciledFinance({
     financingLines: [{ name: 'Construccion', approvedAmount: 700000.06 }]
   });
 
   assert.throws(
     () => assertFinancePhasesBalanced(phases, conditions),
-    /no puede superar la fuente Banco/
+    /debe coincidir con la fuente Banco/
   );
 });
