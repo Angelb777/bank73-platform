@@ -34,7 +34,7 @@ const VALID_UNIT_ESTADOS = [
 const TECHNICAL_UNIT_UPDATE_FIELDS = new Set([
   'etapa', 'torre', 'nivel', 'manzana', 'lote', 'estado', 'modelId', 'modelo', 'm2',
   'costoUnidad', 'costoUnidadManual', 'numeroFinca', 'codigoUbicacion', 'calle',
-  'metrosExtra', 'precioM2Extra', 'areaAbierta', 'areaCerrada', 'recamaras', 'banos',
+  'metrosExtra', 'precioM2Extra', 'areaAbierta', 'areaCerrada', 'areaTotalConstruccion', 'recamaras', 'banos',
   'valorMejoras', 'valorTerreno'
 ]);
 

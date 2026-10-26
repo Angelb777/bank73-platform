@@ -2178,6 +2178,7 @@ body.ba-viewer-open {
 #fichaUnidadModal .modal-body {
   flex: 1 1 auto;
   min-height: 0;
+  overflow-x: hidden;
 }
 
 #fichaUnidadModal .unit-save-footer { position:sticky; z-index:20; bottom:0; display:flex; align-items:center; justify-content:flex-end; gap:14px; margin:0 -16px; padding:12px 18px; border-top:1px solid var(--unit-line,var(--border)); background:color-mix(in srgb,var(--unit-bg,var(--panel)) 94%,transparent); box-shadow:0 -12px 28px rgba(2,6,23,.16); backdrop-filter:blur(10px); }
@@ -2358,16 +2359,20 @@ body.light-theme #fichaUnidadModal {
 }
 #fichaUnidadModal .ficha-unidad-card { background:var(--unit-bg); color:var(--unit-copy); }
 #fichaUnidadModal .modal-head { position:relative; padding-bottom:12px; border-bottom:1px solid var(--unit-line); }
-#fichaUnidadModal #fichaTitulo { position:relative; display:flex; align-items:center; gap:18px; flex:1; color:var(--unit-copy); }
-#fichaUnidadModal .unit-title-identity { display:grid; grid-template-columns:auto minmax(90px,190px); align-items:center; column-gap:8px; min-width:0; }
-#fichaUnidadModal .unit-title-project-name { position:absolute; left:50%; max-width:34%; overflow:hidden; color:var(--unit-copy); font-size:16px; font-weight:900; letter-spacing:.01em; text-align:center; text-overflow:ellipsis; white-space:nowrap; transform:translateX(-50%); }
+#fichaUnidadModal #fichaTitulo { position:relative; display:grid; grid-template-columns:minmax(220px,1fr) minmax(160px,280px) max-content; align-items:center; gap:16px; flex:1; color:var(--unit-copy); }
+#fichaUnidadModal .unit-title-identity { display:grid; grid-column:1; grid-template-columns:auto minmax(90px,190px); align-items:center; column-gap:8px; min-width:0; }
+#fichaUnidadModal .unit-title-project-name { position:static; grid-column:2; max-width:100%; overflow:hidden; color:var(--unit-copy); font-size:16px; font-weight:900; letter-spacing:.01em; text-align:center; text-overflow:ellipsis; white-space:nowrap; transform:none; }
 #fichaUnidadModal .unit-title-kicker { color:var(--unit-muted); font-size:11px; font-weight:850; letter-spacing:.09em; text-transform:uppercase; }
 #fichaUnidadModal .unit-title-identity small { grid-column:1/-1; margin-top:1px; color:var(--unit-muted); font-size:12px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 #fichaUnidadModal .unit-title-identity small i { padding:0 4px; font-style:normal; color:var(--unit-accent); }
 #fichaUnidadModal .unit-title-input { width:100%; max-width:190px; padding:3px 7px; border:1px solid transparent; background:transparent; color:var(--unit-copy); font-size:21px; }
 #fichaUnidadModal .unit-title-input:hover { border-color:var(--unit-line); background:var(--unit-surface-2); }
 #fichaUnidadModal .unit-title-input:focus { border-color:var(--unit-accent); outline:3px solid var(--unit-accent-soft); background:var(--unit-surface); }
-#fichaUnidadModal .unit-title-status { position:relative; display:flex; align-items:center; gap:9px; margin-left:auto; padding:6px 7px 6px 11px; border:1px solid color-mix(in srgb,var(--unit-accent) 45%,var(--unit-line)); border-radius:11px; background:var(--unit-accent-soft); }
+#fichaUnidadModal .unit-title-status { position:relative; display:flex; grid-column:3; align-items:center; gap:9px; justify-self:end; margin-left:0; max-width:100%; padding:6px 7px 6px 11px; border:1px solid color-mix(in srgb,var(--unit-accent) 45%,var(--unit-line)); border-radius:11px; background:var(--unit-accent-soft); }
+#fichaUnidadModal.is-technical #fichaTitulo { min-width:0; grid-template-columns:minmax(190px,1fr) max-content; gap:10px 14px; }
+#fichaUnidadModal.is-technical .unit-title-project-name { grid-column:1/-1; grid-row:1; }
+#fichaUnidadModal.is-technical .unit-title-identity { grid-column:1; grid-row:2; }
+#fichaUnidadModal.is-technical .unit-title-status { grid-column:2; grid-row:2; min-width:0; }
 #fichaUnidadModal .unit-title-status > span { color:var(--unit-muted); font-size:10px; font-weight:850; letter-spacing:.06em; text-transform:uppercase; }
 #fichaUnidadModal .unit-title-status select { min-width:145px; min-height:34px; border-color:transparent; background:#182238; color:#f8fafc; color-scheme:dark; font-weight:800; }
 #fichaUnidadModal .unit-title-status select option { background:#182238; color:#f8fafc; }
@@ -2490,14 +2495,40 @@ body.light-theme #fichaUnidadModal .is-current .unit-stage-status { color:color-
 #fichaUnidadModal .unit-comments { padding:14px 16px; }
 #fichaUnidadModal .unit-comments h3 { font-size:16px; }
 
-@media (max-width:1180px) {
-  #fichaUnidadModal .unit-process-summary { grid-template-columns:repeat(2,minmax(180px,1fr)); }
+@media (max-width:1450px) {
+  #fichaUnidadModal #fichaTitulo { grid-template-columns:minmax(190px,1fr) max-content; gap:10px 14px; }
+  #fichaUnidadModal .unit-title-project-name { grid-column:1/-1; grid-row:1; }
+  #fichaUnidadModal .unit-title-identity { grid-column:1; grid-row:2; }
+  #fichaUnidadModal .unit-title-status { grid-column:2; grid-row:2; }
+  #fichaUnidadModal .unit-process-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  #fichaUnidadModal .unit-process-layout { grid-template-columns:minmax(260px,340px) minmax(0,1fr); }
+  #fichaUnidadModal .unit-process-right { grid-column:1/-1; grid-template-columns:repeat(3,minmax(0,1fr)); }
+}
+@media (max-width:900px) {
+  #fichaUnidadModal #fichaTitulo { grid-template-columns:1fr; }
+  #fichaUnidadModal .unit-title-project-name,
+  #fichaUnidadModal .unit-title-identity,
+  #fichaUnidadModal .unit-title-status { grid-column:1; }
+  #fichaUnidadModal .unit-title-project-name { grid-row:1; }
+  #fichaUnidadModal .unit-title-identity { grid-row:2; }
+  #fichaUnidadModal .unit-title-status { grid-row:3; justify-self:stretch; width:100%; flex-wrap:wrap; }
+  #fichaUnidadModal .unit-title-status select { flex:1 1 160px; }
+  #fichaUnidadModal .unit-process-layout,
+  #fichaUnidadModal .unit-process-right { grid-template-columns:1fr; }
+  #fichaUnidadModal .unit-process-right { grid-column:auto; }
+  #fichaUnidadModal .unit-stage-body { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  #fichaUnidadModal.is-technical #fichaTitulo { grid-template-columns:1fr; }
+  #fichaUnidadModal.is-technical .unit-title-project-name,
+  #fichaUnidadModal.is-technical .unit-title-identity,
+  #fichaUnidadModal.is-technical .unit-title-status { grid-column:1; }
+  #fichaUnidadModal.is-technical .unit-title-project-name { grid-row:1; }
+  #fichaUnidadModal.is-technical .unit-title-identity { grid-row:2; }
+  #fichaUnidadModal.is-technical .unit-title-status { grid-row:3; justify-self:stretch; width:100%; }
 }
 @media (max-width:760px) {
-  #fichaUnidadModal #fichaTitulo { align-items:flex-start; flex-direction:column; gap:9px; }
-  #fichaUnidadModal .unit-title-project-name { position:static; order:-1; width:100%; max-width:none; text-align:center; transform:none; }
-  #fichaUnidadModal .unit-title-status { width:100%; margin-left:0; justify-content:space-between; }
+  #fichaUnidadModal .unit-title-status { justify-content:space-between; }
   #fichaUnidadModal .unit-process-summary { grid-template-columns:1fr; }
+  #fichaUnidadModal .unit-stage-body { grid-template-columns:1fr; }
 }
 
 /* ===== Finanzas: tarjetas de fases ===== */
@@ -4919,10 +4950,14 @@ body.light-theme .finance-modal-funding-summary strong { color: #172033; }
 .insurance-policy-card { border:1px solid #cbd5e1; border-left:5px solid #2563eb; border-radius:12px; padding:12px; background:#fff; color:#0f172a; }
 .insurance-policy-card.is-not-endorsed { border-left-color:#dc2626; background:#fff7f7; }
 .insurance-policy-card.is-endorsed { border-left-color:#16a34a; background:#f0fdf4; }
-.insurance-policy-card-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:8px; }
+.insurance-policy-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; min-width:0; flex-wrap:wrap; }
+.insurance-policy-card-head > strong { min-width:0; overflow-wrap:anywhere; }
+.insurance-policy-card-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px; margin-top:8px; }
+.insurance-policy-card-grid > div { min-width:0; }
 .insurance-policy-card-grid span { display:block; color:#64748b; font-size:.74rem; }
-.insurance-policy-card-grid strong { color:#0f172a; font-size:.85rem; }
-.insurance-policy-card-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; padding-top:10px; border-top:1px solid #dbe2ea; }
+.insurance-policy-card-grid strong { display:block; min-width:0; color:#0f172a; font-size:.85rem; overflow-wrap:anywhere; }
+.insurance-policy-card-grid .btn { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+.insurance-policy-card-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; padding-top:10px; border-top:1px solid #dbe2ea; flex-wrap:wrap; }
 .insurance-policy-editor-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
 [data-unit-policy-editor] .insurance-policy-remove { display:none; }
 .insurance-endorsement { display:inline-flex; align-items:center; gap:5px; border-radius:999px; padding:4px 9px; font-size:.75rem; font-weight:800; }
@@ -4930,6 +4965,53 @@ body.light-theme .finance-modal-funding-summary strong { color: #172033; }
 .insurance-endorsement.no { background:#fee2e2; color:#991b1b; }
 @media (max-width:900px) { .insurance-policy-row { grid-template-columns:repeat(2,minmax(0,1fr)); } .insurance-policy-card-grid,.insurance-policy-units { grid-template-columns:1fr 1fr; } }
 @media (max-width:600px) { .insurance-policy-row,.insurance-policy-card-grid,.insurance-policy-units { grid-template-columns:1fr; } }
+
+/* Ficha técnica: los mismos datos canónicos de Unidad y Construcción que Comercial. */
+body.light-theme #tab-tecnico .commercial-folder {
+  border-color:#d8e0ec;
+  background:linear-gradient(135deg,color-mix(in srgb,var(--folder-color,#0f172a) 9%,#fff),#fff 58%);
+  box-shadow:0 10px 24px rgba(31,45,74,.08);
+}
+body.light-theme #tab-tecnico .commercial-folder-head h3,
+body.light-theme #tab-tecnico .commercial-folder-head .folder-title { color:#172033 !important; text-shadow:none; }
+body.light-theme #tab-tecnico .commercial-folder-head .folder-actions { color:#647089 !important; }
+#fichaUnidadModal .technical-process-shell { gap:12px; }
+#fichaUnidadModal .technical-process-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+#fichaUnidadModal .technical-process-summary .unit-summary-card > strong { color:var(--unit-copy); font-size:18px; overflow-wrap:anywhere; }
+#fichaUnidadModal .technical-process-layout { display:grid; grid-template-columns:minmax(0,1.65fr) minmax(340px,.85fr); gap:14px; align-items:start; }
+#fichaUnidadModal .technical-process-primary,
+#fichaUnidadModal .technical-process-secondary { display:grid; min-width:0; gap:12px; }
+#fichaUnidadModal .technical-process-layout .unit-side-card { min-width:0; }
+#fichaUnidadModal .technical-completion-chip { flex:none; padding:4px 8px; border-radius:999px; background:var(--unit-surface-2); color:var(--unit-muted); font-size:10px; font-weight:850; white-space:nowrap; }
+#fichaUnidadModal .technical-data-card > summary { border-left-color:#06b6d4; }
+#fichaUnidadModal .construction-card > summary { border-left-color:#ef4444; }
+#fichaUnidadModal .technical-policy-card > summary { border-left-color:#a855f7; }
+#fichaUnidadModal .technical-unit-fields { grid-template-columns:repeat(3,minmax(0,1fr)); }
+#fichaUnidadModal .technical-construction-fields { grid-template-columns:repeat(3,minmax(0,1fr)); }
+#fichaUnidadModal .technical-policy-body { display:grid; gap:12px; min-width:0; padding:2px 14px 15px; }
+#fichaUnidadModal .insurance-unit-current,
+#fichaUnidadModal .insurance-unit-current > div { display:grid; grid-template-columns:minmax(0,1fr); min-width:0; width:100%; }
+#fichaUnidadModal .insurance-policy-card { min-width:0; max-width:100%; overflow:hidden; border-color:var(--unit-line); background:var(--unit-surface-2); color:var(--unit-copy); }
+#fichaUnidadModal .insurance-policy-card-grid span { color:var(--unit-muted); }
+#fichaUnidadModal .insurance-policy-card-grid strong { color:var(--unit-copy); }
+#fichaUnidadModal .insurance-policy-card-actions { border-top-color:var(--unit-line); }
+#fichaUnidadModal .technical-policy-manager { min-width:0; padding-top:10px; border-top:1px solid var(--unit-line); }
+#fichaUnidadModal .technical-policy-manager > summary { cursor:pointer; color:var(--unit-copy); }
+#fichaUnidadModal .technical-policy-manager .insurance-policy-row { grid-template-columns:repeat(2,minmax(0,1fr)); min-width:0; border-color:var(--unit-line); background:var(--unit-surface-2); }
+#fichaUnidadModal .technical-policy-manager .insurance-policy-row label { min-width:0; color:var(--unit-muted); }
+#fichaUnidadModal .technical-policy-manager .insurance-policy-row input,
+#fichaUnidadModal .technical-policy-manager .insurance-policy-row select { width:100%; border-color:var(--unit-line); background:var(--unit-surface); color:var(--unit-copy); }
+
+@media (max-width:1100px) {
+  #fichaUnidadModal .technical-process-layout { grid-template-columns:1fr; }
+  #fichaUnidadModal .technical-process-secondary { grid-column:1; }
+}
+@media (max-width:760px) {
+  #fichaUnidadModal .technical-process-summary,
+  #fichaUnidadModal .technical-unit-fields,
+  #fichaUnidadModal .technical-construction-fields { grid-template-columns:1fr; }
+  #fichaUnidadModal .technical-completion-chip { white-space:normal; }
+}
 
 .requirement-field {
   display: block;

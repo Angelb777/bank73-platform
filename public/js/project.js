@@ -9272,7 +9272,7 @@ function insurancePolicyCardsHtml(policies = [], { showCoverage = true, editable
     const refs = [...(policy.unitRefs || []).map(String), ...ids.map(unitId => insuranceUnitReference(INSURANCE_UNITS_CACHE.find(unit => String(unit._id) === unitId) || {}) || unitId)];
     const coverage = policy.appliesToAllUnits !== false ? 'Todas las unidades' : (Array.from(new Set(refs)).join(', ') || 'Sin unidades seleccionadas');
     const actions = editable && policy._id ? `<div class="insurance-policy-card-actions"><button class="btn btn-ghost btn-xs" type="button" data-edit-unit-policy="${escapeHtml(policy._id)}">Editar</button><button class="btn btn-danger btn-xs" type="button" data-delete-unit-policy="${escapeHtml(policy._id)}">Quitar de esta unidad</button></div>` : '';
-    return `<div class="insurance-policy-card ${policy.endorsedToBank ? 'is-endorsed' : 'is-not-endorsed'}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><strong>${escapeHtml(policy.type || 'CAR')} · ${escapeHtml(policy.policyNumber || 'Sin número')}</strong><span class="insurance-endorsement ${policy.endorsedToBank ? 'yes' : 'no'}">${policy.endorsedToBank ? '✓ Endosada al banco' : '⚠ No endosada al banco'}</span></div><div class="insurance-policy-card-grid"><div><span>Aseguradora</span><strong>${escapeHtml(policy.insurer || 'No informada')}</strong></div><div><span>Suma asegurada</span><strong>${escapeHtml(formatProjectMoney(policy.insuredAmount || 0))}</strong></div><div><span>Vigencia</span><strong>${escapeHtml(policy.startDate ? String(policy.startDate).slice(0,10) : '—')} → ${escapeHtml(policy.expiryDate ? String(policy.expiryDate).slice(0,10) : '—')}</strong></div><div><span>Banco</span><strong>${escapeHtml(policy.bank || 'No informado')}</strong></div>${showCoverage ? `<div><span>Cobertura</span><strong>${escapeHtml(coverage)}</strong></div>` : ''}<div><span>Documento</span>${docLink}</div></div>${actions}</div>`;
+    return `<div class="insurance-policy-card ${policy.endorsedToBank ? 'is-endorsed' : 'is-not-endorsed'}"><div class="insurance-policy-card-head"><strong>${escapeHtml(policy.type || 'CAR')} · ${escapeHtml(policy.policyNumber || 'Sin número')}</strong><span class="insurance-endorsement ${policy.endorsedToBank ? 'yes' : 'no'}">${policy.endorsedToBank ? '✓ Endosada al banco' : '⚠ No endosada al banco'}</span></div><div class="insurance-policy-card-grid"><div><span>Aseguradora</span><strong>${escapeHtml(policy.insurer || 'No informada')}</strong></div><div><span>Suma asegurada</span><strong>${escapeHtml(formatProjectMoney(policy.insuredAmount || 0))}</strong></div><div><span>Vigencia</span><strong>${escapeHtml(policy.startDate ? String(policy.startDate).slice(0,10) : '—')} → ${escapeHtml(policy.expiryDate ? String(policy.expiryDate).slice(0,10) : '—')}</strong></div><div><span>Banco</span><strong>${escapeHtml(policy.bank || 'No informado')}</strong></div>${showCoverage ? `<div><span>Cobertura</span><strong>${escapeHtml(coverage)}</strong></div>` : ''}<div><span>Documento</span>${docLink}</div></div>${actions}</div>`;
   }).join('')}</div>`;
 }
 
@@ -10571,6 +10571,81 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
     <main class="unit-process-main"><section class="unit-process-heading"><div><h2>Proceso de venta</h2><span>${complete} de 6 etapas completas</span></div>${reservationAge ? `<strong class="unit-reservation-age">${safeVal(reservationAge.label)}</strong>` : ''}<div class="unit-process-progress"><i style="width:${Math.round(complete/6*100)}%"></i></div></section><div class="unit-stages">${stages}</div><section class="unit-comments"><h3>Comentarios</h3><textarea id="fv-comentario" rows="3" placeholder="Añade información útil para el seguimiento">${safeVal(v.comentario)}</textarea></section></main>
     <aside class="unit-process-right">${client(false)}${client(true)}<details class="unit-side-card" open><summary><strong>Referencias personales</strong><span>⌄</span></summary><div class="unit-side-grid">${field('fv-referencia1Nombre','Referencia 1',v.referencia1Nombre)}${field('fv-referencia1Relacion','Relación',v.referencia1Relacion)}${field('fv-referencia1Telefono','Teléfono',v.referencia1Telefono)}${field('fv-referencia2Nombre','Referencia 2',v.referencia2Nombre)}${field('fv-referencia2Relacion','Relación',v.referencia2Relacion)}${field('fv-referencia2Telefono','Teléfono',v.referencia2Telefono)}${select('fv-canalCaptacion','Captación del cliente',[{v:'',l:'—'},{v:'Atención en oficina',l:'Atención en oficina'},{v:'Mail / internet',l:'Mail / internet'},{v:'En proyecto',l:'En proyecto'},{v:'Mercadeo / prospecto',l:'Mercadeo / prospecto'}],captureChannel)}</div></details></aside>
   </div></div>`;
+}
+
+function renderTechnicalUnitFicha(u = {}, v = {}, unitId = '') {
+  const options = (items, value = '') => {
+    const current = String(value || '');
+    const known = items.some(item => item.v === current);
+    return `${!known && current ? `<option value="${safeVal(current)}" selected>${safeVal(current)}</option>` : ''}${items.map(item =>
+      `<option value="${item.v}" ${current === item.v ? 'selected' : ''}>${item.l}</option>`
+    ).join('')}`;
+  };
+  const field = (id, label, value = '', type = 'text', extra = '') => `
+    <div class="unit-process-field"><label for="${id}">${label}</label>
+    <input id="${id}" type="${type}" value="${safeVal(value)}" ${extra}></div>`;
+  const number = (id, label, value = 0, extra = '') => field(id, label, formatInputNumber(id, value), 'text', `inputmode="decimal" data-number-input ${extra}`);
+  const dateValue = value => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10);
+  };
+  const date = (id, label, value) => field(id, label, dateValue(value), 'date');
+  const check = (id, label, value) => `<div class="unit-process-field"><label class="unit-process-check" for="${id}"><input id="${id}" type="checkbox" ${value ? 'checked' : ''}><span>${label}</span></label></div>`;
+  const select = (id, label, items, value = '') => `<div class="unit-process-field"><label for="${id}">${label}</label><select id="${id}">${options(items, value)}</select></div>`;
+  const informed = values => values.filter(value => value !== null && value !== undefined && String(value).trim() !== '' && Number(value) !== 0).length;
+  const unitValues = [u.etapa,u.torre,u.nivel,u.modelId||u.modelo,u.m2,u.numeroFinca,u.codigoUbicacion,u.calle,u.areaAbierta,u.areaCerrada,u.recamaras,u.banos];
+  const constructionValues = [v.avanceConstruccionPct,v.estatusConstruccion,v.permisoConstruccionMunicipal,v.permisoConstruccionNum,v.permisoConstruccionVencimiento,v.permisoOcupacion,v.permisoOcupacionNum,v.fechaEmisionPermisoOcupacion,v.constructora];
+  const policies = effectivePoliciesForUnit(u);
+  const statusKey = normalizeUnitEstadoFrontend(u.estado);
+  const phase = v.estatusConstruccion || 'Pendiente de construir';
+  const progress = Math.min(100, Math.max(0, Number(v.avanceConstruccionPct || 0)));
+
+  return `<div class="unit-process-shell technical-process-shell unit-status-${statusKey}">
+    <div class="technical-process-summary">
+      <section class="unit-summary-card"><span>Modelo</span><strong>${safeVal(u.modelo || 'Sin modelo')}</strong><small>Dato único de la unidad</small></section>
+      <section class="unit-summary-card"><span>Fase de obra</span><strong>${safeVal(phase)}</strong><small>${progress}% de avance</small></section>
+      <section class="unit-summary-card"><span>Pólizas aplicables</span><strong>${policies.length}</strong><small>CAR / incendio</small></section>
+    </div>
+    <div class="technical-process-layout">
+      <div class="technical-process-primary">
+        <details class="unit-side-card technical-data-card">
+          <summary><strong>Datos de la unidad</strong><span class="technical-completion-chip">${informed(unitValues)} de ${unitValues.length} informados</span><span>⌄</span></summary>
+          <div class="unit-side-grid technical-unit-fields">
+            ${field('fu-etapa','Etapa',u.etapa)}${field('fu-torre','Torre',u.torre)}${field('fu-nivel','Nivel',u.nivel)}
+            <div class="unit-process-field"><label for="fu-modeloSelect">Modelo de vivienda</label><select id="fu-modeloSelect">${projectModelOptions(u.modelId||u.modelo||'',{includeEmpty:true})}</select><input id="fu-modelo" type="hidden" value="${safeVal(u.modelo||'')}"></div>
+            ${number('fu-m2','Área de terreno',u.m2)}${field('fv-numeroFinca','Número de finca',u.numeroFinca)}${field('fv-codigoUbicacion','Código de ubicación',u.codigoUbicacion)}${field('fv-calle','Calle',u.calle)}
+            ${number('fv-areaAbierta','Área abierta',u.areaAbierta)}${number('fv-areaCerrada','Área cerrada',u.areaCerrada)}${number('fv-areaTotalConstruccion','Área total de construcción',Number(u.areaTotalConstruccion||0)||Number(u.areaAbierta||0)+Number(u.areaCerrada||0),'readonly aria-readonly="true"')}${number('fv-recamaras','Recámaras',u.recamaras)}${number('fv-banos','Baños',u.banos)}
+          </div>
+        </details>
+        <details class="unit-side-card construction-card" open>
+          <summary><strong>Construcción de la vivienda</strong><span class="parallel-chip">Dato compartido</span><span class="technical-completion-chip">${informed(constructionValues)} de ${constructionValues.length}</span><span>⌄</span></summary>
+          <div class="unit-side-grid technical-construction-fields">
+            ${number('fv-avanceConstruccionPct','Avance de obra (%)',progress,'min="0" max="100"')}
+            ${select('fv-estatusConstruccion','Fase de obra',[{v:'',l:'Pendiente de construir'},{v:'Obra gris',l:'Obra gris'},{v:'Acabados',l:'Acabados'},{v:'Terminada',l:'Terminada'}],v.estatusConstruccion)}
+            ${check('fv-permisoConstruccionMunicipal','Permiso de construcción',v.permisoConstruccionMunicipal)}${field('fv-permisoConstruccionNum','Resolución construcción',v.permisoConstruccionNum)}
+            ${date('fv-permisoConstruccionVencimiento','Vencimiento construcción',v.permisoConstruccionVencimiento)}${check('fv-permisoOcupacion','Permiso de ocupación',v.permisoOcupacion)}
+            ${field('fv-permisoOcupacionNum','Resolución ocupación',v.permisoOcupacionNum)}${date('fv-fechaEmisionPermisoOcupacion','Fecha permiso ocupación',v.fechaEmisionPermisoOcupacion)}${field('fv-constructora','Constructora / contratista',v.constructora)}
+          </div>
+        </details>
+      </div>
+      <aside class="technical-process-secondary">
+        <details class="unit-side-card technical-policy-card">
+          <summary><strong>Póliza CAR / incendio aplicable</strong><span class="technical-completion-chip">${policies.length || 'Sin póliza'}</span><span>⌄</span></summary>
+          <div class="technical-policy-body">
+            <div class="insurance-unit-current">${insurancePolicyCardsHtml(policies, { showCoverage:true, editable:true })}</div>
+            <details class="technical-policy-manager" data-unit-policy-manager><summary><strong>Crear y asignar una póliza</strong></summary>
+              <p class="small muted">Selecciona todas las unidades cubiertas por esta misma póliza. Una unidad no puede tener dos pólizas del mismo tipo.</p>
+              <div data-unit-policy-editor>${insurancePolicyEditorRow({}, { defaultUnitId:unitId })}</div>
+              <div class="insurance-policy-editor-actions"><button type="button" class="btn btn-ghost" data-save-unit-policy>Guardar póliza</button><button type="button" class="btn btn-ghost" data-cancel-unit-policy>Cancelar</button></div>
+            </details>
+          </div>
+        </details>
+      </aside>
+    </div>
+  </div>`;
 }
 
 const COMMERCIAL_STAGE_FIELD_IDS = [
@@ -13035,6 +13110,7 @@ function scheduleFichaAutosave(delay = 1400) {
   fichaEstadoControl = '';
   fichaUnitId = unitId;
   fichaMode = options.mode === 'technical' ? 'technical' : 'commercial';
+  modalFicha?.classList.toggle('is-technical', fichaMode === 'technical');
 
   const u = unitsCache.find(x => String(x._id) === String(unitId)) || await apiGet(`/api/units/${unitId}`);
   const rawV = ventasMap.get(String(unitId)) || {};
@@ -13453,7 +13529,7 @@ ${input('fv-comentario', `Comentario interno ${info('Comentario interno para seg
 `);
 
   const fichaHTML = fichaMode === 'technical'
-    ? htmlUnidadTechnical + htmlInsurance + htmlTecnico
+    ? renderTechnicalUnitFicha(u, v, unitId)
     : renderCommercialProcessFicha(u, v);
 
   const docsHTML = (typeof renderUnidadDocsSkeleton === 'function')
@@ -13698,7 +13774,7 @@ if (commercialProcessView && fichaMode === 'commercial') {
 }
 const fichaModelSelect = document.getElementById('fu-modeloSelect');
 fichaModelSelect?.addEventListener('change', event => applyProjectModelToFicha(event.target.value));
-if (fichaMode === 'commercial' && fichaModelSelect?.value) {
+if (fichaModelSelect?.value) {
   applyProjectModelToFicha(fichaModelSelect.value, { onlyMissing:true });
 }
 const unitCostInput = document.getElementById('fu-costo');
@@ -13816,6 +13892,9 @@ if (btnImportWord && importWordInput) {
       const { manzana, lote } = unitNamePartsFromInput();
 
       await apiPatch(`/api/units/${fichaUnitId}`, {
+        etapa: vVal('fu-etapa'),
+        torre: vVal('fu-torre'),
+        nivel: vVal('fu-nivel'),
         manzana,
         lote,
         ...(fichaEstadoControl === 'manual'
@@ -13826,19 +13905,14 @@ if (btnImportWord && importWordInput) {
         modelId: vVal('fu-modeloSelect') || undefined,
         modelo: vVal('fu-modelo'),
         m2: vNum('fu-m2'),
-        costoUnidad: vNum('fu-costo'),
-        costoUnidadManual: document.getElementById('fu-costo')?.dataset.manual === 'true',
         numeroFinca: vVal('fv-numeroFinca'),
         codigoUbicacion: vVal('fv-codigoUbicacion'),
         calle: vVal('fv-calle'),
-        metrosExtra: vNum('fv-metrosExtra'),
-        precioM2Extra: vNum('fv-precioM2Extra'),
         areaAbierta: vNum('fv-areaAbierta'),
         areaCerrada: vNum('fv-areaCerrada'),
+        areaTotalConstruccion: vNum('fv-areaTotalConstruccion'),
         recamaras: vNum('fv-recamaras'),
-        banos: vNum('fv-banos'),
-        valorMejoras: vNum('fv-valorMejoras'),
-        valorTerreno: vNum('fv-valorTerreno')
+        banos: vNum('fv-banos')
       });
 
       await apiPost('/api/ventas/upsert-by-unit', {
@@ -13848,19 +13922,19 @@ if (btnImportWord && importWordInput) {
         numeroFinca: vVal('fv-numeroFinca'),
         codigoUbicacion: vVal('fv-codigoUbicacion'),
         calle: vVal('fv-calle'),
-        metrosExtra: vNum('fv-metrosExtra'),
-        precioM2Extra: vNum('fv-precioM2Extra'),
+        metrajeLote: vNum('fu-m2'),
         areaAbierta: vNum('fv-areaAbierta'),
         areaCerrada: vNum('fv-areaCerrada'),
         areaTotalConstruccion: vNum('fv-areaAbierta') + vNum('fv-areaCerrada'),
         recamaras: vNum('fv-recamaras'),
         banos: vNum('fv-banos'),
-        valorMejoras: vNum('fv-valorMejoras'),
-        valorTerreno: vNum('fv-valorTerreno'),
-        enConstruccion: vChk('fv-enConstruccion'),
+        enConstruccion: vNum('fv-avanceConstruccionPct') > 0 && vNum('fv-avanceConstruccionPct') < 100,
         estatusConstruccion: vVal('fv-estatusConstruccion'),
+        faseConstruccion: vVal('fv-estatusConstruccion'),
+        avanceConstruccionPct: vNum('fv-avanceConstruccionPct'),
         permisoConstruccionMunicipal: vChk('fv-permisoConstruccionMunicipal'),
         permisoConstruccionNum: vVal('fv-permisoConstruccionNum'),
+        permisoConstruccionVencimiento: vDate('fv-permisoConstruccionVencimiento'),
         permisoOcupacion: vChk('fv-permisoOcupacion'),
         permisoOcupacionNum: vVal('fv-permisoOcupacionNum'),
         fechaEmisionPermisoOcupacion: vDate('fv-fechaEmisionPermisoOcupacion'),
@@ -14705,7 +14779,7 @@ function renderTechnicalKpis() {
   const approved = activePermits.filter(item => technicalPermitEffectiveStatus(item) === 'approved').length;
   const progress = activePermits.length ? Math.round(approved / activePermits.length * 100) : 0;
   const inConstruction = technicalWorkspace.units.filter(unit => ventas.get(String(unit._id))?.enConstruccion).length;
-  const completed = technicalWorkspace.units.filter(unit => String(ventas.get(String(unit._id))?.estatusConstruccion || '').toLowerCase() === 'culminada').length;
+  const completed = technicalWorkspace.units.filter(unit => technicalConstructionPhase(ventas.get(String(unit._id))?.estatusConstruccion) === 'Terminada').length;
   const missingOccupation = technicalWorkspace.units.filter(unit => !ventas.get(String(unit._id))?.permisoOcupacion).length;
   const expiringPolicies = projectInsurancePolicies().filter(policy => {
     const days = technicalDaysUntil(policy.expiryDate);
@@ -14714,7 +14788,7 @@ function renderTechnicalKpis() {
   host.innerHTML = [
     technicalKpi('Permisos aprobados', `${progress}%`, `${approved} de ${activePermits.length || 0}`, progress === 100 ? 'is-success' : 'is-cyan'),
     technicalKpi('Unidades en obra', inConstruction, 'Construcción activa', 'is-cyan'),
-    technicalKpi('Unidades culminadas', completed, 'Estado técnico', 'is-success'),
+    technicalKpi('Unidades terminadas', completed, 'Estado técnico', 'is-success'),
     technicalKpi('Sin permiso de ocupación', missingOccupation, 'Requieren seguimiento', missingOccupation ? 'is-warning' : 'is-success'),
     technicalKpi('Pólizas con alerta', expiringPolicies, 'Vencidas o a 60 días', expiringPolicies ? 'is-danger' : 'is-success')
   ].join('');
@@ -14982,7 +15056,7 @@ function technicalUnitMatchesFilters(unit, venta) {
   const construction = document.getElementById('technicalConstructionFilter')?.value || '';
   const permitFilter = document.getElementById('technicalPermitFilter')?.value || '';
   const query = String(document.getElementById('technicalUnitSearch')?.value || '').trim().toLowerCase();
-  if (construction && String(venta?.estatusConstruccion || '') !== construction) return false;
+  if (construction && technicalConstructionPhase(venta?.estatusConstruccion) !== construction) return false;
   if (permitFilter === 'missing-construction' && venta?.permisoConstruccionMunicipal) return false;
   if (permitFilter === 'missing-occupation' && venta?.permisoOcupacion) return false;
   if (permitFilter === 'complete' && !(venta?.permisoConstruccionMunicipal && venta?.permisoOcupacion)) return false;
@@ -14993,10 +15067,18 @@ function technicalUnitMatchesFilters(unit, venta) {
   return true;
 }
 
+function technicalConstructionPhase(value = '') {
+  const normalized = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  if (normalized === 'culminada' || normalized === 'terminada') return 'Terminada';
+  if (normalized === 'obra gris') return 'Obra gris';
+  if (normalized === 'acabados') return 'Acabados';
+  return 'Pendiente';
+}
+
 function technicalConstructionTone(value, active = false) {
   const normalized = String(value || (active ? 'En construcción' : 'Pendiente'))
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-  if (normalized === 'culminada') return 'completed';
+  if (normalized === 'culminada' || normalized === 'terminada') return 'completed';
   if (normalized === 'acabados') return 'finishes';
   if (normalized === 'obra gris') return 'gray-work';
   if (normalized.includes('construccion') || active) return 'in-progress';
@@ -15007,7 +15089,7 @@ function technicalUnitCard(unit) {
   const venta = technicalWorkspace.ventas.get(String(unit._id)) || {};
   const policies = technicalPoliciesForUnit(unit);
   const idValue = String(unit._id);
-  const construction = venta.estatusConstruccion || (venta.enConstruccion ? 'En construcción' : 'Pendiente');
+  const construction = venta.enConstruccion && !venta.estatusConstruccion ? 'En construcción' : technicalConstructionPhase(venta.estatusConstruccion);
   const constructionTone = technicalConstructionTone(construction, venta.enConstruccion);
   return `<article class="unit-card construction-${escapeHtml(constructionTone)} ${technicalWorkspace.selected.has(idValue) ? 'selected' : ''}" data-technical-unit="${escapeHtml(idValue)}" draggable="true">
     <div class="head"><div class="title"><b>${escapeHtml(unit.manzana || '-')}-${escapeHtml(unit.lote || '')}</b><span class="status">${escapeHtml(technicalUnitStateLabel(unit.estado || 'disponible'))}</span></div><label class="sel-wrap" title="Seleccionar"><input class="sel" type="checkbox" ${technicalWorkspace.selected.has(idValue) ? 'checked' : ''}><span class="sel-box"></span></label></div>
@@ -15033,12 +15115,12 @@ function renderTechnicalUnits() {
   const filtered = all.filter(unit => technicalUnitMatchesFilters(unit, technicalWorkspace.ventas.get(String(unit._id)) || {}));
   const ventas = technicalWorkspace.ventas;
   const inWork = all.filter(unit => ventas.get(String(unit._id))?.enConstruccion).length;
-  const completed = all.filter(unit => String(ventas.get(String(unit._id))?.estatusConstruccion || '').toLowerCase() === 'culminada').length;
+  const completed = all.filter(unit => technicalConstructionPhase(ventas.get(String(unit._id))?.estatusConstruccion) === 'Terminada').length;
   const missingConstruction = all.filter(unit => !ventas.get(String(unit._id))?.permisoConstruccionMunicipal).length;
   const missingOccupation = all.filter(unit => !ventas.get(String(unit._id))?.permisoOcupacion).length;
   kpiHost.innerHTML = [
     technicalKpi('En construcción', inWork, `${all.length} unidades totales`, 'is-cyan'),
-    technicalKpi('Culminadas', completed, 'Obra finalizada', 'is-success'),
+    technicalKpi('Terminadas', completed, 'Obra finalizada', 'is-success'),
     technicalKpi('Sin permiso construcción', missingConstruction, 'Pendientes', missingConstruction ? 'is-warning' : 'is-success'),
     technicalKpi('Sin permiso ocupación', missingOccupation, 'Pendientes', missingOccupation ? 'is-warning' : 'is-success')
   ].join('');
@@ -15186,11 +15268,12 @@ function openTechnicalBatchEditor() {
   const policies = projectInsurancePolicies();
   openModal('Editar selección técnica', `<div class="technical-batch-form">
     <label>Estado comercial<select id="technicalBatchState"><option value="">(no cambiar)</option>${TECHNICAL_UNIT_STATES.map(item => `<option value="${item.v}">${item.l}</option>`).join('')}</select></label>
-    <label>En construcción<select id="technicalBatchInConstruction"><option value="">(no cambiar)</option><option value="true">Sí</option><option value="false">No</option></select></label>
-    <label>Estado de construcción<select id="technicalBatchConstructionStatus"><option value="">(no cambiar)</option><option>Pendiente</option><option>Obra gris</option><option>Acabados</option><option>Culminada</option></select></label>
+    <label>Avance de obra (%)<input id="technicalBatchConstructionProgress" type="number" min="0" max="100" placeholder="(no cambiar)"></label>
+    <label>Fase de obra<select id="technicalBatchConstructionStatus"><option value="">(no cambiar)</option><option value="Obra gris">Obra gris</option><option value="Acabados">Acabados</option><option value="Terminada">Terminada</option></select></label>
     <label>Constructora<input id="technicalBatchBuilder" placeholder="(no cambiar)"></label>
     <label>Permiso de construcción<select id="technicalBatchConstructionPermit"><option value="">(no cambiar)</option><option value="true">Sí</option><option value="false">No</option></select></label>
     <label>Resolución construcción<input id="technicalBatchConstructionNumber" placeholder="(no cambiar)"></label>
+    <label>Vencimiento construcción<input id="technicalBatchConstructionExpiry" type="date"></label>
     <label>Permiso de ocupación<select id="technicalBatchOccupationPermit"><option value="">(no cambiar)</option><option value="true">Sí</option><option value="false">No</option></select></label>
     <label>Resolución ocupación<input id="technicalBatchOccupationNumber" placeholder="(no cambiar)"></label>
     <label>Fecha emisión ocupación<input id="technicalBatchOccupationDate" type="date"></label>
@@ -15207,11 +15290,18 @@ function openTechnicalBatchEditor() {
     const unitUpdate = {};
     const ventaUpdate = {};
     if (read('technicalBatchState')) unitUpdate.estado = read('technicalBatchState');
-    if (read('technicalBatchInConstruction')) ventaUpdate.enConstruccion = read('technicalBatchInConstruction') === 'true';
-    if (read('technicalBatchConstructionStatus')) ventaUpdate.estatusConstruccion = read('technicalBatchConstructionStatus');
+    if (read('technicalBatchConstructionProgress')) {
+      ventaUpdate.avanceConstruccionPct = Math.min(100, Math.max(0, Number(read('technicalBatchConstructionProgress'))));
+      ventaUpdate.enConstruccion = ventaUpdate.avanceConstruccionPct > 0 && ventaUpdate.avanceConstruccionPct < 100;
+    }
+    if (read('technicalBatchConstructionStatus')) {
+      ventaUpdate.estatusConstruccion = read('technicalBatchConstructionStatus');
+      ventaUpdate.faseConstruccion = read('technicalBatchConstructionStatus');
+    }
     if (read('technicalBatchBuilder')) ventaUpdate.constructora = read('technicalBatchBuilder');
     if (read('technicalBatchConstructionPermit')) ventaUpdate.permisoConstruccionMunicipal = read('technicalBatchConstructionPermit') === 'true';
     if (read('technicalBatchConstructionNumber')) ventaUpdate.permisoConstruccionNum = read('technicalBatchConstructionNumber');
+    if (read('technicalBatchConstructionExpiry')) ventaUpdate.permisoConstruccionVencimiento = read('technicalBatchConstructionExpiry');
     if (read('technicalBatchOccupationPermit')) ventaUpdate.permisoOcupacion = read('technicalBatchOccupationPermit') === 'true';
     if (read('technicalBatchOccupationNumber')) ventaUpdate.permisoOcupacionNum = read('technicalBatchOccupationNumber');
     if (read('technicalBatchOccupationDate')) ventaUpdate.fechaEmisionPermisoOcupacion = read('technicalBatchOccupationDate');

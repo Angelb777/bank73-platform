@@ -42,7 +42,10 @@ test('la ficha comercial sigue el proceso de venta propuesto y mantiene sus camp
   assert.match(css, /unit-process-field select option/);
   assert.match(css, /color-scheme:dark/);
   assert.match(js, /class="unit-title-project-name"/);
-  assert.match(css, /\.unit-title-project-name \{ position:absolute; left:50%/);
+  assert.match(css, /\.unit-title-project-name \{ position:static; grid-column:2;/);
+  assert.match(css, /@media \(max-width:1450px\)/);
+  assert.match(css, /\.unit-process-layout \{ grid-template-columns:minmax\(260px,340px\) minmax\(0,1fr\); \}/);
+  assert.match(css, /\.modal-body \{[\s\S]*?overflow-x: hidden;/);
   assert.match(js, /id="fu-modeloSelect"/);
   assert.match(js, /applyProjectModelToFicha/);
   assert.match(js, /applyProjectModelToFicha\(fichaModelSelect\.value, \{ onlyMissing:true \}\)/);
