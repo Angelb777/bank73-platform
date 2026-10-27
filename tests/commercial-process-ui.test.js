@@ -109,6 +109,7 @@ test('la ficha comercial sigue el proceso de venta propuesto y mantiene sus camp
 test('el importador cubre los encabezados del Dato Único definitivo y sincroniza la unidad', () => {
   const route = read('routes/projects.js');
   const unit = read('models/Unit.js');
+  const project = read('public/js/project.js');
 
   for (const header of [
     'MODELO VIVIENDA',
@@ -147,6 +148,19 @@ test('el importador cubre los encabezados del Dato Único definitivo y sincroniz
   assert.match(unit, /etapa:\s+\{ type: String/);
   assert.match(unit, /torre:\s+\{ type: String/);
   assert.match(unit, /nivel:\s+\{ type: String/);
+  assert.match(project, /function unitDisplayName/);
+  assert.match(project, /if \(hasImportedLocation && lote\) return lote/);
+  assert.match(project, /function commercialUnitName\(u\) \{\s+return unitDisplayName\(u\)/);
+  assert.match(project, /\? \{ manzana: originalManzana, lote: value \}/);
+  assert.doesNotMatch(project, /<b>\$\{u\.manzana \|\| '-'\}-\$\{u\.lote \|\| ''\}<\/b>/);
+  assert.match(project, /importBtn\.innerText = 'Actualizando unidades\.\.\.';[\s\S]*?await window\.loadUnits\(\)/);
+  assert.doesNotMatch(project, /typeof loadCommercial === 'function'/);
+  assert.match(route, /const submittedIdsByName = new Map/);
+  assert.match(route, /const previousModelById = new Map/);
+  assert.match(route, /\{ modelId: model\._id \}/);
+  assert.match(route, /modelId: null, modelo: previousName/);
+  assert.match(route, /if \(unitModelSyncOps\.length\) await Unit\.bulkWrite/);
+  assert.match(project, /Modelos guardados y unidades actualizadas\./);
 });
 
 test('precioVenta es el único precio persistido por unidad comercial', () => {

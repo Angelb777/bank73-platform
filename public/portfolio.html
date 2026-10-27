@@ -632,6 +632,32 @@
       font-size:13px;
       font-weight:600;
     }
+    .create-template-download {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+      margin:0 0 16px;
+      padding:13px 15px;
+      border:1px solid #cbd5e1;
+      border-radius:12px;
+      background:#f8fafc;
+    }
+    .create-template-download-copy { display:grid; gap:3px; }
+    .create-template-download-copy strong { color:#0f172a; }
+    .create-template-download-copy span { color:#64748b; font-size:13px; }
+    .create-template-download .btn { flex:0 0 auto; }
+    .create-finance-guidance {
+      margin:0 0 16px;
+      padding:13px 15px;
+      border:1px solid #bfdbfe;
+      border-radius:12px;
+      background:#eff6ff;
+      color:#1e3a5f;
+      line-height:1.45;
+    }
+    .create-finance-guidance strong { display:block; margin-bottom:4px; color:#172554; }
+    .create-finance-guidance p { margin:0; }
     .financial-conditions-form label,
     .create-finance-panel label {
       color:#334155;
@@ -1375,6 +1401,13 @@
       <section class="create-step" data-create-panel="technical">
         <div class="create-step-card">
         <div class="create-section-title">Datos tecnicos <span class="create-section-kicker">Etapas y volumen del proyecto</span></div>
+        <div class="create-template-download">
+          <div class="create-template-download-copy">
+            <strong>Plantilla Dato Único</strong>
+            <span id="createDatoUnicoTemplateStatus">Consultando la plantilla disponible...</span>
+          </div>
+          <button id="downloadCreateDatoUnicoTemplate" class="btn ghost" type="button" disabled>Descargar plantilla</button>
+        </div>
         <div class="create-grid">
           <label>Cantidad de fases o etapas<input id="td-phasesCount" type="number" min="0" step="1"></label>
           <label>Cantidad total de unidades<input id="td-totalUnits" type="number" min="0" step="1"></label>
@@ -1407,6 +1440,13 @@
         <div id="createManualModelsPanel">
           <div id="createHousingModels"></div>
           <button id="addCreateHousingModel" class="btn ghost" type="button">+ Anadir modelo</button>
+        </div>
+        <div class="create-technical-subsection">
+          <div class="create-section-title">Permisos <span class="create-section-kicker">Ruta inicial del proyecto</span></div>
+          <div class="create-grid">
+            <label>Plantilla de permisos<select id="createPermitTemplate"><option value="">Sin plantilla inicial</option></select></label>
+          </div>
+          <div id="createPermitItems" class="create-progress-list"></div>
         </div>
         <div class="create-technical-subsection">
         <div class="create-section-title">Planos arquitectónicos <span class="create-section-kicker">Documentación técnica</span></div>
@@ -1442,6 +1482,10 @@
       <section class="create-step" data-create-panel="financial">
       <div class="create-finance-panel">
         <div class="create-section-title">Condiciones financieras <span class="create-section-kicker">Opcional</span></div>
+        <div class="create-finance-guidance" role="note">
+          <strong>Esta pestaña recoge la estimación financiera inicial.</strong>
+          <p>Los usos, las fuentes, las condiciones y las líneas que indiques aquí formarán el plan del proyecto. La ejecución real se registrará después, dentro del proyecto, para poder comparar estimación y realidad sin mezclar ambos datos.</p>
+        </div>
         <div class="financial-conditions-form" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px;">
           <section class="create-finance-section">
             <h4>1) Total del proyecto</h4>
@@ -1551,11 +1595,6 @@
         <div id="createProgressChecks" class="create-progress-list">
           <div class="small muted">Cargando checks...</div>
         </div>
-        <h4>Permisos</h4>
-        <div class="create-grid">
-          <label>Plantilla de permisos<select id="createPermitTemplate"><option value="">Sin plantilla inicial</option></select></label>
-        </div>
-        <div id="createPermitItems" class="create-progress-list"></div>
       </div>
       </section>
 
@@ -1598,6 +1637,6 @@
   <script src="/js/api.js"></script>
   <script src="/js/banks.js"></script>
   <script src="/js/theme-toggle.js"></script>
-  <script src="/js/portfolio.js?v=project-finance-v3"></script>
+  <script src="/js/portfolio.js?v=project-finance-v4"></script>
 </body>
 </html>

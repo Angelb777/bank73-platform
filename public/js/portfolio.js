@@ -677,6 +677,7 @@
   let createDatoUnicoFileState = null;
   let createDatoUnicoPreviewState = null;
   let createDatoUnicoPreviewRequest = 0;
+  let createDatoUnicoTemplateState = null;
   let createManualTotalUnitsSnapshot = '';
   let isCreatingProject = false;
   const BANK_REQUIREMENT_TITLES = [
@@ -738,8 +739,11 @@
 
   function createInsuranceUnitOptions(selectedRefs = []) {
     const selected = new Set((selectedRefs || []).map(String));
-    return collectInitialUnits().map(unit => {
-      const ref = String(unit.code || `${unit.manzana || unit.modelo || ''}-${unit.lote || ''}`).trim();
+    const units = hasCreateDatoUnicoFile()
+      ? (createDatoUnicoPreviewState?.units || [])
+      : collectInitialUnits();
+    return units.map(unit => {
+      const ref = String(unit.reference || unit.code || `${unit.manzana || unit.modelo || ''}-${unit.lote || ''}`).trim();
       return ref ? `<label><input type="checkbox" data-insurance-unit-ref value="${escapeHtml(ref)}" ${selected.has(ref) ? 'checked' : ''}> ${escapeHtml(ref)}</label>` : '';
     }).join('') || '<span class="small muted">Define primero las unidades del proyecto.</span>';
   }
@@ -1101,6 +1105,64 @@
     } catch (e) {
       select.innerHTML = '<option value="">No se pudieron cargar plantillas</option>';
       console.warn('No se pudieron cargar plantillas de permisos', e);
+    }
+  }
+
+  function renderCreateDatoUnicoTemplate() {
+    const button = document.getElementById('downloadCreateDatoUnicoTemplate');
+    const status = document.getElementById('createDatoUnicoTemplateStatus');
+    if (!button || !status) return;
+    const available = Boolean(createDatoUnicoTemplateState?.path);
+    button.disabled = !available;
+    status.textContent = available
+      ? `Plantilla publicada por el administrador: ${createDatoUnicoTemplateState.originalname || 'plantilla-dato-unico.xlsx'}`
+      : 'El administrador todavía no ha publicado una plantilla general.';
+  }
+
+  async function loadCreateDatoUnicoTemplate() {
+    try {
+      const result = await API.get('/api/projects/commercial-template/info');
+      createDatoUnicoTemplateState = result?.commercialTemplate || null;
+    } catch (error) {
+      console.warn('[commercial-template:create] No se pudo consultar la plantilla', error);
+      createDatoUnicoTemplateState = null;
+    }
+    renderCreateDatoUnicoTemplate();
+  }
+
+  async function downloadCreateDatoUnicoTemplate() {
+    const button = document.getElementById('downloadCreateDatoUnicoTemplate');
+    if (!button || !createDatoUnicoTemplateState?.path) return;
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Descargando...';
+    try {
+      const currentAuth = API.getAuth();
+      const response = await fetch('/api/projects/commercial-template/download', {
+        headers: {
+          Authorization: `Bearer ${API.getToken()}`,
+          'x-tenant': currentAuth.tenantKey || currentAuth.tenant || ''
+        },
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || 'No se pudo descargar la plantilla.');
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = createDatoUnicoTemplateState.originalname || 'plantilla-dato-unico.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (error) {
+      alert(error.message || 'No se pudo descargar la plantilla.');
+    } finally {
+      button.textContent = originalText;
+      renderCreateDatoUnicoTemplate();
     }
   }
 
@@ -1481,6 +1543,7 @@
       const total = document.getElementById('td-totalUnits');
       if (total) total.value = String(preview.unitsTotal || 0);
       renderCreateDatoUnicoPreview(preview);
+      refreshCreatePolicyUnitOptions();
       updateCreateUnitsReconciliation();
     } catch (error) {
       if (requestId !== createDatoUnicoPreviewRequest) return;
@@ -1520,6 +1583,7 @@
     renderCreateDatoUnicoPreview();
     updateCreateDatoUnicoMode();
     syncTechnicalUnitsFromModels();
+    refreshCreatePolicyUnitOptions();
   }
 
   function collectHousingModels() {
@@ -3008,6 +3072,7 @@
       populateCreatePromoterCompanies(selectedUser?.promoterProfile || {}, document.getElementById('ld-promoterLegalName')?.value);
     }
     syncCreateTrustNameVisibility();
+    await loadCreateDatoUnicoTemplate();
     await loadCreateProgressChecks();
     await loadCreatePermitTemplates();
     renderCreatePermitItems();
@@ -3074,6 +3139,7 @@
     if (btnCancel) btnCancel.addEventListener('click', closeModal);
     if (btnCloseCreate) btnCloseCreate.addEventListener('click', closeModal);
     document.getElementById('createPermitTemplate')?.addEventListener('change', renderCreatePermitItems);
+    document.getElementById('downloadCreateDatoUnicoTemplate')?.addEventListener('click', downloadCreateDatoUnicoTemplate);
     document.getElementById('ld-promoterProfileSelect')?.addEventListener('change', ev => {
       const user = createPromoterProfiles.get(String(ev.target.value || ''));
       populateCreatePromoterCompanies(user?.promoterProfile || {});

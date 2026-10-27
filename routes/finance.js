@@ -1685,15 +1685,144 @@ function buildFinanceSnapshot(doc, phaseId = '') {
   });
   totals.totalPaidToBank = totals.totalAmortized + totals.totalInterestPaid;
 
+  const lineSummaries = phases.flatMap(phase => (phase.loanLines || []).map(line => {
+    const entries = line.entries || [];
+    const bankDisbursed = entries.reduce((sum, entry) => {
+      if (entry.entryType !== 'disbursement' || entry.paymentStatus === 'pending') return sum;
+      if (entry.fundingParty === 'promoter') return sum;
+      return sum + toNum(entry.disbursementAmount);
+    }, 0);
+    const promoterContributed = entries.reduce((sum, entry) => {
+      if (entry.entryType !== 'disbursement' || entry.paymentStatus === 'pending') return sum;
+      if (entry.fundingParty === 'promoter') return sum + toNum(entry.disbursementAmount);
+      return sum + toNum(entry.promoterContributionAmount);
+    }, 0);
+    const manualAmortized = entries.reduce((sum, entry) => (
+      entry.entryType === 'manual_amortization' ? sum + toNum(entry.amortizedAmount) : sum
+    ), 0);
+    const salesAmortized = entries.reduce((sum, entry) => (
+      entry.entryType === 'sale_amortization' ? sum + toNum(entry.amortizedAmount) : sum
+    ), 0);
+    const otherAmortized = entries.reduce((sum, entry) => (
+      !['manual_amortization', 'sale_amortization'].includes(entry.entryType)
+        ? sum + toNum(entry.amortizedAmount)
+        : sum
+    ), 0);
+    const amortized = manualAmortized + salesAmortized + otherAmortized;
+    const interestPaid = entries.reduce((sum, entry) => sum + toNum(entry.interestAmount), 0);
+    const approved = toNum(line.approvedAmount);
+    return {
+      phaseId: phase.id,
+      phaseName: phase.name,
+      line,
+      approved,
+      bankDisbursed,
+      promoterContributed,
+      manualAmortized,
+      salesAmortized,
+      otherAmortized,
+      amortized,
+      interestPaid,
+      totalPaidToBank: amortized + interestPaid,
+      outstandingPrincipal: Math.max(0, bankDisbursed - amortized),
+      availableToDraw: Math.max(0, approved - bankDisbursed),
+      amortizationPct: bankDisbursed > 0 ? amortized / bankDisbursed : 0
+    };
+  }));
+
+  const banking = lineSummaries.reduce((acc, line) => {
+    Object.keys(acc).forEach(key => { acc[key] += toNum(line[key]); });
+    return acc;
+  }, {
+    approved: 0,
+    bankDisbursed: 0,
+    promoterContributed: 0,
+    manualAmortized: 0,
+    salesAmortized: 0,
+    otherAmortized: 0,
+    amortized: 0,
+    interestPaid: 0,
+    totalPaidToBank: 0,
+    outstandingPrincipal: 0,
+    availableToDraw: 0
+  });
+  banking.amortizationPct = banking.bankDisbursed > 0 ? banking.amortized / banking.bankDisbursed : 0;
+
   const percentExecution = totals.planUses > 0 ? (totals.realUses / totals.planUses) : 0;
 
-  return { phases, totals, percentExecution };
+  return { phases, totals, percentExecution, lineSummaries, banking };
 }
 
-function styleSheetHeaderRow(row) {
+function financeItemsComparison(phase, group) {
+  const planItems = group === 'Usos' ? phase.planUsesItems : phase.planSourcesItems;
+  const realItems = group === 'Usos' ? phase.uses : phase.sources;
+  const rows = new Map();
+  const add = (items, key) => (items || []).forEach(item => {
+    const name = String(item?.name || 'Sin partida').trim() || 'Sin partida';
+    const mapKey = name.toLocaleLowerCase('es');
+    const current = rows.get(mapKey) || { name, plan: 0, real: 0 };
+    current[key] += toNum(item?.amount);
+    rows.set(mapKey, current);
+  });
+  add(planItems, 'plan');
+  add(realItems, 'real');
+  return [...rows.values()].map(row => ({
+    ...row,
+    variance: row.real - row.plan,
+    executionPct: row.plan > 0 ? row.real / row.plan : null
+  }));
+}
+
+function financeMovementLabel(entry) {
+  if (entry.entryType === 'interest_payment') return 'Interés pagado';
+  if (entry.entryType === 'manual_amortization') return 'Amortización manual';
+  if (entry.entryType === 'sale_amortization') return 'Amortización por venta';
+  if (entry.entryType === 'disbursement') return 'Desembolso';
+  return 'Histórico';
+}
+
+function financeFundingLabel(value) {
+  if (value === 'promoter') return 'Promotor';
+  if (value === 'mixed') return 'Mixto';
+  return value ? 'Banco' : '—';
+}
+
+function financeMovementStatus(entry) {
+  if (entry.entryType === 'interest_payment') return 'Pagado';
+  if (entry.entryType === 'sale_amortization' || entry.paymentStatus === 'automatic') return 'Automática';
+  if (entry.workflowStatus === 'requested') return 'Solicitado';
+  if (entry.workflowStatus === 'returned') return 'Devuelto';
+  if (entry.workflowStatus === 'prepared') return 'Preparado';
+  if (entry.paymentStatus === 'pending') return 'Pendiente';
+  if (entry.entryType === 'manual_amortization') return 'Registrada';
+  return 'Desembolsado';
+}
+
+const FINANCE_EXPORT_COLORS = {
+  navy: 'FF0F172A',
+  green: 'FF0B3B2E',
+  greenSoft: 'FFD1FAE5',
+  blue: 'FF2563EB',
+  blueSoft: 'FFDBEAFE',
+  amber: 'FFD97706',
+  amberSoft: 'FFFEF3C7',
+  purple: 'FF7C3AED',
+  purpleSoft: 'FFEDE9FE',
+  red: 'FFB91C1C',
+  redSoft: 'FFFEE2E2',
+  slate: 'FF475569',
+  slateSoft: 'FFF1F5F9',
+  white: 'FFFFFFFF'
+};
+
+function styleSheetHeaderRow(row, fill = FINANCE_EXPORT_COLORS.green) {
   row.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-  row.alignment = { vertical: 'middle' };
-  row.fill = { type: 'pattern', pattern:'solid', fgColor:{ argb:'FF0B3B2E' } }; // verde oscuro
+  row.alignment = { vertical: 'middle', wrapText: true };
+  row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
+  row.height = 30;
+  row.eachCell(cell => {
+    cell.border = { bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } } };
+  });
 }
 
 function autoFitColumns(ws, max = 60) {
@@ -1708,179 +1837,280 @@ function autoFitColumns(ws, max = 60) {
   });
 }
 
-async function exportFinanceXlsx({ req, res, projectId, projectName, updatedAt, doc, kpis, chartsPayload, phaseId = '' }) {
+function styleFinanceTitle(ws, title, subtitle, endColumn) {
+  ws.mergeCells(1, 1, 2, endColumn);
+  const titleCell = ws.getCell(1, 1);
+  titleCell.value = title;
+  titleCell.font = { bold: true, size: 18, color: { argb: FINANCE_EXPORT_COLORS.white } };
+  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FINANCE_EXPORT_COLORS.navy } };
+  titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+  ws.getRow(1).height = 28;
+  ws.getRow(2).height = 12;
+  ws.mergeCells(3, 1, 3, endColumn);
+  const subtitleCell = ws.getCell(3, 1);
+  subtitleCell.value = subtitle;
+  subtitleCell.font = { size: 10, color: { argb: FINANCE_EXPORT_COLORS.slate } };
+  subtitleCell.alignment = { vertical: 'middle' };
+  ws.getRow(3).height = 22;
+}
+
+function styleFinanceSection(ws, rowNumber, title, endColumn) {
+  ws.mergeCells(rowNumber, 1, rowNumber, endColumn);
+  const cell = ws.getCell(rowNumber, 1);
+  cell.value = title;
+  cell.font = { bold: true, size: 11, color: { argb: FINANCE_EXPORT_COLORS.navy } };
+  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FINANCE_EXPORT_COLORS.slateSoft } };
+  cell.alignment = { vertical: 'middle' };
+  ws.getRow(rowNumber).height = 24;
+}
+
+function styleFinanceBody(ws, fromRow, toRow, fromColumn, toColumn) {
+  for (let row = fromRow; row <= toRow; row += 1) {
+    for (let column = fromColumn; column <= toColumn; column += 1) {
+      const cell = ws.getRow(row).getCell(column);
+      cell.alignment = { vertical: 'middle', wrapText: false };
+      cell.border = { bottom: { style: 'hair', color: { argb: 'FFE2E8F0' } } };
+      if ((row - fromRow) % 2 === 1) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+      }
+    }
+  }
+}
+
+function styleFinanceTotalRow(row) {
+  row.font = { bold: true, color: { argb: FINANCE_EXPORT_COLORS.navy } };
+  row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FINANCE_EXPORT_COLORS.greenSoft } };
+  row.eachCell(cell => {
+    cell.border = {
+      top: { style: 'thin', color: { argb: FINANCE_EXPORT_COLORS.green } },
+      bottom: { style: 'thin', color: { argb: FINANCE_EXPORT_COLORS.green } }
+    };
+  });
+}
+
+function setFinanceMoneyFormat(ws, rows, columns) {
+  rows.forEach(row => columns.forEach(column => {
+    ws.getRow(row).getCell(column).numFmt = '#,##0.00;[Red]-#,##0.00;–';
+  }));
+}
+
+async function exportFinanceXlsx({ req, res, projectId, projectName, projectCurrency = 'PAB', updatedAt, doc, kpis, chartsPayload, phaseId = '' }) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'TrustForBanks';
   wb.created = new Date();
+  wb.calcProperties.fullCalcOnLoad = true;
 
   const snap = buildFinanceSnapshot(doc, phaseId);
+  const updatedLabel = updatedAt ? new Date(updatedAt).toLocaleString('es-ES') : '—';
+  const subtitle = `${projectName || String(projectId)} · Actualizado ${updatedLabel} · Moneda ${projectCurrency}`;
 
-  // ===== Hoja Resumen =====
-  const sh0 = wb.addWorksheet('Resumen');
-  sh0.columns = [{ width: 34 }, { width: 26 }, { width: 26 }, { width: 26 }];
+  // ===== Resumen ejecutivo =====
+  const sh0 = wb.addWorksheet('Resumen', { properties: { tabColor: { argb: FINANCE_EXPORT_COLORS.green } } });
+  sh0.columns = Array.from({ length: 8 }, () => ({ width: 18 }));
+  styleFinanceTitle(sh0, phaseId ? 'Resumen financiero de la fase' : 'Resumen financiero del proyecto', subtitle, 8);
 
-  sh0.getCell('A1').value = 'Resumen financiero — Proyecto';
-  sh0.getCell('A1').font = { bold: true, size: 14 };
+  const cards = [
+    ['Financiación aprobada', snap.banking.approved, FINANCE_EXPORT_COLORS.navy],
+    ['Capital desembolsado', snap.banking.bankDisbursed, FINANCE_EXPORT_COLORS.blue],
+    ['Disponible por desembolsar', snap.banking.availableToDraw, FINANCE_EXPORT_COLORS.purple],
+    ['Capital amortizado', snap.banking.amortized, FINANCE_EXPORT_COLORS.green],
+    ['Intereses pagados', snap.banking.interestPaid, FINANCE_EXPORT_COLORS.amber],
+    ['Total pagado al banco', snap.banking.totalPaidToBank, FINANCE_EXPORT_COLORS.green],
+    ['Capital pendiente', snap.banking.outstandingPrincipal, FINANCE_EXPORT_COLORS.red],
+    ['Ejecución de usos', snap.percentExecution, FINANCE_EXPORT_COLORS.slate]
+  ];
+  cards.forEach(([label, value, color], index) => {
+    const block = index % 4;
+    const row = index < 4 ? 5 : 8;
+    const col = (block * 2) + 1;
+    sh0.mergeCells(row, col, row, col + 1);
+    sh0.mergeCells(row + 1, col, row + 1, col + 1);
+    const labelCell = sh0.getCell(row, col);
+    const valueCell = sh0.getCell(row + 1, col);
+    labelCell.value = label;
+    valueCell.value = value;
+    labelCell.font = { bold: true, size: 9, color: { argb: FINANCE_EXPORT_COLORS.white } };
+    valueCell.font = { bold: true, size: 15, color: { argb: color } };
+    labelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+    valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+    labelCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    valueCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    valueCell.numFmt = label === 'Ejecución de usos' ? '0.0%' : '#,##0.00;[Red]-#,##0.00;–';
+    for (let c = col; c <= col + 1; c += 1) {
+      sh0.getCell(row, c).border = { top: { style: 'thin', color: { argb: color } }, left: { style: 'thin', color: { argb: color } }, right: { style: 'thin', color: { argb: color } } };
+      sh0.getCell(row + 1, c).border = { bottom: { style: 'thin', color: { argb: color } }, left: { style: 'thin', color: { argb: color } }, right: { style: 'thin', color: { argb: color } } };
+    }
+  });
+  [5, 8].forEach(row => { sh0.getRow(row).height = 28; sh0.getRow(row + 1).height = 32; });
 
-  sh0.addRow(['Proyecto', projectName || String(projectId)]);
-  sh0.addRow(['Actualizado', updatedAt ? new Date(updatedAt).toLocaleString() : '—']);
-  sh0.addRow([]);
-
-  sh0.addRow(['PLAN (por fases) - Usos', snap.totals.planUses]);
-  sh0.addRow(['PLAN (por fases) - Fuentes', snap.totals.planSources]);
-  sh0.addRow(['REAL (sum fases) - Usos', snap.totals.realUses]);
-  sh0.addRow(['REAL (sum fases) - Fuentes', snap.totals.realSources]);
-
-  sh0.addRow(['% Ejecución (Real/Plan usos)', `${(snap.percentExecution * 100).toFixed(1)}%`]);
-  sh0.addRow(['Intereses acumulados', snap.totals.intereses]);
-  sh0.addRow(['Intereses pagados', snap.totals.totalInterestPaid]);
-  sh0.addRow(['Total pagado al banco', snap.totals.totalPaidToBank]);
-  sh0.addRow(['Preventas acumuladas', snap.totals.preventas]);
-  sh0.addRow(['Aportes propios acumulados', snap.totals.aportes]);
-
-  sh0.addRow([]);
-  sh0.addRow(['Desembolso esperado (total)', snap.totals.disbExpected]);
-  sh0.addRow(['Desembolso real (total)', snap.totals.disbActual]);
-  sh0.addRow(['Fases con desembolso solicitado', snap.totals.disbRequestedCount]);
-
-  // Formato numérico
-  for (let r = 4; r <= sh0.rowCount; r++) {
-    const v = sh0.getCell(`B${r}`).value;
-    if (typeof v === 'number') sh0.getCell(`B${r}`).numFmt = '#,##0';
-  }
-
-  // ===== Hoja Fases (tabla compacta) =====
-  const sh1 = wb.addWorksheet('Fases');
-  sh1.addRow([
-    'Fase','Inicio','Fin',
-    'Plan Usos','Plan Fuentes',
-    'Real Usos','Real Fuentes',
-    'Desembolso esperado','Desembolso real','Solicitado','Solicitado at',
-    'Intereses','Aportes','Preventas'
-  ]);
-  styleSheetHeaderRow(sh1.getRow(1));
-
-  snap.phases.forEach(p => {
-    sh1.addRow([
-      p.name,
-      p.startDate ? new Date(p.startDate) : '',
-      p.endDate ? new Date(p.endDate) : '',
-      p.planUses, p.planSources,
-      p.realUses, p.realSources,
-      p.disbExpected, p.disbActual,
-      p.disbRequested ? 'SI' : 'NO',
-      p.disbRequestedAt ? new Date(p.disbRequestedAt) : '',
-      p.intereses, p.aportes, p.preventas
-    ]);
+  styleFinanceSection(sh0, 11, 'Conciliación bancaria', 8);
+  sh0.getRow(12).values = ['Comprobación', '', 'Importe inicial', 'Movimientos', 'Resultado', '', 'Diferencia', 'Estado'];
+  styleSheetHeaderRow(sh0.getRow(12));
+  sh0.getRow(13).values = ['Capital desembolsado = amortizado + pendiente', '', snap.banking.bankDisbursed, snap.banking.amortized, snap.banking.outstandingPrincipal, '', snap.banking.bankDisbursed - snap.banking.amortized - snap.banking.outstandingPrincipal, 'CUADRA'];
+  sh0.getRow(14).values = ['Pago total = amortizaciones + intereses', '', snap.banking.totalPaidToBank, snap.banking.amortized, snap.banking.interestPaid, '', snap.banking.totalPaidToBank - snap.banking.amortized - snap.banking.interestPaid, 'CUADRA'];
+  sh0.mergeCells('A13:B13'); sh0.mergeCells('E13:F13');
+  sh0.mergeCells('A14:B14'); sh0.mergeCells('E14:F14');
+  styleFinanceBody(sh0, 13, 14, 1, 8);
+  setFinanceMoneyFormat(sh0, [13, 14], [3, 4, 5, 7]);
+  [13, 14].forEach(row => {
+    sh0.getRow(row).height = 28;
+    sh0.getCell(row, 1).alignment = { vertical: 'middle', wrapText: true };
+    sh0.getCell(row, 8).font = { bold: true, color: { argb: FINANCE_EXPORT_COLORS.green } };
   });
 
-  // Formato columnas
-  const numCols = [4,5,6,7,8,9,12,13,14];
-  for (let r = 2; r <= sh1.rowCount; r++) {
-    for (const c of numCols) sh1.getRow(r).getCell(c).numFmt = '#,##0';
-  }
-  sh1.getColumn(2).numFmt = 'yyyy-mm-dd';
-  sh1.getColumn(3).numFmt = 'yyyy-mm-dd';
-  sh1.getColumn(11).numFmt = 'yyyy-mm-dd';
-
-  autoFitColumns(sh1, 52);
-
-  // ===== Hoja Detalle por fase =====
-  const sh2 = wb.addWorksheet('Detalle Fase');
-  sh2.addRow(['Fase', 'Tipo', 'Partida', 'Monto']);
-  styleSheetHeaderRow(sh2.getRow(1));
-  sh2.columns = [{ width: 26 }, { width: 16 }, { width: 46 }, { width: 16 }];
-
-  for (const p of snap.phases) {
-    const pushBlock = (type, items) => {
-      (items || []).forEach(it => {
-        sh2.addRow([p.name, type, String(it?.name || '—'), toNum(it?.amount)]);
-      });
-    };
-    pushBlock('PLAN_USOS', p.planUsesItems);
-    pushBlock('PLAN_FUENTES', p.planSourcesItems);
-    pushBlock('REAL_USOS', p.uses);
-    pushBlock('REAL_FUENTES', p.sources);
-
-    // separador
-    sh2.addRow(['', '', '', '']);
-  }
-  // numFmt montos
-  for (let r = 2; r <= sh2.rowCount; r++) {
-    const v = sh2.getRow(r).getCell(4).value;
-    if (typeof v === 'number') sh2.getRow(r).getCell(4).numFmt = '#,##0';
-  }
-
-  // ===== Hoja Desembolsos =====
-  const sh3 = wb.addWorksheet('Desembolsos');
-  sh3.addRow(['Fase','Esperado','Real','Solicitado','Solicitado at']);
-  styleSheetHeaderRow(sh3.getRow(1));
-  sh3.columns = [{ width: 30 }, { width: 16 }, { width: 16 }, { width: 12 }, { width: 18 }];
-  snap.phases.forEach(p => {
-    sh3.addRow([
-      p.name,
-      p.disbExpected,
-      p.disbActual,
-      p.disbRequested ? 'SI' : 'NO',
-      p.disbRequestedAt ? new Date(p.disbRequestedAt) : ''
-    ]);
+  styleFinanceSection(sh0, 16, 'Plan, ejecución y fuentes', 8);
+  sh0.getRow(17).values = ['Concepto', '', 'Plan', 'Real', 'Desviación', '', '% ejecución', ''];
+  styleSheetHeaderRow(sh0.getRow(17));
+  const summaryRows = [
+    ['Usos', snap.totals.planUses, snap.totals.realUses],
+    ['Fuentes', snap.totals.planSources, snap.totals.realSources]
+  ];
+  summaryRows.forEach(([label, plan, real], index) => {
+    const row = 18 + index;
+    sh0.getRow(row).values = [label, '', plan, real, real - plan, '', plan > 0 ? real / plan : null, ''];
+    sh0.mergeCells(row, 1, row, 2); sh0.mergeCells(row, 5, row, 6); sh0.mergeCells(row, 7, row, 8);
   });
-  for (let r = 2; r <= sh3.rowCount; r++) {
-    sh3.getRow(r).getCell(2).numFmt = '#,##0';
-    sh3.getRow(r).getCell(3).numFmt = '#,##0';
-  }
-  sh3.getColumn(5).numFmt = 'yyyy-mm-dd';
+  styleFinanceBody(sh0, 18, 19, 1, 8);
+  setFinanceMoneyFormat(sh0, [18, 19], [3, 4, 5]);
+  [18, 19].forEach(row => { sh0.getCell(row, 7).numFmt = '0.0%'; });
 
-  // ===== Líneas y movimientos =====
-  const sh4 = wb.addWorksheet('Líneas');
-  sh4.addRow(['Fase', 'Línea', 'Aprobado', 'Desembolsado pagado', 'Amortizado', 'Intereses pagados', 'Total pagado al banco', 'Saldo', 'Cálculo', 'Notas']);
-  styleSheetHeaderRow(sh4.getRow(1));
-  const sh5 = wb.addWorksheet('Movimientos');
-  sh5.addRow(['Fase', 'Línea', 'Cuenta de avance', 'Tipo', 'Quién aporta', 'Fecha', 'No. préstamo', 'Banco', 'Aporte promotor', 'Vencimiento', 'Amortización', 'Interés pagado', 'Estado', 'Solicitado', 'Confirmado por', 'Referencia', 'Informe de avalúo', 'Notas']);
-  styleSheetHeaderRow(sh5.getRow(1));
-  snap.phases.forEach(phase => (phase.loanLines || []).forEach(line => {
-    const disbursed = (line.entries || []).reduce((sum, entry) => sum + (entry.entryType === 'disbursement' && entry.paymentStatus === 'pending' ? 0 : toNum(entry.disbursementAmount)), 0);
-    const amortized = (line.entries || []).reduce((sum, entry) => sum + toNum(entry.amortizedAmount), 0);
-    const interestPaid = (line.entries || []).reduce((sum, entry) => sum + toNum(entry.interestAmount), 0);
-    sh4.addRow([phase.name, line.name, line.approvedAmount, disbursed, amortized, interestPaid, amortized + interestPaid, Math.max(0, disbursed - amortized), line.approvedAmountMode === 'auto' ? 'Automático' : 'Manual', line.notes]);
-    (line.entries || []).forEach(entry => sh5.addRow([
-      phase.name, line.name, entry.advanceAccountNumber,
-      entry.entryType === 'interest_payment' ? 'Interés pagado' : entry.entryType === 'manual_amortization' ? 'Amortización manual' : entry.entryType === 'sale_amortization' ? 'Amortización por venta' : entry.entryType === 'disbursement' ? 'Desembolso' : 'Histórico',
-      entry.fundingParty, entry.date ? new Date(entry.date) : '', entry.loanNumber,
-      ['bank', 'mixed'].includes(entry.fundingParty || 'bank') ? entry.disbursementAmount : 0,
-      entry.fundingParty === 'promoter' ? entry.disbursementAmount : entry.promoterContributionAmount,
-      entry.maturityDate ? new Date(entry.maturityDate) : '', entry.amortizedAmount, entry.interestAmount,
-      entry.workflowStatus || entry.paymentStatus, entry.requestedAt ? new Date(entry.requestedAt) : '', entry.disbursedByRole,
-      entry.transferReference, entry.inspectionId, entry.notes
-    ]));
+  styleFinanceSection(sh0, 21, 'Desembolsos de fase (dato operativo)', 8);
+  sh0.getRow(22).values = ['Fase', 'Inicio', 'Fin', 'Esperado', 'Real de fase', 'Solicitado', 'Fecha solicitud', ''];
+  styleSheetHeaderRow(sh0.getRow(22), FINANCE_EXPORT_COLORS.slate);
+  snap.phases.forEach((phase, index) => {
+    const row = 23 + index;
+    sh0.getRow(row).values = [phase.name, phase.startDate ? new Date(phase.startDate) : '', phase.endDate ? new Date(phase.endDate) : '', phase.disbExpected, phase.disbActual, phase.disbRequested ? 'Sí' : 'No', phase.disbRequestedAt ? new Date(phase.disbRequestedAt) : '', ''];
+    [2, 3, 7].forEach(column => { sh0.getRow(row).getCell(column).numFmt = 'dd/mm/yyyy'; });
+    setFinanceMoneyFormat(sh0, [row], [4, 5]);
+  });
+  if (snap.phases.length) styleFinanceBody(sh0, 23, 22 + snap.phases.length, 1, 8);
+  sh0.views = [{ state: 'frozen', ySplit: 3, showGridLines: false }];
+  sh0.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 1, paperSize: 9 };
+
+  // ===== Usos y fuentes =====
+  const sh1 = wb.addWorksheet('Usos y fuentes', { properties: { tabColor: { argb: FINANCE_EXPORT_COLORS.purple } } });
+  sh1.columns = [{ width: 22 }, { width: 13 }, { width: 34 }, { width: 17 }, { width: 17 }, { width: 17 }, { width: 14 }];
+  styleFinanceTitle(sh1, 'Usos y fuentes · Plan frente a real', subtitle, 7);
+  sh1.getRow(5).values = ['Fase', 'Grupo', 'Partida', 'Plan', 'Real', 'Desviación', '% ejecución'];
+  styleSheetHeaderRow(sh1.getRow(5));
+  const useSourceRows = [];
+  snap.phases.forEach(phase => ['Usos', 'Fuentes'].forEach(group => {
+    const detail = financeItemsComparison(phase, group);
+    detail.forEach(item => useSourceRows.push({ phase: phase.name, group, ...item, total: false }));
+    const plan = detail.reduce((sum, item) => sum + item.plan, 0);
+    const real = detail.reduce((sum, item) => sum + item.real, 0);
+    useSourceRows.push({ phase: phase.name, group, name: `Total ${group.toLocaleLowerCase('es')}`, plan, real, variance: real - plan, executionPct: plan > 0 ? real / plan : null, total: true });
   }));
-  [sh4, sh5].forEach(sheet => autoFitColumns(sheet, 46));
-  for (let row = 2; row <= sh4.rowCount; row++) [3, 4, 5, 6, 7, 8].forEach(column => { sh4.getRow(row).getCell(column).numFmt = '#,##0.00'; });
-  for (let row = 2; row <= sh5.rowCount; row++) {
-    sh5.getRow(row).getCell(6).numFmt = 'yyyy-mm-dd';
-    sh5.getRow(row).getCell(8).numFmt = '#,##0.00';
-    sh5.getRow(row).getCell(9).numFmt = '#,##0.00';
-    sh5.getRow(row).getCell(10).numFmt = 'yyyy-mm-dd';
-    sh5.getRow(row).getCell(11).numFmt = '#,##0.00';
-    sh5.getRow(row).getCell(12).numFmt = '#,##0.00';
-    sh5.getRow(row).getCell(14).numFmt = 'yyyy-mm-dd';
+  useSourceRows.forEach(item => {
+    const row = sh1.addRow([item.phase, item.group, item.name, item.plan, item.real, item.variance, item.executionPct]);
+    if (item.total) styleFinanceTotalRow(row);
+    else if (item.group === 'Usos') row.getCell(2).font = { bold: true, color: { argb: FINANCE_EXPORT_COLORS.blue } };
+    else row.getCell(2).font = { bold: true, color: { argb: FINANCE_EXPORT_COLORS.purple } };
+  });
+  if (sh1.rowCount > 5) {
+    styleFinanceBody(sh1, 6, sh1.rowCount, 1, 7);
+    useSourceRows.forEach((item, index) => { if (item.total) styleFinanceTotalRow(sh1.getRow(6 + index)); });
+    setFinanceMoneyFormat(sh1, Array.from({ length: sh1.rowCount - 5 }, (_, i) => i + 6), [4, 5, 6]);
+    for (let row = 6; row <= sh1.rowCount; row += 1) sh1.getRow(row).getCell(7).numFmt = '0.0%';
+    sh1.autoFilter = { from: 'A5', to: `G${sh1.rowCount}` };
   }
+  sh1.views = [{ state: 'frozen', ySplit: 5, showGridLines: false }];
+  sh1.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
+
+  // ===== Líneas bancarias =====
+  const sh2 = wb.addWorksheet('Líneas bancarias', { properties: { tabColor: { argb: FINANCE_EXPORT_COLORS.blue } } });
+  sh2.columns = [20, 28, 16, 18, 18, 18, 18, 16, 18, 16, 18, 18, 14, 13, 30].map(width => ({ width }));
+  styleFinanceTitle(sh2, 'Posición por línea bancaria', subtitle, 15);
+  sh2.getRow(5).values = ['Fase', 'Línea', 'Aprobado', 'Desembolsado banco', 'Disponible', 'Amortización manual', 'Amortización por ventas', 'Otras amortizaciones', 'Amortización total', 'Intereses pagados', 'Total pagado banco', 'Capital pendiente', '% amortizado', 'Cálculo', 'Notas'];
+  styleSheetHeaderRow(sh2.getRow(5));
+  snap.lineSummaries.forEach(item => sh2.addRow([
+    item.phaseName, item.line.name, item.approved, item.bankDisbursed, item.availableToDraw,
+    item.manualAmortized, item.salesAmortized, item.otherAmortized, item.amortized,
+    item.interestPaid, item.totalPaidToBank, item.outstandingPrincipal, item.amortizationPct,
+    item.line.approvedAmountMode === 'auto' ? 'Automático' : 'Manual', item.line.notes
+  ]));
+  const lineTotalRow = sh2.addRow(['TOTAL', '', snap.banking.approved, snap.banking.bankDisbursed, snap.banking.availableToDraw, snap.banking.manualAmortized, snap.banking.salesAmortized, snap.banking.otherAmortized, snap.banking.amortized, snap.banking.interestPaid, snap.banking.totalPaidToBank, snap.banking.outstandingPrincipal, snap.banking.amortizationPct, '', '']);
+  styleFinanceTotalRow(lineTotalRow);
+  if (sh2.rowCount > 5) {
+    styleFinanceBody(sh2, 6, sh2.rowCount, 1, 15);
+    styleFinanceTotalRow(lineTotalRow);
+    setFinanceMoneyFormat(sh2, Array.from({ length: sh2.rowCount - 5 }, (_, i) => i + 6), [3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    for (let row = 6; row <= sh2.rowCount; row += 1) sh2.getRow(row).getCell(13).numFmt = '0.0%';
+    sh2.autoFilter = { from: 'A5', to: `O${Math.max(5, sh2.rowCount - 1)}` };
+  }
+  sh2.views = [{ state: 'frozen', ySplit: 5, xSplit: 2, showGridLines: false }];
+  sh2.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
+
+  // ===== Movimientos =====
+  const sh3 = wb.addWorksheet('Movimientos', { properties: { tabColor: { argb: FINANCE_EXPORT_COLORS.amber } } });
+  sh3.columns = [20, 26, 13, 24, 13, 14, 17, 18, 18, 18, 18, 16, 18, 15, 15, 18, 17, 18, 18, 34, 34].map(width => ({ width }));
+  styleFinanceTitle(sh3, 'Detalle completo de movimientos', subtitle, 21);
+  sh3.getRow(5).values = ['Fase', 'Línea', 'Cuenta avance', 'Tipo', 'Aportante', 'Fecha', 'Nº préstamo', 'Desembolso banco', 'Aporte promotor', 'Importe pendiente', 'Amortización', 'Interés pagado', 'Pago al banco', 'Vencimiento', 'Estado', 'Solicitud', 'Confirmado por', 'Referencia', 'Informe avalúo', 'Detalle / unidad', 'Notas'];
+  styleSheetHeaderRow(sh3.getRow(5));
+  const movementTotals = { bank: 0, promoter: 0, pending: 0, amortized: 0, interest: 0, paid: 0 };
+  const movementStyles = [];
+  snap.phases.forEach(phase => (phase.loanLines || []).forEach(line => (line.entries || []).forEach(entry => {
+    const isDisbursement = entry.entryType === 'disbursement';
+    const isPending = isDisbursement && entry.paymentStatus === 'pending';
+    const bank = isDisbursement && !isPending && ['bank', 'mixed'].includes(entry.fundingParty || 'bank') ? toNum(entry.disbursementAmount) : 0;
+    const promoter = isDisbursement && !isPending
+      ? (entry.fundingParty === 'promoter' ? toNum(entry.disbursementAmount) : toNum(entry.promoterContributionAmount))
+      : 0;
+    const pending = isPending ? toNum(entry.disbursementAmount) : 0;
+    const amortized = toNum(entry.amortizedAmount);
+    const interest = toNum(entry.interestAmount);
+    const paid = amortized + interest;
+    movementTotals.bank += bank; movementTotals.promoter += promoter; movementTotals.pending += pending;
+    movementTotals.amortized += amortized; movementTotals.interest += interest; movementTotals.paid += paid;
+    const saleDetail = entry.entryType === 'sale_amortization' ? entry.notes : '';
+    const row = sh3.addRow([
+      phase.name, line.name, entry.advanceAccountNumber, financeMovementLabel(entry), financeFundingLabel(entry.fundingParty),
+      entry.date ? new Date(entry.date) : '', entry.loanNumber, bank, promoter, pending, amortized, interest, paid,
+      entry.maturityDate ? new Date(entry.maturityDate) : '', financeMovementStatus(entry),
+      entry.requestedAt ? new Date(entry.requestedAt) : '', entry.disbursedByRole, entry.transferReference,
+      entry.inspectionId, saleDetail, saleDetail ? '' : entry.notes
+    ]);
+    const fill = entry.entryType === 'disbursement' ? FINANCE_EXPORT_COLORS.blueSoft
+      : entry.entryType === 'interest_payment' ? FINANCE_EXPORT_COLORS.amberSoft
+        : entry.entryType === 'sale_amortization' ? FINANCE_EXPORT_COLORS.purpleSoft
+          : FINANCE_EXPORT_COLORS.greenSoft;
+    movementStyles.push({ row: row.number, fill });
+    row.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
+    row.getCell(4).font = { bold: true, color: { argb: FINANCE_EXPORT_COLORS.navy } };
+  })));
+  const movementTotalRow = sh3.addRow(['TOTAL', '', '', '', '', '', '', movementTotals.bank, movementTotals.promoter, movementTotals.pending, movementTotals.amortized, movementTotals.interest, movementTotals.paid, '', '', '', '', '', '', '', '']);
+  styleFinanceTotalRow(movementTotalRow);
+  if (sh3.rowCount > 5) {
+    styleFinanceBody(sh3, 6, sh3.rowCount, 1, 21);
+    movementStyles.forEach(({ row, fill }) => {
+      sh3.getRow(row).getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
+      sh3.getRow(row).getCell(4).font = { bold: true, color: { argb: FINANCE_EXPORT_COLORS.navy } };
+    });
+    styleFinanceTotalRow(movementTotalRow);
+    for (let row = 6; row <= sh3.rowCount; row += 1) {
+      [6, 14, 16].forEach(column => { sh3.getRow(row).getCell(column).numFmt = 'dd/mm/yyyy'; });
+    }
+    setFinanceMoneyFormat(sh3, Array.from({ length: sh3.rowCount - 5 }, (_, i) => i + 6), [8, 9, 10, 11, 12, 13]);
+    sh3.autoFilter = { from: 'A5', to: `U${Math.max(5, sh3.rowCount - 1)}` };
+  }
+  sh3.views = [{ state: 'frozen', ySplit: 5, xSplit: 2, showGridLines: false }];
+  sh3.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
 
   // ===== Hoja Gráficas (si llegan) =====
   const charts = chartsPayload || {};
   const chartEntries = Object.entries(charts).filter(([_, v]) => typeof v === 'string' && v.startsWith('data:image/'));
   if (chartEntries.length) {
-    const shC = wb.addWorksheet('Gráficas');
-    shC.getCell('A1').value = 'Gráficas';
-    shC.getRow(1).font = { bold: true, size: 14 };
-    let row = 3;
+    const shC = wb.addWorksheet('Gráficas', { properties: { tabColor: { argb: FINANCE_EXPORT_COLORS.slate } } });
+    styleFinanceTitle(shC, 'Gráficas financieras', subtitle, 10);
+    shC.views = [{ showGridLines: false }];
+    let row = 5;
 
     for (const [title, dataUrl] of chartEntries) {
       const m = /^data:image\/(png|jpe?g);base64,(.+)$/i.exec(String(dataUrl));
       if (!m) continue;
 
       shC.getCell(`A${row}`).value = title;
-      shC.getRow(row).font = { bold: true };
+      shC.getRow(row).font = { bold: true, size: 11, color: { argb: FINANCE_EXPORT_COLORS.navy } };
       row += 1;
 
       const imgId = wb.addImage({ base64: m[2], extension: 'png' });
@@ -1914,7 +2144,7 @@ function pdfRoundRect(doc, x, y, w, h, r) {
   return doc;
 }
 
-function financePdfHeader(doc, { projectName, updatedAt }) {
+function financePdfHeader(doc, { projectName, updatedAt, title }) {
   const margin = doc.page.margins.left;
   const pageW = doc.page.width;
 
@@ -1931,7 +2161,7 @@ function financePdfHeader(doc, { projectName, updatedAt }) {
   }
 
   doc.fontSize(18).fillColor('white')
-    .text('Finanzas — Resumen ejecutivo', margin + 140, 22, { width: pageW - margin*2 - 140 });
+    .text(title || doc.__reportTitle || 'Finanzas - Resumen ejecutivo', margin + 140, 22, { width: pageW - margin*2 - 140 });
 
   doc.fontSize(10).fillColor('#D1FAE5')
     .text(`Proyecto: ${projectName || 'Proyecto'}`, margin + 140, 48, { width: pageW - margin*2 - 140 });
@@ -1959,6 +2189,7 @@ function financePdfFooter(doc, { page, total, projectName }) {
 }
 
 function financePdfSection(doc, title) {
+  financePdfEnsureSpace(doc, 50);
   const margin = doc.page.margins.left;
   doc.moveDown(0.6);
   doc.fontSize(12).fillColor('#111827').text(title, margin);
@@ -1974,306 +2205,316 @@ function financePdfKpiCards(doc, snap, projectCurrency = 'PAB') {
   const pageW = doc.page.width;
   const contentW = pageW - margin*2;
 
-  const cardW = (contentW - 12) / 2;
-  const cardH = 64;
+  const cardW = (contentW - 30) / 4;
+  const cardH = 58;
 
   const kpis = [
-    { label: 'Ejecución (Real/Plan usos)', value: `${(snap.percentExecution * 100).toFixed(1)}%` },
-    { label: 'Intereses pagados', value: moneyES(snap.totals.totalInterestPaid, projectCurrency) },
-    { label: 'Total pagado al banco', value: moneyES(snap.totals.totalPaidToBank, projectCurrency) },
-    { label: 'Desembolso real (total)', value: moneyES(snap.totals.disbActual, projectCurrency) },
+    { label: 'Financiación aprobada', value: moneyES(snap.banking.approved, projectCurrency), color: '#0F172A' },
+    { label: 'Capital desembolsado', value: moneyES(snap.banking.bankDisbursed, projectCurrency), color: '#2563EB' },
+    { label: 'Disponible por desembolsar', value: moneyES(snap.banking.availableToDraw, projectCurrency), color: '#7C3AED' },
+    { label: 'Capital amortizado', value: moneyES(snap.banking.amortized, projectCurrency), color: '#047857' },
+    { label: 'Intereses pagados', value: moneyES(snap.banking.interestPaid, projectCurrency), color: '#D97706' },
+    { label: 'Total pagado al banco', value: moneyES(snap.banking.totalPaidToBank, projectCurrency), color: '#0B3B2E' },
+    { label: 'Capital pendiente', value: moneyES(snap.banking.outstandingPrincipal, projectCurrency), color: '#B91C1C' },
+    { label: 'Ejecución de usos', value: `${(snap.percentExecution * 100).toFixed(1)}%`, color: '#475569' }
   ];
 
-  const drawCard = (x, y, { label, value }) => {
+  const drawCard = (x, y, { label, value, color }) => {
     doc.save();
-    pdfRoundRect(doc, x, y, cardW, cardH, 10).fill('#F3F4F6');
-    pdfRoundRect(doc, x, y, cardW, cardH, 10).stroke('#E5E7EB');
+    pdfRoundRect(doc, x, y, cardW, cardH, 8).fill('#F8FAFC');
+    pdfRoundRect(doc, x, y, cardW, cardH, 8).lineWidth(1).stroke(color);
+    doc.rect(x, y, 5, cardH).fill(color);
     doc.restore();
 
-    doc.fontSize(9).fillColor('#6B7280').text(label, x + 12, y + 10, { width: cardW - 24 });
-    doc.fontSize(16).fillColor('#111827').text(value, x + 12, y + 28, { width: cardW - 24 });
+    doc.fontSize(8).fillColor('#64748B').text(label, x + 12, y + 9, { width: cardW - 20, height: 14, ellipsis: true });
+    doc.fontSize(13).fillColor(color).text(value, x + 12, y + 29, { width: cardW - 20, height: 18, ellipsis: true });
   };
 
   const y0 = doc.y;
-  const x1 = margin;
-  const x2 = margin + cardW + 12;
-
-  drawCard(x1, y0, kpis[0]);
-  drawCard(x2, y0, kpis[1]);
-  drawCard(x1, y0 + cardH + 12, kpis[2]);
-  drawCard(x2, y0 + cardH + 12, kpis[3]);
-
-  doc.y = y0 + (cardH * 2) + 28;
+  kpis.forEach((kpi, index) => {
+    const column = index % 4;
+    const row = Math.floor(index / 4);
+    drawCard(margin + column * (cardW + 10), y0 + row * (cardH + 10), kpi);
+  });
+  doc.y = y0 + (cardH * 2) + 30;
 }
 
 function financePdfEnsureSpace(doc, h) {
   const bottomSafe = doc.page.height - doc.page.margins.bottom - 60;
-  if (doc.y + h > bottomSafe) doc.addPage();
+  if (doc.y + h > bottomSafe) {
+    doc.addPage();
+    financePdfHeader(doc, {
+      projectName: doc.__projectName || null,
+      updatedAt: doc.__updatedAt || null,
+      title: doc.__reportTitle || null
+    });
+  }
 }
 
-function financePdfTable(doc, rows, cols) {
+function financePdfTable(doc, rows, cols, options = {}) {
   const margin = doc.page.margins.left;
   const width = doc.page.width - margin * 2;
-
-  // cols: [{ key, label, wPct, align }]
-  const colW = cols.map(c => Math.floor(width * c.wPct));
-
-  // ✅ Normaliza rows
+  const pctTotal = cols.reduce((sum, column) => sum + Number(column.wPct || 0), 0) || 1;
+  const colW = cols.map(column => width * (Number(column.wPct || 0) / pctTotal));
   const safeRows = Array.isArray(rows) ? rows : [];
-
-  // ✅ Si no hay datos: NO pintes tabla (evita páginas vacías con headers)
   if (safeRows.length === 0) {
     financePdfEnsureSpace(doc, 18);
-    doc.fontSize(9).fillColor('#6b7280').text('— Sin datos —', margin, doc.y);
-    doc.moveDown(0.8);
+    doc.fontSize(9).fillColor('#6b7280').text('- Sin datos -', margin, doc.y);
+    doc.y += 8;
     doc.fillColor('#111827');
     return;
   }
 
-  const HEADER_H = 26; // header + línea
-  const ROW_H = 16;    // alto aprox de cada fila
-
-  // ✅ Clave: antes de pintar header, debe caber header + 1 fila
+  const HEADER_H = options.headerHeight || 25;
+  const ROW_H = options.rowHeight || 21;
+  const fontSize = options.fontSize || 7.5;
   financePdfEnsureSpace(doc, HEADER_H + ROW_H);
 
   const drawHeader = () => {
-    const y0 = doc.y;
-
+    const y = doc.y;
     doc.save();
-    doc.fontSize(9).fillColor('#6b7280');
-
+    doc.rect(margin, y, width, HEADER_H).fill(options.headerFill || '#0B3B2E');
+    doc.fontSize(8).fillColor('#FFFFFF').font('Helvetica-Bold');
     let x = margin;
     cols.forEach((c, i) => {
-      doc.text(c.label, x, y0, { width: colW[i], align: c.align || 'left' });
+      doc.text(c.label, x + 4, y + 7, { width: Math.max(1, colW[i] - 8), height: HEADER_H - 10, align: c.align || 'left', ellipsis: true });
       x += colW[i];
     });
-
     doc.restore();
-
-    doc.moveDown(0.4);
-    doc.save();
-    doc.moveTo(margin, doc.y).lineTo(doc.page.width - margin, doc.y).stroke('#e5e7eb');
-    doc.restore();
-    doc.moveDown(0.2);
-
-    doc.fontSize(9).fillColor('#111827');
+    doc.y = y + HEADER_H;
   };
 
-  // Header
   drawHeader();
-
-  // ✅ Si justo después del header no cabe una fila, saltamos y repetimos header
-  financePdfEnsureSpace(doc, ROW_H);
-  if (doc.y + ROW_H > (doc.page.height - doc.page.margins.bottom - 60)) {
-    doc.addPage();
-    financePdfHeader(doc, {
-      projectName: doc.__projectName || null,
-      updatedAt: doc.__updatedAt || null
-    });
-    drawHeader();
-  }
-
-  // Rows
-  for (const r of safeRows) {
-    // Si no cabe una fila, nueva página + header + header tabla
+  safeRows.forEach((row, rowIndex) => {
     const bottomSafe = doc.page.height - doc.page.margins.bottom - 60;
     if (doc.y + ROW_H > bottomSafe) {
       doc.addPage();
       financePdfHeader(doc, {
         projectName: doc.__projectName || null,
-        updatedAt: doc.__updatedAt || null
+        updatedAt: doc.__updatedAt || null,
+        title: doc.__reportTitle || null
       });
       drawHeader();
     }
-
+    const y = doc.y;
+    const rowStyle = typeof options.rowStyle === 'function' ? (options.rowStyle(row, rowIndex) || {}) : {};
+    const fill = rowStyle.fill || row._fill || (rowIndex % 2 ? '#F8FAFC' : '#FFFFFF');
+    doc.save();
+    doc.rect(margin, y, width, ROW_H).fill(fill);
+    doc.moveTo(margin, y + ROW_H).lineTo(margin + width, y + ROW_H).lineWidth(0.35).stroke('#E2E8F0');
+    doc.font(row._total ? 'Helvetica-Bold' : 'Helvetica').fontSize(fontSize).fillColor(rowStyle.color || row._color || '#111827');
     let x = margin;
     cols.forEach((c, i) => {
-      const v = (r[c.key] === null || r[c.key] === undefined) ? '' : String(r[c.key]);
-      doc.text(v, x, doc.y, { width: colW[i], align: c.align || 'left' });
+      const v = (row[c.key] === null || row[c.key] === undefined) ? '' : String(row[c.key]);
+      doc.text(v, x + 4, y + 6, { width: Math.max(1, colW[i] - 8), height: ROW_H - 8, align: c.align || 'left', ellipsis: true });
       x += colW[i];
     });
-
-    doc.moveDown(0.2);
-  }
-
-  doc.moveDown(0.8);
+    doc.restore();
+    doc.y = y + ROW_H;
+  });
+  doc.y += 8;
 }
 
 async function exportFinancePdf({ req, res, projectId, projectName, projectCurrency = 'PAB', updatedAt, doc, chartsPayload, phaseId = '' }) {
   const snap = buildFinanceSnapshot(doc, phaseId);
   const money = (n) => moneyES(n, projectCurrency);
+  const reportTitle = phaseId ? `Finanzas - ${snap.phases[0]?.name || 'Fase'}` : 'Finanzas - Resumen ejecutivo';
 
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${phaseId ? `fase_${phaseId}` : `finanzas_${projectId}`}.pdf"`);
 
-  // bufferPages para footer con total
-  const pdf = new PDFDocument({ margin: 40, bufferPages: true });
+  const pdf = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 36, bufferPages: true, info: { Title: reportTitle } });
   pdf.pipe(res);
 
-  // Portada + header
-  financePdfHeader(pdf, { projectName, updatedAt });
   pdf.__projectName = projectName;
   pdf.__updatedAt = updatedAt;
+  pdf.__reportTitle = reportTitle;
+  financePdfHeader(pdf, { projectName, updatedAt, title: reportTitle });
 
-  // KPI cards
   financePdfKpiCards(pdf, snap, projectCurrency);
 
-  // Charts opcionales (si llegan)
-  const charts = chartsPayload || {};
-  const chartEntries = Object.entries(charts).filter(([_, v]) => typeof v === 'string' && v);
-  if (chartEntries.length) {
-    financePdfSection(pdf, 'Gráficas');
-    for (const [title, src] of chartEntries) {
-      const buf = await urlToBuffer(src, req);
-      if (!buf) continue;
-
-      pdf.fontSize(11).fillColor('#111827').text(title);
-      pdf.moveDown(0.3);
-
-      const imgTop = pdf.y;
-      const imgH = 260;
-      pdf.image(buf, pdf.page.margins.left, imgTop, {
-        fit: [pdf.page.width - pdf.page.margins.left*2, imgH],
-        align: 'center'
-      });
-      pdf.y = imgTop + imgH + 12;
-      financePdfEnsureSpace(pdf, 40);
-    }
-  }
-
-  // Resumen financiero
-  financePdfSection(pdf, 'Resumen financiero (plan vs real)');
+  financePdfSection(pdf, 'Conciliación bancaria');
   financePdfTable(pdf, [
-    { c:'Plan usos', v: money(snap.totals.planUses) },
-    { c:'Plan fuentes', v: money(snap.totals.planSources) },
-    { c:'Real usos', v: money(snap.totals.realUses) },
-    { c:'Real fuentes', v: money(snap.totals.realSources) },
-    { c:'Ejecución', v: `${(snap.percentExecution * 100).toFixed(1)}%` },
-    { c:'Intereses', v: money(snap.totals.intereses) },
-    { c:'Preventas', v: money(snap.totals.preventas) },
-    { c:'Aportes propios', v: money(snap.totals.aportes) },
-    { c:'Desembolso esperado', v: money(snap.totals.disbExpected) },
-    { c:'Desembolso real', v: money(snap.totals.disbActual) },
-    { c:'Fases solicitadas', v: String(snap.totals.disbRequestedCount) },
+    { concept: 'Capital', base: money(snap.banking.bankDisbursed), component1: money(snap.banking.amortized), component2: money(snap.banking.outstandingPrincipal), difference: money(snap.banking.bankDisbursed - snap.banking.amortized - snap.banking.outstandingPrincipal), status: 'CUADRA' },
+    { concept: 'Pagos al banco', base: money(snap.banking.totalPaidToBank), component1: money(snap.banking.amortized), component2: money(snap.banking.interestPaid), difference: money(snap.banking.totalPaidToBank - snap.banking.amortized - snap.banking.interestPaid), status: 'CUADRA' }
   ], [
-    { key:'c', label:'Concepto', wPct:0.66, align:'left' },
-    { key:'v', label:'Valor', wPct:0.34, align:'right' },
+    { key: 'concept', label: 'Comprobación', wPct: 0.22 },
+    { key: 'base', label: 'Total', wPct: 0.17, align: 'right' },
+    { key: 'component1', label: 'Amortización', wPct: 0.17, align: 'right' },
+    { key: 'component2', label: 'Pendiente / interés', wPct: 0.18, align: 'right' },
+    { key: 'difference', label: 'Diferencia', wPct: 0.16, align: 'right' },
+    { key: 'status', label: 'Estado', wPct: 0.10, align: 'center' }
+  ], { rowStyle: () => ({ color: '#047857' }) });
+
+  financePdfSection(pdf, 'Plan y ejecución');
+  financePdfTable(pdf, [
+    { concept: 'Usos', plan: money(snap.totals.planUses), real: money(snap.totals.realUses), variance: money(snap.totals.realUses - snap.totals.planUses), execution: `${(snap.percentExecution * 100).toFixed(1)}%` },
+    { concept: 'Fuentes', plan: money(snap.totals.planSources), real: money(snap.totals.realSources), variance: money(snap.totals.realSources - snap.totals.planSources), execution: snap.totals.planSources > 0 ? `${((snap.totals.realSources / snap.totals.planSources) * 100).toFixed(1)}%` : '-' }
+  ], [
+    { key: 'concept', label: 'Concepto', wPct: 0.28 },
+    { key: 'plan', label: 'Plan', wPct: 0.18, align: 'right' },
+    { key: 'real', label: 'Real', wPct: 0.18, align: 'right' },
+    { key: 'variance', label: 'Desviación', wPct: 0.18, align: 'right' },
+    { key: 'execution', label: '% ejecución', wPct: 0.18, align: 'right' }
   ]);
 
-  // Tabla compacta de fases
-  financePdfSection(pdf, 'Fases (resumen)');
-  const rows = snap.phases.map(p => ({
-    phase: p.name,
-    dates: `${fmtDate(p.startDate)} → ${fmtDate(p.endDate)}`,
-    plan: money(p.planUses),
-    real: money(p.realUses),
-    disb: `${money(p.disbActual)}${p.disbRequested ? ' (SOL)' : ''}`,
-  }));
-  financePdfTable(pdf, rows, [
-    { key:'phase', label:'Fase', wPct:0.34, align:'left' },
-    { key:'dates', label:'Fechas', wPct:0.26, align:'left' },
-    { key:'plan',  label:'Plan usos', wPct:0.14, align:'right' },
-    { key:'real',  label:'Real usos', wPct:0.14, align:'right' },
-    { key:'disb',  label:'Desembolso', wPct:0.12, align:'right' },
-  ]);
-
-  // Detalle por fase (compacto)
-  for (const p of snap.phases) {
+  for (const phase of snap.phases) {
     pdf.addPage();
-    financePdfHeader(pdf, { projectName, updatedAt });
+    financePdfHeader(pdf, { projectName, updatedAt, title: reportTitle });
+    financePdfSection(pdf, `Usos y fuentes - ${phase.name}`);
+    pdf.fontSize(9).fillColor('#475569').text(`Periodo: ${fmtDate(phase.startDate)} a ${fmtDate(phase.endDate)} · Desembolso operativo esperado: ${money(phase.disbExpected)} · Real de fase: ${money(phase.disbActual)}`);
+    pdf.y += 8;
 
-    financePdfSection(pdf, `Detalle — ${p.name}`);
-
-    pdf.fontSize(10).fillColor('#374151')
-      .text(`Fechas: ${fmtDate(p.startDate)} → ${fmtDate(p.endDate)}`);
-    pdf.moveDown(0.4);
-
-    financePdfTable(pdf, [
-      { c:'Plan usos', v: money(p.planUses) },
-      { c:'Plan fuentes', v: money(p.planSources) },
-      { c:'Real usos', v: money(p.realUses) },
-      { c:'Real fuentes', v: money(p.realSources) },
-      { c:'Intereses', v: money(p.intereses) },
-      { c:'Preventas', v: money(p.preventas) },
-      { c:'Aportes', v: money(p.aportes) },
-      { c:'Desembolso esperado', v: money(p.disbExpected) },
-      { c:'Desembolso real', v: money(p.disbActual) },
-      { c:'Solicitado', v: p.disbRequested ? 'SI' : 'NO' },
-    ], [
-      { key:'c', label:'Concepto', wPct:0.66, align:'left' },
-      { key:'v', label:'Valor', wPct:0.34, align:'right' },
+    const comparisonRows = [];
+    ['Usos', 'Fuentes'].forEach(group => {
+      const detail = financeItemsComparison(phase, group);
+      detail.forEach(item => comparisonRows.push({
+        group,
+        item: item.name,
+        plan: money(item.plan),
+        real: money(item.real),
+        variance: money(item.variance),
+        execution: item.executionPct === null ? '-' : `${(item.executionPct * 100).toFixed(1)}%`,
+        _fill: group === 'Usos' ? '#EFF6FF' : '#F5F3FF'
+      }));
+      const plan = detail.reduce((sum, item) => sum + item.plan, 0);
+      const real = detail.reduce((sum, item) => sum + item.real, 0);
+      comparisonRows.push({
+        group,
+        item: `Total ${group.toLocaleLowerCase('es')}`,
+        plan: money(plan),
+        real: money(real),
+        variance: money(real - plan),
+        execution: plan > 0 ? `${((real / plan) * 100).toFixed(1)}%` : '-',
+        _fill: '#D1FAE5',
+        _total: true
+      });
+    });
+    financePdfTable(pdf, comparisonRows, [
+      { key: 'group', label: 'Grupo', wPct: 0.12 },
+      { key: 'item', label: 'Partida', wPct: 0.28 },
+      { key: 'plan', label: 'Plan', wPct: 0.17, align: 'right' },
+      { key: 'real', label: 'Real', wPct: 0.17, align: 'right' },
+      { key: 'variance', label: 'Desviación', wPct: 0.16, align: 'right' },
+      { key: 'execution', label: '% ejecución', wPct: 0.10, align: 'right' }
     ]);
 
-    const mkRows = (items) => (items || []).map(it => ({
-      n: String(it?.name || '—'),
-      a: money(it?.amount || 0)
+    financePdfSection(pdf, `Líneas bancarias - ${phase.name}`);
+    const phaseLines = snap.lineSummaries.filter(item => item.phaseId === phase.id);
+    const lineRows = phaseLines.map(item => ({
+      name: item.line.name,
+      approved: money(item.approved),
+      disbursed: money(item.bankDisbursed),
+      available: money(item.availableToDraw),
+      manual: money(item.manualAmortized),
+      sales: money(item.salesAmortized),
+      amortized: money(item.amortized),
+      interest: money(item.interestPaid),
+      paid: money(item.totalPaidToBank),
+      pending: money(item.outstandingPrincipal)
     }));
-
-    financePdfSection(pdf, 'PLAN — Usos');
-    financePdfTable(pdf, mkRows(p.planUsesItems), [
-      { key:'n', label:'Partida', wPct:0.72, align:'left' },
-      { key:'a', label:'Monto', wPct:0.28, align:'right' },
-    ]);
-
-    financePdfSection(pdf, 'PLAN — Fuentes');
-    financePdfTable(pdf, mkRows(p.planSourcesItems), [
-      { key:'n', label:'Partida', wPct:0.72, align:'left' },
-      { key:'a', label:'Monto', wPct:0.28, align:'right' },
-    ]);
-
-    financePdfSection(pdf, 'REAL — Usos');
-    financePdfTable(pdf, mkRows(p.uses), [
-      { key:'n', label:'Partida', wPct:0.72, align:'left' },
-      { key:'a', label:'Monto', wPct:0.28, align:'right' },
-    ]);
-
-    financePdfSection(pdf, 'REAL — Fuentes');
-    financePdfTable(pdf, mkRows(p.sources), [
-      { key:'n', label:'Partida', wPct:0.72, align:'left' },
-      { key:'a', label:'Monto', wPct:0.28, align:'right' },
-    ]);
-
-    financePdfSection(pdf, 'Líneas bancarias');
-    const lineRows = (p.loanLines || []).map(line => {
-      const disbursed = (line.entries || []).reduce((sum, entry) => sum + (entry.entryType === 'disbursement' && entry.paymentStatus === 'pending' ? 0 : toNum(entry.disbursementAmount)), 0);
-      const amortized = (line.entries || []).reduce((sum, entry) => sum + toNum(entry.amortizedAmount), 0);
-      const interestPaid = (line.entries || []).reduce((sum, entry) => sum + toNum(entry.interestAmount), 0);
-      return { name: line.name, approved: money(line.approvedAmount), disbursed: money(disbursed), amortized: money(amortized), interestPaid: money(interestPaid), totalPaid: money(amortized + interestPaid), balance: money(Math.max(0, disbursed - amortized)) };
+    if (phaseLines.length) lineRows.push({
+      name: 'TOTAL',
+      approved: money(phaseLines.reduce((sum, item) => sum + item.approved, 0)),
+      disbursed: money(phaseLines.reduce((sum, item) => sum + item.bankDisbursed, 0)),
+      available: money(phaseLines.reduce((sum, item) => sum + item.availableToDraw, 0)),
+      manual: money(phaseLines.reduce((sum, item) => sum + item.manualAmortized, 0)),
+      sales: money(phaseLines.reduce((sum, item) => sum + item.salesAmortized, 0)),
+      amortized: money(phaseLines.reduce((sum, item) => sum + item.amortized, 0)),
+      interest: money(phaseLines.reduce((sum, item) => sum + item.interestPaid, 0)),
+      paid: money(phaseLines.reduce((sum, item) => sum + item.totalPaidToBank, 0)),
+      pending: money(phaseLines.reduce((sum, item) => sum + item.outstandingPrincipal, 0)),
+      _fill: '#D1FAE5',
+      _total: true
     });
     financePdfTable(pdf, lineRows, [
-      { key:'name', label:'Línea', wPct:0.22, align:'left' },
-      { key:'approved', label:'Aprobado', wPct:0.13, align:'right' },
-      { key:'disbursed', label:'Desemb.', wPct:0.13, align:'right' },
-      { key:'amortized', label:'Amort.', wPct:0.13, align:'right' },
-      { key:'interestPaid', label:'Intereses', wPct:0.13, align:'right' },
-      { key:'totalPaid', label:'Total pagado', wPct:0.13, align:'right' },
-      { key:'balance', label:'Saldo', wPct:0.13, align:'right' },
-    ]);
+      { key: 'name', label: 'Línea', wPct: 0.15 },
+      { key: 'approved', label: 'Aprobado', wPct: 0.095, align: 'right' },
+      { key: 'disbursed', label: 'Desembolsado', wPct: 0.105, align: 'right' },
+      { key: 'available', label: 'Disponible', wPct: 0.095, align: 'right' },
+      { key: 'manual', label: 'Amort. manual', wPct: 0.095, align: 'right' },
+      { key: 'sales', label: 'Amort. ventas', wPct: 0.095, align: 'right' },
+      { key: 'amortized', label: 'Amort. total', wPct: 0.095, align: 'right' },
+      { key: 'interest', label: 'Intereses', wPct: 0.085, align: 'right' },
+      { key: 'paid', label: 'Pagado banco', wPct: 0.095, align: 'right' },
+      { key: 'pending', label: 'Pendiente', wPct: 0.09, align: 'right' }
+    ], { fontSize: 7 });
 
-    for (const line of (p.loanLines || [])) {
+    for (const line of (phase.loanLines || [])) {
       if (!(line.entries || []).length) continue;
-      financePdfSection(pdf, `Movimientos — ${line.name}`);
-      financePdfTable(pdf, line.entries.map(entry => ({
-        type: entry.entryType === 'sale_amortization' ? 'Venta' : entry.entryType === 'manual_amortization' ? 'Amortización' : entry.entryType === 'interest_payment' ? 'Interés pagado' : entry.entryType === 'disbursement' ? `Cuenta ${entry.advanceAccountNumber || '—'} · ${entry.fundingParty === 'mixed' ? 'Mixta' : entry.fundingParty === 'promoter' ? 'Promotor' : 'Banco'}` : 'Histórico',
-        date: fmtDate(entry.date),
-        loanNumber: entry.loanNumber || '—',
-        disbursed: money(entry.disbursementAmount),
-        amortized: money(entry.amortizedAmount),
-        interestPaid: money(entry.interestAmount),
-        status: entry.entryType === 'interest_payment' ? 'Pagado' : entry.workflowStatus === 'requested' ? 'Solicitado' : entry.workflowStatus === 'returned' ? 'Devuelto' : entry.workflowStatus === 'prepared' ? 'Preparado' : entry.paymentStatus === 'automatic' ? 'Automática' : 'Desembolsado'
-      })), [
-        { key:'type', label:'Tipo', wPct:0.18, align:'left' },
-        { key:'date', label:'Fecha', wPct:0.12, align:'left' },
-        { key:'loanNumber', label:'Nº préstamo', wPct:0.15, align:'left' },
-        { key:'disbursed', label:'Desembolso', wPct:0.13, align:'right' },
-        { key:'amortized', label:'Amortización', wPct:0.13, align:'right' },
-        { key:'interestPaid', label:'Interés', wPct:0.13, align:'right' },
-        { key:'status', label:'Estado', wPct:0.16, align:'left' },
-      ]);
+      financePdfEnsureSpace(pdf, 50 + 25 + (Math.min((line.entries || []).length + 1, 4) * 20));
+      financePdfSection(pdf, `Movimientos - ${line.name}`);
+      const sortedEntries = [...line.entries].sort((left, right) => {
+        const leftDate = left.date ? new Date(left.date).getTime() : Number.MAX_SAFE_INTEGER;
+        const rightDate = right.date ? new Date(right.date).getTime() : Number.MAX_SAFE_INTEGER;
+        return leftDate - rightDate;
+      });
+      const movementRows = sortedEntries.map(entry => {
+        const isDisbursement = entry.entryType === 'disbursement';
+        const isPending = isDisbursement && entry.paymentStatus === 'pending';
+        const bank = isDisbursement && !isPending && ['bank', 'mixed'].includes(entry.fundingParty || 'bank') ? toNum(entry.disbursementAmount) : 0;
+        const promoter = isDisbursement && !isPending ? (entry.fundingParty === 'promoter' ? toNum(entry.disbursementAmount) : toNum(entry.promoterContributionAmount)) : 0;
+        const pending = isPending ? toNum(entry.disbursementAmount) : 0;
+        const amortized = toNum(entry.amortizedAmount);
+        const interest = toNum(entry.interestAmount);
+        const typeLabel = entry.entryType === 'sale_amortization' && entry.notes
+          ? `${financeMovementLabel(entry)} · ${entry.notes}`
+          : financeMovementLabel(entry);
+        return {
+          type: typeLabel,
+          date: fmtDate(entry.date),
+          origin: financeFundingLabel(entry.fundingParty),
+          loan: entry.loanNumber || '-',
+          bank: money(bank),
+          promoter: money(promoter),
+          requested: money(pending),
+          amortized: money(amortized),
+          interest: money(interest),
+          paid: money(amortized + interest),
+          status: financeMovementStatus(entry),
+          _fill: entry.entryType === 'disbursement' ? '#DBEAFE'
+            : entry.entryType === 'interest_payment' ? '#FEF3C7'
+              : entry.entryType === 'sale_amortization' ? '#EDE9FE' : '#D1FAE5'
+        };
+      });
+      const metric = phaseLines.find(item => item.line === line);
+      if (metric) movementRows.push({
+        type: 'TOTAL LÍNEA', date: '', origin: '', loan: '', bank: money(metric.bankDisbursed), promoter: money(metric.promoterContributed), requested: '',
+        amortized: money(metric.amortized), interest: money(metric.interestPaid), paid: money(metric.totalPaidToBank), status: '', _fill: '#D1FAE5', _total: true
+      });
+      financePdfTable(pdf, movementRows, [
+        { key: 'type', label: 'Tipo / detalle', wPct: 0.15 },
+        { key: 'date', label: 'Fecha', wPct: 0.07 },
+        { key: 'origin', label: 'Origen', wPct: 0.07 },
+        { key: 'loan', label: 'Nº préstamo', wPct: 0.09 },
+        { key: 'bank', label: 'Banco', wPct: 0.09, align: 'right' },
+        { key: 'promoter', label: 'Promotor', wPct: 0.09, align: 'right' },
+        { key: 'requested', label: 'Pendiente', wPct: 0.08, align: 'right' },
+        { key: 'amortized', label: 'Amortización', wPct: 0.09, align: 'right' },
+        { key: 'interest', label: 'Interés', wPct: 0.08, align: 'right' },
+        { key: 'paid', label: 'Pago banco', wPct: 0.10, align: 'right' },
+        { key: 'status', label: 'Estado', wPct: 0.09 }
+      ], { fontSize: 6.8, rowHeight: 20 });
     }
   }
 
-  // Footer con total páginas (2ª pasada)
+  const charts = chartsPayload || {};
+  const chartEntries = Object.entries(charts).filter(([_, value]) => typeof value === 'string' && value);
+  if (chartEntries.length) {
+    pdf.addPage();
+    financePdfHeader(pdf, { projectName, updatedAt, title: reportTitle });
+    financePdfSection(pdf, 'Gráficas');
+    for (const [title, source] of chartEntries) {
+      const buffer = await urlToBuffer(source, req);
+      if (!buffer) continue;
+      financePdfEnsureSpace(pdf, 260);
+      pdf.fontSize(11).fillColor('#0F172A').text(title);
+      const imageTop = pdf.y + 6;
+      pdf.image(buffer, pdf.page.margins.left, imageTop, { fit: [pdf.page.width - pdf.page.margins.left * 2, 220], align: 'center' });
+      pdf.y = imageTop + 232;
+    }
+  }
+
   const range = pdf.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i++) {
     pdf.switchToPage(i);
@@ -2337,5 +2578,10 @@ async function handleFinanceExport(req, res) {
 // ✅ Mantén compat con tu front actual
 router.get('/projects/:projectId/finance/export', handleFinanceExport);
 router.post('/projects/:projectId/finance/export', handleFinanceExport);
+
+Object.defineProperty(router, '__financeExport', {
+  value: { buildFinanceSnapshot, exportFinanceXlsx, exportFinancePdf },
+  enumerable: false
+});
 
 module.exports = router;

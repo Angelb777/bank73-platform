@@ -23,6 +23,8 @@ test('Dato Único agrupa modelos y sugiere características consistentes', () =>
 
   assert.equal(preview.valid, true);
   assert.equal(preview.unitsTotal, 3);
+  assert.equal(preview.units.length, 3);
+  assert.equal(preview.units[0].reference, 'M1-1');
   assert.equal(preview.models.length, 2);
   assert.deepEqual(preview.models[0].conflicts, []);
   assert.equal(preview.models[0].name, 'Modelo A');
@@ -108,6 +110,15 @@ test('Dato Único reconoce el modelo definitivo con ETAPA, TORRE, NIVEL y UNIDAD
   assert.equal(preview.valid, true);
   assert.equal(preview.sheet, 'EXPEDIENTES-BANCO');
   assert.equal(preview.unitsTotal, 1);
+  assert.deepEqual(preview.units[0], {
+    etapa: 'Etapa 1',
+    torre: 'Torre A',
+    nivel: '03',
+    manzana: 'Etapa 1 · Torre A · 03',
+    lote: 'A-301',
+    modelo: 'Modelo A',
+    reference: 'Etapa 1 · Torre A · 03-A-301'
+  });
   assert.equal(preview.models[0].name, 'Modelo A');
   assert.equal(preview.models[0].price, 180000);
   assert.equal(preview.models[0].initialStatuses.con_cpp, 1);

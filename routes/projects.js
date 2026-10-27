@@ -1551,6 +1551,37 @@ router.get('/assignees', requireRole('admin','bank'), async (req, res) => {
    CREAR PROYECTO
    ========================================================================= */
 
+// Plantilla general disponible antes de que exista el proyecto. Es la misma
+// que usa Comercial cuando el proyecto no tiene una plantilla específica.
+router.get('/commercial-template/info', requireRole('admin','bank','promoter'), async (req, res) => {
+  try {
+    const tenant = await Tenant.findOne({ tenantKey: req.tenantKey }).select('commercialTemplate').lean();
+    const template = tenant?.commercialTemplate?.path ? tenant.commercialTemplate : null;
+    return res.json({ commercialTemplate: template, scope: template ? 'all' : null });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'No se pudo consultar la plantilla.' });
+  }
+});
+
+router.get('/commercial-template/download', requireRole('admin','bank','promoter'), async (req, res) => {
+  try {
+    const tenant = await Tenant.findOne({ tenantKey: req.tenantKey }).select('commercialTemplate').lean();
+    const template = tenant?.commercialTemplate || {};
+    if (!template.path) return res.status(404).json({ error: 'Todavía no hay una plantilla general disponible.' });
+
+    const templatesRoot = path.resolve(__dirname, '..', 'uploads', 'commercial-templates');
+    const absolutePath = path.resolve(__dirname, '..', template.path);
+    const relativeToRoot = path.relative(templatesRoot, absolutePath);
+    if (!relativeToRoot || relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
+      return res.status(400).json({ error: 'Ruta de plantilla no válida.' });
+    }
+    if (!fs.existsSync(absolutePath)) return res.status(404).json({ error: 'El archivo de plantilla ya no está disponible.' });
+    return res.download(absolutePath, template.originalname || 'plantilla-dato-unico.xlsx');
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'No se pudo descargar la plantilla.' });
+  }
+});
+
 // POST /api/projects
 router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
   try {
@@ -2163,25 +2194,64 @@ router.put('/:id/housing-models', requireProjectAccess({ commercialOnlySales: fa
 
     // Mantener los ids de los modelos existentes evita romper la relación
     // modelId de las unidades cuando solo se edita la biblioteca.
-    const existingIds = new Map((project.housingModels || []).map(model => [
+    const existingModels = project.housingModels || [];
+    const existingById = new Map(existingModels.map(model => [String(model._id), model]));
+    const existingByName = new Map(existingModels.map(model => [
       String(model.name || '').trim().toLowerCase(),
-      model._id
+      model
     ]));
+    const submittedIdsByName = new Map(req.body.housingModels.map(model => [
+      String(model?.name || '').trim().toLowerCase(),
+      String(model?._id || '')
+    ]));
+    const previousModelById = new Map();
     models.forEach(model => {
-      const existingId = existingIds.get(String(model.name || '').trim().toLowerCase());
-      if (existingId) model._id = existingId;
+      const normalizedName = String(model.name || '').trim().toLowerCase();
+      const submittedId = submittedIdsByName.get(normalizedName);
+      const existing = (submittedId && existingById.get(submittedId)) || existingByName.get(normalizedName);
+      if (!existing?._id) return;
+      model._id = existing._id;
+      previousModelById.set(String(existing._id), existing);
     });
 
     project.housingModels = models;
     project.updatedBy = req.user?.userId || req.user?._id;
     await project.save();
 
+    // Unit.modelo is the visible copy of the canonical model name. Keep it
+    // synchronized by modelId and link legacy units that only stored a name.
+    const unitModelSyncOps = models
+      .filter(model => model._id && String(model.name || '').trim())
+      .map(model => {
+        const previous = previousModelById.get(String(model._id));
+        const previousName = String(previous?.name || '').trim();
+        const linkedUnits = [{ modelId: model._id }];
+        if (previousName) linkedUnits.push({ modelId: null, modelo: previousName });
+        return {
+          updateMany: {
+            filter: {
+              tenantKey: req.tenantKey,
+              projectId: project._id,
+              deletedAt: null,
+              $or: linkedUnits
+            },
+            update: {
+              $set: {
+                modelId: model._id,
+                modelo: String(model.name).trim()
+              }
+            }
+          }
+        };
+      });
+    if (unitModelSyncOps.length) await Unit.bulkWrite(unitModelSyncOps, { ordered: false });
+
     await audit(req, 'project.housing_models.updated', {
       targetType: 'project',
       targetId: project._id,
       projectId: project._id,
       message: 'Biblioteca de modelos actualizada',
-      metadata: { models: models.length }
+      metadata: { models: models.length, synchronizedUnitModels: unitModelSyncOps.length }
     });
 
     res.json({ ok: true, housingModels: project.housingModels });

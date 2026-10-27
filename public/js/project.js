@@ -1126,7 +1126,7 @@ function isOccupationPermit(it) {
 }
 
 function commercialUnitName(u) {
-  return u.nombre || u.name || u.codigo || u.code || u.numero || u.unitNumber || u.lote || u._id || 'Unidad';
+  return unitDisplayName(u);
 }
 
 function getCommercialPermitData(u, kind) {
@@ -4267,14 +4267,15 @@ const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
 
     const json = await resp3.json();
 
-    alert(`Importado: ${json.ventasUpserted} ventas / ${json.unitsUpserted} unidades`);
-
     invalidateProjectDataCache(['unitsAll', 'ventas', 'portfolio', 'finance']);
+    importBtn.innerText = 'Actualizando unidades...';
     await loadSummary();
     await refreshTopHeaderKpis();
-    if (typeof loadCommercial === 'function') {
-      await loadCommercial();
-    }
+    if (typeof window.loadUnits === 'function') await window.loadUnits();
+    if (input) input.value = '';
+    if (datoUnicoFileName) datoUnicoFileName.textContent = 'Ningún archivo seleccionado';
+
+    alert(`Importado: ${json.ventasUpserted} ventas / ${json.unitsUpserted} unidades`);
 
   } catch (err) {
     console.error(err);
@@ -4348,12 +4349,15 @@ function bindDatoUnicoImportControls() {
         }
 
         const json = await resp3.json();
-        alert(`Importado: ${json.ventasUpserted} ventas / ${json.unitsUpserted} unidades`);
-
         invalidateProjectDataCache(['unitsAll', 'ventas', 'portfolio', 'finance']);
+        importBtn.innerText = 'Actualizando unidades...';
         await loadSummary();
         await refreshTopHeaderKpis();
-        if (typeof loadCommercial === 'function') await loadCommercial();
+        if (typeof window.loadUnits === 'function') await window.loadUnits();
+        if (datoUnicoInput) datoUnicoInput.value = '';
+        if (datoUnicoFileName) datoUnicoFileName.textContent = 'Ningún archivo seleccionado';
+
+        alert(`Importado: ${json.ventasUpserted} ventas / ${json.unitsUpserted} unidades`);
       } catch (err) {
         console.error(err);
         alert(err.message || 'Error importando Dato Unico');
@@ -6919,7 +6923,7 @@ function renderFinanceLoanLines(lines = []) {
             <button class="btn btn-xs" type="button" data-finance-add-entry="disbursement">+ Desembolso</button>
             <button class="btn btn-ghost btn-xs" type="button" data-finance-add-entry="manual_amortization">+ Amortización manual</button>
             <button class="btn btn-ghost btn-xs" type="button" data-finance-add-entry="interest_payment">+ Interés pagado</button>
-            <button class="btn btn-xs" type="button" data-finance-save-line>Guardar ahora</button>
+            <button class="btn btn-xs" type="button" data-finance-save-line title="El autoguardado está activo; este botón permite forzarlo.">Guardar ahora</button>
             <button class="btn btn-danger btn-xs" type="button" data-finance-remove-line>Eliminar</button>
           </div>
         </div>
@@ -6935,12 +6939,10 @@ function renderFinanceLoanLines(lines = []) {
                 <th>Cuenta / financiación</th>
                 <th>Fecha</th>
                 <th>No. préstamo</th>
-                <th>Importe banco</th>
+                <th>Importe</th>
                 <th>Vencimiento</th>
-                <th>Amortización / interés</th>
                 <th>Informe de avalúo</th>
                 <th>Pago</th>
-                <th>Saldo</th>
                 <th>Notas</th>
                 <th></th>
               </tr>
@@ -6955,12 +6957,10 @@ function renderFinanceLoanLines(lines = []) {
                       <td><span class="small muted">—</span></td>
                       <td><input value="${escapeHtml(financeDateInput(sale.checkDate) || '-')}" disabled></td>
                       <td><input value="${escapeHtml(sale.checkNumber ? `Cheque ${sale.checkNumber}` : sale.lot || 'Venta')}" disabled></td>
-                      <td><input value="${formatPanamaNumber(0)}" disabled></td>
-                      <td><input value="-" disabled></td>
                       <td><input value="${formatPanamaNumber(sale.amount)}" disabled></td>
+                      <td><input value="-" disabled></td>
                       <td><span class="small muted">—</span></td>
                       <td><span class="finance-status is-ok">Automática</span></td>
-                      <td class="finance-balance">-</td>
                       <td><input value="${escapeHtml(`${sale.lot || 'Unidad'} · ${sale.clientName || 'Cliente'}`)}" disabled></td>
                       <td><span class="small muted">Desde unidad</span></td>
                     </tr>
@@ -6972,11 +6972,21 @@ function renderFinanceLoanLines(lines = []) {
                 const isDisbursement = entryType === 'disbursement';
                 const isManualAmortization = entryType === 'manual_amortization';
                 const isInterestPayment = entryType === 'interest_payment';
+                const isLegacyDisbursement = entryType === 'legacy' && numOr0(entry.disbursementAmount) > 0;
+                const amountField = isDisbursement || isLegacyDisbursement
+                  ? 'disbursementAmount'
+                  : isInterestPayment ? 'interestAmount' : 'amortizedAmount';
+                const amountValue = amountField === 'disbursementAmount'
+                  ? entry.disbursementAmount
+                  : amountField === 'interestAmount' ? entry.interestAmount : entry.amortizedAmount;
+                const preservedLegacyAmounts = entryType === 'legacy' ? `
+                  ${amountField !== 'disbursementAmount' ? `<input data-field="disbursementAmount" type="hidden" value="${escapeHtml(entry.disbursementAmount || 0)}">` : ''}
+                  ${amountField !== 'amortizedAmount' ? `<input data-field="amortizedAmount" type="hidden" value="${escapeHtml(entry.amortizedAmount || 0)}">` : ''}
+                  ${amountField !== 'interestAmount' ? `<input data-field="interestAmount" type="hidden" value="${escapeHtml(entry.interestAmount || 0)}">` : ''}
+                ` : '';
                 const workflowStatus = isDisbursement ? financeDisbursementWorkflowStatus(entry) : '';
                 const workflowLocked = isDisbursement && (['requested', 'disbursed'].includes(workflowStatus) || entry.promoterContributionStatus === 'contributed');
                 const savedEntry = isMongoIdLike(entry._id);
-                const paidAmount = isDisbursement && workflowStatus !== 'disbursed' ? 0 : (entry.fundingParty === 'promoter' ? 0 : numOr0(entry.disbursementAmount));
-                const entryBalance = Math.max(0, paidAmount - numOr0(entry.amortizedAmount));
                 const entryStatus = financeEntryStatus(entry);
                 const report = financeInspectionReport(entry.inspectionId);
                 return `
@@ -6985,12 +6995,10 @@ function renderFinanceLoanLines(lines = []) {
                     <td>${isDisbursement ? `<div class="finance-account-source"><b>Cuenta ${escapeHtml(String(entry.advanceAccountNumber || 'Nueva'))}</b><select data-field="fundingParty" ${workflowLocked ? 'disabled' : ''}><option value="bank" ${(entry.fundingParty || 'bank') === 'bank' ? 'selected' : ''}>Banco</option><option value="promoter" ${entry.fundingParty === 'promoter' ? 'selected' : ''}>Promotor</option>${entry.fundingParty === 'mixed' ? '<option value="mixed" selected>Banco + promotor (histórico)</option>' : ''}</select>${entry.promoterContributionStatus === 'contributed' ? '<small class="finance-status is-ok">Desembolsado</small>' : ''}</div>` : '<span class="small muted">—</span>'}</td>
                     <td><input data-field="${isDisbursement ? 'disbursementDate' : 'movementDate'}" type="date" value="${financeDateInput(isDisbursement ? entry.disbursementDate : entry.movementDate)}" ${workflowLocked ? 'disabled' : ''}></td>
                     <td><input data-field="loanNumber" value="${escapeHtml(entry.loanNumber || '')}" placeholder="Opcional" ${(!isDisbursement && !isInterestPayment) || workflowLocked ? 'disabled' : ''}></td>
-                    <td><input data-field="disbursementAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(entry.disbursementAmount)}" ${!isDisbursement || workflowLocked ? 'disabled' : ''}></td>
+                    <td><input data-field="${amountField}" type="text" inputmode="decimal" value="${formatPanamaNumber(amountValue)}" ${workflowLocked ? 'disabled' : ''}>${preservedLegacyAmounts}</td>
                     <td><input data-field="maturityDate" type="date" value="${financeDateInput(entry.maturityDate)}" ${!isDisbursement || workflowLocked ? 'disabled' : ''}></td>
-                    <td><input data-field="${isInterestPayment ? 'interestAmount' : 'amortizedAmount'}" type="text" inputmode="decimal" value="${formatPanamaNumber(isInterestPayment ? entry.interestAmount : entry.amortizedAmount)}" ${isDisbursement ? 'disabled' : ''}></td>
                     <td>${isDisbursement ? `<select data-field="inspectionId" ${workflowLocked || (entry.inspectionId && savedEntry) || (FINANCE_AVALUATION_CONTEXT.hasAssignedAvaluator && !(FINANCE_AVALUATION_CONTEXT.reports || []).length) ? 'disabled' : ''}>${financeInspectionOptions(entry.inspectionId, usedReportIds)}</select>${report ? `<button class="finance-report-link" type="button" data-open-inspection="${escapeHtml(report.id)}">Ver PDF</button>` : ''}` : '<span class="small muted">—</span>'}</td>
                     <td>${isDisbursement ? financeDisbursementWorkflowCell(entry, savedEntry) : `<span class="finance-status is-${entryStatus.key}">${isManualAmortization ? 'Manual' : isInterestPayment ? 'Pagado' : entryStatus.label}</span>`}</td>
-                    <td class="finance-balance">${isInterestPayment ? '—' : financeMoney(entryBalance)}</td>
                     <td><input data-field="notes" value="${escapeHtml(entry.notes || '')}" ${workflowLocked ? 'disabled' : ''}></td>
                     <td>${['admin', 'promoter', 'bank'].includes(myRole) ? `<button class="btn btn-danger btn-xs" type="button" data-finance-remove-entry>${workflowLocked ? 'Eliminar' : 'Quitar'}</button>` : '<span class="small muted">Bloqueado</span>'}</td>
                   </tr>
@@ -7142,7 +7150,7 @@ function renderFinanceUnitAmortizations() {
         <div class="finance-unit-footer">
           <span>Total distribuido: <b data-unit-distributed>${financeMoney(state.distributed)}</b></span>
           <span>Diferencia: <b data-unit-difference>${financeMoney(state.diff)}</b></span>
-          <button class="btn btn-xs" type="button" data-finance-save-unit>Guardar ahora</button>
+          <button class="btn btn-xs" type="button" data-finance-save-unit title="El autoguardado está activo; este botón permite forzarlo.">Guardar ahora</button>
           <button class="btn btn-ghost btn-xs" type="button" data-finance-reset-unit>Limpiar</button>
         </div>
       </details>
@@ -7302,7 +7310,7 @@ function saveFinanceUnitAmortizations(btn = null, { showAlert = !!btn, force = !
   const unitAmortizations = collectFinanceUnitAmortizations();
   FINANCE_UNIT_DIRTY = false;
   setFinanceButtonState(btn, 'Guardando...', true);
-  setFinanceAutosaveStatus('financeUnitSaveStatus', 'Guardando...', 'saving');
+  setFinanceAutosaveStatus('financeUnitSaveStatus', 'Autoguardado: guardando...', 'saving');
   FINANCE_UNIT_SAVE_QUEUE = FINANCE_CONTROL_SAVE_QUEUE.catch(() => {}).then(async () => {
     const response = await API.put(`/api/projects/${id}/finance/unit-amortizations`, { unitAmortizations });
     applyFinanceControlSaveResponse(response);
@@ -7312,7 +7320,7 @@ function saveFinanceUnitAmortizations(btn = null, { showAlert = !!btn, force = !
       if (saved?._id) card.dataset.financeId = String(saved._id);
     });
     setFinanceButtonState(btn, 'Guardado', true);
-    setFinanceAutosaveStatus('financeUnitSaveStatus', FINANCE_UNIT_DIRTY ? 'Cambios pendientes' : 'Guardado', FINANCE_UNIT_DIRTY ? 'pending' : 'saved');
+    setFinanceAutosaveStatus('financeUnitSaveStatus', FINANCE_UNIT_DIRTY ? 'Autoguardado: cambios pendientes' : 'Autoguardado: guardado', FINANCE_UNIT_DIRTY ? 'pending' : 'saved');
     renderFinanceLoanGlobalSummary(collectFinanceLoanLines());
     renderFinanceUnitGlobalSummary(readFinanceUnitCards());
     renderFinanceControlKpis();
@@ -7325,7 +7333,7 @@ function saveFinanceUnitAmortizations(btn = null, { showAlert = !!btn, force = !
   }).catch(error => {
     FINANCE_UNIT_DIRTY = true;
     setFinanceButtonState(btn, originalLabel, false);
-    setFinanceAutosaveStatus('financeUnitSaveStatus', 'No se pudo guardar', 'error');
+    setFinanceAutosaveStatus('financeUnitSaveStatus', 'Autoguardado: no se pudo guardar', 'error');
     console.error('[Finance] error guardando amortizaciones', error);
     if (showAlert) alert(error.message || 'No se pudieron guardar las amortizaciones');
     throw error;
@@ -7336,23 +7344,38 @@ function saveFinanceUnitAmortizations(btn = null, { showAlert = !!btn, force = !
 
 function scheduleFinanceUnitAutosave() {
   FINANCE_UNIT_DIRTY = true;
-  setFinanceAutosaveStatus('financeUnitSaveStatus', 'Cambios pendientes', 'pending');
+  setFinanceAutosaveStatus('financeUnitSaveStatus', 'Autoguardado: cambios pendientes', 'pending');
   clearTimeout(FINANCE_UNIT_AUTOSAVE_TIMER);
   FINANCE_UNIT_AUTOSAVE_TIMER = setTimeout(() => {
-    saveFinanceUnitAmortizations().catch(() => {});
-  }, 800);
+    flushFinanceUnitAutosave({ showAlert: false }).catch(() => {});
+  }, 500);
 }
 
 async function flushFinanceUnitAutosave({ showAlert = true } = {}) {
   clearTimeout(FINANCE_UNIT_AUTOSAVE_TIMER);
   FINANCE_UNIT_AUTOSAVE_TIMER = null;
+  // Una amortización puede apuntar a una línea recién creada que todavía usa
+  // un id temporal. Persistimos primero las líneas, reconciliamos sus ids y
+  // después capturamos/guardamos las distribuciones de las unidades.
+  await flushFinanceLoanLinesAutosave({ showAlert });
   try { await FINANCE_UNIT_SAVE_QUEUE; } catch {}
   if (FINANCE_UNIT_DIRTY) await saveFinanceUnitAmortizations(null, { showAlert });
 }
 
 async function saveFinanceSingleUnit(card, btn = null) {
-  if (!card) return saveFinanceUnitAmortizations(btn, { force: true, showAlert: true });
-  return saveFinanceUnitAmortizations(btn, { force: true, showAlert: true });
+  FINANCE_UNIT_DIRTY = true;
+  if (btn) setFinanceButtonState(btn, 'Guardando...', true);
+  try {
+    await flushFinanceUnitAutosave({ showAlert: true });
+    if (btn) {
+      setFinanceButtonState(btn, 'Guardado', true);
+      await waitFinanceFeedback();
+      setFinanceButtonState(btn, 'Guardar ahora', false);
+    }
+  } catch (error) {
+    if (btn) setFinanceButtonState(btn, 'Guardar ahora', false);
+    throw error;
+  }
 }
 
 // -------------------------
@@ -7690,6 +7713,13 @@ function bindFinanceOnce() {
     }
     refreshFinanceDerivedUI();
     scheduleFinanceUnitAutosave();
+  });
+  document.getElementById('financeUnitAmortizations')?.addEventListener('focusout', () => {
+    // No esperamos al debounce cuando la persona termina un campo. Esto evita
+    // perder el último valor si cambia de pestaña o cierra el modal enseguida.
+    setTimeout(() => {
+      if (FINANCE_UNIT_DIRTY) flushFinanceUnitAutosave({ showAlert: false }).catch(() => {});
+    }, 0);
   });
   document.getElementById('financeUnitAmortizations')?.addEventListener('click', async (ev) => {
     const saveUnitBtn = ev.target.closest('[data-finance-save-unit]');
@@ -8767,7 +8797,7 @@ async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = '
   FINANCE_LOAN_LINES_DIRTY = false;
   FINANCE_UNIT_DIRTY = false;
   setFinanceAutosaveStatus('financeLoanLinesSaveStatus', 'Guardado', 'saved');
-  setFinanceAutosaveStatus('financeUnitSaveStatus', 'Guardado', 'saved');
+  setFinanceAutosaveStatus('financeUnitSaveStatus', 'Autoguardado: guardado', 'saved');
   const modal = mountFinancePhaseModal();
   if (!modal) return;
   const isRealContext = initialView === 'real';
@@ -10423,8 +10453,8 @@ function unitNamePartsFromInput() {
   const originalLote = String(input?.dataset.originalLote || '').trim();
   if (!value) return { manzana: originalManzana, lote: originalLote };
   if (!value.includes('-')) {
-    return originalLote && !originalManzana
-      ? { manzana: '', lote: value }
+    return originalLote
+      ? { manzana: originalManzana, lote: value }
       : { manzana: value, lote: '' };
   }
   const loteConPrefijo = value.match(/^(.*?)-(L-.+)$/i);
@@ -11281,6 +11311,7 @@ function applyOpenFichaStateVisual(unitState = {}) {
     state.project.housingModels = result?.housingModels || models;
     const modelSelect = document.getElementById('cl-modeloSelect');
     if (modelSelect) modelSelect.innerHTML = projectModelOptions(modelSelect.value, { includeEmpty: true });
+    await loadUnits();
     await window.refreshTechnicalWorkspace?.({ force:true, preserveSelection:true });
   }
 
@@ -11404,7 +11435,6 @@ function applyOpenFichaStateVisual(unitState = {}) {
         await saveProjectHousingModels(models);
         renderCommercialModelsManager();
         setCommercialModelsMsg('Modelo anadido.', '#166534');
-        await loadUnits();
       } catch (e) {
         setMsg(e.message || 'No se pudo añadir el modelo.', '#b91c1c');
       }
@@ -11412,7 +11442,8 @@ function applyOpenFichaStateVisual(unitState = {}) {
     document.getElementById('btnSaveCommercialModels')?.addEventListener('click', async () => {
       try {
         await saveProjectHousingModels(currentCommercialModelsFromUi());
-        setMsg('Modelos guardados.', '#166534');
+        renderCommercialModelsManager();
+        setCommercialModelsMsg('Modelos guardados y unidades actualizadas.', '#166534');
       } catch (e) {
         setMsg(e.message || 'No se pudieron guardar los modelos.', '#b91c1c');
       }
@@ -11426,7 +11457,6 @@ function applyOpenFichaStateVisual(unitState = {}) {
           await saveProjectHousingModels(models);
           renderCommercialModelsManager();
           setCommercialModelsMsg('Modelo eliminado.', '#166534');
-          await loadUnits();
         } catch (e) {
           setMsg(e.message || 'No se pudo eliminar el modelo.', '#b91c1c');
         }
@@ -11635,9 +11665,21 @@ function daysUntil(dateValue) {
   return Math.round((targetDay - todayDay) / (1000 * 60 * 60 * 24));
 }
 
+function unitDisplayName(u = {}) {
+  const lote = String(u?.lote || '').trim();
+  const hasImportedLocation = [u?.etapa, u?.torre, u?.nivel]
+    .some(value => String(value || '').trim());
+  if (hasImportedLocation && lote) return lote;
+
+  const legacyName = [u?.manzana, lote]
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .join('-');
+  return legacyName || u?.nombre || u?.codigo || u?.code || u?._id || 'Unidad';
+}
+
 function unitLabel(u) {
-  const manzanaLote = `${u?.manzana || '-'}-${u?.lote || ''}`.trim();
-  return manzanaLote !== '-' ? manzanaLote : (u?.nombre || u?.codigo || u?._id || 'Unidad');
+  return unitDisplayName(u);
 }
 
 function expiryAlertKey(kind, sourceId, due) {
@@ -12089,7 +12131,7 @@ function renderUnitCard(u) {
 
       <div class="head">
         <div class="title">
-          <b>${u.manzana || '-'}-${u.lote || ''}</b>
+          <b>${safeVal(unitDisplayName(u))}</b>
           <span class="status">${estadoTxt}</span>
         </div>
 
@@ -12219,7 +12261,7 @@ wireCommercialFolders();
   window.loadUnits = loadUnits;
 
   function renderUnidadDocsSkeleton(unit) {
-  const tag = `${unit?.manzana || '-'}-${unit?.lote || ''}`;
+  const tag = unitDisplayName(unit);
 
   return `
     <div id="unitDocs" class="unit-docs-wrap">
@@ -13157,7 +13199,7 @@ function scheduleFichaAutosave(delay = 1400) {
   `;
 
   const tituloUnidad = document.getElementById('fichaTitulo');
-  const unitName = [u.manzana, u.lote].map(value => String(value || '').trim()).filter(Boolean).join('-') || 'Sin nombre';
+  const unitName = unitDisplayName(u) || 'Sin nombre';
   const clientName =
     String(v.clienteNombre || '').trim() ||
     [v.primerNombre, v.segundoNombre, v.primerApellido, v.segundoApellido]
@@ -15120,7 +15162,7 @@ function technicalUnitCard(unit) {
   const construction = venta.enConstruccion && !venta.estatusConstruccion ? 'En construcción' : technicalConstructionPhase(venta.estatusConstruccion);
   const constructionTone = technicalConstructionTone(construction, venta.enConstruccion);
   return `<article class="unit-card construction-${escapeHtml(constructionTone)} ${technicalWorkspace.selected.has(idValue) ? 'selected' : ''}" data-technical-unit="${escapeHtml(idValue)}" draggable="true">
-    <div class="head"><div class="title"><b>${escapeHtml(unit.manzana || '-')}-${escapeHtml(unit.lote || '')}</b><span class="status">${escapeHtml(technicalUnitStateLabel(unit.estado || 'disponible'))}</span></div><label class="sel-wrap" title="Seleccionar"><input class="sel" type="checkbox" ${technicalWorkspace.selected.has(idValue) ? 'checked' : ''}><span class="sel-box"></span></label></div>
+    <div class="head"><div class="title"><b>${escapeHtml(unitDisplayName(unit))}</b><span class="status">${escapeHtml(technicalUnitStateLabel(unit.estado || 'disponible'))}</span></div><label class="sel-wrap" title="Seleccionar"><input class="sel" type="checkbox" ${technicalWorkspace.selected.has(idValue) ? 'checked' : ''}><span class="sel-box"></span></label></div>
     <div class="meta">${escapeHtml(unit.modelo || 'Sin modelo')} · ${escapeHtml(unit.m2 || 0)} m²</div>
     <div class="technical-construction-state"><span>Estado de obra</span><strong>${escapeHtml(construction)}</strong></div>
     <div class="badges">

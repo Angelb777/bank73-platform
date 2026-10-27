@@ -5608,7 +5608,7 @@ body.light-theme #tab-tecnico .commercial-folder-head .folder-actions { color:#6
 
 #tab-finanzas .finance-loan-table {
   width: 100%;
-  min-width: 1380px;
+  min-width: 1120px;
   border-collapse: separate;
   border-spacing: 0 8px;
 }
@@ -5691,11 +5691,6 @@ body.light-theme #tab-tecnico .commercial-folder-head .folder-actions { color:#6
   padding-top: 0;
   background: transparent;
   border: 0;
-}
-
-#tab-finanzas .finance-balance {
-  white-space: nowrap;
-  font-weight: 800;
 }
 
 #tab-finanzas .finance-status {
@@ -6051,7 +6046,7 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
     padding-bottom: 4px;
   }
   #tab-finanzas .finance-loan-table {
-    min-width: 1100px;
+    min-width: 920px;
   }
   #tab-finanzas .finance-readonly-table {
     min-width: 620px;

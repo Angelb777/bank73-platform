@@ -192,11 +192,12 @@ function summarizeDatoUnico(buffer) {
   const { get, dataRows } = table;
   const models = new Map();
   const seenUnits = new Map();
+  const units = [];
   const duplicates = [];
   let unnamedUnits = 0;
 
   for (const { row, sourceRow } of dataRows) {
-    const { manzana, lote } = unitIdentityFromRow(row, get);
+    const { etapa, torre, nivel, manzana, lote } = unitIdentityFromRow(row, get);
     const unitKey = `${normalizeText(manzana)}|${normalizeText(lote)}`;
     if (seenUnits.has(unitKey)) {
       duplicates.push({ manzana, lote, rows: [seenUnits.get(unitKey), sourceRow] });
@@ -205,6 +206,15 @@ function summarizeDatoUnico(buffer) {
     }
 
     const name = clean(get(row, ['MODELO', 'MODELO ', 'MODELO VIVIENDA']));
+    units.push({
+      etapa,
+      torre,
+      nivel,
+      manzana,
+      lote,
+      modelo: name,
+      reference: `${manzana || name || ''}-${lote || ''}`.trim()
+    });
     if (!name) {
       unnamedUnits += 1;
       continue;
@@ -259,6 +269,7 @@ function summarizeDatoUnico(buffer) {
     sheet: table.sheetName,
     rows: dataRows.length,
     unitsTotal: dataRows.length,
+    units,
     models: modelSummaries,
     unnamedUnits,
     duplicates,
