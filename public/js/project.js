@@ -13199,7 +13199,11 @@ function scheduleFichaAutosave(delay = 1400) {
   `;
 
   const tituloUnidad = document.getElementById('fichaTitulo');
-  const unitName = unitDisplayName(u) || 'Sin nombre';
+  const unitName =
+  [u.manzana, u.lote].filter(Boolean).join('-') ||
+  u.nombre ||
+  u.codigo ||
+  'Sin nombre';
   const clientName =
     String(v.clienteNombre || '').trim() ||
     [v.primerNombre, v.segundoNombre, v.primerApellido, v.segundoApellido]
