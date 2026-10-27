@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 
 const Unit = require('../models/Unit');
 const Venta = require('../models/Venta');
+const Cliente = require('../models/Cliente');
 const Project = require('../models/Project'); // ROLE-SEP
 const requirePin = require('../utils/requirePin');
 
@@ -18,6 +19,47 @@ router.use((req, _res, next) => { req.isUnitsRoute = true; next(); }); // ROLE-S
 
 function rx(q) {
   return new RegExp(String(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+}
+
+const UNIT_SEARCH_FIELDS = [
+  'code', 'etapa', 'torre', 'nivel', 'modelo', 'manzana', 'lote',
+  'ubicacion', 'numeroFinca', 'codigoUbicacion', 'calle', 'estado'
+];
+
+const SALE_SEARCH_FIELDS = [
+  'clienteNombre', 'cedula', 'empresa',
+  'primerNombre', 'segundoNombre', 'primerApellido', 'segundoApellido', 'apellidoCasada',
+  'profesion', 'direccion', 'telefonoResidencial', 'telefonoOficina', 'celular', 'correo',
+  'cliente2PrimerNombre', 'cliente2SegundoNombre', 'cliente2PrimerApellido',
+  'cliente2SegundoApellido', 'cliente2ApellidoCasada', 'cliente2Cedula',
+  'cliente2Profesion', 'cliente2Direccion', 'cliente2TelefonoResidencial',
+  'cliente2TelefonoOficina', 'cliente2Celular', 'cliente2Correo',
+  'banco', 'oficialBanco', 'statusBanco', 'estatusCPP', 'numCPP', 'cesionAFavorDe',
+  'numeroFinca', 'codigoUbicacion', 'ubicacion', 'calle'
+];
+
+const CLIENT_SEARCH_FIELDS = ['nombre', 'cedula', 'empresa', 'telefono', 'email', 'direccion'];
+
+function normalizedCommercialSearch(value) {
+  return String(value || '')
+    .trim()
+    .slice(0, 120)
+    .replace(/^(?:banco|cpp|cliente|modelo|unidad)\s*:\s*/i, '')
+    .trim();
+}
+
+function commercialSearchTerms(value) {
+  return normalizedCommercialSearch(value)
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function textSearchCondition(fields, matchers) {
+  const clauses = matchers.map(matcher => ({
+    $or: fields.map(field => ({ [field]: matcher }))
+  }));
+  return clauses.length === 1 ? clauses[0] : { $and: clauses };
 }
 
 const VALID_UNIT_ESTADOS = [
@@ -332,9 +374,33 @@ router.get(
       if (estado) filter.estado = estado;
       if (manzana) filter.manzana = manzana;
 
-      const text = q
-        ? { $or: [{ code: rx(q) }, { modelo: rx(q) }, { manzana: rx(q) }, { lote: rx(q) }] }
-        : {};
+      const search = normalizedCommercialSearch(q);
+      let text = {};
+      if (search) {
+        const matchers = commercialSearchTerms(search).map(rx);
+        const [sales, clients] = await Promise.all([
+          Venta.find({
+            tenantKey: req.tenantKey,
+            projectId,
+            deletedAt: null,
+            ...textSearchCondition(SALE_SEARCH_FIELDS, matchers)
+          }).select('unitId').lean(),
+          Cliente.find({
+            tenantKey: req.tenantKey,
+            ...textSearchCondition(CLIENT_SEARCH_FIELDS, matchers)
+          }).select('_id').lean()
+        ]);
+
+        const saleUnitIds = sales.map(sale => sale.unitId).filter(Boolean);
+        const clientIds = clients.map(client => client._id).filter(Boolean);
+        text = {
+          $or: [
+            textSearchCondition(UNIT_SEARCH_FIELDS, matchers),
+            ...(saleUnitIds.length ? [{ _id: { $in: saleUnitIds } }] : []),
+            ...(clientIds.length ? [{ clienteId: { $in: clientIds } }] : [])
+          ]
+        };
+      }
 
       const list = await Unit.find({ ...filter, ...text })
         .populate('clienteId')
@@ -675,5 +741,16 @@ router.delete(
     }
   }
 );
+
+Object.defineProperty(router, '__searchHelpers', {
+  value: {
+    normalizedCommercialSearch,
+    commercialSearchTerms,
+    unitFields: UNIT_SEARCH_FIELDS,
+    saleFields: SALE_SEARCH_FIELDS,
+    clientFields: CLIENT_SEARCH_FIELDS
+  },
+  enumerable: false
+});
 
 module.exports = router;

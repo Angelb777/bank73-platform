@@ -47,7 +47,9 @@ test('la ficha comercial sigue el proceso de venta propuesto y mantiene sus camp
   assert.match(css, /\.unit-modal-actions \{[\s\S]*?z-index: 100;/);
   assert.match(css, /grid-template-columns: minmax\(0, 1fr\) auto;/);
   assert.match(css, /@media \(max-width:1450px\)/);
-  assert.match(css, /\.unit-process-layout \{ grid-template-columns:minmax\(180px,260px\) minmax\(420px,1fr\) minmax\(250px,290px\);/);
+  assert.match(css, /\.unit-process-layout \{ grid-template-columns:minmax\(280px,1fr\) minmax\(520px,2\.15fr\) minmax\(300px,1fr\);/);
+  assert.match(css, /@media \(min-width:1600px\)[\s\S]*?grid-template-columns:minmax\(340px,1fr\) minmax\(640px,2\.25fr\) minmax\(360px,1\.05fr\)/);
+  assert.match(css, /\.unit-process-field > label \{[^\n]*font-size:13px/);
   assert.match(css, /\.modal-body \{[\s\S]*?overflow-x: hidden;/);
   for (const fieldId of ['fv-polizaVidaEntregada','fv-tipoPolizaVida','fv-polizaIncendioEntregada','fv-tipoPolizaIncendio']) {
     assert.match(js, new RegExp(fieldId));
@@ -161,6 +163,11 @@ test('el importador cubre los encabezados del Dato Único definitivo y sincroniz
   assert.match(route, /modelId: null, modelo: previousName/);
   assert.match(route, /if \(unitModelSyncOps\.length\) await Unit\.bulkWrite/);
   assert.match(project, /Modelos guardados y unidades actualizadas\./);
+  assert.match(project, /if \(\/banos\/i\.test\(id\)\) return 'decimal-flexible'/);
+  assert.match(project, /mode === 'decimal-flexible'[^\n]+toFixed\(2\)/);
+  assert.match(project, /normalizeUnitEstadoFrontend\(u\?\.estado\) === 'escriturado_traspasado'\) return null/);
+  assert.match(project, /cppAlertCandidate && !resolvedExpiryAlertKeys\.has\(cppAlertCandidate\.alertKey\)/);
+  assert.match(project, /resolvedExpiryAlertKeys\.add\(alertItem\.alertKey\);[\s\S]*?await loadUnits\(\)/);
 });
 
 test('precioVenta es el único precio persistido por unidad comercial', () => {

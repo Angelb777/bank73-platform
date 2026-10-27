@@ -1125,6 +1125,21 @@ function isOccupationPermit(it) {
   );
 }
 
+function unitDisplayName(u = {}) {
+  const lote = String(u?.lote || '').trim();
+  const hasImportedLocation = [u?.etapa, u?.torre, u?.nivel]
+    .some(value => String(value || '').trim());
+
+  if (hasImportedLocation && lote) return lote;
+
+  const legacyName = [u?.manzana, lote]
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .join('-');
+
+  return legacyName || u?.nombre || u?.codigo || u?.code || u?._id || 'Unidad';
+}
+
 function commercialUnitName(u) {
   return unitDisplayName(u);
 }
@@ -2478,6 +2493,141 @@ function renderChartSummary(containerId, items, {
   `;
 }
 
+function renderLegalProgressMatrix(legal = {}) {
+  const host = document.getElementById('summaryLegalProgressMatrix');
+  if (!host) return;
+
+  const milestones = Array.isArray(legal.milestones) ? legal.milestones : [];
+  const units = Array.isArray(legal.progressByUnit) ? legal.progressByUnit : [];
+  const search = document.getElementById('summaryLegalProgressSearch');
+  const filter = document.getElementById('summaryLegalProgressFilter');
+  const stateLabels = {
+    completed: 'Completado',
+    in_progress: 'En trámite',
+    pending: 'Pendiente',
+    not_applicable: 'No aplica'
+  };
+  const stateSymbols = {
+    completed: '✓',
+    in_progress: '…',
+    pending: '·',
+    not_applicable: '—'
+  };
+  const normalize = value => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const formatDate = value => {
+    if (!value) return '';
+    const date = new Date(value);
+    return Number.isFinite(date.getTime())
+      ? date.toLocaleDateString('es-PA', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : '';
+  };
+  const unitStats = unit => {
+    const steps = milestones.map(item => unit?.milestones?.[item.key] || { status: 'pending' });
+    const applicable = steps.filter(step => step.status !== 'not_applicable');
+    const completed = applicable.filter(step => step.status === 'completed').length;
+    return {
+      steps,
+      applicable: applicable.length,
+      completed,
+      isComplete: applicable.length > 0 && completed === applicable.length,
+      hasPending: applicable.some(step => step.status === 'pending'),
+      hasInProgress: applicable.some(step => step.status === 'in_progress')
+    };
+  };
+  const tooltipFor = (milestone, step) => {
+    const parts = [milestone.label, stateLabels[step.status] || stateLabels.pending];
+    const date = formatDate(step.date);
+    if (date) parts.push(date);
+    if (step.detail) parts.push(step.detail);
+    return parts.join(' · ');
+  };
+
+  const render = () => {
+    if (!milestones.length || !units.length) {
+      host.innerHTML = '<div class="summary-legal-progress-empty">No hay unidades vendidas con seguimiento legal.</div>';
+      return;
+    }
+
+    const term = normalize(search?.value);
+    const selectedFilter = filter?.value || 'all';
+    const visible = units.filter(unit => {
+      const stats = unitStats(unit);
+      const matchesSearch = !term || normalize([
+        unit.unit,
+        unit.client,
+        unit.bank,
+        unit.phase,
+        unit.tower
+      ].join(' ')).includes(term);
+      const matchesFilter = selectedFilter === 'all' ||
+        (selectedFilter === 'pending' && stats.hasPending) ||
+        (selectedFilter === 'in_progress' && stats.hasInProgress) ||
+        (selectedFilter === 'completed' && stats.isComplete);
+      return matchesSearch && matchesFilter;
+    });
+
+    const totals = milestones.map(milestone => {
+      const steps = visible.map(unit => unit?.milestones?.[milestone.key] || { status: 'pending' });
+      const applicable = steps.filter(step => step.status !== 'not_applicable');
+      return {
+        completed: applicable.filter(step => step.status === 'completed').length,
+        applicable: applicable.length
+      };
+    });
+
+    host.innerHTML = `
+      <div class="summary-legal-progress-result small muted">${visible.length} de ${units.length} unidades</div>
+      <div class="summary-legal-progress-scroll">
+        <table class="summary-legal-progress-table">
+          <thead>
+            <tr>
+              <th class="summary-legal-unit-column">Unidad / cliente</th>
+              ${milestones.map((milestone, index) => `
+                <th title="${escapeHtml(milestone.label)}">
+                  <span>${escapeHtml(milestone.shortLabel || milestone.label)}</span>
+                  <small>${totals[index].completed}/${totals[index].applicable}</small>
+                </th>`).join('')}
+              <th class="summary-legal-total-column">Avance</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${visible.map(unit => {
+              const stats = unitStats(unit);
+              const currentIndex = stats.steps.findIndex(step => step.status === 'in_progress');
+              const pendingIndex = currentIndex >= 0 ? -1 : stats.steps.findIndex(step => step.status === 'pending');
+              const activeIndex = currentIndex >= 0 ? currentIndex : pendingIndex;
+              const pct = stats.applicable > 0 ? Math.round((stats.completed / stats.applicable) * 100) : 0;
+              return `
+                <tr>
+                  <th class="summary-legal-unit-column" scope="row">
+                    <strong>${escapeHtml(unit.unit || 'Unidad')}</strong>
+                    <span>${escapeHtml(unit.client || 'Sin cliente')}</span>
+                    <small>${escapeHtml([unit.bank, unit.phase, unit.tower].filter(Boolean).join(' · '))}</small>
+                  </th>
+                  ${milestones.map((milestone, index) => {
+                    const step = unit?.milestones?.[milestone.key] || { status: 'pending' };
+                    const state = stateLabels[step.status] ? step.status : 'pending';
+                    return `<td class="summary-legal-step is-${state.replace('_', '-')} ${index === activeIndex ? 'is-current' : ''}" title="${escapeHtml(tooltipFor(milestone, step))}" aria-label="${escapeHtml(tooltipFor(milestone, step))}"><span>${stateSymbols[state]}</span></td>`;
+                  }).join('')}
+                  <td class="summary-legal-total-column">
+                    <strong>${stats.completed}/${stats.applicable}</strong>
+                    <div class="summary-legal-row-progress"><i style="width:${pct}%"></i></div>
+                  </td>
+                </tr>`;
+            }).join('') || '<tr><td class="summary-legal-no-results" colspan="99">No hay unidades que coincidan con el filtro.</td></tr>'}
+          </tbody>
+        </table>
+      </div>`;
+  };
+
+  if (search) search.oninput = render;
+  if (filter) filter.onchange = render;
+  render();
+}
+
 function renderFinancePhaseSummary(phases = []) {
   const el = document.getElementById('sumPhaseChartSummary');
   if (!el) return;
@@ -2662,12 +2812,23 @@ async function renderSummaryUI(payload) {
     sumDestroy(chartKey);
 
     const list = data || [];
+    const piePalette = [
+      '#38a3e0', '#8b5cf6', '#22c55e', '#f59e0b', '#ef476f',
+      '#06b6d4', '#f97316', '#84cc16', '#ec4899', '#64748b'
+    ];
+    const chartBorderColor = getComputedStyle(document.body).getPropertyValue('--card-bg').trim() || '#111827';
     if (ctx(canvasId)) {
       __sumCharts[chartKey] = new Chart(ctx(canvasId), {
         type,
         data: {
           labels: list.map(x => x[labelKey]),
-          datasets: [{ data: list.map(x => toNum(x[valueKey])) }]
+          datasets: [{
+            data: list.map(x => toNum(x[valueKey])),
+            backgroundColor: list.map((_, index) => piePalette[index % piePalette.length]),
+            borderColor: chartBorderColor,
+            borderWidth: 2,
+            hoverOffset: 7
+          }]
         },
         options: summaryChartOpts({
           plugins: { legend: summaryLegend() }
@@ -2938,6 +3099,7 @@ async function renderSummaryUI(payload) {
 
   renderPhaseChart(financePhases, 'sumPhaseChart');
   renderPhaseSourceChart(financePhases, 'sumPhaseSourceChart');
+  renderPhaseCompositionCharts(financePhases, 'summaryPhaseCompositionCharts');
   renderFinanceTimeCharts(financePhases, {
     durationCanvasId: 'sumPhaseTimeDurationChart',
     delayCanvasId: 'sumPhaseTimeDelayChart',
@@ -3151,6 +3313,7 @@ if (!isPeriodView) try {
     if (phases.length) {
       renderPhaseChart(phases, 'sumPhaseChart');
       renderPhaseSourceChart(phases, 'sumPhaseSourceChart');
+      renderPhaseCompositionCharts(phases, 'summaryPhaseCompositionCharts');
       renderFinanceTimeCharts(phases, {
         durationCanvasId: 'sumPhaseTimeDurationChart',
         delayCanvasId: 'sumPhaseTimeDelayChart',
@@ -3165,6 +3328,7 @@ if (!isPeriodView) try {
     } else {
       renderPhaseChart([], 'sumPhaseChart');
       renderPhaseSourceChart([], 'sumPhaseSourceChart');
+      renderPhaseCompositionCharts([], 'summaryPhaseCompositionCharts');
       renderFinanceTimeCharts([], {
         durationCanvasId: 'sumPhaseTimeDurationChart',
         delayCanvasId: 'sumPhaseTimeDelayChart',
@@ -3522,6 +3686,34 @@ renderChartSummary(
   renderPieLike('p14', 'sumCompanyType', commercial.companyType || [], 'type', 'count', 'sumCompanyTypeSummary', 'Total empresas', 'doughnut');
   renderPieLike('p15', 'sumBankStatus', commercial.bankStatus || [], 'status', 'count', 'sumBankStatusSummary', 'Total estados banco', 'doughnut');
 
+  // ---------- Comercial: informe del cliente ----------
+  const customerReport = commercial.customerReport || {};
+  const customerTotals = customerReport.totals || {};
+  const jointPurchases = (customerReport.purchaseMode || [])
+    .find(item => item.label === 'Compra conjunta')?.count || 0;
+  renderTargetKpis('summaryCustomerReportKpis', [
+    { title: 'Personas compradoras', value: customerTotals.people || 0, sub: `${customerTotals.sales || 0} operaciones analizadas` },
+    { title: 'Compras conjuntas', value: jointPurchases, sub: 'Operaciones con co-comprador' },
+    { title: 'Ingresos registrados', value: customerTotals.incomesRecorded || 0, sub: `de ${customerTotals.people || 0} compradores` },
+    { title: 'Ingreso promedio', value: formatMoney(customerTotals.incomeAverage || 0), sub: 'Solo ingresos declarados' },
+    { title: 'Ingreso mediano', value: formatMoney(customerTotals.incomeMedian || 0), sub: 'Solo ingresos declarados' }
+  ]);
+  renderPieLike('customerCompanyType', 'sumCustomerCompanyType', customerReport.companyType || [], 'label', 'count', 'sumCustomerCompanyTypeSummary', 'Total compradores', 'doughnut');
+  renderPieLike('customerEmployment', 'sumCustomerEmployment', customerReport.employmentProfile || [], 'label', 'count', 'sumCustomerEmploymentSummary', 'Total compradores', 'doughnut');
+  renderPieLike('customerSex', 'sumCustomerSex', customerReport.sex || [], 'label', 'count', 'sumCustomerSexSummary', 'Total compradores', 'doughnut');
+  renderPieLike('customerPurchaseMode', 'sumCustomerPurchaseMode', customerReport.purchaseMode || [], 'label', 'count', 'sumCustomerPurchaseModeSummary', 'Total operaciones', 'doughnut');
+  renderBarSimple('customerIncome', 'sumCustomerIncome', customerReport.incomeBands || [], 'label', 'count', 'sumCustomerIncomeSummary', 'Clientes con ingreso registrado');
+  renderPieLike('customerCapture', 'sumCustomerCapture', customerReport.captureChannel || [], 'label', 'count', 'sumCustomerCaptureSummary', 'Total operaciones', 'doughnut');
+
+  const customerIncomeSummary = document.getElementById('sumCustomerIncomeSummary');
+  if (customerIncomeSummary && (customerReport.incomeBands || []).length) {
+    customerIncomeSummary.insertAdjacentHTML('beforeend', `
+      <div class="summary-customer-income-stats">
+        <span>Promedio <strong>${formatMoney(customerTotals.incomeAverage || 0)}</strong></span>
+        <span>Mediana <strong>${formatMoney(customerTotals.incomeMedian || 0)}</strong></span>
+      </div>`);
+  }
+
   // ---------- Comercial: montos CPP por banco ----------
   renderBarSimple(
     'p16',
@@ -3530,7 +3722,7 @@ renderChartSummary(
     'bank',
     'amount',
     'sumCppAmountByBankSummary',
-    'Total monto CPP',
+    'Total monto de ventas',
     (v, item) => `${formatMoneyCompact(toNum(item?.amount || v))}`
   );
 
@@ -3547,6 +3739,7 @@ renderChartSummary(
     { title: 'Escrituras inscritas', value: lt.escriturasInscritas || 0 },
     { title: 'Fincas segregadas', value: lt.fincasSegregadas || 0 }
   ]);
+  renderLegalProgressMatrix(legal);
 
   renderPieLike('p17', 'sumLegalLiberacion', legal.minutasLiberacion || [], 'status', 'count', 'sumLegalLiberacionSummary', 'Total minutas', 'pie');
   renderPieLike('p18', 'sumLegalSegregacion', legal.minutasSegregacion || [], 'status', 'count', 'sumLegalSegregacionSummary', 'Total minutas', 'pie');
@@ -4099,9 +4292,15 @@ if (btn) {
         'Ventas por modelo de vivienda': captureCanvas('sumSalesByModel'),
         'Estatus en banco': captureCanvas('sumBankStatus'),
         'CPP por banco': captureCanvas('sumCppPie'),
-        'Montos CPP por banco': captureCanvas('sumCppAmountByBank'),
+        'Monto de ventas por medio de pago del cliente': captureCanvas('sumCppAmountByBank'),
         'Proformas por banco': captureCanvas('sumProformasBar'),
         'Hipotecas por banco': captureCanvas('sumMortgagesByBank'),
+        'Tipo de empresa de compradores': captureCanvas('sumCustomerCompanyType'),
+        'Perfil laboral de compradores': captureCanvas('sumCustomerEmployment'),
+        'Sexo de compradores': captureCanvas('sumCustomerSex'),
+        'Modalidad de compra': captureCanvas('sumCustomerPurchaseMode'),
+        'Ingresos mensuales declarados': captureCanvas('sumCustomerIncome'),
+        'Vía de captación': captureCanvas('sumCustomerCapture'),
 
         'Minutas de liberación': captureCanvas('sumLegalLiberacion'),
         'Minutas de segregación': captureCanvas('sumLegalSegregacion'),
@@ -7885,6 +8084,137 @@ function getPhaseColors(count, type = 'plan') {
   return colors;
 }
 
+const summaryPhaseCompositionCharts = new Map();
+
+function renderPhaseCompositionCharts(phases, containerId = 'summaryPhaseCompositionCharts') {
+  const host = document.getElementById(containerId);
+  if (!host) return;
+
+  summaryPhaseCompositionCharts.forEach(chart => {
+    if (chart && typeof chart.destroy === 'function') chart.destroy();
+  });
+  summaryPhaseCompositionCharts.clear();
+
+  const source = Array.isArray(phases) ? phases : [];
+  if (!source.length) {
+    host.innerHTML = '<div class="card summary-chart-card small muted">No hay fases financieras registradas.</div>';
+    return;
+  }
+
+  const normalizeLineKey = value => String(value || 'Sin nombre')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const lineLabels = new Map();
+
+  source.forEach(phase => {
+    [...(phase?.planUses || []), ...(phase?.uses || [])].forEach(item => {
+      const label = String(item?.name || item?.id || 'Sin nombre').trim() || 'Sin nombre';
+      const key = normalizeLineKey(label);
+      if (!lineLabels.has(key)) lineLabels.set(key, label);
+    });
+  });
+
+  const palette = [
+    '#38a3e0', '#ff6384', '#ff9f40', '#ffcd56', '#4bc0c0',
+    '#8b5cf6', '#22c55e', '#f97316', '#eab308', '#06b6d4',
+    '#ec4899', '#64748b', '#84cc16', '#14b8a6', '#a855f7'
+  ];
+  const colorByLine = new Map(
+    Array.from(lineLabels.keys()).map((key, index) => [key, palette[index % palette.length]])
+  );
+
+  const aggregate = items => {
+    const values = new Map();
+    (items || []).forEach(item => {
+      const label = String(item?.name || item?.id || 'Sin nombre').trim() || 'Sin nombre';
+      const key = normalizeLineKey(label);
+      values.set(key, (values.get(key) || 0) + parsePanamaNumber(item?.amount || 0));
+    });
+    return values;
+  };
+
+  host.innerHTML = source.map((phase, phaseIndex) => {
+    const plan = aggregate(phase?.planUses);
+    const real = aggregate(phase?.uses);
+    const keys = Array.from(lineLabels.keys()).filter(key => plan.has(key) || real.has(key));
+    const phaseName = phase?.name || phase?.title || phase?.phase || `Fase ${phaseIndex + 1}`;
+    const planTotal = Array.from(plan.values()).reduce((sum, value) => sum + numOr0(value), 0);
+    const realTotal = Array.from(real.values()).reduce((sum, value) => sum + numOr0(value), 0);
+
+    return `
+      <article class="card summary-chart-card summary-phase-composition-card" data-phase-composition="${phaseIndex}">
+        <div class="summary-phase-composition-head">
+          <h4>${escapeHtml(phaseName)}</h4>
+          <span>${keys.length} línea${keys.length === 1 ? '' : 's'}</span>
+        </div>
+        <div class="summary-phase-composition-pair">
+          <section class="summary-phase-donut-panel">
+            <div class="summary-phase-donut-title"><span>Estimación</span><strong>${formatMoney(planTotal)}</strong></div>
+            <div class="summary-phase-donut-box">
+              ${planTotal > 0 ? `<canvas id="summaryPhaseCompositionPlan${phaseIndex}"></canvas>` : '<div class="summary-phase-composition-empty">Sin estimación</div>'}
+            </div>
+          </section>
+          <section class="summary-phase-donut-panel">
+            <div class="summary-phase-donut-title"><span>Realidad</span><strong>${formatMoney(realTotal)}</strong></div>
+            <div class="summary-phase-donut-box">
+              ${realTotal > 0 ? `<canvas id="summaryPhaseCompositionReal${phaseIndex}"></canvas>` : '<div class="summary-phase-composition-empty">Sin ejecución real</div>'}
+            </div>
+          </section>
+        </div>
+        <div class="summary-phase-composition-legend">
+          ${keys.map(key => `<span><i style="--line-color:${colorByLine.get(key)}"></i>${escapeHtml(lineLabels.get(key))}</span>`).join('')}
+        </div>
+      </article>`;
+  }).join('');
+
+  const createDonut = (canvasId, values, keys) => {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const data = keys.map(key => numOr0(values.get(key)));
+    const total = data.reduce((sum, value) => sum + value, 0);
+    const chart = new Chart(canvas.getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels: keys.map(key => lineLabels.get(key)),
+        datasets: [{
+          data,
+          backgroundColor: keys.map(key => colorByLine.get(key)),
+          borderColor: '#e5e7eb',
+          borderWidth: 1.5,
+          hoverOffset: 7
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '58%',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: context => {
+                const value = numOr0(context.raw);
+                return ` ${context.label}: ${formatMoney(value)} (${financePct(value, total)})`;
+              }
+            }
+          }
+        }
+      }
+    });
+    summaryPhaseCompositionCharts.set(canvasId, chart);
+  };
+
+  source.forEach((phase, phaseIndex) => {
+    const plan = aggregate(phase?.planUses);
+    const real = aggregate(phase?.uses);
+    const keys = Array.from(lineLabels.keys()).filter(key => plan.has(key) || real.has(key));
+    createDonut(`summaryPhaseCompositionPlan${phaseIndex}`, plan, keys);
+    createDonut(`summaryPhaseCompositionReal${phaseIndex}`, real, keys);
+  });
+}
+
 function renderPhaseChart(phases, canvasId = 'phaseChart') {
   const el = document.getElementById(canvasId);
   if (!el) return;
@@ -10193,14 +10523,6 @@ function normalizeUnitEstadoFrontend(v) {
 
 // ====== Comercial ======
 (function initComercial() {
-
-  function unitDisplayName(u) {
-  if (!u) return 'Sin nombre';
-
-  return [u.manzana, u.lote]
-    .filter(v => v !== undefined && v !== null && String(v).trim() !== '')
-    .join('-') || u.nombre || u.codigo || 'Sin nombre';
-}
     // ===== Export helpers (Comercial) =====
   function buildAuthTenantHeaders() {
     let token = '';
@@ -10416,6 +10738,7 @@ function parseDecimalMeasureNumber(value) {
 
 function numberModeForId(id = '') {
   if (MONEY_FIELD_RE.test(id)) return 'money';
+  if (/banos/i.test(id)) return 'decimal-flexible';
   if (DECIMAL_MEASURE_FIELD_RE.test(id)) return 'decimal';
   return 'integer';
 }
@@ -10430,6 +10753,7 @@ function formatInputNumber(id, value) {
   const mode = numberModeForId(id);
   if (mode === 'money') return formatPanamaNumber(value, 2);
   const n = parseDecimalMeasureNumber(value);
+  if (mode === 'decimal-flexible') return String(Number(n.toFixed(2)));
   return mode === 'integer' ? String(Math.round(n)) : n.toFixed(2);
 }
 
@@ -10485,7 +10809,14 @@ function reservationAgeInfo(u = {}, v = {}) {
 }
 
 function commercialStageStates(stageValues) {
-  const present = value => value !== undefined && value !== null && value !== '' && value !== false;
+  const present = value => {
+    if (value === undefined || value === null || value === false) return false;
+    if (typeof value === 'number') return Number.isFinite(value) && value !== 0;
+    const text = String(value).trim();
+    if (!text) return false;
+    if (/^[+-]?(?:0+(?:[.,]0*)?|[.,]0+)$/.test(text)) return false;
+    return true;
+  };
   const states = stageValues.map((values, index) => {
     const filled = values.filter(present).length;
     const laterStageStarted = stageValues.slice(index + 1).some(nextValues => nextValues.some(present));
@@ -11212,11 +11543,55 @@ function applyOpenFichaStateVisual(unitState = {}) {
   let unitDocFoldersCache = [];
   let unitDocInsideDepartment = false;
   let latestFinanceExpiryAlerts = [];
+  let resolvedExpiryAlertKeys = new Set();
 
   function pill(txt){ return `<span class="tag">${txt||'-'}</span>`; }
 
+  function commonPositiveUnitValue(units, field) {
+    const values = units
+      .map(unit => Number(unit?.[field]))
+      .filter(value => Number.isFinite(value) && value > 0);
+    if (!values.length) return 0;
+    const counts = new Map();
+    values.forEach(value => {
+      const normalized = Number(value.toFixed(6));
+      counts.set(normalized, (counts.get(normalized) || 0) + 1);
+    });
+    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    return ranked.length === 1 || ranked[0][1] > ranked[1][1] ? ranked[0][0] : 0;
+  }
+
+  function unitsForHousingModel(model = {}) {
+    const modelId = String(model._id || '').trim();
+    const modelName = String(model.name || '').trim().toLowerCase();
+    return unitsCache.filter(unit =>
+      (modelId && String(unit.modelId || '') === modelId) ||
+      (modelName && String(unit.modelo || '').trim().toLowerCase() === modelName)
+    );
+  }
+
   function projectHousingModels() {
-    return Array.isArray(state?.project?.housingModels) ? state.project.housingModels : [];
+    const models = Array.isArray(state?.project?.housingModels) ? state.project.housingModels : [];
+    return models.map(model => {
+      const linkedUnits = unitsForHousingModel(model);
+      const linkedSales = linkedUnits.map(unit => ({
+        price: ventasMap.get(String(unit._id))?.precioVenta
+      }));
+      const inherited = {
+        bedrooms: commonPositiveUnitValue(linkedUnits, 'recamaras'),
+        bathrooms: commonPositiveUnitValue(linkedUnits, 'banos'),
+        openAreaM2: commonPositiveUnitValue(linkedUnits, 'areaAbierta'),
+        closedAreaM2: commonPositiveUnitValue(linkedUnits, 'areaCerrada'),
+        price: commonPositiveUnitValue(linkedSales, 'price'),
+        cost: commonPositiveUnitValue(linkedUnits, 'costoUnidad')
+      };
+      return Object.fromEntries(Object.entries({ ...model, ...inherited }).map(([key, value]) => {
+        if (['bedrooms','bathrooms','openAreaM2','closedAreaM2','price','cost'].includes(key) && Number(model[key]) > 0) {
+          return [key, model[key]];
+        }
+        return [key, value];
+      }));
+    });
   }
 
   function findProjectHousingModel(value) {
@@ -11226,6 +11601,26 @@ function applyOpenFichaStateVisual(unitState = {}) {
       String(model._id || '') === key ||
       String(model.name || '').trim().toLowerCase() === key.toLowerCase()
     ) || null;
+  }
+
+  function unitWithCanonicalModel(unit = {}) {
+    const model = findProjectHousingModel(unit.modelId || unit.modelo);
+    if (!model) return unit;
+    const openArea = Number(model.openAreaM2 || 0);
+    const closedArea = Number(model.closedAreaM2 || 0);
+    return {
+      ...unit,
+      modelId: model._id || unit.modelId,
+      modelo: model.name || unit.modelo,
+      ...(openArea > 0 ? { areaAbierta:openArea } : {}),
+      ...(closedArea > 0 ? { areaCerrada:closedArea } : {}),
+      ...(openArea > 0 || closedArea > 0 ? {
+        areaTotalConstruccion:openArea + closedArea
+      } : {}),
+      ...(Number(model.bedrooms) > 0 ? { recamaras:Number(model.bedrooms) } : {}),
+      ...(Number(model.bathrooms) > 0 ? { banos:Number(model.bathrooms) } : {}),
+      ...(Number(model.cost) > 0 ? { costoUnidad:Number(model.cost), costoUnidadManual:false } : {})
+    };
   }
 
   function projectModelOptions(current = '', { includeEmpty = true } = {}) {
@@ -11621,6 +12016,7 @@ function deselectAllVisible() {
     // Ventas (dato único)
     try { await loadVentasMap(); } catch(e){ console.warn('ventas map err', e); }
 try { await loadCommercialFolders(); } catch(e){ console.warn('folders err', e); }
+try { resolvedExpiryAlertKeys = await getResolvedExpiryAlertKeys(); } catch(e){ console.warn('resolved alerts err', e); }
 
     // KPIs
     const resumen = {
@@ -11673,19 +12069,6 @@ function daysUntil(dateValue) {
   return Math.round((targetDay - todayDay) / (1000 * 60 * 60 * 24));
 }
 
-function unitDisplayName(u = {}) {
-  const lote = String(u?.lote || '').trim();
-  const hasImportedLocation = [u?.etapa, u?.torre, u?.nivel]
-    .some(value => String(value || '').trim());
-  if (hasImportedLocation && lote) return lote;
-
-  const legacyName = [u?.manzana, lote]
-    .map(value => String(value || '').trim())
-    .filter(Boolean)
-    .join('-');
-  return legacyName || u?.nombre || u?.codigo || u?.code || u?._id || 'Unidad';
-}
-
 function unitLabel(u) {
   return unitDisplayName(u);
 }
@@ -11695,6 +12078,8 @@ function expiryAlertKey(kind, sourceId, due) {
 }
 
 function getCppExpiryAlert(u, venta, { includeOverdue = false } = {}) {
+  if (normalizeUnitEstadoFrontend(u?.estado) === 'escriturado_traspasado') return null;
+
   const days = daysUntil(venta?.fechaVencimientoCPP);
 
   // Alerta desde 60 días antes; el popup también conserva las ya vencidas.
@@ -11969,7 +12354,10 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
           result.resolution
         ];
         latestFinanceExpiryAlerts = latestFinanceExpiryAlerts.filter(item => item.alertKey !== alertItem.alertKey);
+        resolvedExpiryAlertKeys.add(alertItem.alertKey);
         updateProjectAlertsButton(latestFinanceExpiryAlerts);
+
+        await loadUnits();
 
         if (latestFinanceExpiryAlerts.length) {
           showCppExpiryPopup(latestFinanceExpiryAlerts, { force: true });
@@ -12079,7 +12467,7 @@ async function refreshProjectExpiryAlerts() {
   const insurancePolicyAlerts = getInsurancePolicyExpiryAlerts();
   const requirementBondAlerts = await getRequirementBondExpiryAlerts();
   const periodicRequirementAlerts = await getPeriodicRequirementAlerts();
-  const resolvedExpiryAlertKeys = await getResolvedExpiryAlertKeys();
+  resolvedExpiryAlertKeys = await getResolvedExpiryAlertKeys();
   showCppExpiryPopup(
     [...cppAlerts, ...creditLineAlerts, ...insurancePolicyAlerts, ...requirementBondAlerts, ...periodicRequirementAlerts]
       .filter(alertItem => !resolvedExpiryAlertKeys.has(alertItem.alertKey))
@@ -12117,7 +12505,10 @@ function renderUnitCard(u) {
   const idu = String(u._id);
   const estadoTxt = estadoLabel(u.estado || 'disponible');
   const impago = /mora|impago|rechaz|atras|vencid|moros/i.test(venta?.statusBanco || '');
-  const cppAlert = getCppExpiryAlert(u, venta);
+  const cppAlertCandidate = getCppExpiryAlert(u, venta);
+  const cppAlert = cppAlertCandidate && !resolvedExpiryAlertKeys.has(cppAlertCandidate.alertKey)
+    ? cppAlertCandidate
+    : null;
   const reservationAlert = reservationAgeInfo(u, venta);
   const applicablePolicies = effectivePoliciesForUnit(u);
   const carAlert = applicablePolicies
@@ -13178,7 +13569,8 @@ function scheduleFichaAutosave(delay = 1400) {
   fichaMode = options.mode === 'technical' ? 'technical' : 'commercial';
   modalFicha?.classList.toggle('is-technical', fichaMode === 'technical');
 
-  const u = unitsCache.find(x => String(x._id) === String(unitId)) || await apiGet(`/api/units/${unitId}`);
+  const rawUnit = unitsCache.find(x => String(x._id) === String(unitId)) || await apiGet(`/api/units/${unitId}`);
+  const u = unitWithCanonicalModel(rawUnit);
   const rawV = ventasMap.get(String(unitId)) || {};
   const v = Object.assign(Object.create(null), rawV);
 

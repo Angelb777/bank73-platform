@@ -2227,6 +2227,21 @@ router.put('/:id/housing-models', requireProjectAccess({ commercialOnlySales: fa
         const previousName = String(previous?.name || '').trim();
         const linkedUnits = [{ modelId: model._id }];
         if (previousName) linkedUnits.push({ modelId: null, modelo: previousName });
+        const openArea = Number(model.openAreaM2 || 0);
+        const closedArea = Number(model.closedAreaM2 || 0);
+        const modelSet = {
+          modelId: model._id,
+          modelo: String(model.name).trim(),
+          costoUnidadManual: false
+        };
+        if (openArea > 0) modelSet.areaAbierta = openArea;
+        if (closedArea > 0) modelSet.areaCerrada = closedArea;
+        if (openArea > 0 || closedArea > 0) {
+          modelSet.areaTotalConstruccion = openArea + closedArea;
+        }
+        if (Number(model.bedrooms) > 0) modelSet.recamaras = Number(model.bedrooms);
+        if (Number(model.bathrooms) > 0) modelSet.banos = Number(model.bathrooms);
+        if (Number(model.cost) > 0) modelSet.costoUnidad = Number(model.cost);
         return {
           updateMany: {
             filter: {
@@ -2235,12 +2250,7 @@ router.put('/:id/housing-models', requireProjectAccess({ commercialOnlySales: fa
               deletedAt: null,
               $or: linkedUnits
             },
-            update: {
-              $set: {
-                modelId: model._id,
-                modelo: String(model.name).trim()
-              }
-            }
+            update: { $set:modelSet }
           }
         };
       });
@@ -3232,6 +3242,129 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       .map(([bank, count]) => ({ bank, count }))
       .sort((a, b) => b.count - a.count);
 
+    const customerSales = soldVentas.filter(v => hasClientSignal(v));
+    const customerPeople = [];
+    const hasSecondCustomerData = v => [
+      v.cliente2PrimerNombre,
+      v.cliente2SegundoNombre,
+      v.cliente2PrimerApellido,
+      v.cliente2SegundoApellido,
+      v.cliente2Cedula,
+      v.cliente2Celular,
+      v.cliente2Correo,
+      v.cliente2PerfilCliente,
+      v.cliente2TipoEmpresa,
+      v.cliente2Sexo,
+      v.cliente2Profesion,
+      v.cliente2EstadoCivil
+    ].some(value => !!clean(value)) || toNum(v.cliente2IngresoMensual) > 0;
+    for (const v of customerSales) {
+      customerPeople.push({
+        sex: v.sexo,
+        employmentProfile: v.perfilCliente,
+        companyType: v.tipoEmpresa,
+        monthlyIncome: toNum(v.ingresoMensual)
+      });
+
+      if (hasSecondCustomerData(v)) {
+        customerPeople.push({
+          sex: v.cliente2Sexo,
+          employmentProfile: v.cliente2PerfilCliente,
+          companyType: v.cliente2TipoEmpresa,
+          monthlyIncome: toNum(v.cliente2IngresoMensual)
+        });
+      }
+    }
+
+    const normalizeEmploymentProfile = value => {
+      const text = norm(value);
+      if (text.includes('INDEPEND') || text.includes('AUTONOM')) return 'Independiente / autónomo';
+      if (text.includes('ASALARI') || text.includes('EMPLEAD')) return 'Asalariado';
+      return clean(value) || 'Sin dato';
+    };
+    const normalizeCompanyType = value => {
+      const text = norm(value);
+      if (text.includes('PRIV')) return 'Privada';
+      if (text.includes('GUB') || text.includes('PUBLIC') || text.includes('ESTATAL')) return 'Gubernamental';
+      return clean(value) || 'Sin dato';
+    };
+    const normalizeSex = value => {
+      const text = norm(value);
+      if (['M', 'MASCULINO', 'HOMBRE'].includes(text)) return 'Hombre';
+      if (['F', 'FEMENINO', 'MUJER'].includes(text)) return 'Mujer';
+      return clean(value) || 'Sin dato';
+    };
+    const countCustomerValues = (items, valueFn) => {
+      const map = new Map();
+      for (const item of items) {
+        const label = valueFn(item);
+        map.set(label, (map.get(label) || 0) + 1);
+      }
+      return Array.from(map.entries())
+        .map(([label, count]) => ({ label, count }))
+        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'es'));
+    };
+
+    const purchaseModeMap = new Map([
+      ['Compra individual', 0],
+      ['Compra conjunta', 0]
+    ]);
+    const captureChannelMap = new Map();
+    for (const v of customerSales) {
+      const purchaseMode = hasSecondCustomerData(v) ? 'Compra conjunta' : 'Compra individual';
+      purchaseModeMap.set(purchaseMode, (purchaseModeMap.get(purchaseMode) || 0) + 1);
+
+      const channel = v.captadoAtencionOficina ? 'Atención en oficina'
+        : v.captadoMailInternet ? 'Mail / internet'
+          : v.captadoEnProyecto ? 'En proyecto'
+            : v.captadoMercadeoProspecto ? 'Mercadeo / prospecto'
+              : 'Sin dato';
+      captureChannelMap.set(channel, (captureChannelMap.get(channel) || 0) + 1);
+    }
+
+    const incomeBands = [
+      { label: 'Hasta B/. 1,000', min: 0, max: 1000, count: 0 },
+      { label: 'B/. 1,001–1,500', min: 1000, max: 1500, count: 0 },
+      { label: 'B/. 1,501–2,000', min: 1500, max: 2000, count: 0 },
+      { label: 'B/. 2,001–3,000', min: 2000, max: 3000, count: 0 },
+      { label: 'B/. 3,001–5,000', min: 3000, max: 5000, count: 0 },
+      { label: 'Más de B/. 5,000', min: 5000, max: Infinity, count: 0 }
+    ];
+    const recordedIncomes = customerPeople
+      .map(person => toNum(person.monthlyIncome))
+      .filter(value => value > 0)
+      .sort((a, b) => a - b);
+    recordedIncomes.forEach(value => {
+      const band = incomeBands.find(item => value > item.min && value <= item.max);
+      if (band) band.count++;
+    });
+    const incomeAverage = recordedIncomes.length
+      ? recordedIncomes.reduce((sum, value) => sum + value, 0) / recordedIncomes.length
+      : 0;
+    const incomeMiddle = Math.floor(recordedIncomes.length / 2);
+    const incomeMedian = !recordedIncomes.length ? 0
+      : recordedIncomes.length % 2
+        ? recordedIncomes[incomeMiddle]
+        : (recordedIncomes[incomeMiddle - 1] + recordedIncomes[incomeMiddle]) / 2;
+
+    const customerReport = {
+      totals: {
+        sales: customerSales.length,
+        people: customerPeople.length,
+        incomesRecorded: recordedIncomes.length,
+        incomeAverage,
+        incomeMedian
+      },
+      companyType: countCustomerValues(customerPeople, person => normalizeCompanyType(person.companyType)),
+      employmentProfile: countCustomerValues(customerPeople, person => normalizeEmploymentProfile(person.employmentProfile)),
+      sex: countCustomerValues(customerPeople, person => normalizeSex(person.sex)),
+      purchaseMode: Array.from(purchaseModeMap.entries()).map(([label, count]) => ({ label, count })),
+      incomeBands: incomeBands.map(({ label, count }) => ({ label, count })),
+      captureChannel: Array.from(captureChannelMap.entries())
+        .map(([label, count]) => ({ label, count }))
+        .sort((a, b) => b.count - a.count)
+    };
+
     const profMap = new Map();
     for (const v of soldVentas) {
       if (!/PROFORMA/.test(norm(v.statusBanco)) && !v.fechaEntregaProformaBanco && !v.fechaProforma) continue;
@@ -3274,7 +3407,8 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       companyType,
       bankStatus,
       cppAmountByBank,
-      cppCommitteeByBank
+      cppCommitteeByBank,
+      customerReport
     };
 
     // =========================
@@ -3320,12 +3454,156 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       protocolByBankMap.set(bank, prev);
     }
 
+    const legalMilestones = [
+      { key: 'cpp', label: 'CPP', shortLabel: 'CPP' },
+      { key: 'contract', label: 'Contrato de compraventa', shortLabel: 'Contrato' },
+      { key: 'occupancyPermit', label: 'Permiso de ocupación', shortLabel: 'P. ocupación' },
+      { key: 'appraisal', label: 'Avalúo', shortLabel: 'Avalúo' },
+      { key: 'releaseMinute', label: 'Minuta de liberación', shortLabel: 'M. liberación' },
+      { key: 'segregationMinute', label: 'Minuta de segregación / venta', shortLabel: 'M. venta' },
+      { key: 'mortgageMinute', label: 'Minuta de préstamo / hipoteca', shortLabel: 'M. hipoteca' },
+      { key: 'protocol', label: 'Firma de protocolo', shortLabel: 'Protocolo' },
+      { key: 'clearance', label: 'Paz y salvo', shortLabel: 'Paz y salvo' },
+      { key: 'taxes', label: 'Pago de impuestos', shortLabel: 'Impuestos' },
+      { key: 'notary', label: 'Cierre notarial / firma de escritura', shortLabel: 'Notaría' },
+      { key: 'registryEntry', label: 'Entrada al Registro Público', shortLabel: 'Entrada RP' },
+      { key: 'registration', label: 'Inscripción en Registro Público', shortLabel: 'Inscripción' },
+      { key: 'disbursement', label: 'Desembolso / cobro de CPP', shortLabel: 'Desembolso' },
+      { key: 'handover', label: 'Entrega de vivienda', shortLabel: 'Entrega' }
+    ];
+
+    const legalStep = (status = 'pending', detail = '', date = null) => ({
+      status,
+      detail: clean(detail),
+      date: date || null
+    });
+    const legalTextStep = (value, date = null) => {
+      const text = clean(value);
+      const normalized = norm(text);
+      if (/NO APLICA|N\/A|NO APLICABLE/.test(normalized)) return legalStep('not_applicable', text, date);
+      if (date || /LISTA|FIRMAD|COMPLET|APROBAD|REALIZAD|FINALIZAD|ENTREGAD|^SI$|^OK$/.test(normalized)) {
+        return legalStep('completed', text, date);
+      }
+      if (text) return legalStep('in_progress', text, date);
+      return legalStep('pending');
+    };
+    const legalBooleanStep = (done, date = null, inProgress = false, detail = '') => {
+      if (done || date) return legalStep('completed', detail, date);
+      if (inProgress) return legalStep('in_progress', detail);
+      return legalStep('pending');
+    };
+
+    const legalProgressByUnit = legalSold.map(v => {
+      const unit = v.__unit || {};
+      const isCash = norm(v.banco).includes('CONTADO');
+      const cppDetail = clean(v.estatusCPP || v.statusBanco);
+      const cppComplete = !!clean(v.numCPP) || !!v.recibidoCPP || !!v.fechaValorCPP || /RECIBID/.test(norm(cppDetail));
+      const contractDate = v.fechaContratoCliente || v.fechaFirma || null;
+      const contractComplete = !!v.contratoFirmado || !!contractDate || /FIRMAD|COMPLET/.test(norm(v.estatusContrato));
+      const appraisalStep = legalTextStep(v.avaluoRealizado, v.fechaAvaluo || null);
+      if (appraisalStep.status === 'pending' && v.solicitudAvaluo) {
+        appraisalStep.status = 'in_progress';
+        appraisalStep.detail = 'Avalúo solicitado';
+        appraisalStep.date = v.solicitudAvaluo;
+      }
+
+      const protocolClient = !!v.protocoloFirmaCliente || !!v.fechaProtocoloFirmaCliente;
+      const protocolPromoter = !!v.protocoloFirmaPromotora || !!v.fechaProtocoloFirmaPromotora;
+      const protocolBank = !!v.firmaProtocoloBancoCliente || !!v.fechaProtocoloFirmaBancoCliente ||
+        !!v.protocoloFirmaRLBancoInter || !!v.fechaProtocoloFirmaBancoInterino;
+      const protocolAny = protocolClient || protocolPromoter || protocolBank || !!v.fechaEntregaBanco || !!v.fechaEntregaProtocoloBancoCli;
+      const protocolComplete = protocolClient && protocolPromoter && (isCash || protocolBank);
+      const protocolParts = [
+        protocolClient ? 'cliente' : '',
+        protocolPromoter ? 'promotora' : '',
+        protocolBank ? 'banco' : ''
+      ].filter(Boolean);
+
+      const clearanceCount = [v.pazSalvoGesproban, v.pazSalvoPromotora].filter(Boolean).length;
+      const unitLabel = clean(unit.code) ||
+        [clean(unit.manzana), clean(unit.lote)].filter(Boolean).join('-') ||
+        [clean(unit.torre), clean(unit.nivel)].filter(Boolean).join(' · ') ||
+        `Unidad ${String(unit._id || v.unitId || '').slice(-6)}`;
+      const clientName = clean(v.clienteNombre) ||
+        [v.primerNombre, v.segundoNombre, v.primerApellido, v.segundoApellido].map(clean).filter(Boolean).join(' ');
+
+      return {
+        unitId: String(unit._id || v.unitId || ''),
+        saleId: String(v._id || ''),
+        unit: unitLabel,
+        client: clientName,
+        bank: clean(v.banco) || 'Sin banco',
+        phase: clean(unit.etapa),
+        tower: clean(unit.torre),
+        milestones: {
+          cpp: isCash
+            ? legalStep('not_applicable', 'Venta al contado')
+            : legalBooleanStep(cppComplete, v.fechaValorCPP || v.recibidoCPP || null, !!cppDetail, cppDetail || clean(v.numCPP)),
+          contract: legalBooleanStep(
+            contractComplete,
+            contractDate,
+            !!clean(v.estatusContrato) || !!v.fechaActivacionTramite,
+            clean(v.estatusContrato)
+          ),
+          occupancyPermit: legalBooleanStep(
+            !!v.permisoOcupacion || !!v.fechaEmisionPermisoOcupacion || !!clean(v.permisoOcupacionNum),
+            v.fechaEmisionPermisoOcupacion || null,
+            false,
+            clean(v.permisoOcupacionNum)
+          ),
+          appraisal: isCash ? legalStep('not_applicable', 'Venta al contado') : appraisalStep,
+          releaseMinute: legalTextStep(v.mLiberacion),
+          segregationMinute: legalTextStep(v.mSegregacion),
+          mortgageMinute: isCash ? legalStep('not_applicable', 'Venta al contado') : legalTextStep(v.mPrestamo),
+          protocol: protocolComplete
+            ? legalStep(
+                'completed',
+                protocolParts.length ? `Firmado por ${protocolParts.join(', ')}` : '',
+                v.fechaProtocoloFirmaBancoCliente || v.fechaProtocoloFirmaBancoInterino || v.fechaProtocoloFirmaPromotora || v.fechaProtocoloFirmaCliente || null
+              )
+            : protocolAny
+              ? legalStep(
+                  'in_progress',
+                  protocolParts.length ? `Firmado por ${protocolParts.join(', ')}` : 'Protocolo en trámite',
+                  v.fechaProtocoloFirmaBancoCliente || v.fechaProtocoloFirmaBancoInterino || v.fechaProtocoloFirmaPromotora || v.fechaProtocoloFirmaCliente || null
+                )
+              : legalStep('pending'),
+          clearance: legalBooleanStep(
+            clearanceCount === 2,
+            null,
+            clearanceCount === 1,
+            clearanceCount ? `${clearanceCount} de 2 confirmados` : ''
+          ),
+          taxes: legalBooleanStep(!!v.pagoImpuestos, v.fechaPagoImpuesto || null),
+          notary: legalBooleanStep(!!v.cierreNotaria, v.fechaCierreEscritura || v.fechaFirma || null),
+          registryEntry: legalBooleanStep(!!v.ingresoRP, v.fechaIngresoRP || null),
+          registration: legalBooleanStep(false, v.fechaInscripcion || null),
+          disbursement: legalBooleanStep(
+            !!v.fechaDesembolso || !!v.fechaRecibidoCheque,
+            v.fechaDesembolso || v.fechaRecibidoCheque || null,
+            !!v.solicitudDesembolso,
+            v.solicitudDesembolso ? 'Desembolso solicitado' : ''
+          ),
+          handover: legalBooleanStep(
+            !!v.fechaEntregaVivienda || /ENTREG/.test(norm(v.entregaCasa)),
+            v.fechaEntregaVivienda || null,
+            !!clean(v.entregaCasa),
+            clean(v.entregaCasa)
+          )
+        }
+      };
+    }).sort((a, b) =>
+      [a.phase, a.tower, a.unit].join('|').localeCompare([b.phase, b.tower, b.unit].join('|'), 'es', { numeric: true })
+    );
+
     const legal = {
       totals: legalTotals,
       minutasLiberacion: legalYesNo('mLiberacion'),
       minutasSegregacion: legalYesNo('mSegregacion'),
       minutasPrestamo: legalYesNo('mPrestamo'),
-      protocolByBank: Array.from(protocolByBankMap.values())
+      protocolByBank: Array.from(protocolByBankMap.values()),
+      milestones: legalMilestones,
+      progressByUnit: legalProgressByUnit
     };
 
     // =========================
@@ -4755,6 +5033,12 @@ if (isSoldLikeStatus(st)) U.sold++;
       if (title === 'Perfil cliente') return simple(commercialData.clientProfile, 'profile', 'count', 'Total perfiles');
       if (title === 'Tipo de empresa') return simple(commercialData.companyType, 'type', 'count', 'Total empresas');
       if (title === 'Estatus en banco') return simple(commercialData.bankStatus, 'status', 'count', 'Total estados banco');
+      if (title === 'Tipo de empresa de compradores') return simple(commercialData.customerReport?.companyType, 'label', 'count', 'Total compradores');
+      if (title === 'Perfil laboral de compradores') return simple(commercialData.customerReport?.employmentProfile, 'label', 'count', 'Total compradores');
+      if (title === 'Sexo de compradores') return simple(commercialData.customerReport?.sex, 'label', 'count', 'Total compradores');
+      if (title === 'Modalidad de compra') return simple(commercialData.customerReport?.purchaseMode, 'label', 'count', 'Total operaciones');
+      if (title === 'Ingresos mensuales declarados') return simple(commercialData.customerReport?.incomeBands, 'label', 'count', 'Clientes con ingreso registrado');
+      if (title === 'Vía de captación' || title === 'Via de captacion') return simple(commercialData.customerReport?.captureChannel, 'label', 'count', 'Total operaciones');
       if (title === 'Minutas de liberación') return simple(legalData.minutasLiberacion, 'status', 'count', 'Total minutas');
       if (title === 'Minutas de segregación') return simple(legalData.minutasSegregacion, 'status', 'count', 'Total minutas');
       if (title === 'Minutas de préstamo') return simple(legalData.minutasPrestamo, 'status', 'count', 'Total minutas');
@@ -4816,9 +5100,9 @@ if (isSoldLikeStatus(st)) U.sold++;
         return { columns: ['Año', 'Detalle'], rows, total: { label: 'Ventas reales', value: fmtNum((commercialData.salesVsFallenByYear || []).reduce((a, x) => a + toNumber(x.sales), 0)) } };
       }
 
-      if (title === 'Montos CPP por banco') {
-        const rows = (commercialData.cppAmountByBank || []).map(x => ({ label: x.bank || 'N/D', value: `${fmtMoneyShort(x.amount)} · ${fmtNum(x.count)} CPP` }));
-        return { columns: ['Banco', 'Monto / CPP'], rows, total: { label: 'Total monto CPP', value: fmtMoneyShort((commercialData.cppAmountByBank || []).reduce((a, x) => a + toNumber(x.amount), 0)) } };
+      if (title === 'Monto de ventas por medio de pago del cliente') {
+        const rows = (commercialData.cppAmountByBank || []).map(x => ({ label: x.bank || 'N/D', value: `${fmtMoneyShort(x.amount)} · ${fmtNum(x.count)} operaciones` }));
+        return { columns: ['Medio de pago', 'Monto / operaciones'], rows, total: { label: 'Total monto de ventas', value: fmtMoneyShort((commercialData.cppAmountByBank || []).reduce((a, x) => a + toNumber(x.amount), 0)) } };
       }
 
       if (title === 'Firma de protocolo por banco') {
@@ -5416,9 +5700,15 @@ if (isSoldLikeStatus(st)) U.sold++;
           'Ventas por modelo de vivienda',
           'Estatus en banco',
           'CPP por banco',
-          'Montos CPP por banco',
+          'Monto de ventas por medio de pago del cliente',
           'Proformas por banco',
-          'Hipotecas por banco'
+          'Hipotecas por banco',
+          'Tipo de empresa de compradores',
+          'Perfil laboral de compradores',
+          'Sexo de compradores',
+          'Modalidad de compra',
+          'Ingresos mensuales declarados',
+          'Vía de captación'
         ]
       },
       {
@@ -5908,22 +6198,53 @@ function applyImportedHousingModels(project, units, rawSuggestions) {
       grouped.set(key, {
         name,
         unitIds: [],
+        units: [],
         initialStatuses: Object.fromEntries(UNIT_STATUS_FIELDS.map(status => [status, 0]))
       });
     }
     const group = grouped.get(key);
     group.unitIds.push(unit._id);
+    group.units.push(unit);
     const status = normalizeUnitStatusKey(unit.estado || unit.status || 'disponible');
     group.initialStatuses[status] = (group.initialStatuses[status] || 0) + 1;
   });
 
-  const merged = [...grouped.entries()].map(([key, group]) => ({
-    ...(existingByName.get(key) || {}),
-    ...(suggestedByName.get(key) || {}),
-    name: suggestedByName.get(key)?.name || existingByName.get(key)?.name || group.name,
-    unitsCount: group.unitIds.length,
-    initialStatuses: group.initialStatuses
-  }));
+  const commonPositiveValue = (items, field) => {
+    const values = items
+      .map(item => Number(item?.[field]))
+      .filter(value => Number.isFinite(value) && value > 0);
+    if (!values.length) return 0;
+    const counts = new Map();
+    values.forEach(value => {
+      const normalized = Number(value.toFixed(6));
+      counts.set(normalized, (counts.get(normalized) || 0) + 1);
+    });
+    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    return ranked.length === 1 || ranked[0][1] > ranked[1][1] ? ranked[0][0] : 0;
+  };
+
+  const merged = [...grouped.entries()].map(([key, group]) => {
+    const existingModel = existingByName.get(key) || {};
+    const suggestedModel = suggestedByName.get(key) || {};
+    const model = {
+      ...existingModel,
+      ...suggestedModel,
+      name: suggestedModel.name || existingModel.name || group.name,
+      unitsCount: group.unitIds.length,
+      initialStatuses: group.initialStatuses
+    };
+    const inferred = {
+      bedrooms: commonPositiveValue(group.units, 'recamaras'),
+      bathrooms: commonPositiveValue(group.units, 'banos'),
+      openAreaM2: commonPositiveValue(group.units, 'areaAbierta'),
+      closedAreaM2: commonPositiveValue(group.units, 'areaCerrada'),
+      cost: commonPositiveValue(group.units, 'costoUnidad')
+    };
+    Object.entries(inferred).forEach(([field, value]) => {
+      if (!(Number(model[field]) > 0) && value > 0) model[field] = value;
+    });
+    return model;
+  });
 
   existing.forEach(model => {
     const key = normalizeDatoUnicoText(model.name);
@@ -5937,14 +6258,29 @@ function applyImportedHousingModels(project, units, rawSuggestions) {
 }
 
 async function linkImportedUnitsToHousingModels(project, grouped) {
-  const modelIdByName = new Map((project.housingModels || []).map(model => [normalizeDatoUnicoText(model.name), model._id]));
+  const modelByName = new Map((project.housingModels || []).map(model => [normalizeDatoUnicoText(model.name), model]));
   const writes = [];
   grouped.forEach((group, key) => {
-    const modelId = modelIdByName.get(key);
-    if (!modelId || !group.unitIds.length) return;
+    const model = modelByName.get(key);
+    if (!model?._id || !group.unitIds.length) return;
+    const openArea = Number(model.openAreaM2 || 0);
+    const closedArea = Number(model.closedAreaM2 || 0);
+    const set = {
+      modelId: model._id,
+      modelo: String(model.name || '').trim(),
+      costoUnidadManual: false
+    };
+    if (openArea > 0) set.areaAbierta = openArea;
+    if (closedArea > 0) set.areaCerrada = closedArea;
+    if (openArea > 0 || closedArea > 0) {
+      set.areaTotalConstruccion = openArea + closedArea;
+    }
+    if (Number(model.bedrooms) > 0) set.recamaras = Number(model.bedrooms);
+    if (Number(model.bathrooms) > 0) set.banos = Number(model.bathrooms);
+    if (Number(model.cost) > 0) set.costoUnidad = Number(model.cost);
     writes.push(Unit.updateMany(
       { _id: { $in: group.unitIds }, tenantKey: project.tenantKey, projectId: project._id },
-      { $set: { modelId } }
+      { $set: set }
     ));
   });
   await Promise.all(writes);
@@ -6868,6 +7204,11 @@ Object.defineProperty(router, '__financePhaseHelpers', {
     applyAutomaticPhaseSources,
     assertFinancePhasesBalanced
   },
+  enumerable: false
+});
+
+Object.defineProperty(router, '__housingModelHelpers', {
+  value: { applyImportedHousingModels },
   enumerable: false
 });
 

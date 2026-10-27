@@ -41,6 +41,15 @@ test('Datos técnicos permite descargar la plantilla general antes de crear el p
   assert.match(script, /\/api\/projects\/commercial-template\/download/);
 });
 
+test('cada fase del alta recoge las fechas previstas que usa el resumen financiero', () => {
+  assert.match(script, /Inicio previsto<input data-create-phase="startDate" type="date"/);
+  assert.match(script, /Fin previsto<input data-create-phase="endDate" type="date"/);
+  assert.match(script, /startDate: row\.querySelector\('\[data-create-phase="startDate"\]'\)/);
+  assert.match(script, /endDate: row\.querySelector\('\[data-create-phase="endDate"\]'\)/);
+  assert.doesNotMatch(script, /Fecha de carta<input data-create-phase-condition="letterDate"/);
+  assert.doesNotMatch(script, /Numero o referencia de carta<input data-create-phase-condition="letterReference"/);
+});
+
 test('los planos del alta se guardan en la categoría que consume Técnico', () => {
   assert.match(script, /fd\.append\('category', 'architecturalPlans'\)/);
   assert.match(script, /\/api\/documents\/upload\?category=architecturalPlans/);

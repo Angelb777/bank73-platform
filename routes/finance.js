@@ -2019,24 +2019,24 @@ async function exportFinanceXlsx({ req, res, projectId, projectName, projectCurr
 
   // ===== Líneas bancarias =====
   const sh2 = wb.addWorksheet('Líneas bancarias', { properties: { tabColor: { argb: FINANCE_EXPORT_COLORS.blue } } });
-  sh2.columns = [20, 28, 16, 18, 18, 18, 18, 16, 18, 16, 18, 18, 14, 13, 30].map(width => ({ width }));
-  styleFinanceTitle(sh2, 'Posición por línea bancaria', subtitle, 15);
-  sh2.getRow(5).values = ['Fase', 'Línea', 'Aprobado', 'Desembolsado banco', 'Disponible', 'Amortización manual', 'Amortización por ventas', 'Otras amortizaciones', 'Amortización total', 'Intereses pagados', 'Total pagado banco', 'Capital pendiente', '% amortizado', 'Cálculo', 'Notas'];
+  sh2.columns = [20, 28, 16, 18, 18, 18, 18, 16, 18, 16, 18, 18, 14, 30].map(width => ({ width }));
+  styleFinanceTitle(sh2, 'Posición por línea bancaria', subtitle, 14);
+  sh2.getRow(5).values = ['Fase', 'Línea', 'Aprobado', 'Desembolsado banco', 'Disponible', 'Amortización manual', 'Amortización por ventas', 'Otras amortizaciones', 'Amortización total', 'Intereses pagados', 'Total pagado banco', 'Capital pendiente', '% amortizado', 'Notas'];
   styleSheetHeaderRow(sh2.getRow(5));
   snap.lineSummaries.forEach(item => sh2.addRow([
     item.phaseName, item.line.name, item.approved, item.bankDisbursed, item.availableToDraw,
     item.manualAmortized, item.salesAmortized, item.otherAmortized, item.amortized,
     item.interestPaid, item.totalPaidToBank, item.outstandingPrincipal, item.amortizationPct,
-    item.line.approvedAmountMode === 'auto' ? 'Automático' : 'Manual', item.line.notes
+    item.line.notes
   ]));
-  const lineTotalRow = sh2.addRow(['TOTAL', '', snap.banking.approved, snap.banking.bankDisbursed, snap.banking.availableToDraw, snap.banking.manualAmortized, snap.banking.salesAmortized, snap.banking.otherAmortized, snap.banking.amortized, snap.banking.interestPaid, snap.banking.totalPaidToBank, snap.banking.outstandingPrincipal, snap.banking.amortizationPct, '', '']);
+  const lineTotalRow = sh2.addRow(['TOTAL', '', snap.banking.approved, snap.banking.bankDisbursed, snap.banking.availableToDraw, snap.banking.manualAmortized, snap.banking.salesAmortized, snap.banking.otherAmortized, snap.banking.amortized, snap.banking.interestPaid, snap.banking.totalPaidToBank, snap.banking.outstandingPrincipal, snap.banking.amortizationPct, '']);
   styleFinanceTotalRow(lineTotalRow);
   if (sh2.rowCount > 5) {
-    styleFinanceBody(sh2, 6, sh2.rowCount, 1, 15);
+    styleFinanceBody(sh2, 6, sh2.rowCount, 1, 14);
     styleFinanceTotalRow(lineTotalRow);
     setFinanceMoneyFormat(sh2, Array.from({ length: sh2.rowCount - 5 }, (_, i) => i + 6), [3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     for (let row = 6; row <= sh2.rowCount; row += 1) sh2.getRow(row).getCell(13).numFmt = '0.0%';
-    sh2.autoFilter = { from: 'A5', to: `O${Math.max(5, sh2.rowCount - 1)}` };
+    sh2.autoFilter = { from: 'A5', to: `N${Math.max(5, sh2.rowCount - 1)}` };
   }
   sh2.views = [{ state: 'frozen', ySplit: 5, xSplit: 2, showGridLines: false }];
   sh2.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };

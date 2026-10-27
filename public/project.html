@@ -2007,7 +2007,7 @@ body.light-theme .provider-exclusive {
       </div>
 
       <div class="card summary-chart-card">
-        <h3>Montos CPP por banco</h3>
+        <h3>Monto de ventas por medio de pago del cliente</h3>
         <div class="summary-chart-box">
           <canvas id="sumCppAmountByBank"></canvas>
         </div>
@@ -2033,6 +2033,46 @@ body.light-theme .provider-exclusive {
         <div id="sumMortgagesByBankSummary" class="summary-chart-summary"></div>
       </div>
     </section>
+
+    <section class="summary-customer-report" style="margin-top:18px;">
+      <div class="summary-customer-report-heading">
+        <h3>Informe del cliente</h3>
+        <p class="small muted">Perfil de las personas que están comprando en el proyecto. Incluye al co-comprador cuando está registrado.</p>
+      </div>
+      <section id="summaryCustomerReportKpis" class="kpis-grid" style="margin-top:12px;"></section>
+      <div class="grid-2" style="margin-top:12px;">
+        <div class="card summary-chart-card summary-customer-chart-card">
+          <h3>Tipo de empresa</h3>
+          <div class="summary-chart-box"><canvas id="sumCustomerCompanyType"></canvas></div>
+          <div id="sumCustomerCompanyTypeSummary" class="summary-chart-summary"></div>
+        </div>
+        <div class="card summary-chart-card summary-customer-chart-card">
+          <h3>Perfil laboral</h3>
+          <div class="summary-chart-box"><canvas id="sumCustomerEmployment"></canvas></div>
+          <div id="sumCustomerEmploymentSummary" class="summary-chart-summary"></div>
+        </div>
+        <div class="card summary-chart-card summary-customer-chart-card">
+          <h3>Sexo de los compradores</h3>
+          <div class="summary-chart-box"><canvas id="sumCustomerSex"></canvas></div>
+          <div id="sumCustomerSexSummary" class="summary-chart-summary"></div>
+        </div>
+        <div class="card summary-chart-card summary-customer-chart-card">
+          <h3>Modalidad de compra</h3>
+          <div class="summary-chart-box"><canvas id="sumCustomerPurchaseMode"></canvas></div>
+          <div id="sumCustomerPurchaseModeSummary" class="summary-chart-summary"></div>
+        </div>
+        <div class="card summary-chart-card summary-customer-chart-card summary-customer-income-card">
+          <h3>Ingresos mensuales declarados</h3>
+          <div class="summary-chart-box"><canvas id="sumCustomerIncome"></canvas></div>
+          <div id="sumCustomerIncomeSummary" class="summary-chart-summary"></div>
+        </div>
+        <div class="card summary-chart-card summary-customer-chart-card">
+          <h3>Vía de captación</h3>
+          <div class="summary-chart-box"><canvas id="sumCustomerCapture"></canvas></div>
+          <div id="sumCustomerCaptureSummary" class="summary-chart-summary"></div>
+        </div>
+      </div>
+    </section>
   </section>
 
   <!-- =========================
@@ -2044,6 +2084,31 @@ body.light-theme .provider-exclusive {
     <section id="summaryLegalProjectData" style="margin-top:12px;"></section>
 
     <section id="summaryLegalKpis" class="kpis-grid" style="margin-top:12px;"></section>
+
+    <section class="card summary-chart-card summary-legal-progress-card" style="margin-top:12px;">
+      <div class="summary-legal-progress-head">
+        <div>
+          <h3>Matriz de avance legal por unidad</h3>
+          <p class="small muted">Seguimiento de cada venta desde la CPP hasta la entrega de la vivienda.</p>
+        </div>
+        <div class="summary-legal-progress-controls">
+          <input id="summaryLegalProgressSearch" class="input" type="search" placeholder="Buscar unidad, cliente o banco">
+          <select id="summaryLegalProgressFilter" class="input" aria-label="Filtrar avance legal">
+            <option value="all">Todas las unidades</option>
+            <option value="pending">Con hitos pendientes</option>
+            <option value="in_progress">Con hitos en trámite</option>
+            <option value="completed">Proceso completado</option>
+          </select>
+        </div>
+      </div>
+      <div class="summary-legal-progress-legend" aria-label="Leyenda de estados">
+        <span><i class="is-completed"></i>Completado</span>
+        <span><i class="is-in-progress"></i>En trámite</span>
+        <span><i class="is-pending"></i>Pendiente</span>
+        <span><i class="is-not-applicable"></i>No aplica</span>
+      </div>
+      <div id="summaryLegalProgressMatrix"></div>
+    </section>
 
     <section class="grid-2" style="margin-top:12px;">
       <div class="card summary-chart-card chart-card-sm">
@@ -2159,6 +2224,12 @@ body.light-theme .provider-exclusive {
         </div>
         <div id="sumPhaseSourceChartSummary" class="summary-chart-summary summary-phase-summary"></div>
       </div>
+    </section>
+
+    <section class="summary-phase-composition-section" style="margin-top:12px;">
+      <h3 class="summary-subsection-title">Peso de los usos por fase - Estimación vs realidad</h3>
+      <p class="small muted summary-subsection-help">Cada dona muestra qué porcentaje del total de la fase corresponde a terreno, infraestructura, construcción y las demás líneas registradas.</p>
+      <div id="summaryPhaseCompositionCharts" class="summary-phase-composition-grid"></div>
     </section>
 
     <section class="grid-2" style="margin-top:12px;">

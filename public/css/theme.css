@@ -2430,7 +2430,7 @@ body.light-theme #fichaUnidadModal .unit-title-status .unit-state-mode.is-manual
 #fichaUnidadModal .unit-summary-status.is-danger { background:rgba(239,68,68,.16); color:#fb7185; }
 body.light-theme #fichaUnidadModal .unit-summary-status.is-positive { color:#157347; }
 body.light-theme #fichaUnidadModal .unit-summary-status.is-danger { color:#b42335; }
-#fichaUnidadModal .unit-process-layout { grid-template-columns:minmax(180px,260px) minmax(420px,1fr) minmax(250px,290px); gap:10px; }
+#fichaUnidadModal .unit-process-layout { grid-template-columns:minmax(280px,1fr) minmax(520px,2.15fr) minmax(300px,1fr); gap:14px; }
 #fichaUnidadModal .unit-process-left,
 #fichaUnidadModal .unit-process-right,
 #fichaUnidadModal .unit-process-main,
@@ -2445,8 +2445,9 @@ body.light-theme #fichaUnidadModal .unit-summary-status.is-danger { color:#b4233
 #fichaUnidadModal .unit-process-stage > summary strong,
 #fichaUnidadModal .unit-process-heading h2,
 #fichaUnidadModal .unit-comments h3 { color:var(--unit-copy) !important; }
-#fichaUnidadModal .unit-side-card > summary { min-height:50px; border-left:4px solid var(--unit-accent); }
-#fichaUnidadModal .unit-side-grid { gap:10px; padding:2px 14px 15px; }
+#fichaUnidadModal .unit-side-card > summary { min-height:54px; border-left:4px solid var(--unit-accent); }
+#fichaUnidadModal .unit-side-card > summary strong { font-size:15px; line-height:1.2; }
+#fichaUnidadModal .unit-side-grid { gap:12px 14px; padding:4px 16px 18px; }
 #fichaUnidadModal .unit-process-field:has(#fv-clienteNombre),
 #fichaUnidadModal .unit-process-field:has(#fv-cliente2NombreCompleto),
 #fichaUnidadModal .unit-process-field:has(#fv-correo),
@@ -2456,10 +2457,10 @@ body.light-theme #fichaUnidadModal .unit-summary-status.is-danger { color:#b4233
 #fichaUnidadModal .unit-process-field:has(#fv-referencia1Nombre),
 #fichaUnidadModal .unit-process-field:has(#fv-referencia2Nombre),
 #fichaUnidadModal .unit-process-field:has(#fv-canalCaptacion) { grid-column:1/-1; }
-#fichaUnidadModal .unit-process-field > label { color:var(--unit-muted); }
+#fichaUnidadModal .unit-process-field > label { color:var(--unit-muted); font-size:13px; line-height:1.25; }
 #fichaUnidadModal .unit-process-field input,
 #fichaUnidadModal .unit-process-field select,
-#fichaUnidadModal .unit-comments textarea { border-color:var(--unit-line); background:var(--unit-surface-2); color:var(--unit-copy); }
+#fichaUnidadModal .unit-comments textarea { min-height:40px; padding:10px 11px; border-color:var(--unit-line); background:var(--unit-surface-2); color:var(--unit-copy); font-size:14px; }
 #fichaUnidadModal .unit-process-field select,
 #fichaUnidadModal .unit-summary-card select { color-scheme:dark; }
 #fichaUnidadModal .unit-process-field select option,
@@ -2476,7 +2477,9 @@ body.light-theme #fichaUnidadModal .unit-summary-card select option { background
 #fichaUnidadModal .unit-policy-summary input:disabled { opacity:1; cursor:default; }
 #fichaUnidadModal .unit-policy-summary span { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
 #fichaUnidadModal .unit-policy-summary small { color:var(--unit-muted); font-weight:600; }
-#fichaUnidadModal .unit-process-heading { padding:14px 17px; border-top:3px solid var(--unit-accent); }
+#fichaUnidadModal .unit-process-heading { padding:16px 19px; border-top:3px solid var(--unit-accent); }
+#fichaUnidadModal .unit-process-heading h2 { font-size:22px; }
+#fichaUnidadModal .unit-process-heading span { font-size:14px; }
 #fichaUnidadModal .unit-reservation-age { justify-self:start; margin-top:8px; padding:5px 10px; border:1px solid rgba(245,158,11,.42); border-radius:999px; background:rgba(245,158,11,.14); color:#fbbf24; font-size:12px; }
 body.light-theme #fichaUnidadModal .unit-reservation-age { color:#9a5b00; background:#fff3d8; }
 #fichaUnidadModal .unit-process-progress { height:7px; background:var(--unit-line); }
@@ -2488,7 +2491,9 @@ body.light-theme #fichaUnidadModal .unit-reservation-age { color:#9a5b00; backgr
 #fichaUnidadModal .unit-process-stage:nth-child(4) { --stage-accent:#a855f7; }
 #fichaUnidadModal .unit-process-stage:nth-child(5) { --stage-accent:#ef4444; }
 #fichaUnidadModal .unit-process-stage:nth-child(6) { --stage-accent:#22c55e; }
-#fichaUnidadModal .unit-process-stage > summary { min-height:60px; border-left:4px solid var(--stage-accent); }
+#fichaUnidadModal .unit-process-stage > summary { min-height:64px; border-left:4px solid var(--stage-accent); }
+#fichaUnidadModal .unit-stage-copy strong { font-size:15px; line-height:1.25; }
+#fichaUnidadModal .unit-stage-copy small { font-size:13px; }
 #fichaUnidadModal .unit-process-stage[open] { border:1px solid color-mix(in srgb,var(--stage-accent) 70%,var(--unit-line)); box-shadow:0 0 0 3px color-mix(in srgb,var(--stage-accent) 12%,transparent),0 8px 20px rgba(2,6,23,.08); }
 #fichaUnidadModal .unit-process-stage[open] > summary { background:color-mix(in srgb,var(--stage-accent) 9%,var(--unit-surface)); }
 #fichaUnidadModal .unit-stage-number { border-color:var(--stage-accent); color:var(--stage-accent); }
@@ -2501,6 +2506,20 @@ body.light-theme #fichaUnidadModal .is-current .unit-stage-status { color:color-
 #fichaUnidadModal .unit-stage-body h4 { color:var(--stage-accent); }
 #fichaUnidadModal .unit-comments { padding:14px 16px; }
 #fichaUnidadModal .unit-comments h3 { font-size:16px; }
+
+@media (min-width:1600px) {
+  #fichaUnidadModal .unit-process-layout { grid-template-columns:minmax(340px,1fr) minmax(640px,2.25fr) minmax(360px,1.05fr); gap:16px; }
+  #fichaUnidadModal .unit-side-card > summary strong { font-size:16px; }
+  #fichaUnidadModal .unit-process-field > label { font-size:13.5px; }
+  #fichaUnidadModal .unit-process-field input,
+  #fichaUnidadModal .unit-process-field select,
+  #fichaUnidadModal .unit-comments textarea { font-size:15px; }
+}
+
+@media (min-width:901px) and (max-width:1250px) {
+  #fichaUnidadModal .unit-process-layout { grid-template-columns:minmax(230px,.9fr) minmax(450px,1.75fr) minmax(250px,.95fr); gap:10px; }
+  #fichaUnidadModal .unit-side-grid { gap:10px; padding-inline:12px; }
+}
 
 @media (max-width:1450px) {
   #fichaUnidadModal #fichaTitulo { grid-template-columns:minmax(190px,1fr) minmax(360px,620px); gap:10px 14px; }
@@ -3996,6 +4015,48 @@ body.light-theme #cards .portfolio-card-summary-label {
   width: 100% !important;
   height: 100% !important;
   display: block;
+}
+
+#tab-resumen .summary-customer-report-heading h3 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 1.05rem;
+}
+
+#tab-resumen .summary-customer-report-heading p {
+  margin: 0;
+}
+
+#tab-resumen .summary-customer-chart-card .summary-chart-box {
+  position: relative;
+  height: 320px;
+}
+
+#tab-resumen .summary-customer-income-card .summary-chart-box {
+  height: 360px;
+}
+
+#tab-resumen .summary-customer-income-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+#tab-resumen .summary-customer-income-stats span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text-muted);
+  font-size: .8rem;
+}
+
+#tab-resumen .summary-customer-income-stats strong {
+  color: var(--text);
 }
 
 #tab-finanzas .finance-charts-grid {
@@ -6215,11 +6276,380 @@ body.light-theme #tab-finanzas .finance-status.is-danger {
   padding-top: 12px;
 }
 
+#tab-resumen .summary-phase-composition-section .summary-subsection-title,
 #tab-resumen .summary-phase-lines-section .summary-subsection-title {
   margin:0 0 10px;
   font-size:1.05rem;
   font-weight:800;
   color:var(--text,#e5e7eb);
+}
+
+#tab-resumen .summary-phase-composition-section .summary-subsection-help {
+  margin: -4px 0 12px;
+}
+
+#tab-resumen .summary-phase-composition-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+#tab-resumen .summary-phase-composition-card {
+  margin-bottom: 0;
+  min-width: 0;
+}
+
+#tab-resumen .summary-phase-composition-head,
+#tab-resumen .summary-phase-donut-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#tab-resumen .summary-phase-composition-head {
+  margin-bottom: 14px;
+}
+
+#tab-resumen .summary-phase-composition-head h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+#tab-resumen .summary-phase-composition-head > span,
+#tab-resumen .summary-phase-donut-title > span {
+  color: var(--text-muted);
+  font-size: .78rem;
+}
+
+#tab-resumen .summary-phase-composition-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+#tab-resumen .summary-phase-donut-panel {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255,255,255,.02);
+}
+
+#tab-resumen .summary-phase-donut-title {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 8px;
+}
+
+#tab-resumen .summary-phase-donut-title strong {
+  color: var(--text);
+  font-size: .9rem;
+}
+
+#tab-resumen .summary-phase-donut-box {
+  position: relative;
+  height: 230px;
+}
+
+#tab-resumen .summary-phase-donut-box canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+#tab-resumen .summary-phase-composition-empty {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: .82rem;
+  text-align: center;
+}
+
+#tab-resumen .summary-phase-composition-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+#tab-resumen .summary-phase-composition-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: .78rem;
+}
+
+#tab-resumen .summary-phase-composition-legend i {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+  background: var(--line-color);
+}
+
+#tab-resumen .summary-legal-progress-card {
+  overflow: hidden;
+}
+
+#tab-resumen .summary-legal-progress-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+#tab-resumen .summary-legal-progress-head h3 {
+  margin-bottom: 4px;
+}
+
+#tab-resumen .summary-legal-progress-head p {
+  margin: 0;
+}
+
+#tab-resumen .summary-legal-progress-controls {
+  display: grid;
+  grid-template-columns: minmax(230px, 1.4fr) minmax(190px, 1fr);
+  gap: 8px;
+  width: min(100%, 560px);
+}
+
+#tab-resumen .summary-legal-progress-controls .input {
+  width: 100%;
+  min-height: 40px;
+}
+
+#tab-resumen .summary-legal-progress-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 14px 0 10px;
+  color: var(--text-muted);
+  font-size: .78rem;
+}
+
+#tab-resumen .summary-legal-progress-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#tab-resumen .summary-legal-progress-legend i {
+  width: 11px;
+  height: 11px;
+  border: 1px solid rgba(148,163,184,.45);
+  border-radius: 3px;
+}
+
+#tab-resumen .summary-legal-progress-legend .is-completed,
+#tab-resumen .summary-legal-step.is-completed span {
+  background: #173b87;
+  color: #fff;
+}
+
+#tab-resumen .summary-legal-progress-legend .is-in-progress,
+#tab-resumen .summary-legal-step.is-in-progress span {
+  background: #d97706;
+  color: #fff;
+}
+
+#tab-resumen .summary-legal-progress-legend .is-pending,
+#tab-resumen .summary-legal-step.is-pending span {
+  background: rgba(148,163,184,.12);
+  color: var(--text-muted);
+}
+
+#tab-resumen .summary-legal-progress-legend .is-not-applicable,
+#tab-resumen .summary-legal-step.is-not-applicable span {
+  background: repeating-linear-gradient(135deg, rgba(148,163,184,.2) 0 3px, transparent 3px 6px);
+  color: var(--text-muted);
+}
+
+#tab-resumen .summary-legal-progress-result {
+  margin: 0 0 8px;
+  text-align: right;
+}
+
+#tab-resumen .summary-legal-progress-scroll {
+  max-height: 680px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+#tab-resumen .summary-legal-progress-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: var(--text);
+  font-size: .78rem;
+}
+
+#tab-resumen .summary-legal-progress-table th,
+#tab-resumen .summary-legal-progress-table td {
+  height: 58px;
+  padding: 7px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+  vertical-align: middle;
+}
+
+#tab-resumen .summary-legal-progress-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  width: 88px;
+  min-width: 88px;
+  height: 72px;
+  background: var(--card-bg);
+  color: var(--text);
+}
+
+#tab-resumen .summary-legal-progress-table thead th > span {
+  display: block;
+  max-width: 84px;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+#tab-resumen .summary-legal-progress-table thead th > small {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+#tab-resumen .summary-legal-progress-table .summary-legal-unit-column {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  width: 220px;
+  min-width: 220px;
+  max-width: 220px;
+  padding: 9px 12px;
+  background: var(--card-bg);
+  text-align: left;
+}
+
+#tab-resumen .summary-legal-progress-table thead .summary-legal-unit-column {
+  z-index: 6;
+}
+
+#tab-resumen .summary-legal-unit-column strong,
+#tab-resumen .summary-legal-unit-column span,
+#tab-resumen .summary-legal-unit-column small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tab-resumen .summary-legal-unit-column strong {
+  color: var(--text);
+  font-size: .86rem;
+}
+
+#tab-resumen .summary-legal-unit-column span,
+#tab-resumen .summary-legal-unit-column small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+#tab-resumen .summary-legal-step {
+  width: 58px;
+  min-width: 58px;
+  background: rgba(255,255,255,.012);
+}
+
+#tab-resumen .summary-legal-step span {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin: auto;
+  border: 1px solid rgba(148,163,184,.35);
+  border-radius: 7px;
+  font-size: .9rem;
+  font-weight: 800;
+}
+
+#tab-resumen .summary-legal-step.is-current span {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+#tab-resumen .summary-legal-total-column {
+  width: 92px;
+  min-width: 92px;
+  background: var(--card-bg);
+}
+
+#tab-resumen .summary-legal-total-column strong {
+  color: var(--text);
+}
+
+#tab-resumen .summary-legal-row-progress {
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgba(148,163,184,.18);
+}
+
+#tab-resumen .summary-legal-row-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #38bdf8;
+}
+
+#tab-resumen .summary-legal-progress-empty,
+#tab-resumen .summary-legal-no-results {
+  padding: 28px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+body.light-theme #tab-resumen .summary-legal-progress-table thead th,
+body.light-theme #tab-resumen .summary-legal-progress-table .summary-legal-unit-column,
+body.light-theme #tab-resumen .summary-legal-progress-table .summary-legal-total-column {
+  background: #fff;
+}
+
+@media (max-width: 980px) {
+  #tab-resumen .summary-phase-composition-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-resumen .summary-legal-progress-head {
+    flex-direction: column;
+  }
+
+  #tab-resumen .summary-legal-progress-controls {
+    width: 100%;
+  }
+}
+
+@media (max-width: 620px) {
+  #tab-resumen .summary-phase-composition-pair {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-resumen .summary-customer-income-stats {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-resumen .summary-legal-progress-controls {
+    grid-template-columns: 1fr;
+  }
 }
 
 #tab-resumen .summary-phase-lines-section .summary-chart-card,

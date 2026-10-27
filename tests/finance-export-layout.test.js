@@ -118,6 +118,8 @@ test('Excel export contains the redesigned financial views and totals', async ()
   assert.equal(summary[8][4], 525000);
   const lines = XLSX.utils.sheet_to_json(workbook.Sheets['Líneas bancarias'], { header: 1, defval: null });
   assert.equal(lines[4][10], 'Total pagado banco');
+  assert.equal(lines[4].includes('Cálculo'), false);
+  assert.equal(lines[4][13], 'Notas');
   assert.equal(lines.at(-1)[10], 130000);
 });
 

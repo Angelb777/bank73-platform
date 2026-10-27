@@ -1973,64 +1973,159 @@
     if (operationSection) operationSection.style.display = 'none';
   }
 
-  function createPhaseFinanceBlock(index, item = {}) {
-    const itemRows = (items = [], kind) => {
-      const defaults = kind === 'planUses' ? DEFAULT_PHASE_PLAN_USES.map(name => ({ name })) : [{ name: '', amount: '' }];
-      const rows = items.length ? items : defaults;
-      return rows.map(row => `
-        <div style="display:grid;grid-template-columns:1fr 140px;gap:8px;margin-bottom:6px;" data-create-phase-line="${kind}">
-          <input data-create-phase-line-name placeholder="Concepto" value="${escapeHtml(row.name || '')}">
-          <input data-create-phase-line-amount data-bank-number type="text" inputmode="decimal" placeholder="Monto" value="${row.amount ? formatBankNumber(row.amount) : ''}">
+  const CREATE_PHASE_SOURCE_NAMES = ['Banco', 'Promotor', 'Preventas'];
+
+  function aggregateCreatePhaseSources(uses = []) {
+    const grouped = new Map();
+    (uses || []).forEach(use => (use.fundingSources || []).forEach(source => {
+      const name = String(source?.name || '').trim();
+      if (!name) return;
+      const key = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const current = grouped.get(key) || { name, amount: 0 };
+      current.amount += numberFromCreate(source?.amount);
+      grouped.set(key, current);
+    }));
+    return Array.from(grouped.values()).map(source => ({
+      ...source,
+      amount: Math.round(source.amount * 100) / 100
+    }));
+  }
+
+  function createPhaseUsesWithSources(items = [], fallbackSources = [], { defaults = false } = {}) {
+    const uses = (Array.isArray(items) && items.length
+      ? items
+      : (defaults ? DEFAULT_PHASE_PLAN_USES.map(name => ({ name, amount: 0 })) : [])
+    ).map(item => ({ ...item }));
+    if (!uses.length) return [];
+    if (uses.some(use => Array.isArray(use?.fundingSources))) {
+      return uses.map(use => ({
+        ...use,
+        fundingSources: Array.isArray(use.fundingSources) && use.fundingSources.length
+          ? use.fundingSources.map(source => ({ ...source }))
+          : CREATE_PHASE_SOURCE_NAMES.map(name => ({ name, amount: 0 }))
+      }));
+    }
+    const total = uses.reduce((sum, use) => sum + numberFromCreate(use.amount), 0);
+    const sourceTemplates = (Array.isArray(fallbackSources) ? fallbackSources : [])
+      .map(source => ({ name: String(source?.name || '').trim(), amount: numberFromCreate(source?.amount) }))
+      .filter(source => source.name || source.amount);
+    CREATE_PHASE_SOURCE_NAMES.forEach(name => {
+      if (!sourceTemplates.some(source => source.name.toLowerCase() === name.toLowerCase())) sourceTemplates.push({ name, amount: 0 });
+    });
+    return uses.map((use, useIndex) => ({
+      ...use,
+      fundingSources: sourceTemplates.map(source => {
+        const allocatedBefore = uses.slice(0, useIndex).reduce((sum, previous) => (
+          sum + (total ? Math.round(numberFromCreate(source.amount) * numberFromCreate(previous.amount) / total * 100) / 100 : 0)
+        ), 0);
+        const amount = useIndex === uses.length - 1
+          ? Math.max(0, numberFromCreate(source.amount) - allocatedBefore)
+          : (total ? Math.round(numberFromCreate(source.amount) * numberFromCreate(use.amount) / total * 100) / 100 : 0);
+        return { name: source.name, amount };
+      })
+    }));
+  }
+
+  function createPhaseSourceRow(source = {}, useAmount = 0) {
+    const amount = numberFromCreate(source.amount);
+    const pct = useAmount ? amount / useAmount * 100 : 0;
+    return `<div class="finance-use-source-row" data-create-use-source>
+      <input class="input" data-create-source-name value="${escapeHtml(source.name || '')}" placeholder="Otra fuente">
+      <div class="finance-use-source-pct"><input class="input" data-create-source-pct type="number" min="0" step="0.01" value="${pct.toFixed(2)}"><em>%</em></div>
+      <input class="input" data-create-source-amount data-bank-number type="text" inputmode="decimal" value="${amount ? formatBankNumber(amount) : ''}">
+      <button class="btn btn-danger btn-xs" type="button" data-remove-create-source>Quitar</button>
+    </div>`;
+  }
+
+  function createPhaseUseCards(kind, uses = []) {
+    return (uses || []).map(use => {
+      const amount = numberFromCreate(use.amount);
+      const sources = Array.isArray(use.fundingSources) && use.fundingSources.length
+        ? use.fundingSources
+        : CREATE_PHASE_SOURCE_NAMES.map(name => ({ name, amount: 0 }));
+      return `<article class="finance-plan-use-card" data-create-use-kind="${kind}">
+        <div class="finance-plan-use-head">
+          <label><span>Uso</span><input class="input" data-create-use-name value="${escapeHtml(use.name || '')}" placeholder="Infraestructura"></label>
+          <label><span>Importe del uso</span><input class="input" data-create-use-amount data-bank-number type="text" inputmode="decimal" value="${amount ? formatBankNumber(amount) : ''}"></label>
+          <button class="btn btn-danger btn-xs" type="button" data-remove-create-use>Quitar</button>
         </div>
-      `).join('');
-    };
+        <div class="finance-use-sources-head"><span>Fuentes</span><span>Porcentaje</span><span>Importe</span><span></span></div>
+        <div data-create-use-sources>${sources.map(source => createPhaseSourceRow(source, amount)).join('')}</div>
+        <button class="btn ghost btn-xs" type="button" data-add-create-source>+ Fuente</button>
+        <div class="finance-source-balance" data-create-use-balance></div>
+      </article>`;
+    }).join('');
+  }
+
+  function collectCreatePhaseUses(row, kind) {
+    return Array.from(row?.querySelectorAll(`[data-create-use-kind="${kind}"]`) || []).map(useRow => ({
+      name: useRow.querySelector('[data-create-use-name]')?.value.trim() || '',
+      amount: numberFromCreate(useRow.querySelector('[data-create-use-amount]')?.value),
+      fundingSources: Array.from(useRow.querySelectorAll('[data-create-use-source]')).map(sourceRow => ({
+        name: sourceRow.querySelector('[data-create-source-name]')?.value.trim() || '',
+        amount: numberFromCreate(sourceRow.querySelector('[data-create-source-amount]')?.value)
+      })).filter(source => source.name || source.amount)
+    })).filter(use => use.name || use.amount);
+  }
+
+  function createPhaseFinanceBlock(index, item = {}) {
     const condition = item.financialConditions || {};
     const selectedBanks = phaseSelectedBanks(item);
-    const phaseFinancial = {
-      phaseTotal: numberFromCreate(condition.phaseTotal),
-      bankFinancedAmount: numberFromCreate(condition.bankFinancedAmount),
-      bankFinancedPct: numberFromCreate(condition.bankFinancedPct),
-      promoterContribution: numberFromCreate(condition.promoterContribution),
-      promoterContributionPct: numberFromCreate(condition.promoterContributionPct)
-    };
-    const conditionField = ([key, label, type, placeholder]) => {
-      const value = condition[key] || (key === 'requiredPresales' ? '50%' : '');
-      const attrs = `data-create-phase-condition="${key}" placeholder="${escapeHtml(placeholder || '')}"`;
-      if (type === 'textarea') return `<label style="grid-column:1/-1">${label}<textarea ${attrs} rows="2">${escapeHtml(value)}</textarea></label>`;
-      return `<label>${label}<input ${attrs} value="${escapeHtml(value)}"></label>`;
-    };
-    return `<details class="create-phase-block" data-create-phase-row="${index}" style="border:1px solid #dbe2ea;border-radius:12px;padding:10px;margin-bottom:10px;background:#fff;">
+    const legacySources = Array.isArray(item.planSources) && item.planSources.length ? item.planSources : [
+      { name: 'Banco', amount: numberFromCreate(condition.bankFinancedAmount) },
+      { name: 'Promotor', amount: numberFromCreate(condition.promoterContribution) },
+      { name: 'Preventas', amount: 0 }
+    ];
+    const planUses = createPhaseUsesWithSources(item.planUses || [], legacySources, { defaults: true });
+    const realUses = createPhaseUsesWithSources(item.uses || [], item.sources || []);
+    const planSources = aggregateCreatePhaseSources(planUses);
+    const planTotal = planUses.reduce((sum, use) => sum + numberFromCreate(use.amount), 0);
+    const bankAmount = numberFromCreate(planSources.find(source => source.name.toLowerCase() === 'banco')?.amount);
+    const promoterAmount = numberFromCreate(planSources.find(source => source.name.toLowerCase() === 'promotor')?.amount);
+    const presalesAmount = numberFromCreate(planSources.find(source => source.name.toLowerCase() === 'preventas')?.amount);
+    const realTotal = realUses.reduce((sum, use) => sum + numberFromCreate(use.amount), 0);
+    const realEnabled = Boolean(item.actualStartDate || item.actualEndDate || realUses.length);
+    return `<details class="create-phase-block finance-phase-overview" data-create-phase-row="${index}" open>
       <summary><strong>${escapeHtml(item.name || `Fase ${index + 1}`)}</strong></summary>
-      <div class="create-grid" style="margin-top:10px;">
-        <div style="grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #bae6fd;background:#f0f9ff;border-radius:12px;padding:10px 12px;">
+      <div class="create-phase-overview-body">
+        <div class="create-phase-requirements-head">
           <div><strong>Requisitos</strong><div class="small muted">${BANK_REQUIREMENT_TITLES.length} requisitos aplicables a esta fase. Bank73 precarga la información disponible.</div></div>
           <button class="btn" type="button" data-open-create-requirements="${index}">Requisitos</button>
         </div>
-        <label>Nombre<input data-create-phase="name" value="${escapeHtml(item.name || `Fase ${index + 1}`)}"></label>
-        <label style="grid-column:1/-1">Bancos financiadores de la fase
+        <div class="finance-phase-core-fields">
+          <label><span>Nombre</span><input class="input" data-create-phase="name" value="${escapeHtml(item.name || `Fase ${index + 1}`)}"></label>
+          <label><span>Inicio previsto</span><input class="input" data-create-phase="startDate" type="date" value="${escapeHtml(String(item.startDate || '').slice(0, 10))}"></label>
+          <label><span>Fin previsto</span><input class="input" data-create-phase="endDate" type="date" value="${escapeHtml(String(item.endDate || '').slice(0, 10))}"></label>
+        </div>
+        <label class="create-phase-bank-field"><span>Bancos financiadores de la fase</span>
           <select data-create-phase-banks multiple size="5">${phaseBankOptionsHtml(selectedBanks)}</select>
           <span class="small muted">Deja la selección vacía o elige “Por definir” si todavía no hay banco. Esta selección no concede acceso ni crea tenants.</span>
         </label>
-        <label>Fecha de carta<input data-create-phase-condition="letterDate" type="date" value="${escapeHtml((condition.letterDate || '').slice(0, 10))}"></label>
-        <label>Numero o referencia de carta<input data-create-phase-condition="letterReference" placeholder="Carta term sheet BG-2026-015" value="${escapeHtml(condition.letterReference || '')}"></label>
-        <div style="grid-column:1/-1;border:1px solid #dbeafe;background:#f8fbff;border-radius:12px;padding:10px;">
-          <strong>Datos financieros de la fase</strong>
-          <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:8px;">
-            <label>Total de la fase<input data-create-phase-financial="phaseTotal" data-bank-number type="text" inputmode="decimal" placeholder="Se calcula con los usos" value="${phaseFinancial.phaseTotal ? formatBankNumber(phaseFinancial.phaseTotal) : ''}" readonly aria-readonly="true"></label>
-            <label>Financiacion bancaria<input data-create-phase-financial="bankFinancedAmount" data-bank-number type="text" inputmode="decimal" placeholder="Monto banco" value="${phaseFinancial.bankFinancedAmount ? formatBankNumber(phaseFinancial.bankFinancedAmount) : ''}"></label>
-            <label>Aporte del promotor<input data-create-phase-financial="promoterContribution" data-bank-number type="text" inputmode="decimal" placeholder="Monto promotor" value="${phaseFinancial.promoterContribution ? formatBankNumber(phaseFinancial.promoterContribution) : ''}"></label>
-            <label>% banco<input data-create-phase-financial="bankFinancedPct" type="text" inputmode="decimal" placeholder="70" value="${phaseFinancial.bankFinancedPct ? formatPercentNumber(phaseFinancial.bankFinancedPct) : ''}"></label>
-            <label>% promotor<input data-create-phase-financial="promoterContributionPct" type="text" inputmode="decimal" placeholder="30" value="${phaseFinancial.promoterContributionPct ? formatPercentNumber(phaseFinancial.promoterContributionPct) : ''}"></label>
-          </div>
+        <div class="finance-phase-plan-summary" aria-label="Resumen previsto">
+          <article><span>Total previsto</span><strong data-create-summary="plan-total">${formatBankNumber(planTotal)}</strong><small>Suma de usos</small></article>
+          <article><span>Banco</span><strong data-create-summary="plan-bank">${formatBankNumber(bankAmount)}</strong><small data-create-summary="plan-bank-pct">${planTotal ? (bankAmount / planTotal * 100).toFixed(1) : '0.0'}%</small></article>
+          <article><span>Promotor</span><strong data-create-summary="plan-promoter">${formatBankNumber(promoterAmount)}</strong><small data-create-summary="plan-promoter-pct">${planTotal ? (promoterAmount / planTotal * 100).toFixed(1) : '0.0'}%</small></article>
+          <article><span>Preventas</span><strong data-create-summary="plan-presales">${formatBankNumber(presalesAmount)}</strong><small>Fuente prevista</small></article>
         </div>
-        <label style="grid-column:1/-1">Usos estimados
-          <div data-create-phase-lines-box="planUses">${itemRows(item.planUses || [], 'planUses')}</div>
-          <button class="btn ghost" type="button" data-add-create-phase-line="planUses">+ Uso</button>
-        </label>
-        <div style="grid-column:1/-1;border:1px solid #dbeafe;background:#f8fbff;border-radius:12px;padding:10px;" data-create-phase-sources-summary>
-          <strong>Fuentes estimadas automaticas</strong>
-          <div class="small muted" style="margin-top:6px;">Total usos: <b data-phase-total-uses>0</b> · Banco: <b data-phase-bank-source>0</b> · Promotor: <b data-phase-promoter-source>0</b> · Total fuentes: <b data-phase-total-sources>0</b></div>
+        <div class="finance-phase-view-tabs" role="tablist" aria-label="Vista de la fase">
+          <button class="is-active" type="button" data-create-phase-view="plan" aria-pressed="true">Estimación</button>
+          <button type="button" data-create-phase-view="real" aria-pressed="false">Realidad</button>
         </div>
+        <section class="finance-phase-budget-panel" data-create-phase-panel="plan">
+          <div class="finance-phase-section-head"><div><h4>Usos y fuentes previstas</h4><p>Cada uso puede tener un reparto diferente. Los totales y porcentajes se calculan automáticamente.</p></div><button class="btn ghost btn-xs" type="button" data-copy-create-real-to-plan>Usar realidad como estimación</button></div>
+          <div data-create-uses-list="planUses">${createPhaseUseCards('planUses', planUses)}</div>
+          <button class="btn ghost btn-xs" type="button" data-add-create-use="planUses">+ Uso</button>
+        </section>
+        <section class="finance-phase-budget-panel" data-create-phase-panel="real" hidden>
+          <div class="finance-phase-section-head"><div><h4>Ejecución real</h4><p>Para proyectos ya iniciados. Dato Único seguirá siendo la fuente del inventario y de los datos comerciales.</p></div><button class="btn ghost btn-xs" type="button" data-copy-create-plan-to-real>Copiar estimación</button></div>
+          <label class="create-real-enabled"><input type="checkbox" data-create-real-enabled ${realEnabled ? 'checked' : ''}> El proyecto ya ha comenzado</label>
+          <div class="finance-real-comparison"><span>Previsto <b data-create-real-comparison="plan">${formatBankNumber(planTotal)}</b></span><span>Real <b data-create-real-comparison="real">${formatBankNumber(realTotal)}</b></span><span>Diferencia <b data-create-real-comparison="difference">${formatBankNumber(realTotal - planTotal)}</b></span></div>
+          <div class="finance-phase-real-dates"><label><span>Inicio real</span><input class="input" type="date" data-create-phase="actualStartDate" value="${escapeHtml(String(item.actualStartDate || '').slice(0, 10))}"></label><label><span>Fin real</span><input class="input" type="date" data-create-phase="actualEndDate" value="${escapeHtml(String(item.actualEndDate || '').slice(0, 10))}"></label></div>
+          <div class="finance-phase-section-head create-real-uses-head"><div><h4>Usos y fuentes reales</h4><p>Introduce solamente la ejecución conocida hasta la fecha.</p></div></div>
+          <div data-create-uses-list="uses">${createPhaseUseCards('uses', realUses)}</div>
+          <button class="btn ghost btn-xs" type="button" data-add-create-use="uses">+ Uso real</button>
+        </section>
+        <div hidden><input data-create-phase-financial="phaseTotal" value="${planTotal}"><input data-create-phase-financial="bankFinancedAmount" value="${bankAmount}"><input data-create-phase-financial="bankFinancedPct" value="${planTotal ? bankAmount / planTotal * 100 : 0}"><input data-create-phase-financial="promoterContribution" value="${promoterAmount}"><input data-create-phase-financial="promoterContributionPct" value="${planTotal ? promoterAmount / planTotal * 100 : 0}"></div>
       </div>
     </details>`;
   }
@@ -2738,6 +2833,8 @@
       const lineRow = document.querySelector(`[data-create-phase-financing-row="${idx}"]`) || row;
       return {
         name: row.querySelector('[data-create-phase="name"]')?.value.trim() || `Fase ${idx + 1}`,
+        startDate: row.querySelector('[data-create-phase="startDate"]')?.value || null,
+        endDate: row.querySelector('[data-create-phase="endDate"]')?.value || null,
         financierBanks: Array.from(row.querySelector('[data-create-phase-banks]')?.selectedOptions || []).map(option => option.value).filter(Boolean),
         planUses: collectPhaseLineItems(row, 'planUses'),
         planSources: autoPhaseSourcesForUses(phaseUsesTotal(row), currentPhaseFinancialNumbers(row)),
