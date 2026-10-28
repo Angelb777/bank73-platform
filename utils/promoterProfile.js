@@ -1,4 +1,28 @@
 const { PROMOTER_TYPES = [] } = require('../models/User');
+const { randomUUID } = require('crypto');
+
+function sanitizeCompanyShareholders(items = []) {
+  const shareholders = (Array.isArray(items) ? items : []).slice(0, 50).map(item => ({
+    name: String(item?.name || '').trim().slice(0, 180),
+    cedula: String(item?.cedula || item?.identification || '').trim().slice(0, 80),
+    percentage: Number(item?.percentage ?? item?.porcentaje)
+  })).filter(item => item.name || item.cedula || Number.isFinite(item.percentage));
+
+  if (shareholders.some(item => !item.name || !item.cedula || !Number.isFinite(item.percentage) || item.percentage <= 0 || item.percentage > 100)) {
+    const err = new Error('Cada accionista debe tener nombre, cédula y un porcentaje mayor que 0 y menor o igual que 100.');
+    err.status = 400;
+    throw err;
+  }
+  if (shareholders.length) {
+    const total = shareholders.reduce((sum, item) => sum + item.percentage, 0);
+    if (Math.abs(total - 100) > 0.001) {
+      const err = new Error('Los porcentajes de los accionistas de cada sociedad deben sumar 100%.');
+      err.status = 400;
+      throw err;
+    }
+  }
+  return shareholders;
+}
 
 function sanitizePromoterProfile(input = {}, options = {}) {
   const { requireAny = false, strictNumbers = false } = options;
@@ -47,14 +71,17 @@ function sanitizePromoterProfile(input = {}, options = {}) {
 
   const currentYear = new Date().getFullYear();
   let companies = (Array.isArray(input.companies) ? input.companies : []).map(company => ({
+    companyId: String(company?.companyId || company?._id || randomUUID()).trim().slice(0, 80),
     name: String(company?.name ?? company?.companyName ?? '').trim().slice(0, 180),
     incorporationYear: toNum(company?.incorporationYear ?? company?.year),
+    ruc: String(company?.ruc ?? company?.RUC ?? '').trim().slice(0, 120),
+    shareholders: sanitizeCompanyShareholders(company?.shareholders ?? company?.accionistas),
     isPrimary: !!company?.isPrimary
   })).filter(company => company.name || company.incorporationYear !== null);
   const legacyName = String(input.companyName ?? input.sociedad ?? input.nombreSociedad ?? '').trim().slice(0, 180);
   const legacyYear = toNum(input.incorporationYear ?? input.anioConstitucion);
   if (!companies.length && (legacyName || legacyYear !== null)) {
-    companies = [{ name: legacyName, incorporationYear: legacyYear, isPrimary: true }];
+    companies = [{ companyId: randomUUID(), name: legacyName, incorporationYear: legacyYear, ruc: '', shareholders: [], isPrimary: true }];
   }
   if (companies.some(company => !company.name || !Number.isInteger(company.incorporationYear) || company.incorporationYear < 1800 || company.incorporationYear > currentYear)) {
     const err = new Error(`Cada sociedad debe tener nombre y un año de constitución entre 1800 y ${currentYear}.`);

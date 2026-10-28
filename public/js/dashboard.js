@@ -1953,7 +1953,11 @@ function shortProjectDescription(value, maxLength = 150) {
       assessment = JSON.parse(document.getElementById('editProjectModal')?.dataset.legalAssessment || '{}');
     } catch (_) {}
     return {
+      promoterEntryMode: document.getElementById('editProjectModal')?.dataset.promoterEntryMode || 'manual',
+      promoterCompanyId: document.getElementById('editProjectModal')?.dataset.promoterCompanyId || '',
+      promoterName: document.getElementById('ep-ld-promoterName')?.value?.trim() || '',
       promoterLegalName: document.getElementById('ep-ld-promoterLegalName')?.value?.trim() || '',
+      promoterRuc: document.getElementById('ep-ld-promoterRuc')?.value?.trim() || '',
       interimBank: document.getElementById('ep-ld-interimBank')?.value?.trim() || '',
       trustApplies: document.getElementById('ep-ld-trustApplies')?.value === 'true',
       trustName: document.getElementById('ep-ld-trustName')?.value?.trim() || '',
@@ -2275,7 +2279,9 @@ function shortProjectDescription(value, maxLength = 150) {
     <details style="margin-top:14px;">
       <summary class="small muted">Datos legales</summary>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
+        <label class="small muted">Promotor<input id="ep-ld-promoterName" class="input"></label>
         <label class="small muted">Sociedad promotora<input id="ep-ld-promoterLegalName" class="input"></label>
+        <label class="small muted">RUC<input id="ep-ld-promoterRuc" class="input"></label>
         <input id="ep-ld-interimBank" type="hidden">
         <label class="small muted">Fideicomiso<select id="ep-ld-trustApplies" class="input"><option value="false">No aplica</option><option value="true">Aplica</option></select></label>
         <label id="ep-ld-trustNameLabel" class="small muted" hidden>Nombre fideicomiso<input id="ep-ld-trustName" class="input"></label>
@@ -2387,30 +2393,65 @@ function shortProjectDescription(value, maxLength = 150) {
     rows.forEach((company, index) => {
       const row = document.createElement('div');
       row.dataset.companyRow = '';
-      row.style.cssText = 'display:grid;grid-template-columns:minmax(220px,1fr) 145px auto auto;gap:8px;align-items:end;';
+      row.dataset.companyId = company.companyId || company._id || '';
+      row.style.cssText = 'display:block;border:1px solid #334155;border-radius:10px;padding:10px;background:#18212b;';
       row.innerHTML = `
-        <label>Nombre<input class="input" data-company-name type="text"></label>
-        <label>Año de constitución<input class="input" data-company-year type="number" min="1800" max="${new Date().getFullYear()}" step="1"></label>
-        <label style="display:flex;align-items:center;gap:5px;min-height:38px;"><input data-company-primary type="radio" name="admin-primary-company"> Principal</label>
-        <button class="btn small" data-remove-company type="button">Eliminar</button>`;
+        <div style="display:grid;grid-template-columns:minmax(190px,1fr) 135px minmax(180px,1fr) auto auto;gap:8px;align-items:end;">
+          <label>Nombre<input class="input" data-company-name type="text"></label>
+          <label>Año de constitución<input class="input" data-company-year type="number" min="1800" max="${new Date().getFullYear()}" step="1"></label>
+          <label>RUC<input class="input" data-company-ruc type="text"></label>
+          <label style="display:flex;align-items:center;gap:5px;min-height:38px;"><input data-company-primary type="radio" name="admin-primary-company"> Principal</label>
+          <button class="btn small" data-remove-company type="button">Eliminar</button>
+        </div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #334155;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><strong class="small">Junta accionarial</strong><button class="btn small" data-add-company-shareholder type="button">+ Accionista</button></div>
+          <div data-company-shareholders></div>
+        </div>`;
       row.querySelector('[data-company-name]').value = company.name || '';
       row.querySelector('[data-company-year]').value = company.incorporationYear ?? '';
+      row.querySelector('[data-company-ruc]').value = company.ruc || '';
       row.querySelector('[data-company-primary]').checked = !!company.isPrimary || (!rows.some(item => item.isPrimary) && index === 0);
+      row.querySelector('[data-company-shareholders]').innerHTML = (company.shareholders || []).map(adminCompanyShareholderRow).join('');
       container.appendChild(row);
     });
+  }
+
+  function adminCompanyShareholderRow(item = {}) {
+    return `<div data-company-shareholder-row style="display:grid;grid-template-columns:1fr 1fr 120px auto;gap:8px;align-items:end;margin-top:8px;">
+      <label>Nombre<input class="input" data-company-shareholder="name" value="${escapeHtml(item.name || '')}"></label>
+      <label>Cédula<input class="input" data-company-shareholder="cedula" value="${escapeHtml(item.cedula || '')}"></label>
+      <label>Porcentaje<input class="input" data-company-shareholder="percentage" type="number" min="0.01" max="100" step="any" value="${item.percentage ?? ''}"></label>
+      <button class="btn small" data-remove-company-shareholder type="button">Quitar</button>
+    </div>`;
   }
 
   function readAdminPromoterCompanies(validate = true) {
     const currentYear = new Date().getFullYear();
     const companies = Array.from(document.querySelectorAll('#pp-companies [data-company-row]')).map(row => ({
+      companyId: row.dataset.companyId || '',
       name: row.querySelector('[data-company-name]')?.value.trim() || '',
       incorporationYear: parsePromoterNumber(row.querySelector('[data-company-year]')?.value),
+      ruc: row.querySelector('[data-company-ruc]')?.value.trim() || '',
+      shareholders: Array.from(row.querySelectorAll('[data-company-shareholder-row]')).map(shareholder => ({
+        name: shareholder.querySelector('[data-company-shareholder="name"]')?.value.trim() || '',
+        cedula: shareholder.querySelector('[data-company-shareholder="cedula"]')?.value.trim() || '',
+        percentage: parsePromoterNumber(shareholder.querySelector('[data-company-shareholder="percentage"]')?.value)
+      })),
       isPrimary: !!row.querySelector('[data-company-primary]')?.checked
     })).filter(company => company.name || company.incorporationYear !== null);
     if (validate && companies.some(company => !company.name || !Number.isInteger(company.incorporationYear) || company.incorporationYear < 1800 || company.incorporationYear > currentYear)) {
       throw new Error(`Cada sociedad debe tener nombre y un año de constitución entre 1800 y ${currentYear}.`);
     }
     if (companies.length && !companies.some(company => company.isPrimary)) companies[0].isPrimary = true;
+    if (validate) companies.forEach(company => {
+      if (!company.ruc) throw new Error(`Indica el RUC de ${company.name}.`);
+      if (!company.shareholders.length) throw new Error(`Añade al menos un accionista a ${company.name}.`);
+      if (company.shareholders.some(item => !item.name || !item.cedula || !(item.percentage > 0) || item.percentage > 100)) {
+        throw new Error(`Completa nombre, cédula y porcentaje de todos los accionistas de ${company.name}.`);
+      }
+      const total = company.shareholders.reduce((sum, item) => sum + item.percentage, 0);
+      if (Math.abs(total - 100) > 0.001) throw new Error(`Los porcentajes de ${company.name} deben sumar 100%.`);
+    });
     return companies;
   }
 
@@ -2545,9 +2586,19 @@ function shortProjectDescription(value, maxLength = 150) {
     document.getElementById('promoterProfileCancel').addEventListener('click', close);
     document.getElementById('pp-addCompany').addEventListener('click', () => {
       const companies = readAdminPromoterCompanies(false);
-      renderAdminPromoterCompanies([...companies, { name: '', incorporationYear: '', isPrimary: companies.length === 0 }]);
+      renderAdminPromoterCompanies([...companies, { name: '', incorporationYear: '', ruc: '', shareholders: [], isPrimary: companies.length === 0 }]);
     });
     document.getElementById('pp-companies').addEventListener('click', event => {
+      const addShareholder = event.target.closest('[data-add-company-shareholder]');
+      if (addShareholder) {
+        addShareholder.closest('[data-company-row]')?.querySelector('[data-company-shareholders]')?.insertAdjacentHTML('beforeend', adminCompanyShareholderRow());
+        return;
+      }
+      const removeShareholder = event.target.closest('[data-remove-company-shareholder]');
+      if (removeShareholder) {
+        removeShareholder.closest('[data-company-shareholder-row]')?.remove();
+        return;
+      }
       const removeButton = event.target.closest('[data-remove-company]');
       if (!removeButton) return;
       const container = document.getElementById('pp-companies');
@@ -3512,7 +3563,11 @@ if (pEdit) {
     });
     const legal = proj.legalData || {};
     modal.dataset.legalAssessment = JSON.stringify(legal.assessment || {});
+    modal.dataset.promoterEntryMode = legal.promoterEntryMode || (proj.assignedPromoters?.length ? 'registered' : 'manual');
+    modal.dataset.promoterCompanyId = legal.promoterCompanyId || '';
+    document.getElementById('ep-ld-promoterName').value = legal.promoterName || '';
     document.getElementById('ep-ld-promoterLegalName').value = legal.promoterLegalName || '';
+    document.getElementById('ep-ld-promoterRuc').value = legal.promoterRuc || '';
     document.getElementById('ep-ld-interimBank').value = legal.interimBank || '';
     document.getElementById('ep-ld-trustApplies').value = legal.trustApplies ? 'true' : 'false';
     document.getElementById('ep-ld-trustName').value = legal.trustName || '';

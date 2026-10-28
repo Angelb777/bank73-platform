@@ -120,7 +120,11 @@ const projectSchema = new Schema({
   },
 
   legalData: {
+    promoterEntryMode: { type: String, enum: ['registered', 'manual'], default: 'manual' },
+    promoterCompanyId: { type: String, trim: true, default: '' },
+    promoterName: { type: String, trim: true, default: '' },
     promoterLegalName: { type: String, trim: true, default: '' },
+    promoterRuc: { type: String, trim: true, default: '' },
     boardMembers: {
       type: [{
         name: { type: String, trim: true, default: '' },

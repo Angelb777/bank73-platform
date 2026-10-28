@@ -25,6 +25,17 @@ test('la creación explica que los datos financieros son el plan estimado', () =
   assert.match(html, /Dato Único seguirá siendo la única fuente/);
 });
 
+test('las pestañas del alta avisan de campos pendientes sin bloquear la creación', () => {
+  assert.match(html, /No es necesario rellenar todos los campos/);
+  assert.match(html, /create-step-status/);
+  assert.match(html, /create-step-tab\.is-incomplete/);
+  assert.match(html, /create-step-tab\.is-complete/);
+  assert.match(script, /function updateCreateStepCompletion\(\)/);
+  assert.match(script, /createCompletionFieldFilled/);
+  assert.match(script, /campo\$\{pending === 1 \? '' : 's'\} pendiente/);
+  assert.doesNotMatch(script, /if \(!updateCreateStepCompletion\(\)\) return/);
+});
+
 test('las pólizas pueden seleccionar referencias procedentes de Dato Único', () => {
   assert.match(script, /createDatoUnicoPreviewState\?\.units/);
   assert.match(script, /unit\.reference \|\| unit\.code/);
@@ -43,8 +54,14 @@ test('Datos técnicos permite descargar la plantilla general antes de crear el p
 });
 
 test('cada fase del alta recoge las fechas previstas que usa el resumen financiero', () => {
+  const planPanel = script.indexOf('data-create-phase-panel="plan"');
+  const realPanel = script.indexOf('data-create-phase-panel="real"');
+  const plannedStart = script.indexOf('data-create-phase="startDate"');
+  const plannedEnd = script.indexOf('data-create-phase="endDate"');
   assert.match(script, /Inicio previsto<\/span><input class="input" data-create-phase="startDate" type="date"/);
   assert.match(script, /Fin previsto<\/span><input class="input" data-create-phase="endDate" type="date"/);
+  assert.ok(planPanel < plannedStart && plannedStart < realPanel);
+  assert.ok(planPanel < plannedEnd && plannedEnd < realPanel);
   assert.match(script, /startDate: row\.querySelector\('\[data-create-phase="startDate"\]'\)/);
   assert.match(script, /endDate: row\.querySelector\('\[data-create-phase="endDate"\]'\)/);
   assert.doesNotMatch(script, /Fecha de carta<input data-create-phase-condition="letterDate"/);
@@ -58,6 +75,9 @@ test('el alta financiera comparte el flujo Estimación y Realidad de Finanzas', 
   assert.match(script, /data-copy-create-real-to-plan/);
   assert.match(script, /data-create-phase="actualStartDate"/);
   assert.match(script, /data-create-phase="actualEndDate"/);
+  assert.match(script, /Fin real \(opcional\)/);
+  assert.match(script, /Sigue en curso/);
+  assert.match(script, /transcurrido/);
   assert.match(script, /fundingSources: Array\.from\(useRow\.querySelectorAll\('\[data-create-use-source\]'\)\)/);
   assert.doesNotMatch(script, /data-create-real-enabled/);
   assert.doesNotMatch(script, /El proyecto ya ha comenzado/);
@@ -72,6 +92,7 @@ test('las líneas viven en Realidad y pueden generarse desde la parte Banco de l
   assert.doesNotMatch(script, /data-create-phase-financing="interestRate"/);
   assert.doesNotMatch(script, /data-create-phase-financing="paymentMethod"/);
   assert.doesNotMatch(script, /data-create-phase-financing="commission"/);
+  assert.doesNotMatch(script, /data-create-phase-financing="financierName"/);
 });
 
 test('los planos del alta se guardan en la categoría que consume Técnico', () => {

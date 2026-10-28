@@ -76,8 +76,18 @@ const PromoterProfileSchema = new mongoose.Schema(
     companyName: { type: String, trim: true, default: '' },
     incorporationYear: { type: Number, min: 1800, max: 9999, default: null },
     companies: [{
+      companyId: { type: String, trim: true, required: true },
       name: { type: String, trim: true, required: true },
       incorporationYear: { type: Number, min: 1800, max: 9999, required: true },
+      ruc: { type: String, trim: true, default: '' },
+      shareholders: {
+        type: [{
+          name: { type: String, trim: true, default: '' },
+          cedula: { type: String, trim: true, default: '' },
+          percentage: { type: Number, min: 0, max: 100, default: 0 }
+        }],
+        default: []
+      },
       isPrimary: { type: Boolean, default: false }
     }],
     promoterType: { type: String, enum: PROMOTER_TYPES, default: 'No definido' },
@@ -143,9 +153,19 @@ function promoterProfileCompletion(profile = {}) {
     : null;
   const companyName = primaryCompany?.name || profile.companyName;
   const incorporationYear = primaryCompany?.incorporationYear ?? profile.incorporationYear;
+  const companies = Array.isArray(profile.companies) ? profile.companies : [];
+  const companiesHaveRuc = companies.length > 0 && companies.every(company => usefulText(company?.ruc));
+  const companiesHaveValidShareholders = companies.length > 0 && companies.every(company => {
+    const shareholders = Array.isArray(company?.shareholders) ? company.shareholders : [];
+    const complete = shareholders.length > 0 && shareholders.every(item => usefulText(item?.name) && usefulText(item?.cedula) && Number(item?.percentage) > 0 && Number(item?.percentage) <= 100);
+    const total = shareholders.reduce((sum, item) => sum + Number(item?.percentage || 0), 0);
+    return complete && Math.abs(total - 100) <= 0.001;
+  });
   const checks = [
     usefulText(companyName),
     validYear(incorporationYear),
+    companiesHaveRuc,
+    companiesHaveValidShareholders,
     profile.promoterType && profile.promoterType !== 'No definido',
     validNumber(profile.yearsExperience),
     validNumber(profile.deliveredProjects),

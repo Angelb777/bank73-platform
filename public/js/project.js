@@ -3273,7 +3273,9 @@ if (!isPeriodView) try {
   const legalData = project.legalData || {};
   document.getElementById('summaryLegalDataBox')?.remove();
   const legalRows = [
+    ['Promotor', legalData.promoterName],
     ['Sociedad promotora', legalData.promoterLegalName || project.legalCompanyName || project.sociedad],
+    ['RUC', legalData.promoterRuc],
     ['Fideicomiso', legalData.trustApplies ? 'Aplica' : 'No aplica'],
     ['Nombre del fideicomiso', legalData.trustName],
     ['Representantes legales', (legalData.legalRepresentatives || legalData.representantesLegales || []).map(x => x.name || x.nombre || x).filter(Boolean).join(', ')]

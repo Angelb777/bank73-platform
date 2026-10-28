@@ -21,9 +21,11 @@ const { normalizePhaseRequirements } = require('../services/phaseRequirements');
 const { dateInReportPeriod, anyDateInReportPeriod, buildPeriodActivity } = require('../services/reportActivity');
 const { buildFinanceControlSummary } = require('../services/financeReportContext');
 const { syncUnitCommercialState } = require('../services/unitCommercialState');
+const { resolvedExpiryAlertKeys, isExpiryAlertResolved } = require('../services/expiryAlerts');
 const { readAuthorizedProjectImage } = require('../services/summaryPhotoResolver');
 const { buildDatoUnicoExportRow } = require('../services/datoUnicoExport');
 const { buildExecutiveSummaryWorkbook, numberValue } = require('../services/executiveSummaryExcel');
+const { syncPromoterCompaniesToProjects } = require('../services/promoterCompanySync');
 const {
   buildExecutiveMovementRows,
   buildExecutiveFinancialChartGroups,
@@ -167,7 +169,11 @@ function sanitizeLegalData(raw = {}) {
     .filter(item => Object.values(item).some(value => String(value ?? '').trim() !== '' && Number(value || 0) !== 0));
 
   return {
+    promoterEntryMode: raw.promoterEntryMode === 'registered' ? 'registered' : 'manual',
+    promoterCompanyId: String(raw.promoterCompanyId || '').trim().slice(0, 80),
+    promoterName: String(raw.promoterName || '').trim().slice(0, 180),
     promoterLegalName: String(raw.promoterLegalName || raw.legalCompanyName || raw.sociedad || raw.companyName || raw.promoterSociety || raw.debtorLegalName || '').trim(),
+    promoterRuc: String(raw.promoterRuc || raw.ruc || raw.RUC || '').trim().slice(0, 120),
     boardMembers: cleanRows(raw.boardMembers, item => ({
       name: String(item?.name || '').trim(),
       cedula: String(item?.cedula || '').trim(),
@@ -183,6 +189,72 @@ function sanitizeLegalData(raw = {}) {
     trustName: raw.trustApplies ? String(raw.trustName || raw.fideicomiso || '').trim() : '',
     assessment: Object.fromEntries(['landOwned','purchaseOptionOrPromise','titleVerified','relevantEncumbrances','zoningApproved','licensesRequested','licensesApproved','legalOpinionAttached'].map(key => [key, raw.assessment?.[key] == null ? null : raw.assessment[key] === true]))
   };
+}
+
+function companyReference(company = {}) {
+  return String(company?.companyId || company?._id || '').trim();
+}
+
+function findPromoterCompany(profile = {}, { companyId = '', name = '' } = {}) {
+  const companies = Array.isArray(profile?.companies) ? profile.companies : [];
+  const wantedId = String(companyId || '').trim();
+  if (wantedId) {
+    const byId = companies.find(company => companyReference(company) === wantedId);
+    if (byId) return byId;
+  }
+  const normalize = value => String(value || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const wantedName = normalize(name);
+  return wantedName ? companies.find(company => normalize(company?.name) === wantedName) || null : null;
+}
+
+function registeredCompanyLegalData(legalData = {}, promoter = {}, company = {}) {
+  return {
+    ...legalData,
+    promoterEntryMode: 'registered',
+    promoterCompanyId: companyReference(company),
+    promoterName: promoter?.name || promoter?.email || legalData.promoterName || '',
+    promoterLegalName: String(company?.name || '').trim(),
+    promoterRuc: String(company?.ruc || '').trim(),
+    shareholders: (Array.isArray(company?.shareholders) ? company.shareholders : []).map(item => ({
+      name: String(item?.name || '').trim(),
+      cedula: String(item?.cedula || '').trim(),
+      percentage: Number(item?.percentage) || 0
+    }))
+  };
+}
+
+function assertCompleteShareholders(shareholders = [], { required = false } = {}) {
+  if (required && !shareholders.length) {
+    const err = new Error('Debes registrar al menos un accionista.');
+    err.status = 400;
+    throw err;
+  }
+  if (shareholders.some(item => !item.name || !item.cedula || !(Number(item.percentage) > 0) || Number(item.percentage) > 100)) {
+    const err = new Error('Cada accionista debe tener nombre, cédula y un porcentaje mayor que 0 y menor o igual que 100.');
+    err.status = 400;
+    throw err;
+  }
+  if (shareholders.length) {
+    const total = shareholders.reduce((sum, item) => sum + Number(item.percentage || 0), 0);
+    if (Math.abs(total - 100) > 0.001) {
+      const err = new Error('Los porcentajes de los accionistas deben sumar 100%.');
+      err.status = 400;
+      throw err;
+    }
+  }
+}
+
+async function hydrateRegisteredProjectLegalData(project, tenantKey) {
+  if (!project?.legalData || project.legalData.promoterEntryMode !== 'registered') return project;
+  const promoterId = project.assignedPromoters?.[0];
+  if (!promoterId) return project;
+  const promoter = await User.findOne({ _id: promoterId, tenantKey }).select('name email promoterProfile').lean();
+  const company = findPromoterCompany(promoter?.promoterProfile, {
+    companyId: project.legalData.promoterCompanyId,
+    name: project.legalData.promoterLegalName
+  });
+  if (company) project.legalData = registeredCompanyLegalData(project.legalData, promoter, company);
+  return project;
 }
 
 function sanitizeTechnicalData(raw = {}) {
@@ -1716,17 +1788,27 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
 
     const selectedPromoterId = body.assignedPromoters?.[0];
     if (selectedPromoterId) {
-      const selectedPromoter = await User.findOne({ _id: selectedPromoterId, tenantKey }).select('promoterProfile').lean();
+      const selectedPromoter = await User.findOne({ _id: selectedPromoterId, tenantKey }).select('name email promoterProfile').lean();
       const profile = selectedPromoter?.promoterProfile || {};
-      const registeredCompanies = (Array.isArray(profile.companies) ? profile.companies : [])
-        .map(company => String(company?.name || '').trim())
-        .filter(Boolean);
-      if (!registeredCompanies.length && String(profile.companyName || '').trim()) registeredCompanies.push(String(profile.companyName).trim());
-      const normalizeCompany = value => String(value || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-      const selectedCompany = normalizeCompany(body.legalData?.promoterLegalName);
-      if (registeredCompanies.length && !registeredCompanies.some(name => normalizeCompany(name) === selectedCompany)) {
+      const selectedCompany = findPromoterCompany(profile, {
+        companyId: body.legalData?.promoterCompanyId,
+        name: body.legalData?.promoterLegalName
+      });
+      if (!selectedCompany) {
         return res.status(400).json({ error: 'La sociedad promotora debe ser una de las sociedades registradas en el perfil del promotor' });
       }
+      if (!String(selectedCompany.ruc || '').trim()) {
+        return res.status(400).json({ error: 'La sociedad seleccionada no tiene RUC. Complétalo primero en el perfil del promotor.' });
+      }
+      assertCompleteShareholders(selectedCompany.shareholders || [], { required: true });
+      body.legalData = registeredCompanyLegalData(body.legalData, selectedPromoter, selectedCompany);
+    } else {
+      body.legalData.promoterEntryMode = 'manual';
+      body.legalData.promoterCompanyId = '';
+      if (!body.legalData.promoterName || !body.legalData.promoterLegalName || !body.legalData.promoterRuc) {
+        return res.status(400).json({ error: 'En el modo manual debes indicar promotor, sociedad promotora y RUC.' });
+      }
+      assertCompleteShareholders(body.legalData.shareholders, { required: true });
     }
 
     // Si envías más asignaciones en el body y existen esos campos en Project, las dejamos pasar:
@@ -1816,6 +1898,7 @@ router.get('/:id', requireProjectAccess(), async (req, res) => {
 
     const p = await Project.findOne({ _id: id, tenantKey }).lean();
     if (!p) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    await hydrateRegisteredProjectLegalData(p, tenantKey);
     p.tipoProyecto = p.projectType || '';
 
     // Solo el admin puede abrir proyectos pendientes.
@@ -2332,7 +2415,47 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
       Object.assign(payload, sanitizeProjectLocation(req.body));
     }
     if (req.body.legalData && typeof req.body.legalData === 'object') {
-      payload.legalData = sanitizeLegalData(req.body.legalData);
+      const existingProject = await Project.findOne({ _id: id, tenantKey }).select('assignedPromoters legalData').lean();
+      if (!existingProject) return res.status(404).json({ error: 'Proyecto no encontrado' });
+      const requestedLegalData = sanitizeLegalData(req.body.legalData);
+      const remainsRegistered = existingProject.legalData?.promoterEntryMode === 'registered' && req.body.legalData.promoterEntryMode !== 'manual';
+      if (remainsRegistered) {
+        const promoterId = existingProject.assignedPromoters?.[0];
+        const promoter = promoterId
+          ? await User.findOne({ _id: promoterId, tenantKey }).select('name email promoterProfile')
+          : null;
+        const company = findPromoterCompany(promoter?.promoterProfile, {
+          companyId: existingProject.legalData?.promoterCompanyId,
+          name: existingProject.legalData?.promoterLegalName
+        });
+        if (!promoter || !company) {
+          return res.status(400).json({ error: 'No se pudo localizar la sociedad vinculada al proyecto.' });
+        }
+        assertCompleteShareholders(requestedLegalData.shareholders, { required: true });
+        (promoter.promoterProfile?.companies || []).forEach(item => {
+          item.companyId = companyReference(item) || new mongoose.Types.ObjectId().toString();
+        });
+        if (requestedLegalData.promoterName) promoter.name = requestedLegalData.promoterName;
+        company.name = requestedLegalData.promoterLegalName;
+        company.ruc = requestedLegalData.promoterRuc;
+        company.shareholders = requestedLegalData.shareholders;
+        if (!company.name || !company.ruc) {
+          return res.status(400).json({ error: 'La sociedad y su RUC son obligatorios.' });
+        }
+        const primaryCompany = promoter.promoterProfile?.companies?.find(item => item?.isPrimary) || promoter.promoterProfile?.companies?.[0];
+        if (primaryCompany && String(primaryCompany._id) === String(company._id)) {
+          promoter.promoterProfile.companyName = company.name;
+        }
+        await promoter.save();
+        await syncPromoterCompaniesToProjects(promoter);
+        payload.legalData = registeredCompanyLegalData(requestedLegalData, promoter, company);
+      } else {
+        if (!requestedLegalData.promoterName || !requestedLegalData.promoterLegalName || !requestedLegalData.promoterRuc) {
+          return res.status(400).json({ error: 'Promotor, sociedad promotora y RUC son obligatorios.' });
+        }
+        assertCompleteShareholders(requestedLegalData.shareholders, { required: true });
+        payload.legalData = requestedLegalData;
+      }
     }
     if (req.body.technicalData && typeof req.body.technicalData === 'object') {
       payload.technicalData = sanitizeTechnicalData(req.body.technicalData);
@@ -2656,6 +2779,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
 
     const project = await Project.findOne({ _id: id, tenantKey }).lean();
     if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    await hydrateRegisteredProjectLegalData(project, tenantKey);
 
     const promoterIds = Array.isArray(project.assignedPromoters) ? project.assignedPromoters : [];
     const projectPromoters = promoterIds.length
@@ -3979,6 +4103,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     // Alertas
     // =========================
     const expiries = [];
+    const resolvedExpiryKeys = resolvedExpiryAlertKeys(project);
 
     for (const v of soldVentas) {
       if (!hasCppSignal(v)) continue;
@@ -3986,6 +4111,8 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       const d = getCppDueDate(v);
       const dt = toTime(d);
       if (!dt) continue;
+      const sourceId = String(v?._id || v?.unitId || '');
+      if (isExpiryAlertResolved(resolvedExpiryKeys, 'cpp', sourceId, d)) continue;
 
       const diff = dt - now;
       if (diff <= d90) {
@@ -4018,6 +4145,8 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
 
     for (const policy of (project.technicalData?.insurancePolicies || [])) {
       if (!policy.expiryDate) continue;
+      const sourceId = String(policy._id || policy.policyNumber || 'policy');
+      if (isExpiryAlertResolved(resolvedExpiryKeys, 'insurance_policy', sourceId, policy.expiryDate)) continue;
       const diff = new Date(policy.expiryDate).getTime() - now;
       if (diff <= d30) expiries.push({
         type: 'Póliza',
@@ -4054,6 +4183,8 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       for (const entry of entries) {
         if (entry?.entryType === 'disbursement' && entry?.paymentStatus === 'pending') continue;
         if (!entry?.maturityDate || toNum(entry?.disbursementAmount) <= 0) continue;
+        const sourceId = String(entry?._id || line?._id || '');
+        if (isExpiryAlertResolved(resolvedExpiryKeys, 'credit_line', sourceId, entry.maturityDate)) continue;
         const dueTime = new Date(entry.maturityDate).getTime();
         if (!Number.isFinite(dueTime)) continue;
         const diff = dueTime - now;
@@ -4154,7 +4285,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       projectType: project.projectType || '',
       tipoProyecto: project.projectType || '',
       promoters: projectPromoters.map(promoterPublicShape).filter(Boolean),
-      promoterName: primaryPromoter?.name || primaryPromoter?.email || '',
+      promoterName: primaryPromoter?.name || primaryPromoter?.email || project.legalData?.promoterName || '',
       promoterCompanyName: project.legalData?.promoterLegalName || primaryPromoter?.promoterProfile?.companyName || '',
       promoterCategory: primaryPromoter?.promoterCategory || 'No definido',
       promoterType: primaryPromoter?.promoterProfile?.promoterType || 'No definido',
@@ -4482,6 +4613,7 @@ if (isSoldLikeStatus(st)) U.sold++;
     const d30 = 30 * 24 * 3600 * 1000;
 
     const expiries = [];
+    const resolvedExpiryKeys = resolvedExpiryAlertKeys(project);
 
     for (const v of (ventas || [])) {
       if (!isSoldLikeStatus(v.__unitStatus)) continue;
@@ -4490,6 +4622,8 @@ if (isSoldLikeStatus(st)) U.sold++;
       const d = getCppDueDate(v);
       const t = toTime(d);
       if (!t) continue;
+      const sourceId = String(v?._id || v?.unitId || '');
+      if (isExpiryAlertResolved(resolvedExpiryKeys, 'cpp', sourceId, d)) continue;
 
       if ((t - now) <= d90) {
         expiries.push({
@@ -4520,6 +4654,8 @@ if (isSoldLikeStatus(st)) U.sold++;
 
     for (const policy of (project.technicalData?.insurancePolicies || [])) {
       if (!policy.expiryDate) continue;
+      const sourceId = String(policy._id || policy.policyNumber || 'policy');
+      if (isExpiryAlertResolved(resolvedExpiryKeys, 'insurance_policy', sourceId, policy.expiryDate)) continue;
       const diff = new Date(policy.expiryDate).getTime() - now;
       if (diff <= d30) expiries.push({
         type: 'Póliza',

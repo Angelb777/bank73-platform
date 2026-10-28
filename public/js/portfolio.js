@@ -28,6 +28,7 @@
   const promoterMap = new Map();
   let promoterOptionsLoaded = false;
   const createPromoterProfiles = new Map();
+  const createPromoterCompanies = new Map();
   let createPromoterProfilesLoaded = false;
 
   // Auth / rol
@@ -133,29 +134,65 @@
     rows.forEach((company, index) => {
       const row = document.createElement('div');
       row.className = 'profile-company-row';
+      row.dataset.companyId = company.companyId || company._id || '';
       row.innerHTML = `
-        <label><span>Sociedad ${index + 1} · Nombre</span><input data-company-name type="text" placeholder="Razón social"></label>
-        <label><span>Año de constitución</span><input data-company-year type="number" min="1800" max="${new Date().getFullYear()}" step="1" placeholder="Ej: 2012"></label>
-        <label class="profile-company-primary" title="Usar esta sociedad por defecto"><input data-company-primary type="radio" name="pp-primary-company"> Sociedad principal</label>
-        <button class="btn ghost profile-company-remove" data-remove-company type="button" title="Eliminar sociedad" aria-label="Eliminar sociedad">×</button>`;
+        <div class="profile-company-fields">
+          <label><span>Sociedad ${index + 1} · Nombre</span><input data-company-name type="text" placeholder="Razón social"></label>
+          <label><span>Año de constitución</span><input data-company-year type="number" min="1800" max="${new Date().getFullYear()}" step="1" placeholder="Ej: 2012"></label>
+          <label><span>RUC</span><input data-company-ruc type="text" placeholder="RUC de la sociedad"></label>
+          <label class="profile-company-primary" title="Usar esta sociedad por defecto"><input data-company-primary type="radio" name="pp-primary-company"> Sociedad principal</label>
+          <button class="btn ghost profile-company-remove" data-remove-company type="button" title="Eliminar sociedad" aria-label="Eliminar sociedad">×</button>
+        </div>
+        <div class="profile-company-shareholders">
+          <div class="profile-company-shareholders-head"><strong>Junta accionarial</strong><button class="btn ghost" data-add-company-shareholder type="button">+ Añadir accionista</button></div>
+          <div data-company-shareholders></div>
+        </div>`;
       row.querySelector('[data-company-name]').value = company.name || '';
       row.querySelector('[data-company-year]').value = company.incorporationYear ?? '';
+      row.querySelector('[data-company-ruc]').value = company.ruc || '';
       row.querySelector('[data-company-primary]').checked = !!company.isPrimary || (!rows.some(item => item.isPrimary) && index === 0);
+      const shareholders = Array.isArray(company.shareholders) ? company.shareholders : [];
+      row.querySelector('[data-company-shareholders]').innerHTML = shareholders.map(profileCompanyShareholderRow).join('');
       container.appendChild(row);
     });
+  }
+
+  function profileCompanyShareholderRow(item = {}) {
+    return `<div class="profile-shareholder-row" data-company-shareholder-row>
+      <label>Nombre<input data-company-shareholder="name" value="${escapeHtml(item.name || '')}"></label>
+      <label>Cédula<input data-company-shareholder="cedula" value="${escapeHtml(item.cedula || '')}"></label>
+      <label>Porcentaje<input data-company-shareholder="percentage" type="number" min="0.01" max="100" step="any" value="${item.percentage ?? ''}"></label>
+      <button class="btn ghost profile-company-remove" data-remove-company-shareholder type="button" aria-label="Eliminar accionista">×</button>
+    </div>`;
   }
 
   function collectProfileCompanies() {
     const currentYear = new Date().getFullYear();
     const companies = Array.from(document.querySelectorAll('#pp-companies .profile-company-row')).map(row => ({
+      companyId: row.dataset.companyId || '',
       name: row.querySelector('[data-company-name]')?.value.trim() || '',
       incorporationYear: numberOrNull(row.querySelector('[data-company-year]')?.value),
+      ruc: row.querySelector('[data-company-ruc]')?.value.trim() || '',
+      shareholders: Array.from(row.querySelectorAll('[data-company-shareholder-row]')).map(shareholder => ({
+        name: shareholder.querySelector('[data-company-shareholder="name"]')?.value.trim() || '',
+        cedula: shareholder.querySelector('[data-company-shareholder="cedula"]')?.value.trim() || '',
+        percentage: numberOrNull(shareholder.querySelector('[data-company-shareholder="percentage"]')?.value)
+      })),
       isPrimary: !!row.querySelector('[data-company-primary]')?.checked
     })).filter(company => company.name || company.incorporationYear !== null);
     if (companies.some(company => !company.name || !Number.isInteger(company.incorporationYear) || company.incorporationYear < 1800 || company.incorporationYear > currentYear)) {
       throw new Error(`Cada sociedad debe tener nombre y un año de constitución entre 1800 y ${currentYear}.`);
     }
     if (companies.length && !companies.some(company => company.isPrimary)) companies[0].isPrimary = true;
+    for (const company of companies) {
+      if (!company.ruc) throw new Error(`Indica el RUC de ${company.name}.`);
+      if (!company.shareholders.length) throw new Error(`Añade al menos un accionista a ${company.name}.`);
+      if (company.shareholders.some(item => !item.name || !item.cedula || !(item.percentage > 0) || item.percentage > 100)) {
+        throw new Error(`Completa nombre, cédula y porcentaje de todos los accionistas de ${company.name}.`);
+      }
+      const total = company.shareholders.reduce((sum, item) => sum + item.percentage, 0);
+      if (Math.abs(total - 100) > 0.001) throw new Error(`Los porcentajes de ${company.name} deben sumar 100%.`);
+    }
     return companies;
   }
 
@@ -854,6 +891,57 @@
     });
   }
 
+  function createCompletionFieldApplies(field, panel) {
+    if (!field || field.disabled || field.readOnly || field.dataset.completionOptional !== undefined) return false;
+    if (field.matches('button, [type="button"], [type="submit"], [type="reset"], [type="hidden"]')) return false;
+    let node = field;
+    while (node && node !== panel) {
+      if (node.hidden || node.style?.display === 'none') return false;
+      node = node.parentElement;
+    }
+    return true;
+  }
+
+  function createCompletionFieldFilled(field) {
+    if (field.matches('[type="checkbox"], [type="radio"]')) return field.checked;
+    if (field.matches('[type="file"]')) return !!field.files?.length;
+    if (field.matches('select[multiple]')) return Array.from(field.selectedOptions || []).some(option => String(option.value || '').trim());
+    return String(field.value ?? '').trim() !== '';
+  }
+
+  function updateCreateStepCompletion() {
+    createStepTabs.forEach(tab => {
+      const step = tab.dataset.createStep;
+      const panel = createStepPanels.find(item => item.dataset.createPanel === step);
+      if (!panel) return;
+      const fields = Array.from(panel.querySelectorAll('input, select, textarea'))
+        .filter(field => createCompletionFieldApplies(field, panel));
+      const pending = fields.filter(field => !createCompletionFieldFilled(field)).length;
+      const complete = fields.length > 0 && pending === 0;
+      tab.classList.toggle('is-complete', complete);
+      tab.classList.toggle('is-incomplete', !complete);
+      const status = tab.querySelector('.create-step-status');
+      const statusText = complete ? '✓' : String(pending);
+      if (status && status.textContent !== statusText) status.textContent = statusText;
+      const stateLabel = complete ? 'Completa' : `${pending} campo${pending === 1 ? '' : 's'} pendiente${pending === 1 ? '' : 's'}`;
+      tab.title = stateLabel;
+      tab.setAttribute('aria-label', `${tab.textContent.replace(/\s*[✓…\d]+\s*$/, '').trim()}. ${stateLabel}.`);
+    });
+  }
+
+  let createCompletionFrame = 0;
+  function scheduleCreateStepCompletion() {
+    cancelAnimationFrame(createCompletionFrame);
+    createCompletionFrame = requestAnimationFrame(updateCreateStepCompletion);
+  }
+
+  modal?.addEventListener('input', scheduleCreateStepCompletion);
+  modal?.addEventListener('change', scheduleCreateStepCompletion);
+  modal?.addEventListener('click', () => setTimeout(scheduleCreateStepCompletion, 0));
+  if (createModalBody && window.MutationObserver) {
+    new MutationObserver(scheduleCreateStepCompletion).observe(createModalBody, { childList: true, subtree: true });
+  }
+
   document.getElementById('pSeeksFinancing')?.addEventListener('change', syncCreateFundingRequestVisibility);
   syncCreateFundingRequestVisibility();
 
@@ -963,7 +1051,7 @@
       const data = await API.get('/api/projects/assignees?role=promoter');
       const list = (data && data.users) || [];
       createPromoterProfiles.clear();
-      select.innerHTML = '<option value="">Seleccionar promotor</option>';
+      select.innerHTML = '<option value="">Seleccionar promotor</option><option value="__manual__">Rellenar manualmente</option>';
       list.forEach(user => {
         const opt = document.createElement('option');
         opt.value = user._id;
@@ -974,7 +1062,7 @@
       });
       createPromoterProfilesLoaded = true;
     } catch (e) {
-      select.innerHTML = '<option value="">Seleccionar promotor</option>';
+      select.innerHTML = '<option value="">Seleccionar promotor</option><option value="__manual__">Rellenar manualmente</option>';
       console.warn('No se pudieron cargar promotores para creacion', e);
     }
   }
@@ -986,30 +1074,71 @@
 
   function promoterCompanies(profile = {}) {
     const companies = Array.isArray(profile?.companies) ? profile.companies : [];
-    const values = companies.map(company => String(company?.name || '').trim()).filter(Boolean);
+    const values = companies.filter(company => String(company?.name || '').trim()).map(company => ({
+      ...company,
+      companyId: String(company?.companyId || company?._id || '').trim()
+    }));
     const legacy = String(profile?.companyName || '').trim();
-    if (!values.length && legacy) values.push(legacy);
-    return Array.from(new Set(values));
+    if (!values.length && legacy) values.push({ companyId: '', name: legacy, ruc: '', shareholders: [] });
+    return values;
   }
 
   function populateCreatePromoterCompanies(profile = {}, preferred = '') {
-    const select = document.getElementById('ld-promoterLegalName');
+    const select = document.getElementById('ld-promoterCompanySelect');
     if (!select) return;
     const companies = promoterCompanies(profile);
+    createPromoterCompanies.clear();
     select.innerHTML = '';
     const placeholder = document.createElement('option');
     placeholder.value = '';
     placeholder.textContent = companies.length ? 'Seleccionar sociedad' : 'El promotor no tiene sociedades registradas';
     select.appendChild(placeholder);
-    companies.forEach(name => {
+    companies.forEach(company => {
       const option = document.createElement('option');
-      option.value = name;
-      option.textContent = name;
+      option.value = company.companyId || company.name;
+      option.textContent = company.name;
       select.appendChild(option);
+      createPromoterCompanies.set(option.value, company);
     });
     const requested = String(preferred || '').trim();
-    select.value = companies.includes(requested) ? requested : (companies.length === 1 ? companies[0] : '');
+    const preferredCompany = companies.find(company => company.companyId === requested || company.name === requested);
+    select.value = preferredCompany ? (preferredCompany.companyId || preferredCompany.name) : (companies.length === 1 ? (companies[0].companyId || companies[0].name) : '');
     select.disabled = companies.length === 0;
+    syncCreateCompanyLegalData();
+  }
+
+  function createPromoterIsManual() {
+    return role !== 'promoter' && document.getElementById('ld-promoterProfileSelect')?.value === '__manual__';
+  }
+
+  function syncCreateCompanyLegalData() {
+    const manual = createPromoterIsManual();
+    const companySelect = document.getElementById('ld-promoterCompanySelect');
+    const company = manual ? null : createPromoterCompanies.get(String(companySelect?.value || ''));
+    const manualPromoterLabel = document.getElementById('ld-manualPromoterNameLabel');
+    const companySelectLabel = document.getElementById('ld-promoterCompanySelectLabel');
+    const manualCompanyLabel = document.getElementById('ld-manualCompanyNameLabel');
+    const ruc = document.getElementById('ld-promoterRuc');
+    const notice = document.getElementById('createRegisteredCompanyNotice');
+    if (manualPromoterLabel) manualPromoterLabel.hidden = !manual;
+    if (companySelectLabel) companySelectLabel.hidden = manual;
+    if (manualCompanyLabel) manualCompanyLabel.hidden = !manual;
+    if (notice) notice.hidden = manual || !company;
+    if (ruc) {
+      ruc.readOnly = !manual;
+      ruc.value = manual ? ruc.value : (company?.ruc || '');
+    }
+    const legalName = document.getElementById('ld-promoterLegalName');
+    if (!manual && legalName) legalName.value = company?.name || '';
+    if (!manual) {
+      createShareholders.innerHTML = (company?.shareholders || []).map(createShareholderRow).join('');
+    } else if (!createShareholders.children.length) {
+      createShareholders.insertAdjacentHTML('beforeend', createShareholderRow());
+    }
+    createShareholders?.querySelectorAll('input, button').forEach(control => { control.disabled = !manual; });
+    const addShareholder = document.getElementById('addCreateShareholder');
+    if (addShareholder) addShareholder.hidden = !manual;
+    scheduleCreateStepCompletion();
   }
 
   function syncCreateTrustNameVisibility() {
@@ -1060,7 +1189,7 @@
           <div class="create-checklist-upload">
             <label class="create-checklist-upload-button">
               <span aria-hidden="true">＋</span> Adjuntar
-              <input type="file" multiple data-create-checklist-file="${escapeHtml(step.key)}" aria-label="Adjuntar archivos a ${escapeHtml(step.title)}">
+              <input type="file" multiple data-create-checklist-file="${escapeHtml(step.key)}" data-completion-optional aria-label="Adjuntar archivos a ${escapeHtml(step.title)}">
             </label>
             <span class="create-checklist-upload-name" data-create-checklist-file-name>Sin archivos</span>
           </div>
@@ -1393,8 +1522,16 @@
 
   function collectLegalData() {
     const trustApplies = document.getElementById('ld-trustApplies')?.value === 'true';
+    const manual = createPromoterIsManual();
+    const selectedPromoter = createPromoterProfiles.get(String(document.getElementById('ld-promoterProfileSelect')?.value || ''));
     return {
+      promoterEntryMode: manual ? 'manual' : 'registered',
+      promoterCompanyId: manual ? '' : (document.getElementById('ld-promoterCompanySelect')?.value?.trim() || ''),
+      promoterName: manual
+        ? (document.getElementById('ld-manualPromoterName')?.value?.trim() || '')
+        : (selectedPromoter?.name || selectedPromoter?.email || ''),
       promoterLegalName: document.getElementById('ld-promoterLegalName')?.value?.trim() || '',
+      promoterRuc: document.getElementById('ld-promoterRuc')?.value?.trim() || '',
       interimBank: window.BankSelect?.getBankValue?.('ld-interimBank') || document.getElementById('ld-interimBank')?.value?.trim() || '',
       trustApplies,
       trustName: trustApplies ? (document.getElementById('ld-trustName')?.value?.trim() || '') : '',
@@ -1935,18 +2072,6 @@
     return `<option value="">Por definir</option>${banks.map(bank => `<option value="${escapeHtml(bank)}"${chosen.has(bank) ? ' selected' : ''}>${escapeHtml(bank)}</option>`).join('')}`;
   }
 
-  function lineFinancierOptionsHtml(banks = [], current = '', currentType = 'bank') {
-    const value = String(current || '').trim();
-    const nonBank = currentType && currentType !== 'bank';
-    const historical = value && !banks.includes(value) && !nonBank;
-    return `
-      <option value=""${!value ? ' selected' : ''}>Por definir</option>
-      ${banks.map(bank => `<option value="${escapeHtml(bank)}"${value === bank && !nonBank ? ' selected' : ''}>${escapeHtml(bank)}</option>`).join('')}
-      <option value="__NON_BANK__"${nonBank ? ' selected' : ''}>Otra fuente no bancaria</option>
-      ${historical ? `<option value="${escapeHtml(value)}" selected>${escapeHtml(value)} (histórico)</option>` : ''}
-    `;
-  }
-
   function hideGlobalCreateFinancialConditionFields() {
     [
       'fc-bankFinancedAmount', 'fc-bankFinancedPct',
@@ -2085,8 +2210,6 @@
         </div>
         <div class="finance-phase-core-fields">
           <label><span>Nombre</span><input class="input" data-create-phase="name" value="${escapeHtml(item.name || `Fase ${index + 1}`)}"></label>
-          <label><span>Inicio previsto</span><input class="input" data-create-phase="startDate" type="date" value="${escapeHtml(String(item.startDate || '').slice(0, 10))}"></label>
-          <label><span>Fin previsto</span><input class="input" data-create-phase="endDate" type="date" value="${escapeHtml(String(item.endDate || '').slice(0, 10))}"></label>
         </div>
         <label class="create-phase-bank-field"><span>Bancos financiadores de la fase</span>
           <select data-create-phase-banks multiple size="5">${phaseBankOptionsHtml(selectedBanks)}</select>
@@ -2103,6 +2226,10 @@
           <button type="button" data-create-phase-view="real" aria-pressed="false">Realidad</button>
         </div>
         <section class="finance-phase-budget-panel" data-create-phase-panel="plan">
+          <div class="finance-phase-real-dates finance-phase-planned-dates">
+            <label><span>Inicio previsto</span><input class="input" data-create-phase="startDate" type="date" value="${escapeHtml(String(item.startDate || '').slice(0, 10))}"></label>
+            <label><span>Fin previsto</span><input class="input" data-create-phase="endDate" type="date" value="${escapeHtml(String(item.endDate || '').slice(0, 10))}"></label>
+          </div>
           <div class="finance-phase-section-head"><div><h4>Usos y fuentes previstas</h4><p>Cada uso puede tener un reparto diferente. Los totales y porcentajes se calculan automáticamente.</p></div><button class="btn ghost btn-xs" type="button" data-copy-create-real-to-plan>Usar realidad como estimación</button></div>
           <div data-create-uses-list="planUses">${createPhaseUseCards('planUses', planUses)}</div>
           <button class="btn ghost btn-xs" type="button" data-add-create-use="planUses">+ Uso</button>
@@ -2110,7 +2237,8 @@
         <section class="finance-phase-budget-panel" data-create-phase-panel="real" hidden>
           <div class="finance-phase-section-head"><div><h4>Ejecución real</h4><p>Registra aquí únicamente la ejecución conocida. Dato Único seguirá siendo la fuente del inventario y de los datos comerciales.</p></div><button class="btn ghost btn-xs" type="button" data-copy-create-plan-to-real>Copiar estimación</button></div>
           <div class="finance-real-comparison"><span>Previsto <b data-create-real-comparison="plan">${formatBankNumber(planTotal)}</b></span><span>Real <b data-create-real-comparison="real">${formatBankNumber(realTotal)}</b></span><span>Diferencia <b data-create-real-comparison="difference">${formatBankNumber(realTotal - planTotal)}</b></span></div>
-          <div class="finance-phase-real-dates"><label><span>Inicio real</span><input class="input" type="date" data-create-phase="actualStartDate" value="${escapeHtml(String(item.actualStartDate || '').slice(0, 10))}"></label><label><span>Fin real</span><input class="input" type="date" data-create-phase="actualEndDate" value="${escapeHtml(String(item.actualEndDate || '').slice(0, 10))}"></label></div>
+          <div class="finance-phase-real-dates"><label><span>Inicio real</span><input class="input" type="date" data-create-phase="actualStartDate" value="${escapeHtml(String(item.actualStartDate || '').slice(0, 10))}"></label><label><span>Fin real (opcional)</span><input class="input" type="date" data-create-phase="actualEndDate" data-completion-optional value="${escapeHtml(String(item.actualEndDate || '').slice(0, 10))}"></label></div>
+          <div class="create-phase-progress-status" data-create-phase-progress-status></div>
           <div class="finance-phase-section-head create-real-uses-head"><div><h4>Usos y fuentes reales</h4><p>Introduce solamente la ejecución conocida hasta la fecha.</p></div></div>
           <div data-create-uses-list="uses">${createPhaseUseCards('uses', realUses)}</div>
           <button class="btn ghost btn-xs" type="button" data-add-create-use="uses">+ Uso real</button>
@@ -2122,8 +2250,7 @@
   }
 
   function createPhaseFinancingLinesBlock(index, item = {}) {
-    const selectedBanks = phaseSelectedBanks(item);
-    const financingRows = (Array.isArray(item.financingLines) ? item.financingLines : []).map(line => createPhaseFinancingLineCard(line, selectedBanks)).join('');
+    const financingRows = (Array.isArray(item.financingLines) ? item.financingLines : []).map(line => createPhaseFinancingLineCard(line)).join('');
     return `<section class="create-real-financing-lines" data-create-phase-financing-row="${index}">
       <div class="finance-phase-section-head">
         <div><h4>Líneas de financiación</h4><p>Se gestionan en la realidad de la fase. Los desembolsos, amortizaciones e intereses se completarán después en Finanzas.</p></div>
@@ -2141,10 +2268,9 @@
     </section>`;
   }
 
-  function createPhaseFinancingLineCard(line = {}, selectedBanks = []) {
+  function createPhaseFinancingLineCard(line = {}) {
     return `<article class="create-financing-line-card" data-create-phase-financing-line>
       <label><span>Nombre de la línea</span><input class="input" data-create-phase-financing="name" placeholder="Construcción" value="${escapeHtml(line.name || '')}"></label>
-      <label><span>Entidad financiadora</span><select class="input" data-create-phase-financing="financierName">${lineFinancierOptionsHtml(selectedBanks, line.financierName, line.financierType)}</select></label>
       <label><span>Importe aprobado</span><input class="input" data-create-phase-financing="approvedAmount" data-bank-number type="text" inputmode="decimal" placeholder="0.00" value="${line.approvedAmount ? formatBankNumber(line.approvedAmount) : ''}"></label>
       <label><span>Notas</span><input class="input" data-create-phase-financing="observations" placeholder="Opcional" value="${escapeHtml(line.observations || '')}"></label>
       <button class="btn btn-danger btn-xs" type="button" data-remove-phase-financing-line>Quitar</button>
@@ -2152,9 +2278,6 @@
   }
 
   function financingLinesFromPlannedUses(row) {
-    const selectedBanks = Array.from(row?.querySelector('[data-create-phase-banks]')?.selectedOptions || [])
-      .map(option => option.value).filter(Boolean);
-    const defaultBank = selectedBanks.length === 1 ? selectedBanks[0] : '';
     return collectCreatePhaseUses(row, 'planUses').map(use => {
       const bankAmount = (use.fundingSources || []).reduce((sum, source) => (
         String(source?.name || '').trim().toLowerCase() === 'banco'
@@ -2163,8 +2286,6 @@
       ), 0);
       return {
         name: use.name || 'Línea',
-        financierName: defaultBank,
-        financierType: 'bank',
         approvedAmount: Math.round(bankAmount * 100) / 100,
         observations: ''
       };
@@ -2180,8 +2301,7 @@
     const container = row.querySelector('[data-create-phase-financing-lines]');
     if (!container) return false;
     if (confirmReplace && container.querySelector('[data-create-phase-financing-line]') && !confirm('Las líneas actuales se reemplazarán usando el reparto Banco de los usos previstos. ¿Continuar?')) return false;
-    const selectedBanks = Array.from(row.querySelector('[data-create-phase-banks]')?.selectedOptions || []).map(option => option.value).filter(Boolean);
-    container.innerHTML = lines.map(line => createPhaseFinancingLineCard(line, selectedBanks)).join('');
+    container.innerHTML = lines.map(line => createPhaseFinancingLineCard(line)).join('');
     bindBankNumberFormatting(createFinancePhases);
     syncCreatePhaseSources();
     return true;
@@ -2214,6 +2334,34 @@
   function phaseFinancingLinesTotal(row) {
     return Array.from(row?.querySelectorAll('[data-create-phase-financing="approvedAmount"]') || [])
       .reduce((sum, input) => sum + numberFromCreate(input.value), 0);
+  }
+
+  function syncCreatePhaseProgressStatus(row) {
+    const status = row?.querySelector('[data-create-phase-progress-status]');
+    if (!status) return;
+    const startValue = row.querySelector('[data-create-phase="actualStartDate"]')?.value || '';
+    const endValue = row.querySelector('[data-create-phase="actualEndDate"]')?.value || '';
+    status.classList.remove('is-running', 'is-completed');
+    if (!startValue) {
+      status.textContent = 'Pendiente de iniciar. El fin real se dejará vacío hasta que termine la fase.';
+      return;
+    }
+    const dateAtUtcMidnight = value => {
+      const [year, month, day] = String(value || '').split('-').map(Number);
+      return year && month && day ? Date.UTC(year, month - 1, day) : null;
+    };
+    const start = dateAtUtcMidnight(startValue);
+    const now = new Date();
+    const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    const end = dateAtUtcMidnight(endValue) ?? today;
+    const days = start === null ? 0 : Math.max(0, Math.ceil((end - start) / 86400000));
+    if (endValue) {
+      status.classList.add('is-completed');
+      status.textContent = `Finalizada · ${days} día${days === 1 ? '' : 's'} de duración real.`;
+    } else {
+      status.classList.add('is-running');
+      status.textContent = `Sigue en curso · ${days} día${days === 1 ? '' : 's'} transcurrido${days === 1 ? '' : 's'} hasta hoy.`;
+    }
   }
 
   function syncPhaseFinancialTriplet(row, sourceKey = '') {
@@ -2274,6 +2422,7 @@
   function syncCreatePhaseSources() {
     let totalUsesAll = 0;
     document.querySelectorAll('[data-create-phase-row]').forEach((row, idx) => {
+      syncCreatePhaseProgressStatus(row);
       const planUses = collectCreatePhaseUses(row, 'planUses');
       const realUses = collectCreatePhaseUses(row, 'uses');
       const usesTotal = planUses.reduce((sum, item) => sum + numberFromCreate(item.amount), 0);
@@ -2460,10 +2609,6 @@
   function collectPhaseFinancingLines(row) {
     return Array.from(row.querySelectorAll('[data-create-phase-financing-line]')).map(line => ({
       name: line.querySelector('[data-create-phase-financing="name"]')?.value.trim() || '',
-      financierName: line.querySelector('[data-create-phase-financing="financierName"]')?.value === '__NON_BANK__'
-        ? 'Otra fuente no bancaria'
-        : (line.querySelector('[data-create-phase-financing="financierName"]')?.value.trim() || ''),
-      financierType: line.querySelector('[data-create-phase-financing="financierName"]')?.value === '__NON_BANK__' ? 'other' : 'bank',
       concept: line.querySelector('[data-create-phase-financing="name"]')?.value.trim() || '',
       approvedAmount: numberFromCreate(line.querySelector('[data-create-phase-financing="approvedAmount"]')?.value),
       observations: line.querySelector('[data-create-phase-financing="observations"]')?.value.trim() || ''
@@ -3066,8 +3211,7 @@
     }
     const addFinancingBtn = event.target.closest('[data-add-phase-financing-line]');
     if (phaseRow && addFinancingBtn) {
-      const selectedBanks = Array.from(phaseRow.querySelector('[data-create-phase-banks]')?.selectedOptions || []).map(option => option.value).filter(Boolean);
-      phaseRow.querySelector('[data-create-phase-financing-lines]')?.insertAdjacentHTML('beforeend', createPhaseFinancingLineCard({}, selectedBanks));
+      phaseRow.querySelector('[data-create-phase-financing-lines]')?.insertAdjacentHTML('beforeend', createPhaseFinancingLineCard({}));
       bindBankNumberFormatting(createFinancePhases);
       syncCreatePhaseSources();
       return;
@@ -3121,20 +3265,7 @@
     }
     syncCreatePhaseSources();
   });
-  createFinancePhases?.addEventListener('change', event => {
-    const bankSelect = event.target?.closest?.('[data-create-phase-banks]');
-    if (bankSelect) {
-      const phaseIndex = bankSelect.closest('[data-create-phase-row]')?.dataset.createPhaseRow;
-      const banks = Array.from(bankSelect.selectedOptions || []).map(option => option.value).filter(Boolean);
-      document.querySelectorAll(`[data-create-phase-financing-row="${phaseIndex}"] [data-create-phase-financing="financierName"]`).forEach(select => {
-        const current = select.value;
-        const currentType = current === '__NON_BANK__' ? 'other' : 'bank';
-        const allowedCurrent = currentType === 'other' || banks.includes(current) ? current : '';
-        select.innerHTML = lineFinancierOptionsHtml(banks, allowedCurrent === '__NON_BANK__' ? 'Otra fuente no bancaria' : allowedCurrent, currentType);
-      });
-    }
-    syncCreatePhaseSources();
-  });
+  createFinancePhases?.addEventListener('change', syncCreatePhaseSources);
   createFinancePhases?.addEventListener('keyup', syncCreatePhaseSources);
   createDatoUnicoFileInput?.addEventListener('change', async event => {
     const file = event.target.files?.[0] || null;
@@ -3313,6 +3444,7 @@
     await loadCreateProgressChecks();
     await loadCreatePermitTemplates();
     renderCreatePermitItems();
+    scheduleCreateStepCompletion();
 
     // Modo nuevo (todos los roles)
     // Por privacidad, la creacion no carga ni muestra directorios de usuarios.
@@ -3379,10 +3511,20 @@
     document.getElementById('downloadCreateDatoUnicoTemplate')?.addEventListener('click', downloadCreateDatoUnicoTemplate);
     document.getElementById('ld-promoterProfileSelect')?.addEventListener('change', ev => {
       const user = createPromoterProfiles.get(String(ev.target.value || ''));
+      if (ev.target.value === '__manual__') {
+        const promoterName = document.getElementById('ld-manualPromoterName');
+        const legalName = document.getElementById('ld-promoterLegalName');
+        const ruc = document.getElementById('ld-promoterRuc');
+        if (promoterName) promoterName.value = '';
+        if (legalName) legalName.value = '';
+        if (ruc) ruc.value = '';
+        if (createShareholders) createShareholders.innerHTML = '';
+      }
       populateCreatePromoterCompanies(user?.promoterProfile || {});
       createRequirementPromoterOriginal = JSON.parse(JSON.stringify(user?.promoterProfile || {}));
       createRequirementPromoterDraft = JSON.parse(JSON.stringify(user?.promoterProfile || {}));
     });
+    document.getElementById('ld-promoterCompanySelect')?.addEventListener('change', syncCreateCompanyLegalData);
     document.getElementById('ld-trustApplies')?.addEventListener('change', syncCreateTrustNameVisibility);
     if (btnExpandCreate) btnExpandCreate.addEventListener('click', () => {
       modal.classList.toggle('is-fullscreen');
@@ -3484,16 +3626,42 @@
           const collectedLegalData = collectLegalData();
           const legalData = createRequirementLegalDraft ? {
             ...collectedLegalData,
-            shareholders: createRequirementLegalDraft.shareholders || collectedLegalData.shareholders,
+            shareholders: collectedLegalData.promoterEntryMode === 'registered'
+              ? collectedLegalData.shareholders
+              : (createRequirementLegalDraft.shareholders || collectedLegalData.shareholders),
             boardMembers: createRequirementLegalDraft.boardMembers || collectedLegalData.boardMembers
           } : collectedLegalData;
-          if (!legalData.promoterLegalName) {
-            alert('Selecciona la sociedad promotora del proyecto. Si no aparece, añádela primero al perfil del promotor.');
+          if (legalData.promoterEntryMode === 'manual' && !legalData.promoterName) {
+            alert('Indica el nombre del promotor.');
             setCreateStep('legal');
-            document.getElementById('ld-promoterLegalName')?.focus();
+            document.getElementById('ld-manualPromoterName')?.focus();
             return;
           }
-          const selectedPromoterId = String(document.getElementById('ld-promoterProfileSelect')?.value || '');
+          if (!legalData.promoterLegalName) {
+            alert(legalData.promoterEntryMode === 'manual' ? 'Indica la sociedad promotora.' : 'Selecciona la sociedad promotora del proyecto. Si no aparece, añádela primero al perfil del promotor.');
+            setCreateStep('legal');
+            (legalData.promoterEntryMode === 'manual' ? document.getElementById('ld-promoterLegalName') : document.getElementById('ld-promoterCompanySelect'))?.focus();
+            return;
+          }
+          if (!legalData.promoterRuc) {
+            alert('Indica el RUC de la sociedad promotora.');
+            setCreateStep('legal');
+            document.getElementById('ld-promoterRuc')?.focus();
+            return;
+          }
+          if (!legalData.shareholders.length || legalData.shareholders.some(item => !item.name || !item.cedula || !(item.percentage > 0) || item.percentage > 100)) {
+            alert('Completa nombre, cédula y porcentaje de todos los accionistas.');
+            setCreateStep('legal');
+            return;
+          }
+          const shareholderTotal = legalData.shareholders.reduce((sum, item) => sum + Number(item.percentage || 0), 0);
+          if (Math.abs(shareholderTotal - 100) > 0.001) {
+            alert('Los porcentajes de los accionistas deben sumar 100%.');
+            setCreateStep('legal');
+            return;
+          }
+          const selectedPromoterIdRaw = String(document.getElementById('ld-promoterProfileSelect')?.value || '');
+          const selectedPromoterId = selectedPromoterIdRaw === '__manual__' ? '' : selectedPromoterIdRaw;
           const promoterExperienceValues = createRequirementPromoterDraft
             ? Object.fromEntries(REQUIREMENT_PROMOTER_FIELDS.map(([key]) => [key, createRequirementPromoterDraft[key]]))
             : null;
@@ -3888,13 +4056,30 @@
     });
     document.getElementById('pp-addCompany')?.addEventListener('click', () => {
       const rows = Array.from(document.querySelectorAll('#pp-companies .profile-company-row')).map(row => ({
+        companyId: row.dataset.companyId || '',
         name: row.querySelector('[data-company-name]')?.value || '',
         incorporationYear: row.querySelector('[data-company-year]')?.value || '',
+        ruc: row.querySelector('[data-company-ruc]')?.value || '',
+        shareholders: Array.from(row.querySelectorAll('[data-company-shareholder-row]')).map(shareholder => ({
+          name: shareholder.querySelector('[data-company-shareholder="name"]')?.value || '',
+          cedula: shareholder.querySelector('[data-company-shareholder="cedula"]')?.value || '',
+          percentage: shareholder.querySelector('[data-company-shareholder="percentage"]')?.value || ''
+        })),
         isPrimary: !!row.querySelector('[data-company-primary]')?.checked
       }));
-      renderProfileCompanies([...rows, { name: '', incorporationYear: '', isPrimary: rows.length === 0 }]);
+      renderProfileCompanies([...rows, { name: '', incorporationYear: '', ruc: '', shareholders: [], isPrimary: rows.length === 0 }]);
     });
     document.getElementById('pp-companies')?.addEventListener('click', event => {
+      const addShareholderButton = event.target.closest('[data-add-company-shareholder]');
+      if (addShareholderButton) {
+        addShareholderButton.closest('.profile-company-row')?.querySelector('[data-company-shareholders]')?.insertAdjacentHTML('beforeend', profileCompanyShareholderRow());
+        return;
+      }
+      const removeShareholderButton = event.target.closest('[data-remove-company-shareholder]');
+      if (removeShareholderButton) {
+        removeShareholderButton.closest('[data-company-shareholder-row]')?.remove();
+        return;
+      }
       const removeButton = event.target.closest('[data-remove-company]');
       if (!removeButton) return;
       const container = document.getElementById('pp-companies');

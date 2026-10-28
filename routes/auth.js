@@ -10,6 +10,7 @@ const { hashPassword, isHashedPassword, verifyPassword } = require('../utils/pas
 const audit = require('../utils/audit');
 const { assignedTenantList, activeAvaluatorBankTenants, tenantKeyFromBankName } = require('../utils/tenants');
 const { sanitizePromoterProfile } = require('../utils/promoterProfile');
+const { syncPromoterCompaniesToProjects, assertReferencedCompaniesPreserved } = require('../services/promoterCompanySync');
 
 const router = express.Router();
 const esc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
@@ -350,8 +351,11 @@ router.patch('/promoter-profile', auth, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
     if (user.role !== 'promoter') return res.status(403).json({ error: 'Solo disponible para promotores.' });
 
-    user.promoterProfile = sanitizePromoterProfile(req.body?.promoterProfile || req.body?.perfilPromotor || req.body || {}, { requireAny: true });
+    const nextProfile = sanitizePromoterProfile(req.body?.promoterProfile || req.body?.perfilPromotor || req.body || {}, { requireAny: true });
+    await assertReferencedCompaniesPreserved(user, nextProfile);
+    user.promoterProfile = nextProfile;
     await user.save();
+    await syncPromoterCompaniesToProjects(user);
 
     await audit(req, 'auth.promoter_profile_updated', {
       targetType: 'user',

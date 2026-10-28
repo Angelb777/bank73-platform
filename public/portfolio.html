@@ -482,6 +482,31 @@
     }
     .create-step-tab.active { background:#0d6efd; color:#fff; border-color:#0d6efd; box-shadow:0 10px 24px rgba(13,110,253,.22); }
     .create-step-tab.active .create-step-number { background:#fff; color:#0d6efd; }
+    .create-step-tab.is-incomplete { border-color:#fca5a5;background:#fff1f2;color:#b91c1c; }
+    .create-step-tab.is-incomplete .create-step-number { background:#fee2e2;color:#b91c1c; }
+    .create-step-tab.is-complete { border-color:#86efac;background:#f0fdf4;color:#166534; }
+    .create-step-tab.is-complete .create-step-number { background:#dcfce7;color:#166534; }
+    .create-step-tab.active.is-incomplete { background:#dc2626;border-color:#dc2626;color:#fff;box-shadow:0 10px 24px rgba(220,38,38,.22); }
+    .create-step-tab.active.is-complete { background:#16a34a;border-color:#16a34a;color:#fff;box-shadow:0 10px 24px rgba(22,163,74,.22); }
+    .create-step-tab.active.is-incomplete .create-step-number,
+    .create-step-tab.active.is-complete .create-step-number { background:#fff; }
+    .create-step-status {
+      min-width:20px;
+      height:20px;
+      padding:0 6px;
+      border-radius:999px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      background:rgba(255,255,255,.72);
+      color:inherit;
+      font-size:10px;
+      font-weight:900;
+      line-height:1;
+    }
+    .create-modal-title { display:flex;align-items:baseline;gap:12px;flex-wrap:wrap; }
+    .create-modal-title h3 { margin:0; }
+    .create-modal-optional-note { color:#64748b;font-size:12px;font-weight:700; }
     .create-step { display:none; }
     .create-step.active { display:block; }
     .create-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
@@ -536,12 +561,41 @@
     .profile-section-help { margin-top:3px; color:#64748b; font-size:12px; }
     .profile-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px 18px; }
     .profile-companies-list { display:grid; gap:12px; }
-    .profile-company-row { display:grid; grid-template-columns:minmax(260px,1fr) 180px 170px 44px; gap:14px; align-items:end; padding:16px; border:1px solid #dbe3ee; border-radius:14px; background:#f8fafc; }
+    .profile-company-row { display:block; padding:16px; border:1px solid #dbe3ee; border-radius:14px; background:#f8fafc; }
+    .profile-company-fields { display:grid; grid-template-columns:minmax(240px,1fr) 180px minmax(210px,.8fr) 170px 44px; gap:14px; align-items:end; }
+    .profile-company-shareholders { margin-top:14px; padding:14px; border:1px solid #dbe3ee; border-radius:12px; background:#fff; }
+    .profile-company-shareholders-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:9px; color:#0f172a !important; }
+    .profile-company-shareholders-head strong { color:#0f172a !important; font-size:14px; font-weight:850; }
+    .profile-company-shareholders-head [data-add-company-shareholder] {
+      min-height:38px;
+      padding:8px 14px !important;
+      border:1px solid #2563eb !important;
+      border-radius:10px;
+      background:#2563eb !important;
+      color:#fff !important;
+      font-weight:800;
+      opacity:1 !important;
+      box-shadow:0 5px 12px rgba(37,99,235,.2);
+    }
+    .profile-company-shareholders-head [data-add-company-shareholder]:hover { border-color:#1d4ed8 !important; background:#1d4ed8 !important; }
+    .profile-shareholder-row { display:grid; grid-template-columns:1fr 1fr 140px 44px; gap:9px; align-items:end; margin-top:8px; }
     .profile-company-primary { min-height:42px; display:flex; align-items:center; justify-content:center; gap:8px; border:1px solid #cbd5e1; border-radius:12px; background:#fff; color:#475569; font-weight:750; cursor:pointer; }
     .profile-company-primary:has(input:checked) { border-color:#2563eb; background:#eff6ff; color:#1d4ed8; }
     .profile-company-primary input { width:17px !important; min-height:17px !important; margin:0; accent-color:#2563eb; }
     .profile-company-remove { width:42px; height:42px; padding:0 !important; border-color:#fecaca !important; background:#fff !important; color:#dc2626 !important; font-size:20px; }
-    .profile-add-company { border-color:#bfdbfe !important; background:#eff6ff !important; color:#1d4ed8 !important; }
+    .profile-add-company {
+      min-height:44px;
+      padding:10px 18px !important;
+      border:1px solid #1d4ed8 !important;
+      border-radius:11px;
+      background:#1d4ed8 !important;
+      color:#fff !important;
+      font-size:14px;
+      font-weight:850;
+      opacity:1 !important;
+      box-shadow:0 7px 16px rgba(29,78,216,.24);
+    }
+    .profile-add-company:hover { border-color:#1e40af !important; background:#1e40af !important; transform:translateY(-1px); }
     .profile-team-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
     .profile-team-card { border:1px solid #dbe3ee; border-radius:14px; background:#f8fafc; padding:15px; }
     .profile-team-toggle { display:flex !important; flex-direction:row !important; align-items:center; gap:9px !important; font-weight:800; color:#1e293b !important; cursor:pointer; }
@@ -559,7 +613,7 @@
       .profile-modal.modal.create-modal { width:calc(100vw - 20px); height:calc(100vh - 20px); max-height:calc(100vh - 20px); }
       .profile-modal .create-modal-body { padding:24px 18px 18px; }
       .profile-fields { grid-template-columns:1fr; }
-      .profile-company-row { grid-template-columns:1fr 1fr; }
+      .profile-company-fields, .profile-shareholder-row { grid-template-columns:1fr 1fr; }
       .profile-team-grid { grid-template-columns:1fr 1fr; }
     }
     .create-progress-list { display:grid; gap:10px; margin-top:10px; }
@@ -704,6 +758,18 @@
     .create-finance-panel .finance-source-balance.is-danger { color:#b91c1c;background:#fef2f2; }
     .create-finance-panel .finance-real-comparison { color:#0f172a;background:#eff6ff; }
     .create-finance-panel .finance-real-comparison span { color:#64748b; }
+    .create-finance-panel .finance-phase-planned-dates { margin:0 0 16px; }
+    .create-phase-progress-status {
+      margin-top:10px;
+      padding:9px 11px;
+      border-radius:9px;
+      background:#f1f5f9;
+      color:#475569;
+      font-size:13px;
+      font-weight:700;
+    }
+    .create-phase-progress-status.is-running { background:#eff6ff;color:#1d4ed8; }
+    .create-phase-progress-status.is-completed { background:#f0fdf4;color:#166534; }
     .create-real-uses-head { margin-top:16px; }
     .create-real-financing-lines {
       margin-top:18px;
@@ -727,7 +793,7 @@
     [data-phase-financing-lines-summary] { margin:8px 0;color:#166534; }
     .create-financing-line-card {
       display:grid;
-      grid-template-columns:minmax(170px,1fr) minmax(190px,1fr) minmax(135px,.65fr) minmax(190px,1fr) auto;
+      grid-template-columns:minmax(190px,1fr) minmax(145px,.65fr) minmax(220px,1fr) auto;
       align-items:end;
       gap:8px;
       margin-bottom:9px;
@@ -1408,14 +1474,14 @@
       <button id="expandCreateModal" class="modal-expand" type="button" aria-label="Pantalla completa" title="Pantalla completa">⛶</button>
       <button id="closeCreateModal" class="modal-close" type="button" aria-label="Cerrar">×</button>
       <div class="create-modal-body">
-      <h3>Crear nuevo proyecto</h3>
+      <div class="create-modal-title"><h3>Crear nuevo proyecto</h3><span class="create-modal-optional-note">No es necesario rellenar todos los campos</span></div>
       <div class="create-steps" id="createSteps">
-        <button class="create-step-tab active" type="button" data-create-step="general"><span class="create-step-number">1</span>Datos generales</button>
-        <button class="create-step-tab" type="button" data-create-step="legal"><span class="create-step-number">2</span>Datos legales</button>
-        <button class="create-step-tab" type="button" data-create-step="technical"><span class="create-step-number">3</span>Datos tecnicos</button>
-        <button class="create-step-tab" type="button" data-create-step="progress"><span class="create-step-number">4</span>Avances</button>
-        <button class="create-step-tab" type="button" data-create-step="financial"><span class="create-step-number">5</span>Datos financieros</button>
-        <button class="create-step-tab" type="button" data-create-step="team"><span class="create-step-number">6</span>Equipo sugerido</button>
+        <button class="create-step-tab active" type="button" data-create-step="general"><span class="create-step-number">1</span>Datos generales<span class="create-step-status" aria-hidden="true">…</span></button>
+        <button class="create-step-tab" type="button" data-create-step="legal"><span class="create-step-number">2</span>Datos legales<span class="create-step-status" aria-hidden="true">…</span></button>
+        <button class="create-step-tab" type="button" data-create-step="technical"><span class="create-step-number">3</span>Datos tecnicos<span class="create-step-status" aria-hidden="true">…</span></button>
+        <button class="create-step-tab" type="button" data-create-step="progress"><span class="create-step-number">4</span>Avances<span class="create-step-status" aria-hidden="true">…</span></button>
+        <button class="create-step-tab" type="button" data-create-step="financial"><span class="create-step-number">5</span>Datos financieros<span class="create-step-status" aria-hidden="true">…</span></button>
+        <button class="create-step-tab" type="button" data-create-step="team"><span class="create-step-number">6</span>Equipo sugerido<span class="create-step-status" aria-hidden="true">…</span></button>
       </div>
 
       <section class="create-step active" data-create-panel="general">
@@ -1456,7 +1522,10 @@
         <div class="create-section-title">Datos legales <span class="create-section-kicker">Sociedad, directores, accionistas y fideicomiso</span></div>
         <div class="create-grid">
           <label>Promotor<select id="ld-promoterProfileSelect"><option value="">Seleccionar promotor</option></select></label>
-          <label>Sociedad promotora<select id="ld-promoterLegalName"><option value="">Selecciona primero un promotor</option></select></label>
+          <label id="ld-manualPromoterNameLabel" hidden>Nombre del promotor<input id="ld-manualPromoterName" type="text" placeholder="Nombre o razón del promotor"></label>
+          <label id="ld-promoterCompanySelectLabel">Sociedad promotora<select id="ld-promoterCompanySelect"><option value="">Selecciona primero un promotor</option></select></label>
+          <label id="ld-manualCompanyNameLabel" hidden>Sociedad promotora<input id="ld-promoterLegalName" type="text" placeholder="Razón social"></label>
+          <label id="ld-promoterRucLabel">RUC de la sociedad<input id="ld-promoterRuc" type="text" placeholder="RUC"></label>
           <label>Fideicomiso
             <select id="ld-trustApplies">
               <option value="false">No aplica</option>
@@ -1468,6 +1537,7 @@
         <h4>Junta directiva</h4>
         <div id="createBoardMembers"></div>
         <button id="addCreateBoardMember" class="btn ghost" type="button">+ Anadir directivo</button>
+        <div id="createRegisteredCompanyNotice" class="small muted" hidden>RUC y accionistas proceden del perfil del promotor y no se pueden modificar durante la creación del proyecto.</div>
         <h4>Accionistas</h4>
         <div id="createShareholders"></div>
         <button id="addCreateShareholder" class="btn ghost" type="button">+ Anadir accionista</button>
@@ -1511,7 +1581,7 @@
             <span class="summary-file-picker-label">Seleccionar Excel para IMPORTAR</span>
             <span class="summary-file-picker-name" id="createDatoUnicoFileName">Ningun archivo seleccionado</span>
           </label>
-          <input class="summary-file-input" type="file" id="createDatoUnicoFile" accept=".xlsx,.xls" />
+          <input class="summary-file-input" type="file" id="createDatoUnicoFile" accept=".xlsx,.xls" data-completion-optional />
           <button id="clearCreateDatoUnicoFile" class="btn ghost" type="button" style="display:none;">Quitar Excel</button>
           <span class="small muted">Se importara despues de crear el proyecto usando el importador Dato Unico existente.</span>
         </div>

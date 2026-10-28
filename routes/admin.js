@@ -19,6 +19,7 @@ const audit = require('../utils/audit');
 const { moduleEnabled, setModuleEnabled } = require('../services/moduleSettings');
 const { tenantKeyFromBankName: sharedTenantKeyFromBankName } = require('../utils/tenants');
 const { sanitizePromoterProfile: sanitizePromoterProfileShared } = require('../utils/promoterProfile');
+const { syncPromoterCompaniesToProjects, assertReferencedCompaniesPreserved } = require('../services/promoterCompanySync');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -799,8 +800,11 @@ router.patch('/users/:id/promoter-profile', async (req, res) => {
     });
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
-    user.promoterProfile = sanitizePromoterProfileShared(req.body?.promoterProfile || req.body?.perfilPromotor || req.body || {}, { strictNumbers: true });
+    const nextProfile = sanitizePromoterProfileShared(req.body?.promoterProfile || req.body?.perfilPromotor || req.body || {}, { strictNumbers: true });
+    await assertReferencedCompaniesPreserved(user, nextProfile);
+    user.promoterProfile = nextProfile;
     await user.save();
+    await syncPromoterCompaniesToProjects(user);
 
     await audit(req, 'user.promoter_profile_updated', {
       targetType: 'user',
