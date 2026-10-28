@@ -21,6 +21,14 @@ const { normalizePhaseRequirements } = require('../services/phaseRequirements');
 const { dateInReportPeriod, anyDateInReportPeriod, buildPeriodActivity } = require('../services/reportActivity');
 const { buildFinanceControlSummary } = require('../services/financeReportContext');
 const { syncUnitCommercialState } = require('../services/unitCommercialState');
+const { readAuthorizedProjectImage } = require('../services/summaryPhotoResolver');
+const { buildDatoUnicoExportRow } = require('../services/datoUnicoExport');
+const { buildExecutiveSummaryWorkbook, numberValue } = require('../services/executiveSummaryExcel');
+const {
+  buildExecutiveMovementRows,
+  buildExecutiveFinancialChartGroups,
+  chartGroupFromTable
+} = require('../services/executiveSummaryData');
 const audit             = require('../utils/audit');
 const { normalizeProjectCurrency, parsePanamaNumber, formatProjectMoney, currencySymbol } = require('../utils/currency');
 
@@ -4223,7 +4231,7 @@ router.post('/:id/summary/export', requireProjectAccess(), async (req, res) => {
       : [];
     const exportPrimaryPromoter = exportProjectPromoters[0] || null;
 
-    let [checklists, documents, ventasRaw, units, permits, financePhases] = await Promise.all([
+    let [checklists, documents, ventasRaw, units, permits, financeDocument] = await Promise.all([
       ProjectChecklist.find({
         projectId: new mongoose.Types.ObjectId(id),
         $or: [{ tenantKey }, { tenantKey: { $exists: false } }]
@@ -4233,7 +4241,11 @@ router.post('/:id/summary/export', requireProjectAccess(), async (req, res) => {
 
       Venta.find({ tenantKey, projectId: id }).lean(),
 
-      Unit.find({ tenantKey, projectId: id, deletedAt: null }).lean(),
+      Unit.find({ tenantKey, projectId: id, deletedAt: null })
+        .populate('clienteId')
+        .populate('folderId')
+        .sort({ folderId: 1, folderOrder: 1, etapa: 1, torre: 1, nivel: 1, manzana: 1, lote: 1 })
+        .lean(),
 
       (async () => {
         try {
@@ -4243,11 +4255,9 @@ router.post('/:id/summary/export', requireProjectAccess(), async (req, res) => {
         }
       })(),
 
-      (async () => {
-        const financeDoc = await ProjectFinance.findOne({ project: id, tenantKey }).lean();
-        return Array.isArray(financeDoc?.phases) ? financeDoc.phases : [];
-      })()
+      ProjectFinance.findOne({ project: id, tenantKey }).lean()
     ]);
+    let financePhases = Array.isArray(financeDocument?.phases) ? financeDocument.phases : [];
 
     const periodActivity = buildPeriodActivity({
       period: reportPeriod,
@@ -4576,11 +4586,14 @@ if (isSoldLikeStatus(st)) U.sold++;
       Array.isArray(req.body?.datasets?.beforeAfter) ? req.body.datasets.beforeAfter :
       [];
 
-    async function anyImageToBuffer(src) {
+    async function anyImageToBuffer(src, item = {}) {
       if (!src || typeof src !== 'string') return null;
 
       const m = src.match(/^data:image\/\w+;base64,(.+)$/i);
       if (m) return Buffer.from(m[1], 'base64');
+
+      const localImage = await readAuthorizedProjectImage({ ...item, src }, documents);
+      if (localImage) return localImage;
 
       if (/^https?:\/\//i.test(src)) {
         try {
@@ -5840,6 +5853,7 @@ if (isSoldLikeStatus(st)) U.sold++;
           if (typeof item === 'string') return { src: item, index, tag: '' };
           return {
             src: item?.src || item?.dataUrl || '',
+            documentId: String(item?.documentId || item?.docId || item?._id || '').trim(),
             index,
             tag: String(item?.tag || item?.baTag || '').trim().toUpperCase(),
             label: String(item?.label || item?.name || '').trim(),
@@ -5933,9 +5947,14 @@ if (isSoldLikeStatus(st)) U.sold++;
             doc.fontSize(10).fillColor('#FFFFFF').text(label, x + 10, cardY + 8, { width: colW - 20, align: 'center' });
             return;
           }
-          const b = await anyImageToBuffer(item.src);
+          const b = await anyImageToBuffer(item.src, item);
           if (b) {
-            doc.image(b, x + 8, cardY + 31, { fit: [colW - 16, imgH], align: 'center', valign: 'center' });
+            try {
+              doc.image(b, x + 8, cardY + 31, { fit: [colW - 16, imgH], align: 'center', valign: 'center' });
+            } catch (error) {
+              console.warn('[PDF] No pude interpretar la imagen:', item.documentId || item.src, error?.message || error);
+              doc.fontSize(9).fillColor(TEXT_MUTED).text('Formato de imagen no compatible', x + 10, cardY + 92, { width: colW - 20, align: 'center' });
+            }
           } else {
             doc.fontSize(9).fillColor(TEXT_MUTED).text('Imagen no disponible', x + 10, cardY + 92, { width: colW - 20, align: 'center' });
           }
@@ -6122,176 +6141,39 @@ if (isSoldLikeStatus(st)) U.sold++;
     }
 
     if (format === 'xlsx') {
-      const ExcelJS = require('exceljs');
-      const wb = new ExcelJS.Workbook();
-      const ws = wb.addWorksheet('Resumen');
-      ws.columns = [{ width: 28 }, { width: 60 }];
-      ws.getRow(1).font = { bold: true, size: 14 };
+      const ventaForUnit = unit => ventasByCurrentKey.get(`UNIT:${String(unit?._id || '')}`)
+        || ventasByCurrentKey.get(`LOT:${unitKey(unit?.manzana, unit?.lote)}`)
+        || {};
+      const datoRows = (units || []).map(unit => buildDatoUnicoExportRow(unit, ventaForUnit(unit)));
+      const movementRows = buildExecutiveMovementRows(financeDocument || {});
+      const chartGroups = [];
 
-      ws.addRow(['Proyecto', summary.projectName]);
-      ws.addRow(['Tipo de proyecto', summary.projectType || 'No definido']);
-      ws.addRow(['Sociedad promotora', summary.promoterCompanyName || 'No definido']);
-      ws.addRow(['Promotor', summary.promoterName || 'No definido']);
-      ws.addRow(['Tipo promotor', summary.promoterType || 'No definido']);
-      ws.addRow(['Perfil del promotor', summary.promoterCategory || 'No definido']);
-      if (summary.periodLabel) ws.addRow(['Periodo analizado', summary.periodLabel]);
-      ws.addRow(['Actualizado', summary.updatedAt ? new Date(summary.updatedAt).toLocaleString() : '—']);
-      ws.addRow([]);
-      if (reportPeriod) {
-        ws.addRow(['Avance registrado', 'Cantidad']).font = { bold: true };
-        const counts = exportedPeriodActivity?.counts || [];
-        if (counts.length) {
-          counts.forEach(row => ws.addRow([row.type, row.count]));
-        } else {
-          ws.addRow(['Sin avances fechados registrados en el periodo', 0]);
-        }
-        ws.addRow(['Total avances', exportedPeriodActivity?.totals?.events || 0]);
-      } else {
-        ws.addRow(['Progreso global (%)', summary.progressPct]);
-        ws.addRow([]);
-        ws.addRow(['Unidades', 'Cantidad']);
-        ws.addRow(['Total', summary.units.total]);
-        ws.addRow(['Lotes libres', summary.units.available]);
-        ws.addRow(['Reservadas', summary.units.reserved]);
-        ws.addRow(['Con CPP', summary.units.conCpp]);
-        ws.addRow(['Trámite legal', summary.units.tramiteLegal]);
-        ws.addRow(['Traspasados', summary.units.escrituradas]);
-        ws.addRow(['Vivienda entregada', summary.units.entregadas]);
-        ws.addRow(['Vendidas / no disponibles', summary.units.sold]);
-        ws.addRow(['Canceladas', summary.units.canceladas]);
-        ws.addRow([]);
-        ws.addRow(['Vencimientos críticos (≤120d)']);
-        ws.addRow(['Tipo', 'Nombre', 'Vence']);
-        (summary.alerts || []).forEach(a => ws.addRow([a.type, a.name, a.due ? new Date(a.due).toISOString().slice(0, 10) : '—']));
-      }
-
-      if (reportPeriod) {
-        const wsPeriod = wb.addWorksheet('Actividad periodo');
-        wsPeriod.columns = [{ width: 34 }, { width: 70 }];
-        wsPeriod.addRow(['Periodo analizado', reportPeriod.label]);
-        wsPeriod.getRow(1).font = { bold: true, size: 13 };
-        wsPeriod.addRow([]);
-        wsPeriod.addRow(['Avance registrado', 'Cantidad']).font = { bold: true };
-        if ((exportedPeriodActivity?.counts || []).length) {
-          exportedPeriodActivity.counts.forEach(row => wsPeriod.addRow([row.type, row.count]));
-        } else {
-          wsPeriod.addRow(['Sin avances fechados registrados en el periodo', 0]);
-        }
-        wsPeriod.addRow(['Total avances', exportedPeriodActivity?.totals?.events || 0]);
-        wsPeriod.addRow([]);
-        wsPeriod.addRow(['Fecha / avance', 'Detalle']).font = { bold: true };
-        if ((exportedPeriodActivity?.events || []).length) {
-          exportedPeriodActivity.events.forEach(event => {
-            const date = event.date ? new Date(event.date).toISOString().slice(0, 10) : '';
-            wsPeriod.addRow([`${date} - ${event.type}`, event.detail || '']);
-          });
-        } else {
-          wsPeriod.addRow(['Sin actividad con fecha disponible', '']);
+      for (const section of CHART_ORDER) {
+        if (section.section === 'Resumen Financiero') continue;
+        for (const title of (section.items || [])) {
+          const table = chartRows(title, datasets);
+          const group = chartGroupFromTable(section.section, title, table);
+          if (group) chartGroups.push(group);
         }
       }
 
-      if (exportedFinancePhases.length) {
-        const wsFinance = wb.addWorksheet('Detalle financiero');
-        wsFinance.columns = [
-          { header: 'Fase', key: 'phase', width: 28 },
-          { header: 'Bloque', key: 'group', width: 24 },
-          { header: 'Partida', key: 'item', width: 42 },
-          { header: 'Monto', key: 'amount', width: 18 }
-        ];
-        wsFinance.getRow(1).font = { bold: true };
+      const coverageTable = chartRows('Cobertura CPP vs préstamo', datasets);
+      const coverageGroup = chartGroupFromTable('Resumen Financiero', 'Cobertura CPP vs préstamo', coverageTable);
+      if (coverageGroup) chartGroups.push(coverageGroup);
+      chartGroups.push(...buildExecutiveFinancialChartGroups(financeDocument || {}, movementRows));
 
-        exportedFinancePhases.forEach(phase => {
-          const phaseName = phase.name || phase.title || phase.phase || 'Fase';
-          [
-            { title: 'Usos estimados', items: phase.planUses },
-            { title: 'Fuentes estimadas', items: phase.planSources },
-            { title: 'Usos reales', items: phase.uses },
-            { title: 'Fuentes reales', items: phase.sources }
-          ].forEach(group => {
-            const items = Array.isArray(group.items) && group.items.length
-              ? group.items
-              : [{ name: 'Sin partidas', amount: 0 }];
+      summary.salesAmount = datoRows.reduce((total, row) => total + numberValue(row['PRECIO DE VENTA']), 0);
+      summary.cppAmount = datoRows.reduce((total, row) => total + numberValue(row['MONTO CPP']), 0);
 
-            items.forEach(item => wsFinance.addRow({
-              phase: phaseName,
-              group: group.title,
-              item: item.name || 'Partida',
-              amount: toNumber(item.amount)
-            }));
-            wsFinance.addRow({
-              phase: phaseName,
-              group: `Total ${group.title.toLowerCase()}`,
-              item: '',
-              amount: items.reduce((sum, item) => sum + toNumber(item.amount), 0)
-            });
-          });
-          wsFinance.addRow([]);
-        });
-
-        wsFinance.getColumn('amount').numFmt = '#,##0.00';
-      }
-
-      const wsBA = wb.addWorksheet('Antes-Después');
-      wsBA.getCell('A1').value = 'Evidencia fotográfica — Antes / Después';
-      wsBA.getRow(1).font = { bold: true, size: 14 };
-      wsBA.columns = [{ width: 3 }, { width: 50 }, { width: 50 }];
-
-      let rBA = 3;
-      for (let i = 0; i < (beforeAfter || []).length; i += 2) {
-        const left = beforeAfter[i]?.src || beforeAfter[i];
-        const right = beforeAfter[i + 1]?.src || beforeAfter[i + 1];
-
-        if (left) {
-          const m1 = /^data:image\/\w+;base64,(.+)$/i.exec(String(left));
-          if (m1) {
-            const id1 = wb.addImage({ base64: m1[1], extension: 'png' });
-            wsBA.addImage(id1, { tl: { col: 1, row: rBA }, ext: { width: 340, height: 200 } });
-          }
-        }
-
-        if (right) {
-          const m2 = /^data:image\/png;base64,(.+)$/i.exec(String(right));
-          if (m2) {
-            const id2 = wb.addImage({ base64: m2[1], extension: 'png' });
-            wsBA.addImage(id2, { tl: { col: 2, row: rBA }, ext: { width: 340, height: 200 } });
-          }
-        }
-
-        rBA += 12;
-      }
-
-      const keys = Object.keys(charts || {});
-      if (keys.length) {
-        const ws2 = wb.addWorksheet('Gráficas');
-        ws2.getCell('A1').value = 'Gráficas (orden corporativo)';
-        ws2.getRow(1).font = { bold: true, size: 14 };
-        let row = 3;
-
-        const orderedTitles = [];
-        for (const sec of CHART_ORDER) {
-          for (const t of (sec.items || [])) if (charts[t]) orderedTitles.push(t);
-        }
-        for (const t of keys) if (!orderedTitles.includes(t)) orderedTitles.push(t);
-
-        for (const k of orderedTitles) {
-          const dataUrl = charts[k];
-          const m = /^data:image\/png;base64,(.+)$/i.exec(String(dataUrl || ''));
-          if (!m) continue;
-
-          ws2.getCell(`A${row}`).value = k;
-          ws2.getRow(row).font = { bold: true };
-          row += 1;
-
-          const imgId = wb.addImage({ base64: m[1], extension: 'png' });
-          ws2.addImage(imgId, { tl: { col: 0, row: row }, ext: { width: 900, height: 340 } });
-          row += 20;
-        }
-      }
-
+      const workbookBuffer = await buildExecutiveSummaryWorkbook({
+        summary,
+        datoRows,
+        movementRows,
+        chartGroups
+      });
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename="${reportFilename('xlsx')}"`);
-      await wb.xlsx.write(res);
-      return res.end();
+      return res.end(workbookBuffer);
     }
 
     const PDFDocument = require('pdfkit');

@@ -2293,6 +2293,7 @@ async function refreshBeforeAfter() {
     // ✅ MODO SEGURO: exporta todas las fotos en orden (sin depender de side)
     window.__BEFORE_AFTER__ = imgDocs
       .map(d => ({
+        documentId: String(d._id || ''),
         src: toAbs(getUrl(d)),
         createdAt: d.createdAt || d.updatedAt || null,
         tag: String(d.tag || d.baTag || '').toUpperCase(),
