@@ -2294,7 +2294,12 @@ async function refreshBeforeAfter() {
     window.__BEFORE_AFTER__ = imgDocs
       .map(d => ({
         src: toAbs(getUrl(d)),
-        createdAt: d.createdAt || d.updatedAt || null
+        createdAt: d.createdAt || d.updatedAt || null,
+        tag: String(d.tag || d.baTag || '').toUpperCase(),
+        label: d.label || d.originalname || d.name || 'Fotografía',
+        description: d.description || d.notes || '',
+        phase: d.phase || d.etapa || '',
+        pairKey: d.pairKey || d.comparisonKey || ''
       }))
       .filter(d => d.src);
 
@@ -4323,6 +4328,12 @@ if (btn) {
       document.querySelectorAll('[data-summary-phase-line-chart]').forEach(canvas => {
         const title = canvas.dataset.chartTitle || `Gráfica líneas ${canvas.id || ''}`.trim();
         charts[title] = captureCanvas(canvas.id);
+      });
+
+      document.querySelectorAll('[data-summary-phase-composition-chart]').forEach(canvas => {
+        const phaseName = canvas.dataset.phaseName || 'Fase';
+        const variant = canvas.dataset.phaseVariant || 'Estimación';
+        charts[`Composición de usos - ${phaseName} - ${variant}`] = captureCanvas(canvas.id);
       });
 
       // Limpia nulls
@@ -8153,13 +8164,13 @@ function renderPhaseCompositionCharts(phases, containerId = 'summaryPhaseComposi
           <section class="summary-phase-donut-panel">
             <div class="summary-phase-donut-title"><span>Estimación</span><strong>${formatMoney(planTotal)}</strong></div>
             <div class="summary-phase-donut-box">
-              ${planTotal > 0 ? `<canvas id="summaryPhaseCompositionPlan${phaseIndex}"></canvas>` : '<div class="summary-phase-composition-empty">Sin estimación</div>'}
+              ${planTotal > 0 ? `<canvas id="summaryPhaseCompositionPlan${phaseIndex}" data-summary-phase-composition-chart data-phase-name="${escapeHtml(phaseName)}" data-phase-variant="Estimación"></canvas>` : '<div class="summary-phase-composition-empty">Sin estimación</div>'}
             </div>
           </section>
           <section class="summary-phase-donut-panel">
             <div class="summary-phase-donut-title"><span>Realidad</span><strong>${formatMoney(realTotal)}</strong></div>
             <div class="summary-phase-donut-box">
-              ${realTotal > 0 ? `<canvas id="summaryPhaseCompositionReal${phaseIndex}"></canvas>` : '<div class="summary-phase-composition-empty">Sin ejecución real</div>'}
+              ${realTotal > 0 ? `<canvas id="summaryPhaseCompositionReal${phaseIndex}" data-summary-phase-composition-chart data-phase-name="${escapeHtml(phaseName)}" data-phase-variant="Realidad"></canvas>` : '<div class="summary-phase-composition-empty">Sin ejecución real</div>'}
             </div>
           </section>
         </div>

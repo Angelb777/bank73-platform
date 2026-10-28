@@ -253,6 +253,8 @@ const projectSchema = new Schema({
       financierBanks: { type: [{ type: String, trim: true }], default: [] },
       startDate: { type: Date, default: null },
       endDate: { type: Date, default: null },
+      actualStartDate: { type: Date, default: null },
+      actualEndDate: { type: Date, default: null },
       planUses: {
         type: [{
           name: { type: String, trim: true, default: '' },
@@ -265,6 +267,21 @@ const projectSchema = new Schema({
         default: []
       },
       planSources: {
+        type: [{ name: { type: String, trim: true, default: '' }, amount: { type: Number, default: 0 } }],
+        default: []
+      },
+      uses: {
+        type: [{
+          name: { type: String, trim: true, default: '' },
+          amount: { type: Number, default: 0 },
+          fundingSources: {
+            type: [{ name: { type: String, trim: true, default: '' }, amount: { type: Number, default: 0 } }],
+            default: undefined
+          }
+        }],
+        default: []
+      },
+      sources: {
         type: [{ name: { type: String, trim: true, default: '' }, amount: { type: Number, default: 0 } }],
         default: []
       },

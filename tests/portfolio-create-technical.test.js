@@ -20,8 +20,9 @@ test('los permisos de alta se muestran en Datos técnicos antes de los planos', 
 });
 
 test('la creación explica que los datos financieros son el plan estimado', () => {
-  assert.match(html, /estimación financiera inicial/);
-  assert.match(html, /La ejecución real se registrará después/);
+  assert.match(html, /Planifica la estimación/);
+  assert.match(html, /registra también su realidad/);
+  assert.match(html, /Dato Único seguirá siendo la única fuente/);
 });
 
 test('las pólizas pueden seleccionar referencias procedentes de Dato Único', () => {
@@ -42,12 +43,35 @@ test('Datos técnicos permite descargar la plantilla general antes de crear el p
 });
 
 test('cada fase del alta recoge las fechas previstas que usa el resumen financiero', () => {
-  assert.match(script, /Inicio previsto<input data-create-phase="startDate" type="date"/);
-  assert.match(script, /Fin previsto<input data-create-phase="endDate" type="date"/);
+  assert.match(script, /Inicio previsto<\/span><input class="input" data-create-phase="startDate" type="date"/);
+  assert.match(script, /Fin previsto<\/span><input class="input" data-create-phase="endDate" type="date"/);
   assert.match(script, /startDate: row\.querySelector\('\[data-create-phase="startDate"\]'\)/);
   assert.match(script, /endDate: row\.querySelector\('\[data-create-phase="endDate"\]'\)/);
   assert.doesNotMatch(script, /Fecha de carta<input data-create-phase-condition="letterDate"/);
   assert.doesNotMatch(script, /Numero o referencia de carta<input data-create-phase-condition="letterReference"/);
+});
+
+test('el alta financiera comparte el flujo Estimación y Realidad de Finanzas', () => {
+  assert.match(script, /data-create-phase-view="plan"/);
+  assert.match(script, /data-create-phase-view="real"/);
+  assert.match(script, /data-copy-create-plan-to-real/);
+  assert.match(script, /data-copy-create-real-to-plan/);
+  assert.match(script, /data-create-phase="actualStartDate"/);
+  assert.match(script, /data-create-phase="actualEndDate"/);
+  assert.match(script, /fundingSources: Array\.from\(useRow\.querySelectorAll\('\[data-create-use-source\]'\)\)/);
+  assert.doesNotMatch(script, /data-create-real-enabled/);
+  assert.doesNotMatch(script, /El proyecto ya ha comenzado/);
+});
+
+test('las líneas viven en Realidad y pueden generarse desde la parte Banco de los usos', () => {
+  assert.match(script, /data-generate-create-financing-lines/);
+  assert.match(script, /financingLinesFromPlannedUses/);
+  assert.match(script, /Generar desde usos previstos/);
+  assert.match(script, /Los desembolsos, amortizaciones e intereses se completarán después en Finanzas/);
+  assert.doesNotMatch(html, /id="createFinanceLines"/);
+  assert.doesNotMatch(script, /data-create-phase-financing="interestRate"/);
+  assert.doesNotMatch(script, /data-create-phase-financing="paymentMethod"/);
+  assert.doesNotMatch(script, /data-create-phase-financing="commission"/);
 });
 
 test('los planos del alta se guardan en la categoría que consume Técnico', () => {

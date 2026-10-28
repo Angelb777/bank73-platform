@@ -496,8 +496,12 @@ function sanitizeFinancePhases(raw = [], phasesCount = 0) {
         .map(value => String(value || '').trim()).filter(Boolean))].slice(0, 20),
       startDate: item.startDate || null,
       endDate: item.endDate || null,
+      actualStartDate: item.actualStartDate || null,
+      actualEndDate: item.actualEndDate || null,
       planUses: sanitizeLineItems(item.planUses || item.uses || item.usos),
       planSources: sanitizeLineItems(item.planSources || item.sources || item.fuentes),
+      uses: sanitizeLineItems(item.uses || item.realUses || []),
+      sources: sanitizeLineItems(item.sources || item.realSources || []),
       financialConditions: sanitizePhaseFinancialConditions(item.financialConditions || {}),
       financingLines: sanitizePhaseFinancingLines(item.financingLines || item.financingFacilities || [])
     };
@@ -584,7 +588,7 @@ function applyAutomaticPhaseSources(phases = [], conditions = {}) {
     // Las fuentes son automaticas: Promotor absorbe el resto y el redondeo.
     // Asi el servidor nunca reconstruye unas fuentes distintas a las mostradas.
     const promoterAmount = roundMoney(Math.max(usesTotal - bankAmount, 0));
-    const reconciledConditions = {
+    let reconciledConditions = {
       ...phaseConditions,
       phaseTotal: roundMoney(usesTotal),
       bankFinancedAmount: bankAmount,
@@ -601,6 +605,17 @@ function applyAutomaticPhaseSources(phases = [], conditions = {}) {
       current.amount += Number(source?.amount || 0);
       nestedSources.set(key, current);
     }));
+    if (nestedSources.size) {
+      const nestedBank = roundMoney(nestedSources.get('banco')?.amount || 0);
+      const nestedPromoter = roundMoney(nestedSources.get('promotor')?.amount || 0);
+      reconciledConditions = {
+        ...reconciledConditions,
+        bankFinancedAmount: nestedBank,
+        bankFinancedPct: usesTotal > 0 ? roundPct(nestedBank / usesTotal * 100) : 0,
+        promoterContribution: nestedPromoter,
+        promoterContributionPct: usesTotal > 0 ? roundPct(nestedPromoter / usesTotal * 100) : 0
+      };
+    }
     return {
       ...phase,
       financialConditions: reconciledConditions,
@@ -634,7 +649,7 @@ function assertFinancePhasesBalanced(phases = [], conditions = {}) {
     }
     const bankSource = Number((phase.planSources || []).find(item => item.name === 'Banco')?.amount || 0);
     const financingLinesTotal = (phase.financingLines || []).reduce((sum, line) => sum + Number(line?.approvedAmount || 0), 0);
-    if (!close(bankSource, financingLinesTotal)) {
+    if ((phase.financingLines || []).length && !close(bankSource, financingLinesTotal)) {
       fail(`En ${phase.name || 'fase'}, la suma de lineas aprobadas debe coincidir con la fuente Banco de la fase.`);
     }
   }
@@ -968,6 +983,8 @@ async function syncInitialFinanceStructure({
       financierBanks: phase.financierBanks || [],
       startDate: phase.startDate || dates.startDate,
       endDate: phase.endDate || dates.endDate,
+      actualStartDate: phase.actualStartDate || null,
+      actualEndDate: phase.actualEndDate || null,
       planUses: phase.planUses || [],
       planSources: phase.planSources || [],
       financialConditions: phase.financialConditions || {},
@@ -977,15 +994,19 @@ async function syncInitialFinanceStructure({
         promoterProfile: requirementPromoter?.promoterProfile || {},
         phase
       }),
-      uses: [],
-      sources: []
+      uses: phase.uses || [],
+      sources: phase.sources || []
     };
     if (existing) {
       if (!appendOnly) {
         existing.startDate = payload.startDate;
         existing.endDate = payload.endDate;
+        existing.actualStartDate = payload.actualStartDate;
+        existing.actualEndDate = payload.actualEndDate;
         existing.planUses = payload.planUses;
         existing.planSources = payload.planSources;
+        existing.uses = payload.uses;
+        existing.sources = payload.sources;
         existing.financierBanks = payload.financierBanks;
         existing.financialConditions = payload.financialConditions;
         existing.financingLines = payload.financingLines;
@@ -5039,6 +5060,26 @@ if (isSoldLikeStatus(st)) U.sold++;
       if (title === 'Modalidad de compra') return simple(commercialData.customerReport?.purchaseMode, 'label', 'count', 'Total operaciones');
       if (title === 'Ingresos mensuales declarados') return simple(commercialData.customerReport?.incomeBands, 'label', 'count', 'Clientes con ingreso registrado');
       if (title === 'Vía de captación' || title === 'Via de captacion') return simple(commercialData.customerReport?.captureChannel, 'label', 'count', 'Total operaciones');
+
+      const phaseCompositionMatch = String(title || '').match(/^Composición de usos - (.+) - (Estimación|Realidad)$/i);
+      if (phaseCompositionMatch) {
+        const phaseName = phaseCompositionMatch[1].trim();
+        const variant = phaseCompositionMatch[2].toLowerCase();
+        const phase = (exportedFinancePhases || []).find(item =>
+          String(item?.name || item?.title || item?.phase || 'Fase').trim() === phaseName
+        );
+        const items = variant.startsWith('estim') ? (phase?.planUses || []) : (phase?.uses || []);
+        const total = items.reduce((sum, item) => sum + toNumber(item?.amount), 0);
+        return {
+          columns: ['Línea', 'Monto / peso'],
+          rows: items.map(item => {
+            const amount = toNumber(item?.amount);
+            const pct = total > 0 ? ((amount / total) * 100).toFixed(1) : '0.0';
+            return { label: item?.name || 'Sin nombre', value: `${fmtMoneyShort(amount)} · ${pct}%` };
+          }),
+          total: { label: `Total ${variant}`, value: fmtMoneyShort(total) }
+        };
+      }
       if (title === 'Minutas de liberación') return simple(legalData.minutasLiberacion, 'status', 'count', 'Total minutas');
       if (title === 'Minutas de segregación') return simple(legalData.minutasSegregacion, 'status', 'count', 'Total minutas');
       if (title === 'Minutas de préstamo') return simple(legalData.minutasPrestamo, 'status', 'count', 'Total minutas');
@@ -5637,57 +5678,371 @@ if (isSoldLikeStatus(st)) U.sold++;
       doc.moveDown(0.6);
     }
 
+    function drawLegalProgressMatrix(doc, legalData = {}, meta) {
+      const milestones = Array.isArray(legalData.milestones) ? legalData.milestones : [];
+      const units = Array.isArray(legalData.progressByUnit) ? legalData.progressByUnit : [];
+      if (!milestones.length || !units.length) return;
+
+      const stateStyle = {
+        completed: { fill: '#173B87', text: '#FFFFFF', symbol: 'C' },
+        in_progress: { fill: '#D97706', text: '#FFFFFF', symbol: 'T' },
+        pending: { fill: '#FFFFFF', text: '#64748B', symbol: 'P' },
+        not_applicable: { fill: '#E2E8F0', text: '#64748B', symbol: '-' }
+      };
+      const shortLabels = {
+        occupancyPermit: 'P. ocup.',
+        releaseMinute: 'M. lib.',
+        segregationMinute: 'M. venta',
+        mortgageMinute: 'M. hip.',
+        registryEntry: 'Entrada RP',
+        registration: 'Inscrip.',
+        disbursement: 'Desemb.'
+      };
+
+      let margin;
+      let contentW;
+      let unitW;
+      let progressW;
+      let stepW;
+      let bottom;
+      const rowH = 18;
+      const headerH = 42;
+
+      const totals = milestones.map(milestone => {
+        const steps = units.map(unit => unit?.milestones?.[milestone.key] || { status: 'pending' });
+        const applicable = steps.filter(step => step.status !== 'not_applicable');
+        return {
+          complete: applicable.filter(step => step.status === 'completed').length,
+          applicable: applicable.length
+        };
+      });
+
+      const drawLegend = () => {
+        const y = doc.y;
+        const items = [
+          ['C', 'Completado', stateStyle.completed],
+          ['T', 'En tramite', stateStyle.in_progress],
+          ['P', 'Pendiente', stateStyle.pending],
+          ['-', 'No aplica', stateStyle.not_applicable]
+        ];
+        let x = margin;
+        items.forEach(([symbol, label, style]) => {
+          doc.save();
+          roundRect(doc, x, y, 14, 14, 3).fill(style.fill).stroke('#CBD5E1');
+          doc.restore();
+          doc.fontSize(6).fillColor(style.text).text(symbol, x, y + 4, { width: 14, align: 'center' });
+          doc.fontSize(7).fillColor(TEXT_MUTED).text(label, x + 19, y + 3, { width: 66 });
+          x += 86;
+        });
+        doc.y = y + 22;
+      };
+
+      const drawMatrixHeader = () => {
+        const y = doc.y;
+        doc.save();
+        doc.rect(margin, y, contentW, headerH).fill(BRAND_BLUE_SOFT).stroke('#CBD5E1');
+        doc.restore();
+        doc.fontSize(7).fillColor(BRAND_BLUE).text('Unidad', margin + 5, y + 15, { width: unitW - 10 });
+
+        milestones.forEach((milestone, index) => {
+          const x = margin + unitW + index * stepW;
+          const label = shortLabels[milestone.key] || milestone.shortLabel || milestone.label;
+          doc.save();
+          doc.lineWidth(0.35).moveTo(x, y).lineTo(x, y + headerH).stroke('#CBD5E1');
+          doc.restore();
+          doc.fontSize(5.5).fillColor(BRAND_BLUE).text(label, x + 2, y + 7, {
+            width: stepW - 4,
+            height: 19,
+            align: 'center',
+            ellipsis: true
+          });
+          doc.fontSize(5.5).fillColor(TEXT_MUTED).text(
+            `${totals[index].complete}/${totals[index].applicable}`,
+            x + 2,
+            y + 29,
+            { width: stepW - 4, align: 'center' }
+          );
+        });
+
+        const progressX = margin + unitW + milestones.length * stepW;
+        doc.save();
+        doc.lineWidth(0.35).moveTo(progressX, y).lineTo(progressX, y + headerH).stroke('#CBD5E1');
+        doc.restore();
+        doc.fontSize(6).fillColor(BRAND_BLUE).text('Avance', progressX + 2, y + 15, { width: progressW - 4, align: 'center' });
+        doc.y = y + headerH;
+      };
+
+      const addMatrixPage = (continuation = false) => {
+        doc.addPage({
+          size: 'LETTER',
+          layout: 'landscape',
+          margins: { top: 36, bottom: 36, left: 28, right: 28 }
+        });
+        header(doc, meta);
+        sectionTitle(doc, 'Resumen Legal');
+        doc.fontSize(13).fillColor(TEXT_DARK).text(
+          continuation ? 'Matriz de avance legal por unidad - continuacion' : 'Matriz de avance legal por unidad',
+          doc.page.margins.left
+        );
+        doc.moveDown(0.35);
+        margin = doc.page.margins.left;
+        contentW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+        unitW = 104;
+        progressW = 42;
+        stepW = (contentW - unitW - progressW) / milestones.length;
+        bottom = doc.page.height - doc.page.margins.bottom - 26;
+        drawLegend();
+        drawMatrixHeader();
+      };
+
+      addMatrixPage(false);
+      units.forEach((unit, rowIndex) => {
+        if (doc.y + rowH > bottom) addMatrixPage(true);
+        const y = doc.y;
+        if (rowIndex % 2 === 1) {
+          doc.save();
+          doc.rect(margin, y, contentW, rowH).fill('#F8FAFC');
+          doc.restore();
+        }
+        doc.save();
+        doc.lineWidth(0.25).moveTo(margin, y + rowH).lineTo(margin + contentW, y + rowH).stroke('#E2E8F0');
+        doc.restore();
+        doc.fontSize(6.5).fillColor(TEXT_DARK).text(unit.unit || 'Unidad', margin + 5, y + 3, { width: unitW - 10, ellipsis: true });
+        doc.fontSize(5.5).fillColor(TEXT_MUTED).text(unit.bank || '', margin + 5, y + 10, { width: unitW - 10, ellipsis: true });
+
+        let completed = 0;
+        let applicable = 0;
+        milestones.forEach((milestone, index) => {
+          const step = unit?.milestones?.[milestone.key] || { status: 'pending' };
+          const style = stateStyle[step.status] || stateStyle.pending;
+          if (step.status !== 'not_applicable') applicable++;
+          if (step.status === 'completed') completed++;
+          const x = margin + unitW + index * stepW;
+          const boxSize = 11;
+          const boxX = x + (stepW - boxSize) / 2;
+          doc.save();
+          roundRect(doc, boxX, y + 3.5, boxSize, boxSize, 2).fill(style.fill).stroke('#CBD5E1');
+          doc.restore();
+          doc.fontSize(5.5).fillColor(style.text).text(style.symbol, boxX, y + 6, { width: boxSize, align: 'center' });
+        });
+
+        const progressX = margin + unitW + milestones.length * stepW;
+        doc.fontSize(6.5).fillColor(BRAND_BLUE).text(`${completed}/${applicable}`, progressX + 2, y + 6, { width: progressW - 4, align: 'center' });
+        doc.y = y + rowH;
+      });
+      doc.y += 6;
+    }
+
     async function drawBeforeAfter(doc, beforeAfter, meta) {
       const margin = doc.page.margins.left;
       const items = (beforeAfter || [])
-        .map(x => x?.src || x?.dataUrl || x)
-        .filter(Boolean);
+        .map((item, index) => {
+          if (typeof item === 'string') return { src: item, index, tag: '' };
+          return {
+            src: item?.src || item?.dataUrl || '',
+            index,
+            tag: String(item?.tag || item?.baTag || '').trim().toUpperCase(),
+            label: String(item?.label || item?.name || '').trim(),
+            description: String(item?.description || item?.notes || '').trim(),
+            phase: String(item?.phase || item?.etapa || '').trim(),
+            pairKey: String(item?.pairKey || item?.comparisonKey || '').trim(),
+            createdAt: item?.createdAt || item?.date || null
+          };
+        })
+        .filter(item => item.src)
+        .sort((a, b) => {
+          const aTime = a.createdAt ? new Date(a.createdAt).getTime() : a.index;
+          const bTime = b.createdAt ? new Date(b.createdAt).getTime() : b.index;
+          return aTime - bTime;
+        });
 
       if (!items.length) {
         doc.fontSize(10).fillColor('#6b7280')
-          .text('No hay imágenes de Antes/Después disponibles.', margin);
+          .text('No hay imagenes de Antes/Despues disponibles.', margin);
         return;
+      }
+
+      const pairs = [];
+      const keyed = new Map();
+      const unkeyedBefore = [];
+      const unkeyedAfter = [];
+      const legacy = [];
+      items.forEach(item => {
+        const isBefore = item.tag === 'BEFORE' || item.tag === 'ANTES';
+        const isAfter = item.tag === 'AFTER' || item.tag === 'DESPUES';
+        if (!isBefore && !isAfter) {
+          legacy.push(item);
+          return;
+        }
+        if (item.pairKey) {
+          if (!keyed.has(item.pairKey)) keyed.set(item.pairKey, { before: null, after: null });
+          keyed.get(item.pairKey)[isBefore ? 'before' : 'after'] = item;
+          return;
+        }
+        (isBefore ? unkeyedBefore : unkeyedAfter).push(item);
+      });
+      keyed.forEach(pair => pairs.push(pair));
+      const taggedCount = Math.max(unkeyedBefore.length, unkeyedAfter.length);
+      for (let i = 0; i < taggedCount; i++) {
+        pairs.push({ before: unkeyedBefore[i] || null, after: unkeyedAfter[i] || null });
+      }
+      for (let i = 0; i < legacy.length; i += 2) {
+        pairs.push({ before: legacy[i] || null, after: legacy[i + 1] || null });
       }
 
       const colGap = 14;
       const pageW = doc.page.width - margin * 2;
       const colW = (pageW - colGap) / 2;
-      const imgH = 150;
-      const cardH = imgH + 34;
+      const imgH = 155;
+      const cardH = imgH + 74;
+      const bottom = () => doc.page.height - doc.page.margins.bottom - 26;
 
-      for (let i = 0; i < items.length; i += 2) {
-        const left = items[i];
-        const right = items[i + 1];
-        const y0 = doc.y;
+      const addPhotoPage = () => {
+        doc.addPage({ size: 'LETTER', layout: 'portrait', margins: { top: 40, bottom: 40, left: 40, right: 40 } });
+        header(doc, meta);
+        sectionTitle(doc, 'Evidencia fotografica - continuacion');
+      };
 
-        if (y0 + cardH > doc.page.height - doc.page.margins.bottom - 28) {
-          doc.addPage();
-          header(doc, meta);
-        }
+      const formatPhotoDate = value => {
+        if (!value) return '';
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+      };
+
+      for (let i = 0; i < pairs.length; i++) {
+        const pair = pairs[i];
+        if (doc.y + cardH + 24 > bottom()) addPhotoPage();
 
         const y = doc.y;
-        const drawPhotoCard = async (src, x, label) => {
+        doc.fontSize(9).fillColor(TEXT_DARK).text(`Comparativa ${i + 1}`, margin, y, { width: pageW });
+        const cardY = y + 17;
+        const drawPhotoCard = async (item, x, label, bandColor) => {
           doc.save();
-          roundRect(doc, x, y, colW, cardH, 8).fill('#FFFFFF').stroke('#DDE7F2');
-          doc.fontSize(9).fillColor(BRAND_BLUE).text(label, x + 10, y + 9, { width: colW - 20 });
+          roundRect(doc, x, cardY, colW, cardH, 8).fill('#FFFFFF').stroke('#DDE7F2');
+          doc.rect(x + 8, cardY + 31, colW - 16, imgH).fill('#F1F5F9');
           doc.restore();
 
-          const b = await anyImageToBuffer(src);
+          if (!item) {
+            doc.fontSize(9).fillColor(TEXT_MUTED).text(`Sin fotografia de ${label.toLowerCase()}`, x + 10, cardY + 92, {
+              width: colW - 20,
+              align: 'center'
+            });
+            doc.save();
+            doc.rect(x, cardY, colW, 25).fill(bandColor);
+            doc.restore();
+            doc.fontSize(10).fillColor('#FFFFFF').text(label, x + 10, cardY + 8, { width: colW - 20, align: 'center' });
+            return;
+          }
+          const b = await anyImageToBuffer(item.src);
           if (b) {
-            doc.image(b, x + 10, y + 26, { fit: [colW - 20, imgH] });
+            doc.image(b, x + 8, cardY + 31, { fit: [colW - 16, imgH], align: 'center', valign: 'center' });
           } else {
-            doc.fontSize(9).fillColor(TEXT_MUTED).text('Imagen no disponible', x + 10, y + 78, { width: colW - 20, align: 'center' });
+            doc.fontSize(9).fillColor(TEXT_MUTED).text('Imagen no disponible', x + 10, cardY + 92, { width: colW - 20, align: 'center' });
+          }
+          doc.save();
+          doc.rect(x, cardY, colW, 25).fill(bandColor);
+          doc.restore();
+          doc.fontSize(10).fillColor('#FFFFFF').text(label, x + 10, cardY + 8, { width: colW - 20, align: 'center' });
+          const metaParts = [item.label, item.phase, formatPhotoDate(item.createdAt)].filter(Boolean);
+          doc.fontSize(7).fillColor(TEXT_MUTED).text(metaParts.join(' | ') || 'Sin detalle adicional', x + 9, cardY + 191, {
+            width: colW - 18,
+            height: 12,
+            ellipsis: true
+          });
+          if (item.description) {
+            doc.fontSize(6.5).fillColor(TEXT_MUTED).text(item.description, x + 9, cardY + 205, {
+              width: colW - 18,
+              height: 15,
+              ellipsis: true
+            });
           }
         };
 
-        await drawPhotoCard(left, margin, `Foto ${i + 1}`);
+        await drawPhotoCard(pair.before, margin, 'ANTES', '#64748B');
+        await drawPhotoCard(pair.after, margin + colW + colGap, 'DESPUES', '#0F766E');
+        doc.y = cardY + cardH + 14;
+      }
+    }
 
-        if (right) {
-          await drawPhotoCard(right, margin + colW + colGap, `Foto ${i + 2}`);
+    function drawPhaseCompositionComparison(doc, phaseName, variants = []) {
+      const margin = doc.page.margins.left;
+      const contentW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+      const gap = 14;
+      const colW = (contentW - gap) / 2;
+      const startY = doc.y;
+
+      doc.fontSize(15).fillColor(TEXT_DARK).text(`Composicion de usos - ${phaseName}`, margin, startY, {
+        width: contentW
+      });
+      const panelY = startY + 28;
+      const panelH = 475;
+
+      variants.forEach((variant, index) => {
+        const x = margin + index * (colW + gap);
+        doc.save();
+        roundRect(doc, x, panelY, colW, panelH, 9).fill('#FFFFFF').stroke('#DDE7F2');
+        doc.rect(x, panelY, colW, 30).fill(index === 0 ? BRAND_BLUE_SOFT : '#ECFDF5');
+        doc.restore();
+        doc.fontSize(10).fillColor(index === 0 ? BRAND_BLUE : '#0F766E').text(variant.label, x + 10, panelY + 10, {
+          width: colW - 20,
+          align: 'center'
+        });
+
+        const imageTop = panelY + 42;
+        const imageH = 180;
+        const buffer = dataUrlToBuffer(variant.dataUrl);
+        if (buffer) {
+          doc.image(buffer, x + 10, imageTop, { fit: [colW - 20, imageH], align: 'center', valign: 'center' });
+        } else {
+          doc.fontSize(9).fillColor(TEXT_MUTED).text('Grafica no disponible', x + 10, imageTop + 78, {
+            width: colW - 20,
+            align: 'center'
+          });
         }
 
-        doc.y = y + cardH + 14;
-      }
+        const table = chartRows(variant.title, datasets);
+        const rows = Array.isArray(table?.rows) ? table.rows : [];
+        let rowY = panelY + 237;
+        const visibleRows = rows.slice(0, 8);
+        visibleRows.forEach((row, rowIndex) => {
+          if (rowIndex % 2 === 1) {
+            doc.save();
+            doc.rect(x + 8, rowY, colW - 16, 22).fill('#F8FAFC');
+            doc.restore();
+          }
+          doc.fontSize(7).fillColor(TEXT_DARK).text(row.label || '', x + 12, rowY + 7, {
+            width: colW * 0.52,
+            height: 10,
+            ellipsis: true
+          });
+          doc.fontSize(7).fillColor(TEXT_MUTED).text(row.value || '', x + colW * 0.55, rowY + 7, {
+            width: colW * 0.4 - 12,
+            align: 'right',
+            height: 10,
+            ellipsis: true
+          });
+          rowY += 22;
+        });
+        if (rows.length > visibleRows.length) {
+          doc.fontSize(7).fillColor(TEXT_MUTED).text(`+ ${rows.length - visibleRows.length} lineas adicionales`, x + 12, rowY + 5, {
+            width: colW - 24
+          });
+          rowY += 18;
+        }
+        if (table?.total) {
+          doc.save();
+          doc.moveTo(x + 10, rowY).lineTo(x + colW - 10, rowY).stroke('#CBD5E1');
+          doc.restore();
+          doc.fontSize(7.5).fillColor(TEXT_DARK).text(table.total.label || 'Total', x + 12, rowY + 7, {
+            width: colW * 0.48
+          });
+          doc.fontSize(7.5).fillColor(index === 0 ? BRAND_BLUE : '#0F766E').text(table.total.value || '', x + colW * 0.5, rowY + 7, {
+            width: colW * 0.45 - 12,
+            align: 'right'
+          });
+        }
+      });
+      doc.y = panelY + panelH + 8;
     }
 
         const CHART_ORDER = [
@@ -5739,6 +6094,32 @@ if (isSoldLikeStatus(st)) U.sold++;
         ]
       }
     ];
+
+    const financialChartSection = CHART_ORDER.find(section => section.section === 'Resumen Financiero');
+    if (financialChartSection) {
+      for (const phase of (exportedFinancePhases || [])) {
+        const phaseName = phase?.name || phase?.title || phase?.phase || 'Fase';
+        if ((phase?.planUses || []).some(item => toNumber(item?.amount) > 0)) {
+          financialChartSection.items.push(`Composición de usos - ${phaseName} - Estimación`);
+        }
+        if ((phase?.uses || []).some(item => toNumber(item?.amount) > 0)) {
+          financialChartSection.items.push(`Composición de usos - ${phaseName} - Realidad`);
+        }
+      }
+      const normalizeFinancialChartTitle = value => String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+      for (const title of Object.keys(charts || {})) {
+        const normalized = normalizeFinancialChartTitle(title);
+        const isFinancialDetail = normalized.startsWith('desviacion temporal - ')
+          || normalized.startsWith('grafica lineas fase ');
+        if (isFinancialDetail && !financialChartSection.items.includes(title)) {
+          financialChartSection.items.push(title);
+        }
+      }
+    }
 
     if (format === 'xlsx') {
       const ExcelJS = require('exceljs');
@@ -5984,6 +6365,8 @@ if (isSoldLikeStatus(st)) U.sold++;
       });
 
       if (Array.isArray(beforeAfter) && beforeAfter.length > 0) {
+        doc.addPage({ size: 'LETTER', layout: 'portrait', margins: { top: 40, bottom: 40, left: 40, right: 40 } });
+        header(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt });
         sectionTitle(doc, 'Evidencia fotografica del periodo');
         await drawBeforeAfter(doc, beforeAfter, {
           projectName: summary.projectName,
@@ -5991,7 +6374,7 @@ if (isSoldLikeStatus(st)) U.sold++;
         });
       }
 
-      doc.addPage();
+      doc.addPage({ size: 'LETTER', layout: 'portrait', margins: { top: 40, bottom: 40, left: 40, right: 40 } });
       backCoverPageV2(doc, { projectName: summary.projectName });
       const periodPages = doc.bufferedPageRange();
       for (let i = periodPages.start; i < periodPages.start + periodPages.count; i++) {
@@ -6038,7 +6421,9 @@ if (isSoldLikeStatus(st)) U.sold++;
 
     const hasBA = Array.isArray(beforeAfter) && beforeAfter.length > 0;
     if (hasBA) {
-      sectionTitle(doc, 'Evidencia fotográfica — Antes / Después');
+      doc.addPage({ size: 'LETTER', layout: 'portrait', margins: { top: 40, bottom: 40, left: 40, right: 40 } });
+      header(doc, executiveMeta);
+      sectionTitle(doc, 'Evidencia fotografica - Antes / Despues');
       await drawBeforeAfter(doc, beforeAfter, {
         projectName: summary.projectName,
         updatedAt: summary.updatedAt
@@ -6062,6 +6447,8 @@ if (isSoldLikeStatus(st)) U.sold++;
 
     const chartsSafe = charts || {};
     const usedKeys = new Set();
+    const compositionTitlesHandled = new Set();
+    const compositionPhasePages = [];
     const hasUsefulTable = (title) => {
       const table = chartRows(title, datasets);
       if (!table || !Array.isArray(table.rows) || !table.rows.length) return false;
@@ -6073,10 +6460,28 @@ if (isSoldLikeStatus(st)) U.sold++;
       return true;
     };
 
+    for (const phase of (exportedFinancePhases || [])) {
+      const phaseName = phase?.name || phase?.title || phase?.phase || 'Fase';
+      const planTitle = `Composición de usos - ${phaseName} - Estimación`;
+      const realTitle = `Composición de usos - ${phaseName} - Realidad`;
+      const planKey = findChartKey(chartsSafe, planTitle);
+      const realKey = findChartKey(chartsSafe, realTitle);
+      const hasPlan = Boolean(planKey && chartsSafe[planKey]) || hasUsefulTable(planTitle);
+      const hasReal = Boolean(realKey && chartsSafe[realKey]) || hasUsefulTable(realTitle);
+      if (!hasPlan && !hasReal) continue;
+
+      compositionPhasePages.push({ phaseName, planTitle, realTitle, planKey, realKey });
+      compositionTitlesHandled.add(planTitle);
+      compositionTitlesHandled.add(realTitle);
+      if (planKey) usedKeys.add(planKey);
+      if (realKey) usedKeys.add(realKey);
+    }
+
     for (const sec of CHART_ORDER) {
       const resolved = [];
 
       for (const expectedTitle of (sec.items || [])) {
+        if (compositionTitlesHandled.has(expectedTitle)) continue;
         const realKey = findChartKey(chartsSafe, expectedTitle);
         if (realKey && chartsSafe[realKey]) {
           resolved.push({ expectedTitle, realKey });
@@ -6085,12 +6490,20 @@ if (isSoldLikeStatus(st)) U.sold++;
         }
       }
 
-      if (!resolved.length) continue;
+      const hasCompositionPages = sec.section === 'Resumen Financiero' && compositionPhasePages.length > 0;
+      const hasLegalMatrix = sec.section === 'Resumen Legal'
+        && Array.isArray(datasets.legal?.progressByUnit)
+        && datasets.legal.progressByUnit.length > 0;
+      if (!resolved.length && !hasCompositionPages && !hasLegalMatrix) continue;
+
+      if (hasLegalMatrix) {
+        drawLegalProgressMatrix(doc, datasets.legal, executiveMeta);
+      }
 
       for (const { expectedTitle, realKey } of resolved) {
         if (realKey) usedKeys.add(realKey);
 
-        doc.addPage();
+        doc.addPage({ size: 'LETTER', layout: 'portrait', margins: { top: 40, bottom: 40, left: 40, right: 40 } });
         header(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt });
         sectionTitle(doc, sec.section);
         drawChart(doc, {
@@ -6099,6 +6512,18 @@ if (isSoldLikeStatus(st)) U.sold++;
           datasets,
           meta: { projectName: summary.projectName, updatedAt: summary.updatedAt }
         });
+      }
+
+      if (hasCompositionPages) {
+        for (const page of compositionPhasePages) {
+          doc.addPage({ size: 'LETTER', layout: 'portrait', margins: { top: 40, bottom: 40, left: 40, right: 40 } });
+          header(doc, executiveMeta);
+          sectionTitle(doc, sec.section);
+          drawPhaseCompositionComparison(doc, page.phaseName, [
+            { label: 'ESTIMACION', title: page.planTitle, dataUrl: page.planKey ? chartsSafe[page.planKey] : null },
+            { label: 'REALIDAD', title: page.realTitle, dataUrl: page.realKey ? chartsSafe[page.realKey] : null }
+          ]);
+        }
       }
     }
 
@@ -6109,27 +6534,17 @@ if (isSoldLikeStatus(st)) U.sold++;
       'alertas por severidad',
       'expedientes atrasados por etapa'
     ]);
-    const leftovers = Object.keys(chartsSafe).filter(k =>
+    const unclassifiedCharts = Object.keys(chartsSafe).filter(k =>
       chartsSafe[k] &&
       !usedKeys.has(k) &&
       !excludedChartTitles.has(normKey(k))
     );
 
-    if (leftovers.length) {
-      for (const k of leftovers) {
-        doc.addPage();
-        header(doc, { projectName: summary.projectName, updatedAt: summary.updatedAt });
-        sectionTitle(doc, 'Otras gráficas');
-        drawChart(doc, {
-          title: k,
-          dataUrl: chartsSafe[k],
-          datasets,
-          meta: { projectName: summary.projectName, updatedAt: summary.updatedAt }
-        });
-      }
+    if (unclassifiedCharts.length) {
+      console.warn('[PDF] Graficas no clasificadas omitidas del resumen:', unclassifiedCharts);
     }
 
-    doc.addPage();
+    doc.addPage({ size: 'LETTER', layout: 'portrait', margins: { top: 40, bottom: 40, left: 40, right: 40 } });
     backCoverPageV2(doc, { projectName: summary.projectName });
 
     const range = doc.bufferedPageRange();

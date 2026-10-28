@@ -658,6 +658,90 @@
     }
     .create-finance-guidance strong { display:block; margin-bottom:4px; color:#172554; }
     .create-finance-guidance p { margin:0; }
+    .create-finance-panel .finance-phase-overview {
+      margin:14px 0;
+      padding:0;
+      border:1px solid #dbe2ea;
+      border-radius:16px;
+      background:#fff;
+      color:#0f172a;
+      overflow:hidden;
+    }
+    .create-finance-panel .finance-phase-overview > summary {
+      padding:14px 16px;
+      border-bottom:1px solid #e2e8f0;
+      background:#f8fafc;
+      cursor:pointer;
+      font-size:16px;
+    }
+    .create-phase-overview-body { padding:16px; }
+    .create-phase-requirements-head {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:11px 13px;
+      border:1px solid #bae6fd;
+      border-radius:12px;
+      background:#f0f9ff;
+    }
+    .create-phase-bank-field { display:grid;gap:6px;margin-top:14px; }
+    .create-phase-bank-field > span:first-child { color:#334155;font-size:13px;font-weight:800; }
+    .create-finance-panel .finance-phase-core-fields label span,
+    .create-finance-panel .finance-phase-real-dates label span { color:#475569; }
+    .create-finance-panel .finance-phase-plan-summary article {
+      border-color:#dbeafe;
+      background:#f8fbff;
+    }
+    .create-finance-panel .finance-phase-plan-summary span,
+    .create-finance-panel .finance-phase-plan-summary small,
+    .create-finance-panel .finance-phase-section-head p,
+    .create-finance-panel .finance-use-sources-head { color:#64748b; }
+    .create-finance-panel .finance-phase-view-tabs { border-color:#d7dfec;background:#e9eff8; }
+    .create-finance-panel .finance-phase-budget-panel { border-color:#d7dfec;background:#fff; }
+    .create-finance-panel .finance-plan-use-card { border-color:#d7dfec;background:#f8fafc; }
+    .create-finance-panel .finance-source-balance { color:#166534;background:#f0fdf4; }
+    .create-finance-panel .finance-source-balance.is-danger { color:#b91c1c;background:#fef2f2; }
+    .create-finance-panel .finance-real-comparison { color:#0f172a;background:#eff6ff; }
+    .create-finance-panel .finance-real-comparison span { color:#64748b; }
+    .create-real-uses-head { margin-top:16px; }
+    .create-real-financing-lines {
+      margin-top:18px;
+      padding-top:16px;
+      border-top:1px solid #dbe2ea;
+    }
+    .create-line-summary-grid {
+      display:grid;
+      grid-template-columns:repeat(4,minmax(0,1fr));
+      gap:8px;
+      margin-bottom:10px;
+    }
+    .create-line-summary-grid article {
+      padding:10px 12px;
+      border:1px solid #dbeafe;
+      border-radius:11px;
+      background:#f8fbff;
+    }
+    .create-line-summary-grid span { display:block;color:#64748b;font-size:11px; }
+    .create-line-summary-grid strong { display:block;margin-top:4px;color:#0f172a;font-size:15px; }
+    [data-phase-financing-lines-summary] { margin:8px 0;color:#166534; }
+    .create-financing-line-card {
+      display:grid;
+      grid-template-columns:minmax(170px,1fr) minmax(190px,1fr) minmax(135px,.65fr) minmax(190px,1fr) auto;
+      align-items:end;
+      gap:8px;
+      margin-bottom:9px;
+      padding:11px;
+      border:1px solid #d7dfec;
+      border-radius:11px;
+      background:#f8fafc;
+    }
+    .create-financing-line-card label span { display:block;margin-bottom:5px;color:#64748b;font-size:11px;font-weight:800; }
+    @media (max-width:980px) {
+      .create-line-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .create-financing-line-card { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .create-financing-line-card .btn { grid-column:1/-1; }
+    }
     .financial-conditions-form label,
     .create-finance-panel label {
       color:#334155;
@@ -1483,8 +1567,8 @@
       <div class="create-finance-panel">
         <div class="create-section-title">Condiciones financieras <span class="create-section-kicker">Opcional</span></div>
         <div class="create-finance-guidance" role="note">
-          <strong>Esta pestaña recoge la estimación financiera inicial.</strong>
-          <p>Los usos, las fuentes, las condiciones y las líneas que indiques aquí formarán el plan del proyecto. La ejecución real se registrará después, dentro del proyecto, para poder comparar estimación y realidad sin mezclar ambos datos.</p>
+          <strong>Planifica la estimación y, si el proyecto ya comenzó, registra también su realidad.</strong>
+          <p>Los datos se guardarán en las mismas fases que utiliza Finanzas. Dato Único seguirá siendo la única fuente del inventario y de la información comercial.</p>
         </div>
         <div class="financial-conditions-form" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px;">
           <section class="create-finance-section">
@@ -1507,11 +1591,6 @@
             <h4>2) Usos y fuentes por fase</h4>
             <p class="small muted" style="margin:0 0 10px;">En este apartado se define el presupuesto de cada fase y como se financia. Los usos indican en que se invertira el dinero. Las fuentes indican de donde saldra el dinero: banco, promotor u otras fuentes.</p>
             <div id="createFinancePhases"></div>
-          </section>
-          <section class="create-finance-section">
-            <h4>3) Lineas de financiacion aprobadas</h4>
-            <p class="small muted" style="margin:0 0 10px;">Aqui se detallan unicamente las lineas aprobadas por el banco. Estas lineas sirven para repartir la financiacion bancaria de cada fase entre conceptos como terreno, infraestructura, construccion u otros.</p>
-            <div id="createFinanceLines"></div>
           </section>
           <section class="create-finance-section">
             <h4>Condiciones precedentes</h4>
