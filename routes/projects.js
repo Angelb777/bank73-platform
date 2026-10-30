@@ -4322,6 +4322,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     const projectHeader = {
       name: project.name,
       description: project.description,
+      status: project.status || 'EN_CURSO',
       projectType: project.projectType || '',
       tipoProyecto: project.projectType || '',
       promoters: projectPromoters.map(promoterPublicShape).filter(Boolean),

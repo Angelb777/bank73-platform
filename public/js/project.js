@@ -11122,7 +11122,14 @@ function refreshCustomerPaymentDisplays(unitId, sale) {
   document.querySelectorAll(`[data-customer-payment-summary-unit="${CSS.escape(String(unitId))}"]`).forEach(host => {
     host.querySelector('[data-customer-agreed]') && (host.querySelector('[data-customer-agreed]').textContent = financeMoney(totals.agreed));
     host.querySelector('[data-customer-paid]') && (host.querySelector('[data-customer-paid]').textContent = financeMoney(totals.paid));
-    host.querySelector('[data-customer-balance]') && (host.querySelector('[data-customer-balance]').textContent = financeMoney(totals.balance));
+    const balance = host.querySelector('[data-customer-balance]');
+    if (balance) {
+      balance.textContent = financeMoney(totals.balance);
+      host.classList.toggle('is-pending', totals.balance > 0.01);
+      host.classList.toggle('is-paid', totals.balance <= 0.01);
+      const detail = host.querySelector('small');
+      if (detail) detail.textContent = totals.balance > 0.01 ? 'Seguimiento activo' : 'Paz y salvo';
+    }
   });
 }
 
@@ -11566,6 +11573,14 @@ function refreshCommercialSummaryKpis({ normalizeCpp = false } = {}) {
   const cpp = parsePanamaNumber(document.getElementById('fv-montoFinanciamientoCPP')?.value || 0);
   const pctValue = document.getElementById('fichaFinancingPctValue');
   if (pctValue) pctValue.textContent = `${price > 0 ? ((cpp / price) * 100).toFixed(1) : '0.0'} % de financiación`;
+  const currentUnitId = String(fichaUnitId || '');
+  if (currentUnitId) {
+    refreshCustomerPaymentDisplays(currentUnitId, {
+      ...(ventasMap.get(currentUnitId) || {}),
+      precioVenta: price,
+      montoFinanciamientoCPP: cpp
+    });
+  }
 }
 
 function refreshStructuredClientName(second = false) {
@@ -11683,9 +11698,13 @@ function refreshFinanciamientoAuto(changedField = '') {
   pct = Number.isFinite(pct) ? pct : 0;
   abono = Number.isFinite(abono) ? abono : 0;
 
-  montoEl.value = formatPanamaNumber(monto);
-  pctEl.value = formatPanamaNumber(pct);
-  if (abonoEl) abonoEl.value = formatPanamaNumber(abono);
+  // No reemplazar el valor del control que el usuario esta editando: al
+  // formatearlo en cada pulsacion el cursor salta y los siguientes digitos se
+  // insertan dentro de "8.00", por ejemplo. El focusout global ya se encarga
+  // de aplicar el formato monetario al terminar la edicion.
+  if (changedField !== 'monto') montoEl.value = formatPanamaNumber(monto);
+  if (changedField !== 'pct') pctEl.value = formatPanamaNumber(pct);
+  if (abonoEl && changedField !== 'abono') abonoEl.value = formatPanamaNumber(abono);
   refreshCommercialSummaryKpis();
 }
 
@@ -14891,13 +14910,20 @@ const uBody = {
     await apiPatch(`/api/units/${fichaUnitId}`, uBody);
 
     // 2) Upsert de la venta
-    refreshFinanciamientoAuto('init');
     const precioVentaFin = parsePanamaNumber(vVal('fv-precioVenta'));
-    const abonoInicialFin = parsePanamaNumber(vVal('fv-abonoInicial'));
-    const montoFinanciamientoFin = Math.max(precioVentaFin - abonoInicialFin, 0);
+    // El importe escrito en Monto CPP es la fuente de verdad. Antes se
+    // reconstruia desde el abono oculto, lo que podia recuperar un valor
+    // intermedio mientras actuaba el autoguardado.
+    const montoFinanciamientoFin = Math.max(parsePanamaNumber(vVal('fv-montoFinanciamientoCPP')), 0);
+    const abonoInicialFin = Math.max(precioVentaFin - montoFinanciamientoFin, 0);
     const porcentajeFinanciamientoFin = precioVentaFin > 0
       ? (montoFinanciamientoFin / precioVentaFin) * 100
       : 0;
+
+    const abonoInicialEl = document.getElementById('fv-abonoInicial');
+    const porcentajeFinanciamientoEl = document.getElementById('fv-porcentajeFinanciamiento');
+    if (abonoInicialEl) abonoInicialEl.value = formatPanamaNumber(abonoInicialFin);
+    if (porcentajeFinanciamientoEl) porcentajeFinanciamientoEl.value = formatPanamaNumber(porcentajeFinanciamientoFin);
 
     const vBody = {
       projectId: id,
