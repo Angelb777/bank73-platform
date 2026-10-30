@@ -9508,6 +9508,37 @@ body.light-theme .project-experience.viewer-active #tab-resumen #summaryHeader .
 .technical-batch-form input,.technical-batch-form select{min-height:42px;border:1px solid var(--stroke,#cbd5e1);border-radius:10px;padding:8px 10px;color:var(--text,var(--technical-ink));background:var(--input-bg,#fff)}
 .technical-batch-form .technical-batch-wide{grid-column:1/-1}
 
+/* Editor comercial en lote, alineado con la ficha comercial por proceso. */
+#modalBatch .modal{width:min(1480px,97vw)!important;max-height:94vh;display:flex;flex-direction:column;overflow:hidden}
+#modalBatch .modal-body{overflow:auto;padding:16px 18px 24px}
+#modalBatch .modal>.row{flex:none;margin:0;padding:12px 18px;border-top:1px solid var(--stroke,#d9e2ec);background:var(--card-bg,#fff)}
+#modalBatch .commercial-batch-intro{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px;padding:13px 15px;border:1px solid var(--stroke,#d9e2ec);border-radius:14px;background:var(--card-bg,#fff)}
+#modalBatch .commercial-batch-intro>div{display:grid;gap:2px}
+#modalBatch .commercial-batch-intro span{color:var(--text-muted,#64748b);font-size:.82rem}
+#modalBatch .commercial-batch-count{padding:6px 10px;border-radius:999px;background:rgba(37,99,235,.12);color:#2563eb!important;font-weight:800;white-space:nowrap}
+#modalBatch .commercial-batch-summary{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:10px;margin-bottom:14px;padding:14px;border:1px solid var(--stroke,#d9e2ec);border-top:3px solid #2563eb;border-radius:14px;background:var(--card-bg,#fff)}
+#modalBatch .commercial-batch-layout{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(480px,1.65fr) minmax(270px,.95fr);gap:14px;align-items:start}
+#modalBatch .commercial-batch-layout>aside,#modalBatch .commercial-batch-layout>main{display:grid;gap:10px;min-width:0}
+#modalBatch .commercial-batch-layout>main>h3{margin:2px 4px 0;color:var(--text,#0f172a)}
+#modalBatch .commercial-batch-card{--batch-accent:#64748b;border:1px solid var(--stroke,#d9e2ec);border-radius:13px;background:var(--card-bg,#fff);overflow:hidden}
+#modalBatch .commercial-batch-card.is-stage-1{--batch-accent:#f59e0b}
+#modalBatch .commercial-batch-card.is-stage-2{--batch-accent:#3b82f6}
+#modalBatch .commercial-batch-card.is-stage-3{--batch-accent:#06b6d4}
+#modalBatch .commercial-batch-card.is-stage-4{--batch-accent:#a855f7}
+#modalBatch .commercial-batch-card.is-stage-5{--batch-accent:#ef4444}
+#modalBatch .commercial-batch-card.is-stage-6{--batch-accent:#22c55e}
+#modalBatch .commercial-batch-card>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;padding:0 13px;border-left:4px solid var(--batch-accent);cursor:pointer;list-style:none;color:var(--text,#0f172a)}
+#modalBatch .commercial-batch-card>summary::-webkit-details-marker{display:none}
+#modalBatch .commercial-batch-card[open]>summary{background:color-mix(in srgb,var(--batch-accent) 9%,var(--card-bg,#fff))}
+#modalBatch .commercial-batch-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:13px;border-top:1px solid var(--stroke,#d9e2ec)}
+#modalBatch .commercial-batch-grid>h4{grid-column:1/-1;margin:7px 0 0;color:var(--text,#0f172a)}
+#modalBatch .commercial-batch-field{display:flex;flex-direction:column;gap:5px;min-width:0}
+#modalBatch .commercial-batch-field label{color:var(--text-muted,#64748b);font-size:.76rem;font-weight:750}
+#modalBatch .commercial-batch-field input,#modalBatch .commercial-batch-field select{width:100%;min-height:39px;padding:7px 9px;border:1px solid var(--stroke,#cbd5e1);border-radius:9px;background:var(--input-bg,#fff);color:var(--text,#0f172a)}
+#modalBatch .commercial-batch-field input:focus,#modalBatch .commercial-batch-field select:focus{outline:2px solid color-mix(in srgb,#2563eb 30%,transparent);border-color:#2563eb}
+@media(max-width:1180px){#modalBatch .commercial-batch-summary{grid-template-columns:repeat(3,minmax(0,1fr))}#modalBatch .commercial-batch-layout{grid-template-columns:1fr 1.45fr}#modalBatch .commercial-batch-layout>aside:last-child{grid-column:1/-1;grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:760px){#modalBatch .modal{width:100vw!important;max-height:100vh;border-radius:0}#modalBatch .commercial-batch-intro{align-items:flex-start;flex-direction:column}#modalBatch .commercial-batch-summary,#modalBatch .commercial-batch-layout,#modalBatch .commercial-batch-layout>aside:last-child{grid-template-columns:1fr}#modalBatch .commercial-batch-layout>aside:last-child{grid-column:auto}#modalBatch .commercial-batch-grid{grid-template-columns:1fr}}
+
 /* ===== Dark mode ===== */
 
 body:not(.light-theme) #tab-tecnico .technical-kpi{background:linear-gradient(145deg,#111c2f,#101827)}

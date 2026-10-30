@@ -4990,13 +4990,14 @@ function semaphoreForRole(roleKey) {
 
   function openProjectCoverManager() {
     const path = String(state.project?.coverImage?.path || '');
-    if (!path) return projectCoverFile?.click();
     openModal('Portada', `
       <div style="display:grid;gap:16px;justify-items:center;">
-        <img src="${escapeHtml(path)}" alt="Portada actual" style="width:min(520px,100%);max-height:320px;object-fit:cover;border-radius:12px;">
+        ${path
+          ? `<img src="${escapeHtml(path)}" alt="Portada actual" style="width:min(520px,100%);max-height:320px;object-fit:cover;border-radius:12px;">`
+          : '<p class="muted" style="margin:0;text-align:center;">Este proyecto no tiene portada. Selecciona una imagen para añadirla.</p>'}
         <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
-          <button id="projectCoverChange" class="btn" type="button">Cambiar portada</button>
-          <button id="projectCoverDelete" class="btn btn-ghost" type="button">Eliminar portada</button>
+          <button id="projectCoverChange" class="btn" type="button">${path ? 'Cambiar portada' : 'Seleccionar portada'}</button>
+          ${path ? '<button id="projectCoverDelete" class="btn btn-ghost" type="button">Eliminar portada</button>' : ''}
         </div>
       </div>`, 'Cerrar', () => { if (modalBackdrop) modalBackdrop.style.display = 'none'; });
     document.getElementById('projectCoverChange')?.addEventListener('click', () => projectCoverFile?.click());
@@ -15226,8 +15227,91 @@ const uBody = {
 }
 
   // === Batch ===
+  function renderCommercialBatchModal() {
+    const body = modalBatch?.querySelector('.modal-body');
+    if (!body) return;
+
+    const field = (id, label, type = 'text', extra = '') => `
+      <div class="commercial-batch-field"><label for="b-${id}">${label}</label>
+      <input id="b-${id}" type="${type}" ${extra}></div>`;
+    const number = (id, label) => field(id, label, 'text', 'inputmode="decimal" data-number-input');
+    const date = (id, label) => field(id, label, 'date');
+    const select = (id, label, options = '') => `
+      <div class="commercial-batch-field"><label for="b-${id}">${label}</label>
+      <select id="b-${id}"><option value="">(no cambiar)</option>${options}</select></div>`;
+    const bool = (id, label) => select(id, label, '<option value="true">Sí</option><option value="false">No</option>');
+    const optionList = items => items.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
+    const card = (title, content, { open = false, className = '' } = {}) => `
+      <details class="commercial-batch-card ${className}" ${open ? 'open' : ''}>
+        <summary><strong>${title}</strong><span>⌄</span></summary>
+        <div class="commercial-batch-grid">${content}</div>
+      </details>`;
+
+    const states = optionList(UNIT_ESTADOS.map(item => [item.v, item.l]));
+    const sex = optionList([['Masculino','Masculino'],['Femenino','Femenino']]);
+    const civil = optionList([['Soltero','Soltero/a'],['Casado','Casado/a']]);
+    const profiles = optionList([['Independiente','Independiente'],['Asalariado','Asalariado']]);
+    const companies = optionList([['Privada','Privada'],['Gubernamental','Gubernamental']]);
+    const purchase = optionList([['Interés preferencial','Interés preferencial'],['Tasa libre','Tasa libre'],['Al contado','Al contado']]);
+    const cppStatuses = optionList([['Documentación entregada','Documentación entregada'],['En comité','En comité'],['Aprobado','Aprobado'],['CPP recibida','CPP recibida']]);
+    const minutes = optionList([['Solicitada','Solicitada'],['Lista','Firmada / lista'],['No aplica','No aplica']]);
+    const policies = optionList([['Endosada','Endosada'],['Colectiva','Colectiva']]);
+    const construction = optionList([['Obra gris','Obra gris'],['Acabados','Acabados'],['Terminada','Terminada']]);
+    const capture = optionList(captureChannelOptions('').filter(item => item.v).map(item => [item.v, item.l]));
+
+    const client = (second = false) => {
+      const id = name => second ? `cliente2${name.charAt(0).toUpperCase()}${name.slice(1)}` : name;
+      return `${!second ? select('modalidadFinanciamiento','Modalidad de compra',purchase) : ''}
+        ${field(id('primerNombre'),'Primer nombre')}${field(id('segundoNombre'),'Segundo nombre')}
+        ${field(id('primerApellido'),'Apellido paterno')}${field(id('segundoApellido'),'Apellido materno')}
+        ${field(id('apellidoCasada'),'Apellido de casada')}${field(second ? 'cliente2Cedula' : 'cedula','Cédula')}
+        ${select(second ? 'cliente2Sexo' : 'sexo','Sexo',sex)}${select(second ? 'cliente2EstadoCivil' : 'estadoCivil','Estado civil',civil)}
+        ${field(second ? 'cliente2Celular' : 'celular','Teléfono')}${field(second ? 'cliente2Correo' : 'correo','Email','email')}
+        ${field(second ? 'cliente2Direccion' : 'direccion','Dirección')}
+        ${select(second ? 'cliente2PerfilCliente' : 'perfilCliente','Perfil',profiles)}
+        ${select(second ? 'cliente2TipoEmpresa' : 'tipoEmpresa','Tipo de empresa',companies)}
+        ${field(second ? 'cliente2Profesion' : 'profesion','Profesión')}
+        ${number(second ? 'cliente2IngresoMensual' : 'ingresoMensual','Ingreso mensual')}
+        ${field(second ? 'cliente2AntiguedadLaboral' : 'antiguedadLaboral','Antigüedad laboral')}`;
+    };
+
+    body.innerHTML = `
+      <div class="commercial-batch-intro">
+        <div><strong>Edición comercial en lote</strong><span>Se aplicarán únicamente los campos que completes.</span></div>
+        <span class="commercial-batch-count">${selected.size} unidades seleccionadas</span>
+      </div>
+      <div class="commercial-batch-summary">
+        ${select('estado','Estado comercial',states)}
+        ${select('modeloSelect','Modelo de vivienda',projectModelOptions('', { includeEmpty:false }))}
+        ${number('precioVenta','Precio de venta')}${number('montoFinanciamientoCPP','Monto CPP')}
+        <div class="commercial-batch-field"><label for="b-banco">Banco del cliente</label><select id="b-banco"></select><input id="b-bancoOther" placeholder="Especificar banco" hidden></div>
+      </div>
+      <div class="commercial-batch-layout">
+        <aside>
+          ${card('Datos de la unidad', `${field('etapa','Etapa')}${field('torre','Torre')}${field('nivel','Nivel')}${number('m2','Área de terreno')}${field('numeroFinca','Número de finca')}${field('codigoUbicacion','Código de ubicación')}${field('calle','Calle')}${number('areaAbierta','Área abierta')}${number('areaCerrada','Área cerrada')}${number('recamaras','Recámaras')}${number('banos','Baños')}`, { open:true })}
+          ${card('Construcción de la vivienda', `${number('avanceConstruccionPct','Avance de obra (%)')}${select('estatusConstruccion','Fase de obra',construction)}${bool('permisoConstruccionMunicipal','Permiso de construcción')}${field('permisoConstruccionNum','Resolución construcción')}${date('fechaPermisoConstruccion','Fecha permiso construcción')}${date('permisoConstruccionVencimiento','Vencimiento construcción')}${bool('permisoOcupacion','Permiso de ocupación')}${field('permisoOcupacionNum','Resolución ocupación')}${date('fechaEmisionPermisoOcupacion','Fecha permiso ocupación')}${field('constructora','Constructora / contratista')}`, { open:true })}
+        </aside>
+        <main>
+          <h3>Proceso de venta</h3>
+          ${card('1 · Reserva', `${date('fechaReserva','Fecha de reserva')}${date('fechaProforma','Fecha proforma')}${date('fechaProbableEntrega','Fecha probable de entrega')}${field('cesionAFavorDe','Cesión a favor de')}${select('estatusCPP','Estatus de CPP',cppStatuses)}`, { open:true, className:'is-stage-1' })}
+          ${card('2 · Carta promesa de pago y contrato', `${field('numCPP','No. de CPP')}${date('fechaValorCPP','Fecha de CPP')}${date('fechaVencimientoCPP','Vencimiento de CPP')}${bool('aperturaCtaBanco','Apertura de cuenta en banco')}<h4>Pólizas</h4>${bool('polizaVidaEntregada','Póliza de vida entregada')}${select('tipoPolizaVida','Modalidad póliza de vida',policies)}${bool('polizaIncendioEntregada','Póliza de incendio entregada')}${select('tipoPolizaIncendio','Modalidad póliza de incendio',policies)}<h4>Contrato</h4>${date('fechaContratoCliente','Fecha de contrato')}${number('montoContrato','Monto de contrato')}${number('valorMejoras','Valor mejoras')}${number('valorTerreno','Valor terreno')}<h4>Minutas</h4>${select('mLiberacion','Minuta liberación / desafectación',minutes)}${select('mSegregacion','Minuta segregación / venta',minutes)}`, { className:'is-stage-2' })}
+          ${card('3 · Avalúo', `${date('solicitudAvaluo','Solicitud avalúo (fecha)')}${date('fechaAvaluo','Avalúo (fecha)')}${field('empresaAvaluadora','Empresa avaluadora')}`, { className:'is-stage-3' })}
+          ${card('4 · Protocolo / Escrituras', `${select('mPrestamo','Minuta préstamo / hipoteca',minutes)}${date('fechaProtocoloFirmaCliente','Firma del cliente')}${date('fechaProtocoloFirmaPromotora','Firma del promotor')}${date('fechaProtocoloFirmaBancoInterino','Firma del banco interino')}${date('fechaProtocoloFirmaBancoCliente','Firma del banco del cliente')}`, { className:'is-stage-4' })}
+          ${card('5 · Cierre notarial / Registro Público', `${date('fechaPagoImpuesto','Fecha de pago de impuestos')}${date('fechaCierreEscritura','Cierre de notaría (fecha de escritura)')}${date('fechaIngresoRP','Ingreso al Registro Público')}${date('fechaInscripcion','Fecha de inscripción')}`, { className:'is-stage-5' })}
+          ${card('6 · Desembolso y entrega', `${date('fechaDesembolso','Fecha de desembolso')}${date('fechaEntregaVivienda','Fecha de entrega de vivienda')}`, { className:'is-stage-6' })}
+          ${card('Seguimiento', field('comentario','Comentario interno'), { open:true })}
+        </main>
+        <aside>
+          ${card('Datos del cliente 1', client(false), { open:true })}
+          ${card('Datos del cliente 2', client(true))}
+          ${card('Referencias personales', `${field('referencia1Nombre','Referencia 1')}${field('referencia1Relacion','Relación')}${field('referencia1Telefono','Teléfono')}${field('referencia2Nombre','Referencia 2')}${field('referencia2Relacion','Relación')}${field('referencia2Telefono','Teléfono')}${select('canalCaptacion','Captación del cliente',capture)}`, { open:true })}
+        </aside>
+      </div>`;
+  }
+
   function openBatch() {
   if (!selected.size) return alert('Selecciona al menos una unidad.');
+  renderCommercialBatchModal();
   const bankBatch = document.getElementById('b-banco');
   if (bankBatch && window.BankSelect && !bankBatch.children.length) {
     bankBatch.innerHTML = window.BankSelect.bankOptionsHtml('');
@@ -15314,6 +15398,7 @@ const uBody = {
       'clienteNombre',
       'cedula',
       'empresa',
+      'modalidadFinanciamiento',
       'primerNombre',
       'segundoNombre',
       'primerApellido',
@@ -15349,7 +15434,17 @@ const uBody = {
       'cliente2Correo',
       'cliente2LugarTrabajo',
       'cliente2Cargo',
-      'cliente2AntiguedadLaboral'
+      'cliente2AntiguedadLaboral',
+      'cliente2PerfilCliente',
+      'cliente2TipoEmpresa',
+      'referencia1Nombre',
+      'referencia1Relacion',
+      'referencia1Telefono',
+      'referencia2Nombre',
+      'referencia2Relacion',
+      'referencia2Telefono',
+      'tipoPolizaVida',
+      'tipoPolizaIncendio'
     ].forEach(field => addBatchField(update, field));
 
     [
@@ -15368,18 +15463,30 @@ const uBody = {
       'valorTerreno',
       'montoContrato',
       'ingresoMensual',
-      'cliente2IngresoMensual'
+      'cliente2IngresoMensual',
+      'avanceConstruccionPct'
     ].forEach(field => addBatchField(update, field, 'number'));
 
     [
       'fechaProbableEntrega',
+      'fechaReserva',
       'fechaProforma',
+      'fechaValorCPP',
       'fechaVencimientoCPP',
       'fechaContratoCliente',
       'fechaActivacionTramite',
       'fechaEntregaBanco',
+      'fechaProtocoloFirmaCliente',
+      'fechaProtocoloFirmaPromotora',
+      'fechaProtocoloFirmaBancoInterino',
+      'fechaProtocoloFirmaBancoCliente',
+      'fechaPagoImpuesto',
+      'fechaCierreEscritura',
+      'fechaIngresoRP',
       'fechaInscripcion',
       'fechaDesembolso',
+      'fechaPermisoConstruccion',
+      'permisoConstruccionVencimiento',
       'fechaEmisionPermisoOcupacion',
       'fechaAvaluo',
       'fechaEntregaVivienda'
@@ -15392,6 +15499,9 @@ const uBody = {
       'ingresoRP',
       'solicitudDesembolso',
       'enConstruccion',
+      'aperturaCtaBanco',
+      'polizaVidaEntregada',
+      'polizaIncendioEntregada',
       'permisoConstruccionMunicipal',
       'permisoOcupacion'
     ].forEach(field => addBatchField(update, field, 'boolean'));
@@ -15403,6 +15513,13 @@ const uBody = {
     if (update.montoFinanciamientoCPP != null && update.valor == null) update.valor = update.montoFinanciamientoCPP;
     if (update.areaAbierta != null && update.areaCerrada != null) {
       update.areaTotalConstruccion = Number(update.areaAbierta || 0) + Number(update.areaCerrada || 0);
+    }
+    if (update.avanceConstruccionPct != null) {
+      update.avanceConstruccionPct = Math.min(100, Math.max(0, update.avanceConstruccionPct));
+      update.enConstruccion = update.avanceConstruccionPct > 0 && update.avanceConstruccionPct < 100;
+    }
+    if (update.polizaVidaEntregada != null && update.polizaIncendioEntregada != null) {
+      update.polizas = update.polizaVidaEntregada && update.polizaIncendioEntregada;
     }
     return update;
   }
@@ -15418,13 +15535,31 @@ const uBody = {
     // Unit updates
     const updUnit = {};
     const e = document.getElementById('b-estado').value; if (e) updUnit.estado = e;
-    const mo = document.getElementById('b-modelo').value; if (mo) updUnit.modelo = mo;
+    const modelSelect = document.getElementById('b-modeloSelect');
+    if (modelSelect?.value) {
+      updUnit.modelId = modelSelect.value;
+      updUnit.modelo = modelSelect.selectedOptions[0]?.textContent?.trim() || '';
+    }
+    ['etapa','torre','nivel'].forEach(field => {
+      const value = String(document.getElementById(`b-${field}`)?.value || '').trim();
+      if (value) updUnit[field] = value;
+    });
     const m2 = document.getElementById('b-m2').value; if (m2) updUnit.m2 = parseInputNumber('b-m2', m2);
+    ['numeroFinca','codigoUbicacion','calle'].forEach(field => {
+      const value = String(document.getElementById(`b-${field}`)?.value || '').trim();
+      if (value) updUnit[field] = value;
+    });
+    ['areaAbierta','areaCerrada','recamaras','banos','valorMejoras','valorTerreno'].forEach(field => {
+      const value = String(document.getElementById(`b-${field}`)?.value || '').trim();
+      if (value) updUnit[field] = parseInputNumber(`b-${field}`, value);
+    });
+    if (updUnit.areaAbierta != null && updUnit.areaCerrada != null) {
+      updUnit.areaTotalConstruccion = updUnit.areaAbierta + updUnit.areaCerrada;
+    }
     if (Object.keys(updUnit).length) await apiPatch('/api/units/batch', { ids, update: updUnit, projectId: id });
 
     // Venta updates
     const updVenta = collectBatchVentaUpdate();
-    const pr = document.getElementById('b-precio').value; if (pr) updVenta.precioVenta = parsePanamaNumber(pr);
     if (Object.keys(updVenta).length) await apiPatch('/api/ventas/batch', { unitIds: ids, update: updVenta, upsert: true, projectId: id });
 
     closeBatch();
