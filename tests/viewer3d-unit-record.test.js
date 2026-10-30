@@ -32,7 +32,11 @@ test('maps every visible 3D value from the Commercial unit record', () => {
       }
     },
     venta: {
-      precioVenta: 245000, abonoCliente: 30000,
+      precioVenta: 245000, montoFinanciamientoCPP: 215000,
+      customerPaymentAccounts: [{
+        source: 'sale_gap', concept: 'Abono del cliente',
+        payments: [{ paymentDate: '2026-01-10', amount: 30000 }]
+      }],
       estatusConstruccion: 'Acabados', faseConstruccion: 'Pintura'
     },
     project: { currency: 'PAB', viewer3D: { primaryTower: 'C' } }

@@ -28,10 +28,12 @@ test('la ficha comercial sigue el proceso de venta propuesto y mantiene sus camp
   }
   assert.match(js, /Nombre completo'[^\n]+readonly aria-readonly="true"/);
   assert.doesNotMatch(js, /vBody\.primerNombre = ''/);
-  assert.match(js, /const captureChannel = v\.captadoAtencionOficina/);
-  assert.doesNotMatch(read('models/Venta.js'), /canalCaptacion|fechaSolicitudAvaluo/);
+  assert.match(js, /const CUSTOMER_CAPTURE_CHANNELS = \[/);
+  assert.match(js, /canalCaptacion: vVal\('fv-canalCaptacion'\)/);
+  assert.match(read('models/Venta.js'), /canalCaptacion:\s*\{/);
+  assert.doesNotMatch(read('models/Venta.js'), /fechaSolicitudAvaluo/);
   assert.match(css, /unit-status-reservado[^\n]+#f59e0b/);
-  assert.match(css, /unit-process-summary \{ grid-template-columns:repeat\(4/);
+  assert.match(css, /unit-process-summary \{ grid-template-columns:repeat\(6/);
   assert.match(js, /\{ v: 'disponible', l: 'Lote libre' \}/);
   assert.match(js, /\{ v: 'escriturado_traspasado', l: 'Traspasado' \}/);
   const stateCatalog = js.slice(js.indexOf('const UNIT_ESTADOS = ['), js.indexOf('function estadoLabel'));

@@ -8,6 +8,8 @@ const Unit = require('../models/Unit');
 const Project = require('../models/Project');
 const { formatProjectMoney } = require('../utils/currency');
 const { requireProjectAccess } = require('../middleware/rbac');
+const { captureChannelForVenta } = require('../services/captureChannel');
+const { customerPaymentSummary, saleGap } = require('../services/customerPayments');
 
 const BRAND = {
   dark: '#0B1020',
@@ -237,6 +239,7 @@ router.get('/ficha-cliente/:unitId', attachProjectByUnitId, requireProjectAccess
 
     const { unit, venta, currency } = result;
     const projectMoney = (value) => money(value, currency);
+    const customerPayments = customerPaymentSummary(venta);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="ficha_cliente_${unit.manzana || ''}_${unit.lote || ''}.pdf"`);
@@ -277,6 +280,7 @@ router.get('/ficha-cliente/:unitId', attachProjectByUnitId, requireProjectAccess
     sectionTitle(doc, 'Datos del cliente 1');
     grid(doc, [
       ['Cliente resumen', venta.clienteNombre],
+      ['Modalidad de compra', venta.modalidadFinanciamiento],
       ['Primer nombre', venta.primerNombre],
       ['Segundo nombre', venta.segundoNombre],
       ['Apellido paterno', venta.primerApellido],
@@ -349,7 +353,7 @@ router.get('/ficha-cliente/:unitId', attachProjectByUnitId, requireProjectAccess
       ['Precio de venta', projectMoney(venta.precioVenta)],
       ['Monto hipoteca', projectMoney(venta.montoFinanciamientoCPP || venta.valor)],
       ['Precio m² extra', projectMoney(venta.precioM2Extra)],
-      ['Abono del financiamiento', projectMoney(venta.abonoCliente)],
+      ['Abonos pagados', projectMoney(customerPayments.totals.paid)],
       ['Póliza de vida', venta.polizaVida],
       ['Abono ALTE', projectMoney(venta.abonoAlte)],
       ['Valor mejoras', projectMoney(venta.valorMejoras)],
@@ -362,18 +366,15 @@ router.get('/ficha-cliente/:unitId', attachProjectByUnitId, requireProjectAccess
       ['Banco', venta.banco],
       ['Monto hipoteca / CPP', projectMoney(venta.montoFinanciamientoCPP || venta.valor)],
       ['Oficial de crédito', venta.oficialBanco],
-      ['Abono cliente', projectMoney(venta.abonoCliente)],
-      ['Abono inicial', projectMoney(venta.abonoInicial)],
+      ['Abono cliente acordado', projectMoney(customerPayments.totals.agreed)],
+      ['Abono cliente pendiente', projectMoney(customerPayments.totals.balance)],
       ['% financiamiento', venta.porcentajeFinanciamiento],
       ['Cesión a favor de', venta.cesionAFavorDe],
     ]);
 
-    sectionTitle(doc, 'Cliente captado');
-    checkRow(doc, [
-      ['Atención oficina', venta.captadoAtencionOficina],
-      ['Por mail / internet', venta.captadoMailInternet],
-      ['En el proyecto', venta.captadoEnProyecto],
-      ['Mercadeo / prospecteo', venta.captadoMercadeoProspecto],
+    sectionTitle(doc, 'Captación del cliente');
+    grid(doc, [
+      ['Vía de captación', captureChannelForVenta(venta)],
     ]);
 
     grid(doc, [
@@ -493,7 +494,7 @@ router.get('/proforma/:unitId', attachProjectByUnitId, requireProjectAccess(), a
       ['Monto del financiamiento', projectMoney(venta.montoFinanciamientoCPP || venta.valor)],
       ['Cesión a favor de', venta.cesionAFavorDe],
       ['Porcentaje del financiamiento', venta.porcentajeFinanciamiento],
-      ['Abono inicial', projectMoney(venta.abonoInicial)],
+      ['Abono inicial', projectMoney(saleGap(venta))],
     ], 2, 38);
 
     ensure(doc, 110);

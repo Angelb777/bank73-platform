@@ -3626,7 +3626,9 @@ renderChartSummary(
   {
     totalLabel: 'Total hipotecas',
     formatter: (v, item) => {
-      const amount = toNum(item?.amount);
+      const amount = item
+        ? toNum(item.amount)
+        : calcTotal(mortgagesByBank, 'amount');
       return `${toNum(v)} · ${formatMoneyCompact(amount)}`;
     }
   }
@@ -3722,16 +3724,18 @@ renderChartSummary(
       </div>`);
   }
 
-  // ---------- Comercial: montos CPP por banco ----------
+  // ---------- Comercial: modalidad de compra ----------
   renderBarSimple(
     'p16',
-    'sumCppAmountByBank',
-    commercial.cppAmountByBank || [],
-    'bank',
-    'amount',
-    'sumCppAmountByBankSummary',
-    'Total monto de ventas',
-    (v, item) => `${formatMoneyCompact(toNum(item?.amount || v))}`
+    'sumPurchaseModality',
+    commercial.purchaseModality || [],
+    'label',
+    'count',
+    'sumPurchaseModalitySummary',
+    'Total operaciones',
+    (v, item) => item
+      ? `${toNum(v)} · ${formatMoneyCompact(toNum(item.amount))}`
+      : `${toNum(v)}`
   );
 
   // ---------- Legal: KPIs ----------
@@ -3792,13 +3796,14 @@ renderChartSummary(
     { title: 'Modelos en construcción', value: (technical.modelsInConstruction || []).length }
   ]);
 
-  renderPieLike('p21', 'sumConstructionStatus', technical.constructionStatus || [], 'status', 'count', 'sumConstructionStatusSummary', 'Total estatus', 'doughnut');
-  renderBarSimple('p22', 'sumConstructionPhase', technical.constructionPhase || [], 'phase', 'count', 'sumConstructionPhaseSummary', 'Total fases');
+  renderPieLike('p21', 'sumConstructionStatus', technical.constructionStatus || [], 'status', 'count', 'sumConstructionStatusSummary', 'Total unidades', 'doughnut');
+  renderBarSimple('p22', 'sumConstructionPhase', technical.constructionPhase || [], 'phase', 'count', 'sumConstructionPhaseSummary', 'Total unidades');
   renderPieLike('p23', 'sumModelsInConstruction', technical.modelsInConstruction || [], 'model', 'count', 'sumModelsInConstructionSummary', 'Total modelos', 'pie');
   renderBarSimple('p24', 'sumConstructionProgressRanges', technical.constructionProgressRanges || [], 'range', 'count', 'sumConstructionProgressRangesSummary', 'Total unidades');
 
   // ---------- Financiero: KPIs ----------
   const fc = financial.cppCoverage || {};
+  const collectionCoverage = financial.collectionCoverage || {};
   const financeTotals = financial.totals || {};
 
   const loanApprovedSummary =
@@ -3946,38 +3951,58 @@ renderChartSummary(
     }
   );
 
-  // ---------- Financiero: cobertura CPP ----------
+  // ---------- Financiero: deuda frente a saldo comercial pendiente ----------
   sumDestroy('p26');
-  const coverageRows = [
-    { label: 'Deuda actual', amount: toNum(fc.totalDebt) },
-    { label: 'CPP vigentes', amount: toNum(fc.cppVigenteAmount) },
-    { label: 'CPP en trámite', amount: toNum(fc.cppTramiteAmount) }
-  ];
+  const collectionBuckets = Object.values(collectionCoverage.buckets || {})
+    .filter(bucket => toNum(bucket?.amount) > 0);
+  const coverageDebt = toNum(collectionCoverage.totalDebt);
+  const coverageReceivable = toNum(collectionCoverage.totalReceivable);
 
   if (ctx('sumCppCoverage')) {
     __sumCharts.p26 = new Chart(ctx('sumCppCoverage'), {
       type: 'bar',
       data: {
-        labels: coverageRows.map(x => x.label),
-        datasets: [{
-          label: 'Monto',
-          data: coverageRows.map(x => x.amount)
-        }]
+        labels: ['Deuda bancaria pendiente', 'Saldo pendiente de cobro'],
+        datasets: [
+          { label: 'Deuda bancaria pendiente', data: [coverageDebt, 0], backgroundColor: '#dc2626' },
+          ...collectionBuckets.map((bucket, index) => ({
+            label: bucket.label,
+            data: [0, toNum(bucket.amount)],
+            backgroundColor: ['#2563eb', '#f59e0b', '#16a34a', '#64748b'][index % 4]
+          }))
+        ]
       },
       options: summaryChartOpts({
-        plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true } }
+        scales: {
+          x: { stacked: true },
+          y: { stacked: true, beginAtZero: true }
+        }
       })
     });
   }
-  renderChartSummary(
-    'sumCppCoverageSummary',
-    coverageRows.map(x => ({ label: x.label, value: x.amount })),
-    {
-      totalLabel: 'Referencia',
-      formatter: (v) => formatMoneyCompact(toNum(v))
-    }
-  );
+  const coverageSummary = document.getElementById('sumCppCoverageSummary');
+  if (coverageSummary) {
+    const noDebt = coverageDebt <= 0;
+    const canCover = !!collectionCoverage.canCoverDebt;
+    const difference = toNum(collectionCoverage.difference);
+    const verdict = noDebt
+      ? 'No hay deuda bancaria pendiente.'
+      : canCover
+        ? 'Sí. Lo pendiente de cobro permitiría cubrir la deuda actual.'
+        : 'No. Lo pendiente de cobro no alcanzaría para cubrir la deuda actual.';
+    coverageSummary.innerHTML = `
+      <div class="summary-coverage-verdict ${noDebt || canCover ? 'is-positive' : 'is-negative'}">
+        <strong>${verdict}</strong>
+        <span>${noDebt ? 'Cobertura no aplicable' : `${toNum(collectionCoverage.coveragePct).toFixed(1)}% de cobertura`}</span>
+      </div>
+      <div class="summary-mini-box">
+        <div class="summary-mini-row"><span class="summary-mini-label">Deuda bancaria pendiente</span><span class="summary-mini-value">${formatMoneyCompact(coverageDebt)}</span></div>
+        ${collectionBuckets.map(bucket => `<div class="summary-mini-row"><span class="summary-mini-label">${escapeHtml(bucket.label)} · ${toNum(bucket.units)} unidades</span><span class="summary-mini-value">${formatMoneyCompact(toNum(bucket.amount))}</span></div>`).join('')}
+        <div class="summary-mini-row summary-mini-total"><span class="summary-mini-label">Total pendiente de cobro</span><span class="summary-mini-value">${formatMoneyCompact(coverageReceivable)}</span></div>
+        <div class="summary-mini-row"><span class="summary-mini-label">${difference >= 0 ? 'Excedente potencial' : 'Déficit potencial'}</span><span class="summary-mini-value">${formatMoneyCompact(Math.abs(difference))}</span></div>
+        ${toNum(collectionCoverage.missingPriceUnits) ? `<div class="summary-mini-row"><span class="summary-mini-label">Unidades sin precio excluidas</span><span class="summary-mini-value">${toNum(collectionCoverage.missingPriceUnits)}</span></div>` : ''}
+      </div>`;
+  }
 
   // ---------- Alertas por severidad ----------
   sumDestroy('p9');
@@ -4300,13 +4325,13 @@ if (btn) {
         'Ventas por modelo de vivienda': captureCanvas('sumSalesByModel'),
         'Estatus en banco': captureCanvas('sumBankStatus'),
         'CPP por banco': captureCanvas('sumCppPie'),
-        'Monto de ventas por medio de pago del cliente': captureCanvas('sumCppAmountByBank'),
+        'Modalidad de compra': captureCanvas('sumPurchaseModality'),
         'Proformas por banco': captureCanvas('sumProformasBar'),
         'Hipotecas por banco': captureCanvas('sumMortgagesByBank'),
         'Tipo de empresa de compradores': captureCanvas('sumCustomerCompanyType'),
         'Perfil laboral de compradores': captureCanvas('sumCustomerEmployment'),
         'Sexo de compradores': captureCanvas('sumCustomerSex'),
-        'Modalidad de compra': captureCanvas('sumCustomerPurchaseMode'),
+        'Composición de compradores': captureCanvas('sumCustomerPurchaseMode'),
         'Ingresos mensuales declarados': captureCanvas('sumCustomerIncome'),
         'Vía de captación': captureCanvas('sumCustomerCapture'),
 
@@ -4324,7 +4349,7 @@ if (btn) {
         'Comparación por fase (Fuentes)': captureCanvas('sumPhaseSourceChart'),
         'Desviación temporal - Duración por fase': captureCanvas('sumPhaseTimeDurationChart'),
         'Desviación temporal - Fecha final': captureCanvas('sumPhaseTimeDelayChart'),
-        'Cobertura CPP vs préstamo': captureCanvas('sumCppCoverage'),
+        'Cobertura de deuda con cobros pendientes': captureCanvas('sumCppCoverage'),
 
       };
 
@@ -4653,23 +4678,23 @@ function addInfoBadges(){
     sumUnitsDonut: 'Unidades: disponibles, reservadas, vendidas, escrituradas, canceladas.',
     sumSalesMonthly: 'Contratos firmados por mes (fechaContratoCliente).',
     sumDisbPlanReal: 'Desembolsos plan vs. real (acumulado).',
-    sumMortgagesByBank: 'Hipotecas aprobadas por banco (statusBanco contiene APROB).',
+    sumMortgagesByBank: 'Ventas con señal de CPP agrupadas por banco.',
     sumSalesVsFallen: 'Compara ventas reales contra ventas caídas/canceladas por año.',
     sumSalesByModel: 'Distribución de ventas por modelo de vivienda.',
     sumClientProfile: 'Perfil del cliente comprador: independiente, asalariado o mixto.',
     sumCompanyType: 'Tipo de empresa del cliente: pública, privada o mixta.',
     sumBankStatus: 'Estado del expediente dentro del banco.',
-    sumCppAmountByBank: 'Monto financiado o CPP acumulado por banco.',
+    sumPurchaseModality: 'Operaciones por modalidad de compra: interés preferencial, tasa libre o al contado.',
     sumLegalLiberacion: 'Minutas de liberación completadas frente a pendientes.',
     sumLegalSegregacion: 'Minutas de segregación completadas frente a pendientes.',
     sumLegalPrestamo: 'Minutas de préstamo completadas frente a pendientes.',
     sumProtocolByBank: 'Firmas de protocolo agrupadas por banco.',
     sumConstructionStatus: 'Estado general de construcción de las unidades.',
-    sumConstructionPhase: 'Fase constructiva actual de las unidades.',
+    sumConstructionPhase: 'Fase de obra actual indicada en la ficha de cada unidad.',
     sumModelsInConstruction: 'Modelos de vivienda actualmente en construcción.',
     sumConstructionProgressRanges: 'Avance de construcción agrupado por rangos porcentuales.',
     sumCreditLines: 'Líneas de crédito: desembolsado frente a amortizado total.',
-    sumCppCoverage: 'Cobertura de CPP vigente y en trámite frente a deuda actual.',
+    sumCppCoverage: 'Compara la deuda bancaria pendiente con el saldo que todavía queda por cobrar de las unidades del proyecto.',
   };
   for (const [id, tip] of Object.entries(tips)) {
     const canvas = document.getElementById(id);
@@ -6460,6 +6485,7 @@ function computeFinanceControlTotals() {
   const budgetApproved = numOr0(document.getElementById('finBudgetApproved')?.value || FINANCE_CONTROL?.totals?.budgetApproved);
   const planUses = (FINANCE?.phases || []).reduce((a, ph) => a + sumItems(ph.planUses), 0);
   const realUses = (FINANCE?.phases || []).reduce((a, ph) => a + sumItems(ph.uses), 0);
+  const customerReceipts = financeCustomerPaymentRecipientTotals();
 
   return {
     budgetApproved,
@@ -6470,13 +6496,15 @@ function computeFinanceControlTotals() {
     availableToDisburse: loanApproved - totalBankDisbursed,
     totalAmortized,
     totalInterestPaid,
-    totalPaidToBank: totalAmortized + totalInterestPaid,
+    totalPaidToBank: totalAmortized + totalInterestPaid + customerReceipts.bank,
     currentDebtBalance: totalBankDisbursed - totalAmortized,
     amortizationPct: totalBankDisbursed > 0 ? totalAmortized / totalBankDisbursed : 0,
     upcomingMaturities: loanLines.filter(l => financeLineStatus(l).key === 'upcoming').length,
     overdueMaturities: loanLines.filter(l => financeLineStatus(l).key === 'overdue').length,
     checkAmountTotal: unitAmortizations.reduce((a, u) => a + numOr0(u.checkAmount), 0),
-    promoterTotal: unitAmortizations.reduce((a, u) => a + numOr0(u.promoterAmount), 0),
+    promoterTotal: unitAmortizations.reduce((a, u) => a + numOr0(u.promoterAmount), 0) + customerReceipts.promoter,
+    customerPaidToBank: customerReceipts.bank,
+    customerPaidToPromoter: customerReceipts.promoter,
     totalManualAmortized,
     totalAllocatedAmortized,
     planVsRealDifference: realUses - planUses,
@@ -6710,13 +6738,14 @@ function renderFinanceLoanGlobalSummary(lines = collectFinanceLoanLines()) {
   }, { disbursed: 0, amortized: 0, interestPaid: 0, balance: 0 });
   const allocated = lines.reduce((a, l) => a + financeLoanLineTotals(l).allocated, 0);
   const totalAmortized = totals.amortized + allocated;
+  const customerReceipts = financeCustomerPaymentRecipientTotals();
   box.innerHTML = [
     ['Total desembolsado', financeMoney(totals.disbursed), '100% base'],
     ['Amortizado manual', financeMoney(totals.amortized), `${financePct(totals.amortized, totals.disbursed)} del desembolsado`],
     ['Amortizado por ventas', financeMoney(allocated), `${financePct(allocated, totals.disbursed)} del desembolsado`],
     ['Amortización total', financeMoney(totalAmortized), `${financePct(totalAmortized, totals.disbursed)} del desembolsado`],
     ['Intereses pagados', financeMoney(totals.interestPaid), 'Coste financiero pagado'],
-    ['Total pagado al banco', financeMoney(totalAmortized + totals.interestPaid), 'Amortizaciones + intereses'],
+    ['Total pagado al banco', financeMoney(totalAmortized + totals.interestPaid + customerReceipts.bank), `Amortizaciones + intereses + abonos cliente (${financeMoney(customerReceipts.bank)})`],
     ['Saldo por pagar', financeMoney(totals.balance), `${financePct(totals.balance, totals.disbursed)} pendiente`],
   ].map(([label, value, percent]) => `
     <article class="finance-loan-summary-card">
@@ -6730,7 +6759,7 @@ function renderFinanceLoanGlobalSummary(lines = collectFinanceLoanLines()) {
 function renderFinanceControlKpis(totals = null) {
   const box = document.getElementById('financeControlKpis');
   if (!box) return;
-  totals = totals || FINANCE_CONTROL?.totals || computeFinanceControlTotals();
+  totals = totals || computeFinanceControlTotals();
   const cards = [
     ['Presupuesto Total', financeMoney(totals.budgetApproved), 'budget'],
     ['Cuantía Bancaria Aprobada', financeMoney(totals.loanApproved), 'loan'],
@@ -7267,6 +7296,10 @@ function mergedFinanceUnitAmortizations() {
       notes: savedItem.notes || '',
       commercialStatus: unit.commercialStatus || '',
       cppStatus: unit.cppStatus || '',
+      customerPaymentAccounts: unit.customerPaymentAccounts || [],
+      customerPaymentTotals: unit.customerPaymentTotals || { agreed: 0, paid: 0, balance: 0 },
+      customerClearanceStatus: unit.customerClearanceStatus || 'not_applicable',
+      customerPaymentsVersion: numOr0(unit.customerPaymentsVersion),
     };
   }).filter(Boolean);
   saved.filter(x => !x.unitId).forEach((item, idx) => out.push({ ...item, _id: item._id || `manual-${idx}` }));
@@ -7304,10 +7337,11 @@ function renderFinanceAllocationInputs(item) {
   return lines.map(line => {
     const key = line.id || line.name;
     const saved = allocationByKey.get(String(key)) || allocationByKey.get(String(line.name)) || {};
+    const percentage = numOr0(item.checkAmount) > 0 ? (numOr0(saved.amount) / numOr0(item.checkAmount)) * 100 : 0;
     return `
-      <label data-allocation-line data-loan-line-id="${escapeHtml(line.id)}" data-loan-line-name="${escapeHtml(line.name)}">
+      <label class="finance-allocation-field" data-allocation-line data-loan-line-id="${escapeHtml(line.id)}" data-loan-line-name="${escapeHtml(line.name)}">
         Amortizacion ${escapeHtml(line.name)}
-        <input data-field="allocationAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(saved.amount)}">
+        <span class="finance-allocation-pair"><input data-field="allocationPct" type="number" min="0" step="any" value="${percentage ? percentage.toFixed(2) : ''}" aria-label="Porcentaje para ${escapeHtml(line.name)}"><b>%</b><input data-field="allocationAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(saved.amount)}" aria-label="Importe para ${escapeHtml(line.name)}"></span>
       </label>
     `;
   }).join('');
@@ -7335,33 +7369,59 @@ function renderFinanceUnitAmortizations() {
             <span>${escapeHtml(item.clientName || 'Sin cliente')}</span>
           </div>
           <div class="finance-unit-money">
-            <b>${financeMoney(item.checkAmount)}</b>
+            <small>Precio de venta</small>
+            <b>${financeMoney(item.salePrice)}</b>
             <span class="finance-status is-${state.key}">${state.label}</span>
           </div>
         </summary>
         <div class="finance-unit-fields">
-          <label>Nombre del cliente<input data-field="clientName" value="${escapeHtml(item.clientName || '')}"></label>
-          <label>Lote / unidad<input data-field="lot" value="${escapeHtml(item.lot || '')}"></label>
-          <label>Banco comprador<input data-field="buyerBank" value="${escapeHtml(item.buyerBank || '')}"></label>
-          <label>No. cheque<input data-field="checkNumber" value="${escapeHtml(item.checkNumber || '')}"></label>
-          <label>Base valor
-            <select data-field="checkAmountSource">
-              <option value="cpp" ${item.checkAmountSource === 'cpp' ? 'selected' : ''}>CPP</option>
-              <option value="cpp_initial" ${item.checkAmountSource === 'cpp_initial' ? 'selected' : ''}>CPP + abono inicial</option>
-              <option value="sale_price" ${item.checkAmountSource === 'sale_price' ? 'selected' : ''}>Precio venta</option>
-            </select>
-          </label>
-          <label>Valor cheque / base<input data-field="checkAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(item.checkAmount)}"></label>
-          <label>Fecha cheque<input data-field="checkDate" type="date" value="${financeDateInput(item.checkDate)}"></label>
-          <div class="finance-field-wide finance-commercial-base">
-            CPP: <b>${financeMoney(item.cppAmount)}</b> · Abono inicial: <b>${financeMoney(item.initialPayment)}</b> · Precio venta: <b>${financeMoney(item.salePrice)}</b>
-          </div>
-          ${renderFinanceAllocationInputs(item)}
-          <label>Promotor<input data-field="promoterAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(item.promoterAmount)}"></label>
-          <label class="finance-field-wide">Notas<input data-field="notes" value="${escapeHtml(item.notes || '')}"></label>
+          <section class="finance-unit-section is-client">
+            <h5>Datos del cliente</h5>
+            <div class="finance-unit-section-grid">
+              <label>Nombre del cliente<input data-field="clientName" value="${escapeHtml(item.clientName || '')}"></label>
+              <label>Lote / unidad<input data-field="lot" value="${escapeHtml(item.lot || '')}"></label>
+              <label class="finance-field-wide">Banco comprador<input data-field="buyerBank" value="${escapeHtml(item.buyerBank || '')}"></label>
+            </div>
+          </section>
+          <section class="finance-unit-section is-cpp">
+            <h5>CPP y cheque</h5>
+            <div class="finance-unit-section-grid">
+              <label>No. cheque<input data-field="checkNumber" value="${escapeHtml(item.checkNumber || '')}"></label>
+              <label>Fecha cheque<input data-field="checkDate" type="date" value="${financeDateInput(item.checkDate)}"></label>
+              <label>Base valor
+                <select data-field="checkAmountSource">
+                  <option value="cpp" ${item.checkAmountSource === 'cpp' ? 'selected' : ''}>CPP</option>
+                  <option value="cpp_initial" ${item.checkAmountSource === 'cpp_initial' ? 'selected' : ''}>CPP + abono inicial</option>
+                  <option value="sale_price" ${item.checkAmountSource === 'sale_price' ? 'selected' : ''}>Precio venta</option>
+                </select>
+              </label>
+              <label>Valor cheque / base<input data-field="checkAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(item.checkAmount)}"></label>
+            </div>
+            <div class="finance-commercial-base">
+              <span>CPP <b>${financeMoney(item.cppAmount)}</b></span><span>Abono inicial <b>${financeMoney(item.initialPayment)}</b></span><span>Precio venta <b>${financeMoney(item.salePrice)}</b></span>
+            </div>
+          </section>
+          <section class="finance-unit-section is-payments">
+            <h5>Abonos del cliente</h5>
+            <div class="finance-customer-payment-summary" data-customer-payment-summary-unit="${escapeHtml(item.unitId || '')}">
+              <span>Acordado <b data-customer-agreed>${financeMoney(item.customerPaymentTotals?.agreed)}</b></span>
+              <span>Pagado <b data-customer-paid>${financeMoney(item.customerPaymentTotals?.paid)}</b></span>
+              <span>Pendiente <b data-customer-balance>${financeMoney(item.customerPaymentTotals?.balance)}</b></span>
+              <button class="btn btn-ghost btn-xs" type="button" data-open-customer-payments="${escapeHtml(item.unitId || '')}">Ver pagos</button>
+            </div>
+          </section>
+          <section class="finance-unit-section is-allocation">
+            <h5>Distribución de la CPP</h5>
+            <div class="finance-allocation-grid">
+              ${renderFinanceAllocationInputs(item)}
+              <label class="finance-allocation-field">Promotor<span class="finance-allocation-pair"><input data-field="promoterPct" type="number" min="0" step="any" value="${numOr0(item.checkAmount) > 0 && numOr0(item.promoterAmount) ? ((numOr0(item.promoterAmount) / numOr0(item.checkAmount)) * 100).toFixed(2) : ''}"><b>%</b><input data-field="promoterAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(item.promoterAmount)}"></span></label>
+              <label class="finance-field-wide">Notas<input data-field="notes" value="${escapeHtml(item.notes || '')}"></label>
+            </div>
+          </section>
         </div>
         <div class="finance-unit-footer">
           <span>Total distribuido: <b data-unit-distributed>${financeMoney(state.distributed)}</b></span>
+          <span>Porcentaje: <b data-unit-percentage>${numOr0(item.checkAmount) > 0 ? ((state.distributed / numOr0(item.checkAmount)) * 100).toFixed(2) : '0.00'}%</b></span>
           <span>Diferencia: <b data-unit-difference>${financeMoney(state.diff)}</b></span>
           <button class="btn btn-xs" type="button" data-finance-save-unit title="El autoguardado está activo; este botón permite forzarlo.">Guardar ahora</button>
           <button class="btn btn-ghost btn-xs" type="button" data-finance-reset-unit>Limpiar</button>
@@ -7382,16 +7442,58 @@ function renderFinanceUnitGlobalSummary(items = mergedFinanceUnitAmortizations()
     acc.promoter += numOr0(item.promoterAmount);
     return acc;
   }, { checkAmount: 0, allocated: 0, promoter: 0 });
+  const customerReceipts = financeCustomerPaymentRecipientTotals();
   box.innerHTML = [
-    ['Valor base / cheques', financeMoney(totals.checkAmount)],
-    ['Amortizado a líneas', financeMoney(totals.allocated)],
-    ['Total promotor', financeMoney(totals.promoter)],
-  ].map(([label, value]) => `
+    ['Valor base / cheques', financeMoney(totals.checkAmount), 'Base de distribución de CPP'],
+    ['Amortizado a líneas', financeMoney(totals.allocated), 'Aplicado a líneas bancarias'],
+    ['Total promotor', financeMoney(totals.promoter + customerReceipts.promoter), `CPP + abonos cliente (${financeMoney(customerReceipts.promoter)})`],
+  ].map(([label, value, detail]) => `
     <article class="finance-loan-summary-card">
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(detail)}</small>
     </article>
   `).join('');
+}
+
+function financeCustomerPaymentGlobalTotals() {
+  return (FINANCE_COMMERCIAL_UNITS || []).reduce((totals, unit) => {
+    totals.agreed += numOr0(unit.customerPaymentTotals?.agreed);
+    totals.paid += numOr0(unit.customerPaymentTotals?.paid);
+    totals.balance += numOr0(unit.customerPaymentTotals?.balance);
+    return totals;
+  }, { agreed: 0, paid: 0, balance: 0 });
+}
+
+function financeCustomerPaymentRecipientTotals() {
+  return (FINANCE_COMMERCIAL_UNITS || []).reduce((totals, unit) => {
+    (unit.customerPaymentAccounts || []).forEach(account => {
+      (account.payments || []).forEach(payment => {
+        const recipient = payment.recipient || account.recipient || 'promoter';
+        if (Object.hasOwn(totals, recipient)) totals[recipient] += numOr0(payment.amount);
+      });
+    });
+    return totals;
+  }, { bank: 0, promoter: 0, other: 0 });
+}
+
+function renderFinancePhaseFundingSummary(phase = null) {
+  const fundingSummary = document.getElementById('financePhaseFundingSummary');
+  if (!fundingSummary) return;
+  const currentPhase = phase || (FINANCE?.phases || []).find(item => String(item?._id || '') === String(FINANCE_SELECTED_PHASE_ID || ''));
+  const funding = financePhaseFunding(currentPhase || {});
+  const approvedBank = financePhaseApprovedBank(currentPhase || {});
+  const payments = financeCustomerPaymentGlobalTotals();
+  fundingSummary.innerHTML = [
+    ['Aprobado para desembolso', approvedBank, 'is-bank'],
+    ['Total desembolsado', funding.disbursed, 'is-bank'],
+    ['Pendiente por desembolsar', Math.max(0, approvedBank - funding.disbursed), 'is-bank'],
+    ['Total amortizado', funding.amortized, 'is-bank'],
+    ['Saldo por pagar', funding.debt, 'is-bank'],
+    ['Abonos acordados', payments.agreed, 'is-customer'],
+    ['Abonos cobrados', payments.paid, 'is-customer'],
+    ['Abonos pendientes', payments.balance, 'is-customer'],
+  ].map(([label, value, kind]) => `<div class="${kind}"><span>${escapeHtml(label)}</span><strong>${financeMoney(value)}</strong></div>`).join('');
 }
 
 function refreshFinanceDerivedUI() {
@@ -7400,6 +7502,8 @@ function refreshFinanceDerivedUI() {
     const item = readFinanceUnitCards().find(x => String(x.unitId || '') === String(card.dataset.unitId || '')) || {};
     const state = financeUnitState(item);
     card.querySelector('[data-unit-distributed]').textContent = financeMoney(state.distributed);
+    const percentage = card.querySelector('[data-unit-percentage]');
+    if (percentage) percentage.textContent = `${numOr0(item.checkAmount) > 0 ? ((state.distributed / numOr0(item.checkAmount)) * 100).toFixed(2) : '0.00'}%`;
     card.querySelector('[data-unit-difference]').textContent = financeMoney(state.diff);
     const badge = card.querySelector('.finance-status');
     if (badge) {
@@ -7408,6 +7512,23 @@ function refreshFinanceDerivedUI() {
     }
   });
   renderFinanceControlKpis();
+}
+
+function syncFinanceAllocationPair(target) {
+  const card = target.closest('.finance-unit-card');
+  if (!card) return;
+  const base = numOr0(card.querySelector('[data-field="checkAmount"]')?.value);
+  const allocation = target.closest('[data-allocation-line]');
+  const isPromoter = ['promoterPct', 'promoterAmount'].includes(target.dataset.field);
+  const pctInput = isPromoter
+    ? card.querySelector('[data-field="promoterPct"]')
+    : allocation?.querySelector('[data-field="allocationPct"]');
+  const amountInput = isPromoter
+    ? card.querySelector('[data-field="promoterAmount"]')
+    : allocation?.querySelector('[data-field="allocationAmount"]');
+  if (!pctInput || !amountInput) return;
+  if (target === pctInput) amountInput.value = formatPanamaNumber(base * numOr0(pctInput.value) / 100);
+  if (target === amountInput) pctInput.value = base > 0 && numOr0(amountInput.value) ? ((numOr0(amountInput.value) / base) * 100).toFixed(2) : '';
 }
 
 function setFinanceAutosaveStatus(elementId, label, tone = '') {
@@ -7908,7 +8029,14 @@ function bindFinanceOnce() {
     }
   });
 
-  document.getElementById('financeUnitAmortizations')?.addEventListener('input', () => {
+  document.getElementById('financeUnitAmortizations')?.addEventListener('input', (ev) => {
+    if (ev.target.dataset.field === 'checkAmount') {
+      ev.target.closest('.finance-unit-card')?.querySelectorAll('[data-field="allocationAmount"], [data-field="promoterAmount"]').forEach(syncFinanceAllocationPair);
+    }
+    if (['allocationPct', 'allocationAmount', 'promoterPct', 'promoterAmount'].includes(ev.target.dataset.field)) {
+      syncFinanceAllocationPair(ev.target);
+      refreshFinanceDerivedUI();
+    }
     renderFinanceControlKpis();
     scheduleFinanceUnitAutosave();
   });
@@ -7923,6 +8051,7 @@ function bindFinanceOnce() {
       if (checkInput) {
         checkInput.value = source.value === 'cpp_initial' ? cpp + initial : source.value === 'sale_price' ? sale : cpp;
       }
+      card?.querySelectorAll('[data-field="allocationAmount"], [data-field="promoterAmount"]').forEach(syncFinanceAllocationPair);
     }
     refreshFinanceDerivedUI();
     scheduleFinanceUnitAutosave();
@@ -9172,16 +9301,7 @@ async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = '
   const lines = financeLoanLinesWithUseSeeds(savedLines, phase);
   FINANCE_LOAN_LINE_EXPANDED = new Set();
   FINANCE_LOAN_LINE_COLLAPSED = new Set();
-  const funding = financePhaseFunding(phase);
-  const fundingSummary = document.getElementById('financePhaseFundingSummary');
-  const approvedBank = financePhaseApprovedBank(phase);
-  if (fundingSummary) fundingSummary.innerHTML = [
-    ['Aprobado para desembolso', approvedBank],
-    ['Total desembolsado', funding.disbursed],
-    ['Pendiente por desembolsar', Math.max(0, approvedBank - funding.disbursed)],
-    ['Total amortizado', funding.amortized],
-    ['Saldo por pagar', funding.debt],
-  ].map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${financeMoney(value)}</strong></div>`).join('');
+  renderFinancePhaseFundingSummary(phase);
   renderFinancePhaseOverview(phase, lines, initialView);
   renderFinanceLoanLines(lines);
   renderFinanceUnitAmortizations();
@@ -10844,6 +10964,300 @@ function commercialStageStates(stageValues) {
   return states;
 }
 
+const CUSTOMER_CAPTURE_CHANNELS = [
+  'Ferias',
+  'Referido',
+  'Valla publicitaria',
+  'Broker',
+  'Redes sociales',
+  'Portales inmobiliarios',
+  'En proyecto',
+  'Oficina',
+  'Mercadeo / volanteo'
+];
+const LEGACY_MAIL_CAPTURE_CHANNEL = '__legacy_mail_internet__';
+
+function captureChannelValue(v = {}) {
+  if (CUSTOMER_CAPTURE_CHANNELS.includes(String(v.canalCaptacion || '').trim())) {
+    return String(v.canalCaptacion).trim();
+  }
+  if (v.captadoAtencionOficina) return 'Oficina';
+  if (v.captadoMailInternet) return LEGACY_MAIL_CAPTURE_CHANNEL;
+  if (v.captadoEnProyecto) return 'En proyecto';
+  if (v.captadoMercadeoProspecto) return 'Mercadeo / volanteo';
+  return '';
+}
+
+function captureChannelOptions(value = '') {
+  return [
+    {v:'',l:'—'},
+    ...(value === LEGACY_MAIL_CAPTURE_CHANNEL
+      ? [{v:LEGACY_MAIL_CAPTURE_CHANNEL,l:'Mail / Internet (dato histórico; actualizar)'}]
+      : []),
+    ...CUSTOMER_CAPTURE_CHANNELS.map(channel => ({v:channel,l:channel}))
+  ];
+}
+
+function customerPaymentSaleGap(v = {}) {
+  return Math.max(0, numOr0(v.precioVenta) - numOr0(v.montoFinanciamientoCPP || v.valor));
+}
+
+function effectiveCustomerPaymentAccountsFrontend(v = {}) {
+  const accounts = Array.isArray(v.customerPaymentAccounts)
+    ? v.customerPaymentAccounts.map(account => ({ ...account, payments: (account.payments || []).map(payment => ({ ...payment })) }))
+    : [];
+  if (customerPaymentSaleGap(v) > 0 && !accounts.some(account => account.source === 'sale_gap')) {
+    accounts.unshift({ source: 'sale_gap', concept: 'Abono del cliente', recipient: 'promoter', requiredForClearance: true, payments: [] });
+  }
+  return accounts;
+}
+
+function customerPaymentAccountSummaryFrontend(account = {}, v = {}) {
+  const agreed = account.source === 'sale_gap' ? customerPaymentSaleGap(v) : numOr0(account.agreedAmount);
+  const paid = (account.payments || []).reduce((sum, payment) => sum + numOr0(payment.amount), 0);
+  return { agreed, paid, balance: Math.max(0, agreed - paid), overpaid: Math.max(0, paid - agreed) };
+}
+
+function customerPaymentSummaryFrontend(v = {}) {
+  const accounts = effectiveCustomerPaymentAccountsFrontend(v);
+  return accounts.reduce((totals, account) => {
+    const summary = customerPaymentAccountSummaryFrontend(account, v);
+    totals.agreed += summary.agreed;
+    totals.paid += summary.paid;
+    totals.balance += summary.balance;
+    totals.overpaid += summary.overpaid;
+    return totals;
+  }, { agreed: 0, paid: 0, balance: 0, overpaid: 0 });
+}
+
+function customerPaymentClientName(v = {}) {
+  return String(v.clienteNombre || '').trim() || [
+    v.primerNombre, v.segundoNombre, v.primerApellido, v.segundoApellido
+  ].map(value => String(value || '').trim()).filter(Boolean).join(' ') || 'Cliente';
+}
+
+let CUSTOMER_PAYMENT_MODAL_UNIT_ID = '';
+let CUSTOMER_PAYMENT_MODAL_SALE = null;
+let CUSTOMER_PAYMENT_AUTOSAVE_TIMER = null;
+let CUSTOMER_PAYMENT_AUTOSAVE_IN_FLIGHT = null;
+let CUSTOMER_PAYMENT_AUTOSAVE_DIRTY = false;
+
+function ensureCustomerPaymentsModal() {
+  let modal = document.getElementById('customerPaymentsModal');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'customerPaymentsModal';
+  modal.className = 'customer-payments-modal';
+  modal.hidden = true;
+  modal.innerHTML = `
+    <button type="button" class="customer-payments-backdrop" data-customer-payments-close aria-label="Cerrar"></button>
+    <section class="customer-payments-dialog" role="dialog" aria-modal="true" aria-labelledby="customerPaymentsTitle">
+      <header><div><span>Seguimiento de cobros</span><h2 id="customerPaymentsTitle">Abonos del cliente</h2><p id="customerPaymentsSubtitle"></p></div><button type="button" class="btn btn-ghost btn-xs" data-customer-payments-close>Cerrar</button></header>
+      <div id="customerPaymentsTotals" class="customer-payments-totals"></div>
+      <div id="customerPaymentsAccounts" class="customer-payments-accounts"></div>
+      <footer><span id="customerPaymentsSaveStatus">Autoguardado activo</span><button type="button" class="btn primary" data-customer-payments-save>Guardar ahora</button></footer>
+    </section>`;
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function renderCustomerPaymentsModal() {
+  const modal = ensureCustomerPaymentsModal();
+  const sale = CUSTOMER_PAYMENT_MODAL_SALE || {};
+  const accounts = effectiveCustomerPaymentAccountsFrontend(sale);
+  sale.customerPaymentAccounts = accounts;
+  const totals = customerPaymentSummaryFrontend(sale);
+  const clientName = customerPaymentClientName(sale);
+  const payments = accounts.flatMap(account => (account.payments || []).map(payment => ({
+    ...payment,
+    recipient: payment.recipient || account.recipient || 'promoter'
+  })));
+  modal.querySelector('#customerPaymentsTotals').innerHTML = [
+    ['Total acordado', totals.agreed], ['Pagado', totals.paid], ['Pendiente', totals.balance]
+  ].map(([label, value]) => `<article><span>${label}</span><strong>${financeMoney(value)}</strong></article>`).join('');
+  modal.querySelector('#customerPaymentsAccounts').innerHTML = `<section class="customer-payment-list">
+    <div class="customer-payment-table-wrap"><table><thead><tr><th>Fecha del abono</th><th>Concepto</th><th>Beneficiario</th><th>Nº recibo</th><th>Importe</th><th></th></tr></thead><tbody>
+      ${payments.map((payment, paymentIndex) => `<tr data-customer-payment-index="${paymentIndex}" data-payment-id="${escapeHtml(payment._id || '')}"><td><input data-payment-field="paymentDate" type="date" value="${financeDateInput(payment.paymentDate)}"></td><td><input value="${escapeHtml(clientName)}" readonly aria-readonly="true"></td><td><select data-payment-field="recipient"><option value="promoter" ${payment.recipient === 'promoter' ? 'selected' : ''}>Promotor</option><option value="bank" ${payment.recipient === 'bank' ? 'selected' : ''}>Banco</option><option value="other" ${payment.recipient === 'other' ? 'selected' : ''}>Otro</option></select></td><td><input data-payment-field="receiptNumber" value="${escapeHtml(payment.receiptNumber || '')}"></td><td><input data-payment-field="amount" type="text" inputmode="decimal" value="${formatPanamaNumber(payment.amount)}"></td><td><button type="button" class="btn btn-ghost btn-xs" data-customer-payment-remove>Quitar</button></td></tr>`).join('') || '<tr class="customer-payment-empty"><td colspan="6">Todavía no hay pagos registrados.</td></tr>'}
+    </tbody></table></div>
+    <button type="button" class="btn btn-ghost btn-xs" data-customer-payment-add>+ Añadir pago</button>
+  </section>`;
+}
+
+function readCustomerPaymentModal() {
+  const sale = CUSTOMER_PAYMENT_MODAL_SALE || {};
+  const saleGapAccount = effectiveCustomerPaymentAccountsFrontend(sale).find(account => account.source === 'sale_gap') || {};
+  return [{
+    _id: saleGapAccount._id || undefined,
+    source: 'sale_gap',
+    concept: 'Abono del cliente',
+    agreedAmount: 0,
+    recipient: 'promoter',
+    requiredForClearance: true,
+    payments: Array.from(document.querySelectorAll('#customerPaymentsAccounts [data-customer-payment-index]')).map(payment => ({
+      _id: payment.dataset.paymentId || undefined,
+      paymentDate: payment.querySelector('[data-payment-field="paymentDate"]')?.value || null,
+      recipient: payment.querySelector('[data-payment-field="recipient"]')?.value || 'promoter',
+      receiptNumber: payment.querySelector('[data-payment-field="receiptNumber"]')?.value || '',
+      amount: numOr0(payment.querySelector('[data-payment-field="amount"]')?.value)
+    }))
+  }];
+}
+
+function openCustomerPayments(unitId, saleOverride = null) {
+  clearTimeout(CUSTOMER_PAYMENT_AUTOSAVE_TIMER);
+  CUSTOMER_PAYMENT_AUTOSAVE_DIRTY = false;
+  const sale = saleOverride || ventasMap.get(String(unitId)) || {};
+  CUSTOMER_PAYMENT_MODAL_UNIT_ID = String(unitId || '');
+  CUSTOMER_PAYMENT_MODAL_SALE = { ...sale, customerPaymentAccounts: effectiveCustomerPaymentAccountsFrontend(sale) };
+  const modal = ensureCustomerPaymentsModal();
+  modal.querySelector('#customerPaymentsSubtitle').textContent = `${customerPaymentClientName(sale)}${sale.lote ? ` · ${sale.lote}` : ''}`;
+  renderCustomerPaymentsModal();
+  modal.querySelector('#customerPaymentsSaveStatus').textContent = 'Autoguardado activo';
+  modal.hidden = false;
+}
+
+function refreshCustomerPaymentDisplays(unitId, sale) {
+  const totals = customerPaymentSummaryFrontend(sale);
+  document.querySelectorAll(`[data-customer-payment-summary-unit="${CSS.escape(String(unitId))}"]`).forEach(host => {
+    host.querySelector('[data-customer-agreed]') && (host.querySelector('[data-customer-agreed]').textContent = financeMoney(totals.agreed));
+    host.querySelector('[data-customer-paid]') && (host.querySelector('[data-customer-paid]').textContent = financeMoney(totals.paid));
+    host.querySelector('[data-customer-balance]') && (host.querySelector('[data-customer-balance]').textContent = financeMoney(totals.balance));
+  });
+}
+
+function refreshCustomerPaymentFinanceTotals() {
+  renderFinancePhaseFundingSummary();
+  renderFinanceLoanGlobalSummary(collectFinanceLoanLines());
+  renderFinanceUnitGlobalSummary(mergedFinanceUnitAmortizations());
+  renderFinanceControlKpis(computeFinanceControlTotals());
+}
+
+function scheduleCustomerPaymentsAutosave(delay = 700) {
+  CUSTOMER_PAYMENT_AUTOSAVE_DIRTY = true;
+  clearTimeout(CUSTOMER_PAYMENT_AUTOSAVE_TIMER);
+  const status = ensureCustomerPaymentsModal().querySelector('#customerPaymentsSaveStatus');
+  if (status) status.textContent = 'Cambios pendientes…';
+  CUSTOMER_PAYMENT_AUTOSAVE_TIMER = setTimeout(() => persistCustomerPayments({ manual: false }), delay);
+}
+
+async function persistCustomerPayments({ manual = false } = {}) {
+  if (CUSTOMER_PAYMENT_AUTOSAVE_IN_FLIGHT) {
+    CUSTOMER_PAYMENT_AUTOSAVE_DIRTY = true;
+    return CUSTOMER_PAYMENT_AUTOSAVE_IN_FLIGHT;
+  }
+  const modal = ensureCustomerPaymentsModal();
+  const unitId = String(CUSTOMER_PAYMENT_MODAL_UNIT_ID || '');
+  const expectedVersion = numOr0(CUSTOMER_PAYMENT_MODAL_SALE?.customerPaymentsVersion);
+  const status = modal.querySelector('#customerPaymentsSaveStatus');
+  const save = modal.querySelector('[data-customer-payments-save]');
+  const accounts = readCustomerPaymentModal();
+  const invalid = accounts.some(item => item.payments.some(payment => !payment.paymentDate || !payment.receiptNumber.trim() || payment.amount <= 0));
+  if (invalid) {
+    if (status) status.textContent = 'Completa fecha, recibo e importe para autoguardar';
+    return false;
+  }
+  CUSTOMER_PAYMENT_AUTOSAVE_DIRTY = false;
+  if (save) save.disabled = true;
+  if (status) status.textContent = 'Guardando…';
+  CUSTOMER_PAYMENT_AUTOSAVE_IN_FLIGHT = (async () => {
+    try {
+      const response = await API.put(`/api/ventas/by-unit/${encodeURIComponent(unitId)}/customer-payments`, {
+        customerPaymentAccounts: accounts,
+        customerPaymentsVersion: expectedVersion
+      });
+      const savedSale = response.venta || {};
+      ventasMap.set(unitId, savedSale);
+      const financeUnit = (FINANCE_COMMERCIAL_UNITS || []).find(unit => String(unit.unitId) === unitId);
+      if (financeUnit) {
+        financeUnit.customerPaymentAccounts = response.customerPayments?.accounts || [];
+        financeUnit.customerPaymentTotals = response.customerPayments?.totals || {};
+        financeUnit.customerClearanceStatus = response.customerPayments?.clearanceStatus || 'pending';
+        financeUnit.customerPaymentsVersion = numOr0(savedSale.customerPaymentsVersion);
+      }
+      refreshCustomerPaymentFinanceTotals();
+      await markProjectDataChanged({ refreshHeader: false });
+      if (String(CUSTOMER_PAYMENT_MODAL_UNIT_ID || '') !== unitId) return true;
+      CUSTOMER_PAYMENT_MODAL_SALE = savedSale;
+      const savedPayments = (response.customerPayments?.accounts || []).flatMap(account => account.payments || []);
+      modal.querySelectorAll('[data-customer-payment-index]').forEach((row, index) => {
+        if (savedPayments[index]?._id) row.dataset.paymentId = savedPayments[index]._id;
+      });
+      refreshCustomerPaymentDisplays(unitId, savedSale);
+      const totals = customerPaymentSummaryFrontend(savedSale);
+      modal.querySelector('#customerPaymentsTotals').innerHTML = [
+        ['Total acordado', totals.agreed], ['Pagado', totals.paid], ['Pendiente', totals.balance]
+      ].map(([label, value]) => `<article><span>${label}</span><strong>${financeMoney(value)}</strong></article>`).join('');
+      if (status) status.textContent = 'Autoguardado: guardado';
+      return true;
+    } catch (error) {
+      if (status) status.textContent = error.message || 'No se pudo guardar';
+      if (manual) alert(error.message || 'No se pudo guardar');
+      return false;
+    } finally {
+      CUSTOMER_PAYMENT_AUTOSAVE_IN_FLIGHT = null;
+      if (save) save.disabled = false;
+      if (CUSTOMER_PAYMENT_AUTOSAVE_DIRTY) scheduleCustomerPaymentsAutosave(150);
+    }
+  })();
+  return CUSTOMER_PAYMENT_AUTOSAVE_IN_FLIGHT;
+}
+
+if (typeof document !== 'undefined') {
+  const customerPaymentChanged = event => {
+    if (!event.target.closest('#customerPaymentsModal [data-customer-payment-index]')) return;
+    if (!event.target.matches('[data-payment-field]')) return;
+    scheduleCustomerPaymentsAutosave();
+  };
+  document.addEventListener('input', customerPaymentChanged);
+  document.addEventListener('change', customerPaymentChanged);
+}
+
+if (typeof document !== 'undefined') document.addEventListener('click', async event => {
+  const open = event.target.closest('[data-open-customer-payments]');
+  if (open) {
+    event.preventDefault();
+    const unitId = open.dataset.openCustomerPayments;
+    const financeUnit = (FINANCE_COMMERCIAL_UNITS || []).find(unit => String(unit.unitId) === String(unitId));
+    openCustomerPayments(unitId, ventasMap.get(String(unitId)) || (financeUnit ? {
+      precioVenta: financeUnit.salePrice, montoFinanciamientoCPP: financeUnit.cppAmount,
+      clienteNombre: financeUnit.clientName, lote: financeUnit.lot,
+      customerPaymentAccounts: financeUnit.customerPaymentAccounts,
+      customerPaymentsVersion: financeUnit.customerPaymentsVersion
+    } : null));
+    return;
+  }
+  if (event.target.closest('[data-customer-payments-close]')) {
+    ensureCustomerPaymentsModal().hidden = true;
+    return;
+  }
+  if (event.target.closest('[data-customer-payment-add]')) {
+    CUSTOMER_PAYMENT_MODAL_SALE.customerPaymentAccounts = readCustomerPaymentModal();
+    const target = CUSTOMER_PAYMENT_MODAL_SALE.customerPaymentAccounts[0];
+    target.payments = target.payments || [];
+    target.payments.push({
+      paymentDate: new Date().toISOString().slice(0, 10),
+      recipient: 'promoter',
+      receiptNumber: '',
+      amount: 0
+    });
+    renderCustomerPaymentsModal();
+    scheduleCustomerPaymentsAutosave();
+    return;
+  }
+  const paymentRow = event.target.closest('[data-customer-payment-index]');
+  if (event.target.closest('[data-customer-payment-remove]') && paymentRow) {
+    CUSTOMER_PAYMENT_MODAL_SALE.customerPaymentAccounts = readCustomerPaymentModal();
+    CUSTOMER_PAYMENT_MODAL_SALE.customerPaymentAccounts[0].payments.splice(Number(paymentRow.dataset.customerPaymentIndex), 1);
+    renderCustomerPaymentsModal();
+    scheduleCustomerPaymentsAutosave(100);
+    return;
+  }
+  const save = event.target.closest('[data-customer-payments-save]');
+  if (!save) return;
+  clearTimeout(CUSTOMER_PAYMENT_AUTOSAVE_TIMER);
+  await persistCustomerPayments({ manual: true });
+});
+
 function renderCommercialProcessFicha(u = {}, v = {}) {
   const options = (items, value = '') => {
     const current = String(value || '');
@@ -10881,6 +11295,12 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
   const civilOpts = [{v:'',l:'—'},{v:'Soltero',l:'Soltero/a'},{v:'Casado',l:'Casado/a'}];
   const minuteOpts = [{v:'',l:'—'},{v:'Solicitada',l:'Solicitada'},{v:'Lista',l:'Firmada / lista'},{v:'No aplica',l:'No aplica'}];
   const policyTypeOpts = [{v:'',l:'—'},{v:'Endosada',l:'Endosada'},{v:'Colectiva',l:'Colectiva'}];
+  const purchaseModalityOpts = [
+    {v:'',l:'—'},
+    {v:'Interés preferencial',l:'Interés preferencial'},
+    {v:'Tasa libre',l:'Tasa libre'},
+    {v:'Al contado',l:'Al contado'}
+  ];
   const client = second => {
     const composedName = second
       ? [v.cliente2PrimerNombre,v.cliente2SegundoNombre,v.cliente2PrimerApellido,v.cliente2SegundoApellido].filter(Boolean).join(' ')
@@ -10892,6 +11312,7 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
     const phoneValue = second ? (v.cliente2Celular||v.cliente2TelefonoResidencial) : (v.celular||v.telefonoResidencial);
     return `<details class="unit-side-card" ${!second || exists ? 'open' : ''}><summary><strong>Datos del cliente ${second ? '2' : '1'}</strong><span>⌄</span></summary><div class="unit-side-grid">
       ${field(second?'fv-cliente2NombreCompleto':'fv-clienteNombre','Nombre completo',composedName,'text',`readonly aria-readonly="true" data-original="${safeVal(composedName)}" data-persisted="${second || !!v.clienteNombre}"`)}
+      ${!second ? select('fv-modalidadFinanciamiento','Modalidad de compra',purchaseModalityOpts,v.modalidadFinanciamiento) : ''}
       ${field(second?'fv-cliente2PrimerNombre':'fv-primerNombre','Primer nombre',second?v.cliente2PrimerNombre:v.primerNombre)}
       ${field(second?'fv-cliente2SegundoNombre':'fv-segundoNombre','Segundo nombre',second?v.cliente2SegundoNombre:v.segundoNombre)}
       ${field(second?'fv-cliente2PrimerApellido':'fv-primerApellido','Apellido paterno',second?v.cliente2PrimerApellido:v.primerApellido)}
@@ -10934,12 +11355,11 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
     stage(5,'Cierre notarial / Registro Público',stageValues[4],`${date('fv-fechaPagoImpuesto','Fecha de pago de impuestos',v.fechaPagoImpuesto)}${date('fv-fechaCierreEscritura','Cierre de notaría (fecha de escritura)',v.fechaCierreEscritura||v.fechaFirma)}${date('fv-fechaIngresoRP','Ingreso al Registro Público',v.fechaIngresoRP)}${date('fv-fechaInscripcion','Fecha de inscripción',v.fechaInscripcion)}`,stageStates[4]),
     stage(6,'Desembolso y entrega',stageValues[5],`${date('fv-fechaDesembolso','Fecha de desembolso',v.fechaDesembolso)}${date('fv-fechaEntregaVivienda','Fecha de entrega de vivienda',v.fechaEntregaVivienda)}${!v.fechaEmisionPermisoOcupacion?'<div class="unit-stage-warning">Falta el permiso de ocupación. Es un aviso y no bloquea este paso.</div>':''}`,stageStates[5])
   ].join('');
-  const captureChannel = v.captadoAtencionOficina ? 'Atención en oficina'
-    : v.captadoMailInternet ? 'Mail / internet'
-      : v.captadoEnProyecto ? 'En proyecto'
-        : v.captadoMercadeoProspecto ? 'Mercadeo / prospecto' : '';
+  const captureChannel = captureChannelValue(v);
   const price = Number(v.precioVenta || 0);
   const cpp = Number(v.montoFinanciamientoCPP || 0);
+  const customerPayments = customerPaymentSummaryFrontend(v);
+  const paymentUnitId = String(u._id || v.unitId || '');
   const financingPct = price > 0 ? (cpp / price) * 100 : 0;
   const statusKey = normalizeUnitEstadoFrontend(u.estado);
   const cppStatus = String(v.estatusCPP || '').trim();
@@ -10948,9 +11368,11 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
   <div class="unit-process-summary">
     <section class="unit-summary-card is-money"><span>Precio de venta</span>${number('fv-precioVenta','',price)}<small>Dato comercial único</small></section>
     <section class="unit-summary-card is-money"><span>Monto CPP</span>${number('fv-montoFinanciamientoCPP','',cpp)}<small id="fichaFinancingPctValue">${financingPct.toFixed(1)} % de financiación</small></section>
+    <button type="button" class="unit-summary-card unit-summary-payment" data-open-customer-payments="${safeVal(paymentUnitId)}" data-customer-payment-summary-unit="${safeVal(paymentUnitId)}"><span>Abono del cliente</span><strong data-customer-agreed>${formatProjectMoney(customerPayments.agreed)}</strong><small>Pagado: <b data-customer-paid>${formatProjectMoney(customerPayments.paid)}</b> · Ver pagos</small></button>
+    <button type="button" class="unit-summary-card unit-summary-payment ${customerPayments.balance > 0.01 ? 'is-pending' : 'is-paid'}" data-open-customer-payments="${safeVal(paymentUnitId)}" data-customer-payment-summary-unit="${safeVal(paymentUnitId)}"><span>Pendiente de pago</span><strong data-customer-balance>${formatProjectMoney(customerPayments.balance)}</strong><small>${customerPayments.balance > 0.01 ? 'Seguimiento activo' : 'Paz y salvo'}</small></button>
     <section class="unit-summary-card"><span>Banco del cliente</span><div class="bank-select-field">${window.BankSelect?.bankSelectHtml?.('fv-banco',v.banco||'')||`<input id="fv-banco" type="text" value="${safeVal(v.banco||'')}">`}</div><small>Entidad que financia</small></section>
     <section class="unit-summary-card"><span>Estatus de CPP</span><strong id="fichaCppStatusValue" class="unit-summary-status ${cppTone}">${safeVal(cppStatus || 'Sin definir')}</strong><small id="fichaCppExpiryValue">${v.fechaVencimientoCPP ? `Vence el ${safeVal(dateValue(v.fechaVencimientoCPP).split('-').reverse().join('/'))}` : 'Sin vencimiento registrado'}</small></section>
-    <input id="fv-abonoInicial" type="hidden" value="${safeVal(v.abonoInicial || Math.max(price-cpp,0))}">
+    <input id="fv-abonoInicial" type="hidden" value="${safeVal(Math.max(price-cpp,0))}">
     <input id="fv-porcentajeFinanciamiento" type="hidden" value="${safeVal(financingPct)}">
   </div><div class="unit-process-layout">
     <aside class="unit-process-left"><details class="unit-side-card" open><summary><strong>Datos de la unidad</strong><span>⌄</span></summary><div class="unit-side-grid">
@@ -10959,7 +11381,7 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
       ${number('fv-avanceConstruccionPct','Avance de obra (%)',v.avanceConstruccionPct||0)}${select('fv-estatusConstruccion','Fase de obra',[{v:'',l:'Pendiente de construir'},{v:'Obra gris',l:'Obra gris'},{v:'Acabados',l:'Acabados'},{v:'Terminada',l:'Terminada'}],v.estatusConstruccion)}${check('fv-permisoConstruccionMunicipal','Permiso de construcción',v.permisoConstruccionMunicipal)}${field('fv-permisoConstruccionNum','Resolución construcción',v.permisoConstruccionNum)}${date('fv-fechaPermisoConstruccion','Fecha permiso construcción',v.fechaPermisoConstruccion)}${date('fv-permisoConstruccionVencimiento','Vencimiento construcción',v.permisoConstruccionVencimiento)}${check('fv-permisoOcupacion','Permiso de ocupación',v.permisoOcupacion)}${field('fv-permisoOcupacionNum','Resolución ocupación',v.permisoOcupacionNum)}${date('fv-fechaEmisionPermisoOcupacion','Fecha permiso ocupación',v.fechaEmisionPermisoOcupacion)}${field('fv-constructora','Constructora / contratista',v.constructora)}
     </div></details></aside>
     <main class="unit-process-main"><section class="unit-process-heading"><div><h2>Proceso de venta</h2><span>${complete} de 6 etapas completas</span></div>${reservationAge ? `<strong class="unit-reservation-age">${safeVal(reservationAge.label)}</strong>` : ''}<div class="unit-process-progress"><i style="width:${Math.round(complete/6*100)}%"></i></div></section><div class="unit-stages">${stages}</div><section class="unit-comments"><h3>Comentarios</h3><textarea id="fv-comentario" rows="3" placeholder="Añade información útil para el seguimiento">${safeVal(v.comentario)}</textarea></section></main>
-    <aside class="unit-process-right">${client(false)}${client(true)}<details class="unit-side-card" open><summary><strong>Referencias personales</strong><span>⌄</span></summary><div class="unit-side-grid">${field('fv-referencia1Nombre','Referencia 1',v.referencia1Nombre)}${field('fv-referencia1Relacion','Relación',v.referencia1Relacion)}${field('fv-referencia1Telefono','Teléfono',v.referencia1Telefono)}${field('fv-referencia2Nombre','Referencia 2',v.referencia2Nombre)}${field('fv-referencia2Relacion','Relación',v.referencia2Relacion)}${field('fv-referencia2Telefono','Teléfono',v.referencia2Telefono)}${select('fv-canalCaptacion','Captación del cliente',[{v:'',l:'—'},{v:'Atención en oficina',l:'Atención en oficina'},{v:'Mail / internet',l:'Mail / internet'},{v:'En proyecto',l:'En proyecto'},{v:'Mercadeo / prospecto',l:'Mercadeo / prospecto'}],captureChannel)}</div></details></aside>
+    <aside class="unit-process-right">${client(false)}${client(true)}<details class="unit-side-card" open><summary><strong>Referencias personales</strong><span>⌄</span></summary><div class="unit-side-grid">${field('fv-referencia1Nombre','Referencia 1',v.referencia1Nombre)}${field('fv-referencia1Relacion','Relación',v.referencia1Relacion)}${field('fv-referencia1Telefono','Teléfono',v.referencia1Telefono)}${field('fv-referencia2Nombre','Referencia 2',v.referencia2Nombre)}${field('fv-referencia2Relacion','Relación',v.referencia2Relacion)}${field('fv-referencia2Telefono','Teléfono',v.referencia2Telefono)}${select('fv-canalCaptacion','Captación del cliente',captureChannelOptions(captureChannel),captureChannel)}</div></details></aside>
   </div></div>`;
 }
 
@@ -13768,6 +14190,12 @@ ${inputNum('fv-valorTerreno', `Valor terreno ${info('Valor asignado al terreno d
 
 const htmlCliente1 = seccion('Cliente 1 / Solicitante principal', `
 ${input('fv-clienteNombre', `Nickname ${info('Nombre resumen del cliente para búsquedas, tarjetas y reportes comerciales.')}`, v.clienteNombre || '')}
+${selectCustom('fv-modalidadFinanciamiento', `Modalidad de compra ${info('Clasifica la operación como interés preferencial, tasa libre o al contado.')}`, [
+  { v: '', l: '—' },
+  { v: 'Interés preferencial', l: 'Interés preferencial' },
+  { v: 'Tasa libre', l: 'Tasa libre' },
+  { v: 'Al contado', l: 'Al contado' }
+], v.modalidadFinanciamiento || '')}
 ${input('fv-primerNombre', `Primer nombre ${info('Primer nombre del solicitante principal.')}`, v.primerNombre || '')}
 ${input('fv-segundoNombre', `Segundo nombre ${info('Segundo nombre del solicitante principal, si aplica.')}`, v.segundoNombre || '')}
 ${input('fv-primerApellido', `Apellido paterno ${info('Primer apellido del solicitante principal.')}`, v.primerApellido || '')}
@@ -13862,7 +14290,7 @@ const htmlFinanciamiento = seccion('Financiamiento / Proforma', `
 ${inputNum('fv-precioVenta', `Precio de venta ${info('Precio comercial único de la unidad.')}`, v.precioVenta || 0)}
 ${inputDate('fv-fechaProbableEntrega', `Fecha probable de entrega ${info('Fecha estimada de entrega de la vivienda. Se mueve a financiamiento por seguimiento de crédito/desembolsos.')}`, v.fechaProbableEntrega)}
 ${inputNum('fv-montoFinanciamientoCPP', `Monto financiamiento CPP / hipoteca ${info('Monto financiado mediante Carta Promesa de Pago o hipoteca aprobada.')}`, v.montoFinanciamientoCPP || v.valor || 0)}
-${inputNum('fv-abonoInicial', `Abono inicial ${info('Se usa para calcular automáticamente el monto de financiamiento como precio de venta menos abono inicial.')}`, v.abonoInicial || 0)}
+${inputNum('fv-abonoInicial', `Abono inicial ${info('Valor calculado como precio de venta menos CPP. Al editarlo se recalcula la CPP; no se guarda como un segundo dato.')}`, Math.max(Number(v.precioVenta || 0) - Number(v.montoFinanciamientoCPP || v.valor || 0), 0))}
 ${inputNum('fv-porcentajeFinanciamiento', `% financiamiento ${info('Porcentaje del precio de venta cubierto por financiamiento bancario.')}`, v.porcentajeFinanciamiento || 0)}
 ${input('fv-cesionAFavorDe', `Cesión a favor de ${info('Entidad o banco a favor de quien se realiza la cesión de la CPP, si aplica.')}`, v.cesionAFavorDe || '')}
 
@@ -13968,8 +14396,7 @@ ${selectCustom('fv-mPrestamo', `Minuta préstamo ${info('Estado de la minuta de 
   { v: 'No aplica', l: 'No aplica' }
 ], v.mPrestamo || '')}
 
-${inputChk('fv-pazSalvoGesproban', `Paz y salvo Gesproban ${info('Checklist interno para confirmar paz y salvo de Gesproban, si aplica al proceso.')}`, !!v.pazSalvoGesproban)}
-${inputChk('fv-pazSalvoPromotora', `Paz y salvo Promotora ${info('Checklist para confirmar paz y salvo de la promotora antes de cierre o entrega.')}`, !!v.pazSalvoPromotora)}
+<div class="small muted" style="grid-column:1/-1;">El paz y salvo se calcula automáticamente con el saldo de los abonos requeridos del cliente.</div>
 `);
 
 // Bono MIVI retirado: se mantiene comentado para conservar la referencia histórica.
@@ -13989,10 +14416,7 @@ ${input('fv-entregaCasa', `Entrega de casa ${info('Estado o confirmación de ent
 ${input('fv-entregaANATI', `Entrega ANATI ${info('Estado o referencia de entrega ANATI, si aplica.')}`, v.entregaANATI || '')}
 ${inputDate('fv-fechaEntregaVivienda', `Fecha entrega vivienda ${info('Fecha efectiva de entrega de la vivienda al cliente.')}`, v.fechaEntregaVivienda)}
 
-${inputChk('fv-captadoAtencionOficina', `Captado atención oficina ${info('Indica si el cliente fue captado mediante atención en oficina.')}`, !!v.captadoAtencionOficina)}
-${inputChk('fv-captadoMailInternet', `Captado mail / internet ${info('Indica si el cliente fue captado por correo, web o canal digital.')}`, !!v.captadoMailInternet)}
-${inputChk('fv-captadoEnProyecto', `Captado en proyecto ${info('Indica si el cliente fue captado directamente en el proyecto.')}`, !!v.captadoEnProyecto)}
-${inputChk('fv-captadoMercadeoProspecto', `Captado mercadeo / prospecteo ${info('Indica si el cliente proviene de campañas de mercadeo o prospección comercial.')}`, !!v.captadoMercadeoProspecto)}
+${selectCustom('fv-canalCaptacion', `Captación del cliente ${info('Canal por el que el cliente conoció o llegó al proyecto.')}`, captureChannelOptions(captureChannelValue(v)), captureChannelValue(v))}
 
 ${input('fv-proformaSolicitadaPor', `Proforma solicitada por ${info('Persona o canal que solicitó la proforma.')}`, v.proformaSolicitadaPor || '')}
 ${input('fv-referidoPor', `Referido por ${info('Persona, canal o entidad que refirió al cliente.')}`, v.referidoPor || '')}
@@ -14406,7 +14830,6 @@ if (btnImportWord && importWordInput) {
         banos: vNum('fv-banos'),
         enConstruccion: vNum('fv-avanceConstruccionPct') > 0 && vNum('fv-avanceConstruccionPct') < 100,
         estatusConstruccion: vVal('fv-estatusConstruccion'),
-        faseConstruccion: vVal('fv-estatusConstruccion'),
         avanceConstruccionPct: vNum('fv-avanceConstruccionPct'),
         permisoConstruccionMunicipal: vChk('fv-permisoConstruccionMunicipal'),
         permisoConstruccionNum: vVal('fv-permisoConstruccionNum'),
@@ -14486,6 +14909,7 @@ const uBody = {
       clienteNombre: vVal('fv-clienteNombre'),
       cedula: vVal('fv-cedula'),
       empresa: vVal('fv-empresa'),
+      modalidadFinanciamiento: vVal('fv-modalidadFinanciamiento'),
 
       primerNombre: vVal('fv-primerNombre'),
       segundoNombre: vVal('fv-segundoNombre'),
@@ -14593,8 +15017,6 @@ const uBody = {
       // legacy
       valor: montoFinanciamientoFin,
 
-      abonoCliente: vNum('fv-abonoCliente'),
-      abonoInicial: abonoInicialFin,
       porcentajeFinanciamiento: porcentajeFinanciamientoFin,
       cesionAFavorDe: vVal('fv-cesionAFavorDe'),
 
@@ -14675,7 +15097,6 @@ const uBody = {
       // =====================================================
       enConstruccion: vChk('fv-enConstruccion'),
       estatusConstruccion: vVal('fv-estatusConstruccion'),
-      faseConstruccion: vVal('fv-estatusConstruccion'),
       avanceConstruccionPct: vNum('fv-avanceConstruccionPct'),
       permisoConstruccionMunicipal: vChk('fv-permisoConstruccionMunicipal'),
       permisoConstruccionNum: vVal('fv-permisoConstruccionNum'),
@@ -14700,9 +15121,6 @@ const uBody = {
       mSegregacion: vVal('fv-mSegregacion'),
       mPrestamo: vVal('fv-mPrestamo'),
 
-      pazSalvoGesproban: vChk('fv-pazSalvoGesproban'),
-      pazSalvoPromotora: vChk('fv-pazSalvoPromotora'),
-
       // =====================================================
       // Entrega / otros
       // =====================================================
@@ -14715,6 +15133,7 @@ const uBody = {
       // =====================================================
       // Captación / proforma comercial
       // =====================================================
+      canalCaptacion: vVal('fv-canalCaptacion'),
       captadoAtencionOficina: vChk('fv-captadoAtencionOficina'),
       captadoMailInternet: vChk('fv-captadoMailInternet'),
       captadoEnProyecto: vChk('fv-captadoEnProyecto'),
@@ -14732,14 +15151,19 @@ const uBody = {
       .map(value => String(value || '').trim()).filter(Boolean).join(' ');
     vBody.clienteNombre = structuredClientName || String(clientNameEl?.value || '').trim() || undefined;
 
-    // Captación reutiliza los cuatro indicadores existentes: no persiste un
-    // segundo campo de canal que pueda contradecirlos.
+    // El canal único es la fuente principal. Los indicadores anteriores se
+    // mantienen sincronizados durante la transición para datos históricos.
     const captureChannel = vVal('fv-canalCaptacion');
     if (captureChannel !== undefined) {
-      vBody.captadoAtencionOficina = captureChannel === 'Atención en oficina';
-      vBody.captadoMailInternet = captureChannel === 'Mail / internet';
-      vBody.captadoEnProyecto = captureChannel === 'En proyecto';
-      vBody.captadoMercadeoProspecto = captureChannel === 'Mercadeo / prospecto';
+      if (captureChannel === LEGACY_MAIL_CAPTURE_CHANNEL) {
+        delete vBody.canalCaptacion;
+      } else {
+        vBody.canalCaptacion = captureChannel;
+        vBody.captadoAtencionOficina = captureChannel === 'Oficina';
+        vBody.captadoMailInternet = false;
+        vBody.captadoEnProyecto = captureChannel === 'En proyecto';
+        vBody.captadoMercadeoProspecto = captureChannel === 'Mercadeo / volanteo';
+      }
     }
     if (vBody.fechaContratoCliente !== undefined) vBody.contratoFirmado = !!vBody.fechaContratoCliente;
     if (vBody.fechaProtocoloFirmaCliente !== undefined) vBody.protocoloFirmaCliente = !!vBody.fechaProtocoloFirmaCliente;
@@ -14752,6 +15176,15 @@ const uBody = {
     if (vBody.fechaDesembolso !== undefined) vBody.solicitudDesembolso = !!vBody.fechaDesembolso;
     if (vBody.fechaEntregaVivienda !== undefined) vBody.entregaCasa = vBody.fechaEntregaVivienda ? 'Sí' : '';
     if (vBody.avanceConstruccionPct !== undefined) vBody.enConstruccion = vBody.avanceConstruccionPct > 0 && vBody.avanceConstruccionPct < 100;
+
+    const paymentFit = customerPaymentSummaryFrontend({
+      ...(ventasMap.get(String(fichaUnitId)) || {}),
+      precioVenta: vBody.precioVenta,
+      montoFinanciamientoCPP: vBody.montoFinanciamientoCPP
+    });
+    if (paymentFit.overpaid > 0.01) {
+      throw new Error('No se puede guardar: el cambio de precio o CPP dejaría recibos por encima del abono acordado. Revisa primero los pagos del cliente.');
+    }
 
     await apiPost('/api/ventas/upsert-by-unit', vBody);
 
@@ -14771,7 +15204,7 @@ const uBody = {
     console.error(e);
     fichaDirty = true;
     setFichaSaveStatus('No se pudo guardar · pulsa Guardar cambios', 'error');
-    if (!silent) alert('Error guardando la ficha');
+    if (!silent) alert(e?.message || 'Error guardando la ficha');
     return false;
   } finally {
     fichaSaving = false;
@@ -14870,6 +15303,7 @@ const uBody = {
       'mSegregacion',
       'mPrestamo',
       'entregaCasa',
+      'canalCaptacion',
       'proformaSolicitadaPor',
       'referidoPor',
       'observacionCliente',
@@ -14959,13 +15393,7 @@ const uBody = {
       'solicitudDesembolso',
       'enConstruccion',
       'permisoConstruccionMunicipal',
-      'permisoOcupacion',
-      'pazSalvoGesproban',
-      'pazSalvoPromotora',
-      'captadoAtencionOficina',
-      'captadoMailInternet',
-      'captadoEnProyecto',
-      'captadoMercadeoProspecto'
+      'permisoOcupacion'
     ].forEach(field => addBatchField(update, field, 'boolean'));
 
     const sb = getStatusBancoValue('b-statusBancoSel','b-statusBancoOther');
@@ -14976,10 +15404,6 @@ const uBody = {
     if (update.areaAbierta != null && update.areaCerrada != null) {
       update.areaTotalConstruccion = Number(update.areaAbierta || 0) + Number(update.areaCerrada || 0);
     }
-    if (update.precioVenta != null && update.montoFinanciamientoCPP != null) {
-      update.abonoInicial = Math.max(Number(update.precioVenta || 0) - Number(update.montoFinanciamientoCPP || 0), 0);
-    }
-
     return update;
   }
 
@@ -15780,7 +16204,6 @@ function openTechnicalBatchEditor() {
     }
     if (read('technicalBatchConstructionStatus')) {
       ventaUpdate.estatusConstruccion = read('technicalBatchConstructionStatus');
-      ventaUpdate.faseConstruccion = read('technicalBatchConstructionStatus');
     }
     if (read('technicalBatchBuilder')) ventaUpdate.constructora = read('technicalBatchBuilder');
     if (read('technicalBatchConstructionPermit')) ventaUpdate.permisoConstruccionMunicipal = read('technicalBatchConstructionPermit') === 'true';

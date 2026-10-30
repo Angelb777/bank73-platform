@@ -7,6 +7,8 @@ const Project = require('../models/Project'); // ROLE-SEP
 const Unit = require('../models/Unit'); // ROLE-SEP
 const { requireProjectAccess } = require('../middleware/rbac'); // ROLE-SEP
 const { recomputeCommercialKpis } = require('../services/comercial_kpis');
+const { customerPaymentSummary } = require('../services/customerPayments');
+const audit = require('../utils/audit');
 const {
   syncUnitCommercialState,
   syncManyUnitCommercialStates
@@ -48,9 +50,10 @@ const ALLOWED_FIELDS = new Set([
   'valorMejoras', 'valorTerreno', 'fechaProbableEntrega', 'fechaReserva',
 
   // banco / cpp / financiación
+  'modalidadFinanciamiento',
   'banco', 'oficialBanco', 'statusBanco', 'estatusCPP', 'numCPP',
   'montoFinanciamientoCPP', 'precioVenta',
-  'abonoCliente', 'abonoInicial', 'porcentajeFinanciamiento', 'cesionAFavorDe',
+  'porcentajeFinanciamiento', 'cesionAFavorDe',
   'entregaExpedienteBanco', 'recibidoCPP', 'plazoAprobacionDias',
   'fechaValorCPP', 'fechaVencimientoCPP', 'vencimientoCPPBnMivi',
   'fechaEntregaProformaBanco', 'fechaProforma',
@@ -88,13 +91,13 @@ const ALLOWED_FIELDS = new Set([
   // legal / avalúo / minutas / paz y salvo
   'solicitudAvaluo', 'avaluoRealizado', 'fechaAvaluo', 'empresaAvaluadora',
   'mLiberacion', 'mSegregacion', 'mPrestamo',
-  'pazSalvoGesproban', 'pazSalvoPromotora',
 
   // entrega / otros
   'entregaCasa', 'entregaANATI', 'fechaEntregaVivienda',
   'comentario',
 
   // captación / proforma
+  'canalCaptacion',
   'captadoAtencionOficina', 'captadoMailInternet',
   'captadoEnProyecto', 'captadoMercadeoProspecto',
   'proformaSolicitadaPor', 'referidoPor', 'observacionCliente'
@@ -123,6 +126,48 @@ function sanitizeChecklist(input) {
   })).filter(x => x.code);
 }
 
+function cleanDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function sanitizeCustomerPaymentAccounts(input) {
+  if (!Array.isArray(input)) return [];
+  let hasSaleGap = false;
+  return input.slice(0, 30).map(account => {
+    const source = account?.source === 'sale_gap' && !hasSaleGap ? 'sale_gap' : 'manual';
+    if (source === 'sale_gap') hasSaleGap = true;
+    return {
+      ...(String(account?._id || '').match(/^[a-f\d]{24}$/i) ? { _id: account._id } : {}),
+      source,
+      concept: String(account?.concept || (source === 'sale_gap' ? 'Abono del cliente' : '')).trim().slice(0, 120),
+      agreedAmount: source === 'sale_gap' ? 0 : Math.max(0, Number(account?.agreedAmount) || 0),
+      recipient: ['bank', 'promoter', 'other'].includes(account?.recipient) ? account.recipient : 'promoter',
+      requiredForClearance: account?.requiredForClearance !== false,
+      payments: (Array.isArray(account?.payments) ? account.payments : []).slice(0, 500).map(payment => ({
+        ...(String(payment?._id || '').match(/^[a-f\d]{24}$/i) ? { _id: payment._id } : {}),
+        paymentDate: cleanDate(payment?.paymentDate),
+        recipient: ['bank', 'promoter', 'other'].includes(payment?.recipient)
+          ? payment.recipient
+          : (['bank', 'promoter', 'other'].includes(account?.recipient) ? account.recipient : 'promoter'),
+        receiptNumber: String(payment?.receiptNumber || '').trim().slice(0, 80),
+        amount: Math.max(0, Number(payment?.amount) || 0)
+      })).filter(payment => payment.paymentDate && payment.amount > 0)
+    };
+  }).filter(account => account.source === 'sale_gap' || account.concept);
+}
+
+function assertCustomerPaymentsFitSale(venta = {}) {
+  const summary = customerPaymentSummary(venta);
+  if (summary.totals.overpaid > 0.01) {
+    const error = new Error('El cambio dejaría pagos por encima del total acordado. Revisa primero el precio, la CPP o los recibos del cliente.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return summary;
+}
+
 function pickAllowed(obj = {}) {
   const out = {};
   for (const k in obj) {
@@ -130,6 +175,14 @@ function pickAllowed(obj = {}) {
   }
   if (Object.hasOwn(out, 'polizaVidaEntregada') && Object.hasOwn(out, 'polizaIncendioEntregada')) {
     out.polizas = out.polizaVidaEntregada === true && out.polizaIncendioEntregada === true;
+  }
+  if (Object.hasOwn(out, 'canalCaptacion')) {
+    const channel = String(out.canalCaptacion || '').trim();
+    out.canalCaptacion = channel;
+    out.captadoAtencionOficina = channel === 'Oficina';
+    out.captadoMailInternet = false;
+    out.captadoEnProyecto = channel === 'En proyecto';
+    out.captadoMercadeoProspecto = channel === 'Mercadeo / volanteo';
   }
   return out;
 }
@@ -251,6 +304,45 @@ router.get(
   }
 );
 
+router.put(
+  '/by-unit/:unitId/customer-payments',
+  attachProjectByUnitIdFromVenta,
+  requireProjectAccess({ promoterCanEditAssigned: true }),
+  async (req, res) => {
+    try {
+      const accounts = sanitizeCustomerPaymentAccounts(req.body?.customerPaymentAccounts);
+      const expectedVersion = Math.max(0, Number(req.body?.customerPaymentsVersion) || 0);
+      assertCustomerPaymentsFitSale({ ...(req._venta || {}), customerPaymentAccounts: accounts });
+      const updated = await Venta.findOneAndUpdate(
+        {
+          tenantKey: req.tenantKey,
+          projectId: req.project._id,
+          unitId: req.params.unitId,
+          deletedAt: null,
+          $or: [
+            { customerPaymentsVersion: expectedVersion },
+            ...(expectedVersion === 0 ? [{ customerPaymentsVersion: { $exists: false } }] : [])
+          ]
+        },
+        { $set: { customerPaymentAccounts: accounts }, $inc: { customerPaymentsVersion: 1 } },
+        { new: true, runValidators: true }
+      );
+      if (!updated) return res.status(409).json({ error: 'Los abonos cambiaron en otra sesión. Cierra y vuelve a abrir el seguimiento antes de guardar.' });
+      await syncProjectKpisSafe(req, req.project._id);
+      const dto = updated.toObject ? updated.toObject() : updated;
+      const summary = customerPaymentSummary(dto);
+      await audit(req, 'sale.customer_payments_updated', {
+        targetType: 'sale', targetId: updated._id, projectId: req.project._id,
+        message: 'Historial de abonos del cliente actualizado',
+        metadata: { accounts: accounts.length, paid: summary.totals.paid, balance: summary.totals.balance }
+      });
+      res.json({ venta: dto, customerPayments: summary });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
 /* =========================================================================
    GET /ventas/by-unit/:unitId
    ========================================================================= */
@@ -304,6 +396,9 @@ router.post(
         base.manzana = base.manzana || u.manzana;
         base.lote = base.lote || u.lote;
       }
+
+      const existing = await Venta.findOne({ tenantKey: req.tenantKey, projectId, unitId, deletedAt: null }).lean();
+      assertCustomerPaymentsFitSale({ ...(existing || {}), ...base });
 
       const saved = await Venta.findOneAndUpdate(
         {
@@ -368,6 +463,9 @@ router.post(
         }
       }
 
+      const existing = await Venta.findOne({ tenantKey: req.tenantKey, projectId, unitId, deletedAt: null }).lean();
+      assertCustomerPaymentsFitSale({ ...(existing || {}), ...set });
+
       const updated = await Venta.findOneAndUpdate(
         {
           tenantKey: req.tenantKey,
@@ -415,6 +513,11 @@ router.patch(
 
       const set = pickAllowedForRole(update, req.user?.role);
       set.tenantKey = req.tenantKey;
+
+      if (Object.hasOwn(set, 'precioVenta') || Object.hasOwn(set, 'montoFinanciamientoCPP') || Object.hasOwn(set, 'valor')) {
+        const affected = await Venta.find({ tenantKey: req.tenantKey, projectId, unitId: { $in: unitIds }, deletedAt: null }).lean();
+        affected.forEach(venta => assertCustomerPaymentsFitSale({ ...venta, ...set }));
+      }
 
       let modified = 0;
       let created = 0;
@@ -487,6 +590,7 @@ router.patch(
   async (req, res) => {
     try {
       const set = pickAllowedForRole(req.body, req.user?.role);
+      assertCustomerPaymentsFitSale({ ...(req._venta || {}), ...set });
 
       if ('checklist' in req.body) {
         set.checklist = sanitizeChecklist(req.body.checklist);

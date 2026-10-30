@@ -2007,11 +2007,11 @@ body.light-theme .provider-exclusive {
       </div>
 
       <div class="card summary-chart-card">
-        <h3>Medio de pago de la hipoteca</h3>
+        <h3>Modalidad de compra</h3>
         <div class="summary-chart-box">
-          <canvas id="sumCppAmountByBank"></canvas>
+          <canvas id="sumPurchaseModality"></canvas>
         </div>
-        <div id="sumCppAmountByBankSummary" class="summary-chart-summary"></div>
+        <div id="sumPurchaseModalitySummary" class="summary-chart-summary"></div>
       </div>
 
       <div class="card summary-chart-card">
@@ -2057,7 +2057,7 @@ body.light-theme .provider-exclusive {
           <div id="sumCustomerSexSummary" class="summary-chart-summary"></div>
         </div>
         <div class="card summary-chart-card summary-customer-chart-card">
-          <h3>Modalidad de compra</h3>
+          <h3>Composición de compradores</h3>
           <div class="summary-chart-box"><canvas id="sumCustomerPurchaseMode"></canvas></div>
           <div id="sumCustomerPurchaseModeSummary" class="summary-chart-summary"></div>
         </div>
@@ -2200,7 +2200,7 @@ body.light-theme .provider-exclusive {
 
     <section class="grid-2" style="margin-top:12px;">
       <div class="card summary-chart-card">
-        <h3>Cobertura CPP vs prestamo</h3>
+        <h3>¿Lo pendiente de cobro cubre la deuda actual?</h3>
         <div class="summary-chart-box">
           <canvas id="sumCppCoverage"></canvas>
         </div>
@@ -2257,7 +2257,7 @@ body.light-theme .provider-exclusive {
 
     <section class="grid-1 summary-legacy-cpp-coverage" style="margin-top:12px;display:none;">
       <div class="card summary-chart-card">
-        <h3>Cobertura CPP vs préstamo</h3>
+        <h3>¿Lo pendiente de cobro cubre la deuda actual?</h3>
         <div class="summary-chart-box">
           <canvas id="sumCppCoverageLegacy"></canvas>
         </div>
@@ -2861,20 +2861,22 @@ body.light-theme .provider-exclusive {
             <select id="b-mSegregacion"><option value="">(no cambiar)</option><option value="Solicitada">Solicitada</option><option value="Lista">Lista</option><option value="No aplica">No aplica</option></select>
             <label>Minuta prestamo</label>
             <select id="b-mPrestamo"><option value="">(no cambiar)</option><option value="Solicitada">Solicitada</option><option value="Lista">Lista</option><option value="No aplica">No aplica</option></select>
-            <label>Paz y salvo Gesproban</label>
-            <select id="b-pazSalvoGesproban"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
-            <label>Paz y salvo Promotora</label>
-            <select id="b-pazSalvoPromotora"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
+            <p class="small muted" style="grid-column:1/-1;">El paz y salvo se calcula automáticamente desde los abonos requeridos del cliente.</p>
             <label>Entrega de casa</label><input id="b-entregaCasa" />
             <label>Fecha entrega vivienda</label><input id="b-fechaEntregaVivienda" type="date" />
-            <label>Captado atencion oficina</label>
-            <select id="b-captadoAtencionOficina"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
-            <label>Captado mail / internet</label>
-            <select id="b-captadoMailInternet"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
-            <label>Captado en proyecto</label>
-            <select id="b-captadoEnProyecto"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
-            <label>Captado mercadeo / prospecteo</label>
-            <select id="b-captadoMercadeoProspecto"><option value="">(no cambiar)</option><option value="true">Si</option><option value="false">No</option></select>
+            <label>Captación del cliente</label>
+            <select id="b-canalCaptacion">
+              <option value="">(no cambiar)</option>
+              <option value="Ferias">Ferias</option>
+              <option value="Referido">Referido</option>
+              <option value="Valla publicitaria">Valla publicitaria</option>
+              <option value="Broker">Broker</option>
+              <option value="Redes sociales">Redes sociales</option>
+              <option value="Portales inmobiliarios">Portales inmobiliarios</option>
+              <option value="En proyecto">En proyecto</option>
+              <option value="Oficina">Oficina</option>
+              <option value="Mercadeo / volanteo">Mercadeo / volanteo</option>
+            </select>
             <label>Proforma solicitada por</label><input id="b-proformaSolicitadaPor" />
             <label>Referido por</label><input id="b-referidoPor" />
             <label>Observacion cliente</label><input id="b-observacionCliente" />

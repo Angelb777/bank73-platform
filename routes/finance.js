@@ -24,6 +24,7 @@ const { verifyPassword } = require('../utils/passwords');
 const audit = require('../utils/audit');
 const { renderInspectionReport } = require('../services/inspectionReport');
 const inspectionReportContext = require('../services/inspectionReportContext');
+const { customerPaymentRecipientTotals, customerPaymentSummary } = require('../services/customerPayments');
 
 router.use(bankReadOnly);
 router.use('/projects/:projectId/finance', requireProjectAccess({ commercialOnlySales: false }));
@@ -680,12 +681,14 @@ async function getFinanceCommercialUnits(projectId, tenantKey) {
 
   const [units, ventas] = await Promise.all([
     Unit.find(unitFilter).select('_id manzana lote estado modelo recamaras banos areaAbierta areaCerrada').sort({ manzana: 1, lote: 1 }).lean(),
-    Venta.find(ventaFilter).select('unitId clienteNombre primerNombre segundoNombre primerApellido segundoApellido apellidoCasada banco valor montoFinanciamientoCPP precioVenta abonoInicial abonoCliente numCPP estatusCPP statusBanco').lean()
+    Venta.find(ventaFilter).select('unitId clienteNombre primerNombre segundoNombre primerApellido segundoApellido apellidoCasada banco valor montoFinanciamientoCPP precioVenta numCPP estatusCPP statusBanco customerPaymentAccounts customerPaymentsVersion').lean()
   ]);
 
   const ventasByUnit = new Map((ventas || []).map(v => [String(v.unitId), v]));
   return (units || []).map(u => {
     const venta = ventasByUnit.get(String(u._id)) || {};
+    const customerPayments = customerPaymentSummary(venta);
+    const initialPayment = Math.max(0, toNum(venta.precioVenta) - toNum(venta.montoFinanciamientoCPP || venta.valor));
     return {
       unitId: String(u._id),
       lot: [u.manzana, u.lote].filter(Boolean).join('-') || u.lote || u.manzana || '',
@@ -699,12 +702,16 @@ async function getFinanceCommercialUnits(projectId, tenantKey) {
       clientName: commercialClientName(venta),
       buyerBank: venta.banco || '',
       cppAmount: toNum(venta.montoFinanciamientoCPP || venta.valor),
-      initialPayment: toNum(venta.abonoInicial || venta.abonoCliente),
+      initialPayment,
       salePrice: toNum(venta.precioVenta),
       financeBaseAmount: toNum(venta.montoFinanciamientoCPP || venta.valor),
-      financeBaseAmountWithInitial: toNum(venta.montoFinanciamientoCPP || venta.valor) + toNum(venta.abonoInicial || venta.abonoCliente),
+      financeBaseAmountWithInitial: toNum(venta.montoFinanciamientoCPP || venta.valor) + initialPayment,
       cppNumber: venta.numCPP || '',
       cppStatus: venta.estatusCPP || venta.statusBanco || '',
+      customerPaymentAccounts: customerPayments.accounts,
+      customerPaymentTotals: customerPayments.totals,
+      customerClearanceStatus: customerPayments.clearanceStatus,
+      customerPaymentsVersion: toNum(venta.customerPaymentsVersion),
     };
   });
 }
@@ -1894,13 +1901,22 @@ function setFinanceMoneyFormat(ws, rows, columns) {
   }));
 }
 
-async function exportFinanceXlsx({ req, res, projectId, projectName, projectCurrency = 'PAB', updatedAt, doc, kpis, chartsPayload, phaseId = '' }) {
+async function exportFinanceXlsx({ req, res, projectId, projectName, projectCurrency = 'PAB', updatedAt, doc, kpis, chartsPayload, phaseId = '', commercialUnits = [] }) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'TrustForBanks';
   wb.created = new Date();
   wb.calcProperties.fullCalcOnLoad = true;
 
   const snap = buildFinanceSnapshot(doc, phaseId);
+  const customerReceipts = (commercialUnits || []).reduce((totals, unit) => {
+    const recipients = customerPaymentRecipientTotals({ customerPaymentAccounts: unit.customerPaymentAccounts || [] });
+    totals.bank += recipients.bank;
+    totals.promoter += recipients.promoter;
+    return totals;
+  }, { bank: 0, promoter: 0 });
+  snap.banking.lineTotalPaidToBank = snap.banking.totalPaidToBank;
+  snap.banking.customerPaidToBank = customerReceipts.bank;
+  snap.banking.totalPaidToBank += customerReceipts.bank;
   const updatedLabel = updatedAt ? new Date(updatedAt).toLocaleString('es-ES') : '—';
   const subtitle = `${projectName || String(projectId)} · Actualizado ${updatedLabel} · Moneda ${projectCurrency}`;
 
@@ -1947,7 +1963,7 @@ async function exportFinanceXlsx({ req, res, projectId, projectName, projectCurr
   sh0.getRow(12).values = ['Comprobación', '', 'Importe inicial', 'Movimientos', 'Resultado', '', 'Diferencia', 'Estado'];
   styleSheetHeaderRow(sh0.getRow(12));
   sh0.getRow(13).values = ['Capital desembolsado = amortizado + pendiente', '', snap.banking.bankDisbursed, snap.banking.amortized, snap.banking.outstandingPrincipal, '', snap.banking.bankDisbursed - snap.banking.amortized - snap.banking.outstandingPrincipal, 'CUADRA'];
-  sh0.getRow(14).values = ['Pago total = amortizaciones + intereses', '', snap.banking.totalPaidToBank, snap.banking.amortized, snap.banking.interestPaid, '', snap.banking.totalPaidToBank - snap.banking.amortized - snap.banking.interestPaid, 'CUADRA'];
+  sh0.getRow(14).values = ['Pago total = amortizaciones + intereses + abonos cliente', '', snap.banking.totalPaidToBank, snap.banking.amortized, snap.banking.interestPaid + snap.banking.customerPaidToBank, '', snap.banking.totalPaidToBank - snap.banking.amortized - snap.banking.interestPaid - snap.banking.customerPaidToBank, 'CUADRA'];
   sh0.mergeCells('A13:B13'); sh0.mergeCells('E13:F13');
   sh0.mergeCells('A14:B14'); sh0.mergeCells('E14:F14');
   styleFinanceBody(sh0, 13, 14, 1, 8);
@@ -2029,7 +2045,7 @@ async function exportFinanceXlsx({ req, res, projectId, projectName, projectCurr
     item.interestPaid, item.totalPaidToBank, item.outstandingPrincipal, item.amortizationPct,
     item.line.notes
   ]));
-  const lineTotalRow = sh2.addRow(['TOTAL', '', snap.banking.approved, snap.banking.bankDisbursed, snap.banking.availableToDraw, snap.banking.manualAmortized, snap.banking.salesAmortized, snap.banking.otherAmortized, snap.banking.amortized, snap.banking.interestPaid, snap.banking.totalPaidToBank, snap.banking.outstandingPrincipal, snap.banking.amortizationPct, '']);
+  const lineTotalRow = sh2.addRow(['TOTAL', '', snap.banking.approved, snap.banking.bankDisbursed, snap.banking.availableToDraw, snap.banking.manualAmortized, snap.banking.salesAmortized, snap.banking.otherAmortized, snap.banking.amortized, snap.banking.interestPaid, snap.banking.lineTotalPaidToBank, snap.banking.outstandingPrincipal, snap.banking.amortizationPct, '']);
   styleFinanceTotalRow(lineTotalRow);
   if (sh2.rowCount > 5) {
     styleFinanceBody(sh2, 6, sh2.rowCount, 1, 14);
@@ -2095,6 +2111,40 @@ async function exportFinanceXlsx({ req, res, projectId, projectName, projectCurr
   }
   sh3.views = [{ state: 'frozen', ySplit: 5, xSplit: 2, showGridLines: false }];
   sh3.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
+
+  // ===== Abonos de clientes (dato único de la venta) =====
+  const sh4 = wb.addWorksheet('Abonos clientes', { properties: { tabColor: { argb: FINANCE_EXPORT_COLORS.green } } });
+  sh4.columns = [18, 28, 28, 16, 16, 18, 16, 16, 18, 18, 15].map(width => ({ width }));
+  styleFinanceTitle(sh4, 'Seguimiento de abonos de clientes', subtitle, 11);
+  sh4.getRow(5).values = ['Unidad', 'Cliente', 'Concepto', 'Beneficiario', 'Fecha del abono', 'Nº recibo', 'Importe pago', 'Total acordado', 'Pagado acumulado', 'Saldo pendiente', 'Estado'];
+  styleSheetHeaderRow(sh4.getRow(5));
+  const recipientLabels = { bank: 'Banco', promoter: 'Promotor', other: 'Otro' };
+  const statusLabels = { paid: 'Pagado', partial: 'Parcial', pending: 'Pendiente', not_applicable: 'No aplica' };
+  for (const unit of (commercialUnits || [])) {
+    for (const account of (unit.customerPaymentAccounts || [])) {
+      const payments = Array.isArray(account.payments) && account.payments.length ? account.payments : [null];
+      let accumulated = 0;
+      for (const payment of payments) {
+        accumulated += toNum(payment?.amount);
+        const agreed = toNum(account.summary?.agreed);
+        const balance = Math.max(0, agreed - accumulated);
+        sh4.addRow([
+          unit.unitLabel || unit.lot, unit.clientName, unit.clientName || account.concept,
+          recipientLabels[payment?.recipient || account.recipient] || 'Otro', payment?.paymentDate ? new Date(payment.paymentDate) : '',
+          payment?.receiptNumber || '', toNum(payment?.amount), agreed, accumulated, balance,
+          statusLabels[account.summary?.status] || account.summary?.status || ''
+        ]);
+      }
+    }
+  }
+  if (sh4.rowCount > 5) {
+    styleFinanceBody(sh4, 6, sh4.rowCount, 1, 11);
+    for (let row = 6; row <= sh4.rowCount; row += 1) sh4.getRow(row).getCell(5).numFmt = 'dd/mm/yyyy';
+    setFinanceMoneyFormat(sh4, Array.from({ length: sh4.rowCount - 5 }, (_, i) => i + 6), [7, 8, 9, 10]);
+    sh4.autoFilter = { from: 'A5', to: `K${sh4.rowCount}` };
+  }
+  sh4.views = [{ state: 'frozen', ySplit: 5, xSplit: 2, showGridLines: false }];
+  sh4.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
 
   // ===== Hoja Gráficas (si llegan) =====
   const charts = chartsPayload || {};
@@ -2315,8 +2365,13 @@ function financePdfTable(doc, rows, cols, options = {}) {
   doc.y += 8;
 }
 
-async function exportFinancePdf({ req, res, projectId, projectName, projectCurrency = 'PAB', updatedAt, doc, chartsPayload, phaseId = '' }) {
+async function exportFinancePdf({ req, res, projectId, projectName, projectCurrency = 'PAB', updatedAt, doc, chartsPayload, phaseId = '', commercialUnits = [] }) {
   const snap = buildFinanceSnapshot(doc, phaseId);
+  const customerPaidToBank = (commercialUnits || []).reduce((sum, unit) => (
+    sum + customerPaymentRecipientTotals({ customerPaymentAccounts: unit.customerPaymentAccounts || [] }).bank
+  ), 0);
+  snap.banking.customerPaidToBank = customerPaidToBank;
+  snap.banking.totalPaidToBank += customerPaidToBank;
   const money = (n) => moneyES(n, projectCurrency);
   const reportTitle = phaseId ? `Finanzas - ${snap.phases[0]?.name || 'Fase'}` : 'Finanzas - Resumen ejecutivo';
 
@@ -2336,7 +2391,7 @@ async function exportFinancePdf({ req, res, projectId, projectName, projectCurre
   financePdfSection(pdf, 'Conciliación bancaria');
   financePdfTable(pdf, [
     { concept: 'Capital', base: money(snap.banking.bankDisbursed), component1: money(snap.banking.amortized), component2: money(snap.banking.outstandingPrincipal), difference: money(snap.banking.bankDisbursed - snap.banking.amortized - snap.banking.outstandingPrincipal), status: 'CUADRA' },
-    { concept: 'Pagos al banco', base: money(snap.banking.totalPaidToBank), component1: money(snap.banking.amortized), component2: money(snap.banking.interestPaid), difference: money(snap.banking.totalPaidToBank - snap.banking.amortized - snap.banking.interestPaid), status: 'CUADRA' }
+    { concept: 'Pagos al banco', base: money(snap.banking.totalPaidToBank), component1: money(snap.banking.amortized), component2: money(snap.banking.interestPaid + snap.banking.customerPaidToBank), difference: money(snap.banking.totalPaidToBank - snap.banking.amortized - snap.banking.interestPaid - snap.banking.customerPaidToBank), status: 'CUADRA' }
   ], [
     { key: 'concept', label: 'Comprobación', wPct: 0.22 },
     { key: 'base', label: 'Total', wPct: 0.17, align: 'right' },
@@ -2559,14 +2614,16 @@ async function handleFinanceExport(req, res) {
     })();
 
     if (format === 'xlsx') {
+      const commercialUnits = await getFinanceCommercialUnits(projectId, project.tenantKey);
       return exportFinanceXlsx({
-        req, res, projectId, projectName, projectCurrency, updatedAt, doc, kpis, chartsPayload, phaseId: exportPhaseId
+        req, res, projectId, projectName, projectCurrency, updatedAt, doc, kpis, chartsPayload, phaseId: exportPhaseId, commercialUnits
       });
     }
 
     // pdf
+    const commercialUnits = await getFinanceCommercialUnits(projectId, project.tenantKey);
     return exportFinancePdf({
-      req, res, projectId, projectName, projectCurrency, updatedAt, doc, chartsPayload, phaseId: exportPhaseId
+      req, res, projectId, projectName, projectCurrency, updatedAt, doc, chartsPayload, phaseId: exportPhaseId, commercialUnits
     });
 
   } catch (err) {

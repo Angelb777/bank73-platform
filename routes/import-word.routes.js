@@ -112,8 +112,6 @@ const ALLOWED_FIELDS = new Set([
   // precio / banco / financiación
   'precioVenta',
   'montoFinanciamientoCPP',
-  'abonoCliente',
-  'abonoInicial',
   'porcentajeFinanciamiento',
   'cesionAFavorDe',
   'banco',
@@ -193,8 +191,6 @@ const NUMBER_FIELDS = new Set([
   'valorTerreno',
   'montoFinanciamientoCPP',
   'precioVenta',
-  'abonoCliente',
-  'abonoInicial',
   'porcentajeFinanciamiento',
   'polizaVida',
   'abonoAlte'
@@ -264,7 +260,6 @@ const IMPORT_FIELDS_FICHA_CLIENTE = [
 
   'precioVenta',
   'montoFinanciamientoCPP',
-  'abonoCliente',
   'banco',
   'oficialBanco',
   'polizaVida',
@@ -324,7 +319,6 @@ const IMPORT_FIELDS_PROFORMA = [
   'montoFinanciamientoCPP',
   'cesionAFavorDe',
   'porcentajeFinanciamiento',
-  'abonoInicial',
 ];
 
 function buildFullImportPreview(type, detectedRaw = {}) {

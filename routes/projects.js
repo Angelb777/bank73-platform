@@ -24,6 +24,9 @@ const { syncUnitCommercialState } = require('../services/unitCommercialState');
 const { resolvedExpiryAlertKeys, isExpiryAlertResolved } = require('../services/expiryAlerts');
 const { readAuthorizedProjectImage } = require('../services/summaryPhotoResolver');
 const { buildDatoUnicoExportRow } = require('../services/datoUnicoExport');
+const { normalizeCaptureChannel, captureChannelForVenta } = require('../services/captureChannel');
+const { customerPaymentRecipientTotals, customerPaymentSummary } = require('../services/customerPayments');
+const { buildProjectCollectionCoverage } = require('../services/projectCollectionCoverage');
 const { buildExecutiveSummaryWorkbook, numberValue } = require('../services/executiveSummaryExcel');
 const { syncPromoterCompaniesToProjects } = require('../services/promoterCompanySync');
 const {
@@ -2000,7 +2003,7 @@ router.get('/:id/viewer-3d', requireProjectAccess({ commercialOnlySales: false }
         .sort({ manzana: 1, lote: 1 })
         .lean(),
       Venta.find({ projectId: project._id, tenantKey, deletedAt: null })
-        .select('unitId precioVenta abonoCliente estatusConstruccion faseConstruccion enConstruccion fechaEntregaVivienda estadoVenta areaAbierta areaCerrada areaTotalConstruccion recamaras banos')
+        .select('unitId precioVenta montoFinanciamientoCPP valor customerPaymentAccounts estatusConstruccion faseConstruccion enConstruccion fechaEntregaVivienda estadoVenta areaAbierta areaCerrada areaTotalConstruccion recamaras banos')
         .lean()
     ]);
 
@@ -3391,6 +3394,22 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     const cppAmountByBank = Array.from(cppAmountByBankMap.values())
       .sort((a, b) => b.amount - a.amount);
 
+    const purchaseModalityMap = new Map([
+      ['Interés preferencial', { label: 'Interés preferencial', count: 0, amount: 0 }],
+      ['Tasa libre', { label: 'Tasa libre', count: 0, amount: 0 }],
+      ['Al contado', { label: 'Al contado', count: 0, amount: 0 }]
+    ]);
+
+    for (const v of soldVentas) {
+      const label = clean(v.modalidadFinanciamiento);
+      const item = purchaseModalityMap.get(label);
+      if (!item) continue;
+      item.count += 1;
+      item.amount += getEffectivePrice(v, v.__unit);
+    }
+
+    const purchaseModality = Array.from(purchaseModalityMap.values());
+
     const cppCommitteeByBank = Array.from(cppCommitteeByBankMap.entries())
       .map(([bank, count]) => ({ bank, count }))
       .sort((a, b) => b.count - a.count);
@@ -3467,11 +3486,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       const purchaseMode = hasSecondCustomerData(v) ? 'Compra conjunta' : 'Compra individual';
       purchaseModeMap.set(purchaseMode, (purchaseModeMap.get(purchaseMode) || 0) + 1);
 
-      const channel = v.captadoAtencionOficina ? 'Atención en oficina'
-        : v.captadoMailInternet ? 'Mail / internet'
-          : v.captadoEnProyecto ? 'En proyecto'
-            : v.captadoMercadeoProspecto ? 'Mercadeo / prospecto'
-              : 'Sin dato';
+      const channel = captureChannelForVenta(v) || 'Sin dato';
       captureChannelMap.set(channel, (captureChannelMap.get(channel) || 0) + 1);
     }
 
@@ -3548,9 +3563,13 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       if (ft && (now - ft) <= d30) clientMortgages30d++;
     }
 
-    const mortgagesByBank = Array.from(mortMap.entries())
-      .map(([bank, data]) => ({ bank, count: data.count, amount: data.amount }))
-      .sort((a, b) => b.amount - a.amount);
+    // La gráfica de hipotecas debe representar todas las operaciones con señal
+    // de CPP, no solo las ya formalizadas o inscritas.
+    const mortgagesByBank = cppAmountByBank.map(({ bank, count, amount }) => ({
+      bank,
+      count,
+      amount
+    }));
 
     const commercial = {
       inventoryByStatus: unitsByStatus,
@@ -3560,6 +3579,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       companyType,
       bankStatus,
       cppAmountByBank,
+      purchaseModality,
       cppCommitteeByBank,
       customerReport
     };
@@ -3672,7 +3692,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
         protocolBank ? 'banco' : ''
       ].filter(Boolean);
 
-      const clearanceCount = [v.pazSalvoGesproban, v.pazSalvoPromotora].filter(Boolean).length;
+      const customerPayments = customerPaymentSummary(v);
       const unitLabel = clean(unit.code) ||
         [clean(unit.manzana), clean(unit.lote)].filter(Boolean).join('-') ||
         [clean(unit.torre), clean(unit.nivel)].filter(Boolean).join(' · ') ||
@@ -3721,12 +3741,14 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
                   v.fechaProtocoloFirmaBancoCliente || v.fechaProtocoloFirmaBancoInterino || v.fechaProtocoloFirmaPromotora || v.fechaProtocoloFirmaCliente || null
                 )
               : legalStep('pending'),
-          clearance: legalBooleanStep(
-            clearanceCount === 2,
-            null,
-            clearanceCount === 1,
-            clearanceCount ? `${clearanceCount} de 2 confirmados` : ''
-          ),
+          clearance: customerPayments.clearanceStatus === 'not_applicable'
+            ? legalStep('not_applicable', 'Sin abonos requeridos')
+            : legalStep(
+                customerPayments.clearanceStatus,
+                customerPayments.clearanceStatus === 'completed'
+                  ? 'Abonos del cliente pagados'
+                  : `Saldo pendiente ${formatProjectMoney(customerPayments.requiredBalance, project.currency || 'PAB')}`
+              ),
           taxes: legalBooleanStep(!!v.pagoImpuestos, v.fechaPagoImpuesto || null),
           notary: legalBooleanStep(!!v.cierreNotaria, v.fechaCierreEscritura || v.fechaFirma || null),
           registryEntry: legalBooleanStep(!!v.ingresoRP, v.fechaIngresoRP || null),
@@ -3780,23 +3802,19 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
 
       const estatusConstruccion =
         clean(venta?.estatusConstruccion) ||
-        clean(u?.estatusConstruccion) ||
-        (venta?.enConstruccion ? 'En construcción' : '');
-
-      const faseConstruccion =
         clean(venta?.faseConstruccion) ||
+        clean(u?.estatusConstruccion) ||
         clean(u?.faseConstruccion) ||
-        'Sin fase';
+        (venta?.enConstruccion ? 'En construcción' : '');
 
       const model = clean(u?.modelo) || 'Sin modelo';
 
       if (estatusConstruccion) {
         constructionStatusMap.set(estatusConstruccion, (constructionStatusMap.get(estatusConstruccion) || 0) + 1);
+        constructionPhaseMap.set(estatusConstruccion, (constructionPhaseMap.get(estatusConstruccion) || 0) + 1);
       }
 
-      constructionPhaseMap.set(faseConstruccion, (constructionPhaseMap.get(faseConstruccion) || 0) + 1);
-
-      if (venta?.enConstruccion || estatusConstruccion || faseConstruccion !== 'Sin fase') {
+      if (venta?.enConstruccion || estatusConstruccion) {
         constructionModelMap.set(model, (constructionModelMap.get(model) || 0) + 1);
       }
 
@@ -3999,6 +4017,27 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
           promoterTotal: 0
         };
 
+    const customerReceiptTotals = soldVentas.reduce((totals, venta) => {
+      const recipients = customerPaymentRecipientTotals(venta);
+      totals.bank += recipients.bank;
+      totals.promoter += recipients.promoter;
+      return totals;
+    }, { bank: 0, promoter: 0 });
+    financeTotals.totalPaidToBank += customerReceiptTotals.bank;
+    financeTotals.promoterTotal += customerReceiptTotals.promoter;
+    financeTotals.customerPaidToBank = customerReceiptTotals.bank;
+    financeTotals.customerPaidToPromoter = customerReceiptTotals.promoter;
+
+    const collectionSalesByUnit = new Map(
+      ventas.map(venta => [String(venta.unitId || venta.__unit?._id || ''), venta])
+    );
+    const collectionCoverage = buildProjectCollectionCoverage({
+      units,
+      salesByUnit: collectionSalesByUnit,
+      totalDebt: financeTotals.debt,
+      getStatus: unit => getUnitStatus(unit)
+    });
+
     const cppVigenteAmount = soldVentas
       .filter(v => hasCppSignal(v))
       .reduce((a, v) => a + getMortgageAmount(v, v.__unit), 0);
@@ -4025,6 +4064,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
         totals: financeTotals
       },
       totals: financeTotals,
+      collectionCoverage,
       cppCoverage: {
         cppVigenteAmount,
         cppTramiteAmount,
@@ -4212,8 +4252,8 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       notes.push(`${kpis.cpp.due30} CPP vencen ≤30 días.`);
     }
 
-    if (financial.cppCoverage.totalDebt && financial.cppCoverage.coverageCppVigentePct < 100) {
-      notes.push(`Cobertura CPP vigente sobre deuda actual: ${financial.cppCoverage.coverageCppVigentePct}%.`);
+    if (financial.collectionCoverage.totalDebt && !financial.collectionCoverage.canCoverDebt) {
+      notes.push(`Lo pendiente de cobro cubre el ${financial.collectionCoverage.coveragePct}% de la deuda actual.`);
     }
 
     if (!notes.length) notes.push('Sin riesgos destacados.');
@@ -5206,7 +5246,7 @@ if (isSoldLikeStatus(st)) U.sold++;
       if (title === 'Tipo de empresa de compradores') return simple(commercialData.customerReport?.companyType, 'label', 'count', 'Total compradores');
       if (title === 'Perfil laboral de compradores') return simple(commercialData.customerReport?.employmentProfile, 'label', 'count', 'Total compradores');
       if (title === 'Sexo de compradores') return simple(commercialData.customerReport?.sex, 'label', 'count', 'Total compradores');
-      if (title === 'Modalidad de compra') return simple(commercialData.customerReport?.purchaseMode, 'label', 'count', 'Total operaciones');
+      if (title === 'Composición de compradores') return simple(commercialData.customerReport?.purchaseMode, 'label', 'count', 'Total operaciones');
       if (title === 'Ingresos mensuales declarados') return simple(commercialData.customerReport?.incomeBands, 'label', 'count', 'Clientes con ingreso registrado');
       if (title === 'Vía de captación' || title === 'Via de captacion') return simple(commercialData.customerReport?.captureChannel, 'label', 'count', 'Total operaciones');
 
@@ -5233,7 +5273,7 @@ if (isSoldLikeStatus(st)) U.sold++;
       if (title === 'Minutas de segregación') return simple(legalData.minutasSegregacion, 'status', 'count', 'Total minutas');
       if (title === 'Minutas de préstamo') return simple(legalData.minutasPrestamo, 'status', 'count', 'Total minutas');
       if (title === 'Estatus construcción') return simple(technicalData.constructionStatus, 'status', 'count', 'Total estatus');
-      if (title === 'Fase de construcción') return simple(technicalData.constructionPhase, 'phase', 'count', 'Total fases');
+      if (title === 'Fase de construcción') return simple(technicalData.constructionPhase, 'phase', 'count', 'Total unidades');
       if (title === 'Modelos en construcción') return simple(technicalData.modelsInConstruction, 'model', 'count', 'Total modelos');
       if (title === 'Avance de construcción') return simple(technicalData.constructionProgressRanges, 'range', 'count', 'Total unidades');
       if (title === 'Alertas por severidad') return simple(alertsData.bySeverity, 'severity', 'count', 'Total alertas');
@@ -5290,9 +5330,20 @@ if (isSoldLikeStatus(st)) U.sold++;
         return { columns: ['Año', 'Detalle'], rows, total: { label: 'Ventas reales', value: fmtNum((commercialData.salesVsFallenByYear || []).reduce((a, x) => a + toNumber(x.sales), 0)) } };
       }
 
-      if (title === 'Monto de ventas por medio de pago del cliente') {
-        const rows = (commercialData.cppAmountByBank || []).map(x => ({ label: x.bank || 'N/D', value: `${fmtMoneyShort(x.amount)} · ${fmtNum(x.count)} operaciones` }));
-        return { columns: ['Medio de pago', 'Monto / operaciones'], rows, total: { label: 'Total monto de ventas', value: fmtMoneyShort((commercialData.cppAmountByBank || []).reduce((a, x) => a + toNumber(x.amount), 0)) } };
+      if (title === 'Modalidad de compra') {
+        const list = commercialData.purchaseModality || [];
+        const rows = list.map(x => ({
+          label: x.label || 'N/D',
+          value: `${fmtNum(x.count)} operaciones · ${fmtMoneyShort(x.amount)}`
+        }));
+        return {
+          columns: ['Modalidad', 'Operaciones / monto'],
+          rows,
+          total: {
+            label: 'Total operaciones',
+            value: `${fmtNum(list.reduce((a, x) => a + toNumber(x.count), 0))} · ${fmtMoneyShort(list.reduce((a, x) => a + toNumber(x.amount), 0))}`
+          }
+        };
       }
 
       if (title === 'Firma de protocolo por banco') {
@@ -5324,16 +5375,23 @@ if (isSoldLikeStatus(st)) U.sold++;
         };
       }
 
-      if (title === 'Cobertura CPP vs préstamo') {
-        const fc = financialData.cppCoverage || {};
+      if (title === 'Cobertura de deuda con cobros pendientes') {
+        const coverage = financialData.collectionCoverage || {};
+        const buckets = coverage.buckets || {};
         return {
           columns: ['Concepto', 'Monto'],
           rows: [
-            { label: 'Deuda actual', value: fmtMoneyShort(fc.totalDebt) },
-            { label: 'CPP vigentes', value: `${fmtMoneyShort(fc.cppVigenteAmount)} · ${fmtNum(fc.coverageCppVigentePct)}%` },
-            { label: 'CPP en trámite', value: `${fmtMoneyShort(fc.cppTramiteAmount)} · ${fmtNum(fc.coverageCppTramitePct)}%` }
+            { label: 'Deuda bancaria pendiente', value: fmtMoneyShort(coverage.totalDebt) },
+            { label: buckets.available?.label || 'Lotes libres / inventario', value: fmtMoneyShort(buckets.available?.amount) },
+            { label: buckets.reserved?.label || 'Reservadas', value: fmtMoneyShort(buckets.reserved?.amount) },
+            { label: buckets.pipeline?.label || 'CPP / trámite / traspaso pendiente', value: fmtMoneyShort(buckets.pipeline?.amount) },
+            { label: buckets.other?.label || 'Otras unidades pendientes', value: fmtMoneyShort(buckets.other?.amount) },
+            { label: 'Total pendiente de cobro', value: fmtMoneyShort(coverage.totalReceivable) }
           ],
-          total: null
+          total: {
+            label: coverage.canCoverDebt ? 'Sí cubre la deuda' : 'No cubre la deuda',
+            value: `${fmtNum(coverage.coveragePct)}% · ${coverage.difference >= 0 ? 'Excedente' : 'Déficit'} ${fmtMoneyShort(Math.abs(toNumber(coverage.difference)))}`
+          }
         };
       }
 
@@ -6210,13 +6268,13 @@ if (isSoldLikeStatus(st)) U.sold++;
           'Ventas por modelo de vivienda',
           'Estatus en banco',
           'CPP por banco',
-          'Monto de ventas por medio de pago del cliente',
+          'Modalidad de compra',
           'Proformas por banco',
           'Hipotecas por banco',
           'Tipo de empresa de compradores',
           'Perfil laboral de compradores',
           'Sexo de compradores',
-          'Modalidad de compra',
+          'Composición de compradores',
           'Ingresos mensuales declarados',
           'Vía de captación'
         ]
@@ -6245,7 +6303,7 @@ if (isSoldLikeStatus(st)) U.sold++;
           'Comparación por fase (Usos)',
           'Comparación por fase (Fuentes)',
           'Líneas de crédito',
-          'Cobertura CPP vs préstamo'
+          'Cobertura de deuda con cobros pendientes'
         ]
       }
     ];
@@ -6293,8 +6351,8 @@ if (isSoldLikeStatus(st)) U.sold++;
         }
       }
 
-      const coverageTable = chartRows('Cobertura CPP vs préstamo', datasets);
-      const coverageGroup = chartGroupFromTable('Resumen Financiero', 'Cobertura CPP vs préstamo', coverageTable);
+      const coverageTable = chartRows('Cobertura de deuda con cobros pendientes', datasets);
+      const coverageGroup = chartGroupFromTable('Resumen Financiero', 'Cobertura de deuda con cobros pendientes', coverageTable);
       if (coverageGroup) chartGroups.push(coverageGroup);
       chartGroups.push(...buildExecutiveFinancialChartGroups(financeDocument || {}, movementRows));
 
@@ -6855,6 +6913,15 @@ router.post(
         return '';
       };
 
+      const normalizePurchaseModality = (v) => {
+        const normalized = normTxt(v);
+        if (!normalized) return '';
+        if (normalized.includes('PREFERENC')) return 'Interés preferencial';
+        if (normalized.includes('TASA') && normalized.includes('LIBRE')) return 'Tasa libre';
+        if (normalized.includes('CONTADO') || normalized.includes('CASH')) return 'Al contado';
+        return '';
+      };
+
       const parseCaptureChannel = (v) => {
         const t = normTxt(v);
         return {
@@ -7102,7 +7169,6 @@ router.post(
           ? Number(((montoFinanciamientoCPPFinal / precioVentaFinal) * 100).toFixed(2))
           : porcentajeFinanciamientoExcel || 0;
 
-        const abonoInicialFinal = Math.max(precioVentaFinal - montoFinanciamientoCPPFinal, 0);
         const valorLegacyFinal = montoFinanciamientoCPPFinal;
 
         const areaAbiertaExcel = toNum0(get(rowObj, [
@@ -7226,7 +7292,9 @@ router.post(
           await setUnitEstado(unit._id, estado, estadoModo);
         }
 
-        const captureChannel = parseCaptureChannel(get(rowObj, ['CAPTACION DE CLIENTE', 'CAPTACIÓN DE CLIENTE']));
+        const captureChannelRaw = get(rowObj, ['CAPTACION DE CLIENTE', 'CAPTACIÓN DE CLIENTE']);
+        const captureChannel = normalizeCaptureChannel(captureChannelRaw);
+        const legacyCaptureFlags = parseCaptureChannel(captureChannelRaw);
         const ingresoRegistroRaw = get(rowObj, ['FECHA INGRESO RP', 'FECHA DE INGRESO RP', 'INGRESO REGISTRO']);
         const fechaDesembolsoExcel = asDate(get(rowObj, ['FECHA DESEMBOLSO', 'FECHA DE DESEMBOLSO', 'DESEMBOLSO']));
         const fechaEntregaViviendaExcel = asDate(get(rowObj, [
@@ -7351,6 +7419,11 @@ router.post(
           // =========================
           // Financiamiento / proforma
           // =========================
+          modalidadFinanciamiento: normalizePurchaseModality(get(rowObj, [
+            'MODALIDAD DE COMPRA',
+            'MODALIDAD FINANCIAMIENTO',
+            'MODALIDAD DE FINANCIAMIENTO'
+          ])),
           banco: clean(get(rowObj, ['BANCO', 'BANCO DEL CLIENTE'])),
           oficialBanco: clean(get(rowObj, ['OFICIAL DE BANCO', 'OFICIAL BANCO', 'OFICIAL DE TRÁMITE'])),
           statusBanco: clean(get(rowObj, ['STATUS EN BANCO', 'STATUS  EN BANCO', 'ESTATUS BANCO'])),
@@ -7360,9 +7433,6 @@ router.post(
           precioVenta: precioVentaFinal,
           montoFinanciamientoCPP: montoFinanciamientoCPPFinal,
           porcentajeFinanciamiento: porcentajeFinanciamientoFinal,
-
-          abonoCliente: abonoInicialFinal,
-          abonoInicial: abonoInicialFinal,
 
           cesionAFavorDe: clean(get(rowObj, ['CESION A FAVOR DE', 'CESIÓN A FAVOR DE'])),
           fechaProbableEntrega: asDate(get(rowObj, ['FECHA PROBABLE ENTREGA', 'FECHA PROBABLE DE ENTREGA'])),
@@ -7464,8 +7534,10 @@ router.post(
           // Técnico / construcción / permisos
           // =========================
           enConstruccion: parseBool(get(rowObj, ['EN CONSTRUCCION', 'EN CONSTRUCCIÓN'])),
-          estatusConstruccion: clean(get(rowObj, ['ESTATUS CONSTRUCCION', 'ESTATUS CONSTRUCCIÓN'])),
-          faseConstruccion: clean(get(rowObj, ['FASE CONSTRUCCION', 'FASE CONSTRUCCIÓN'])),
+          estatusConstruccion: clean(get(rowObj, [
+            'ESTATUS CONSTRUCCION', 'ESTATUS CONSTRUCCIÓN',
+            'FASE CONSTRUCCION', 'FASE CONSTRUCCIÓN'
+          ])),
           avanceConstruccionPct: asPercentage(get(rowObj, ['PORCENTAJE AVANCE DE OBRA', 'AVANCE DE OBRA (%)', 'AVANCE CONSTRUCCION (%)'])),
 
           permisoConstruccionNum: permisoConstruccionNumExcel,
@@ -7489,9 +7561,6 @@ router.post(
           mSegregacion: clean(get(rowObj, ['M. SEGREGACION', 'MINUTA SEGREGACION', 'MINUTA SEGREGACIÓN'])),
           mPrestamo: clean(get(rowObj, ['M. PRESTAMO', 'MINUTA PRESTAMO', 'MINUTA PRÉSTAMO', 'MINUTA DE PRESTAMO'])),
 
-          pazSalvoGesproban: parseBool(get(rowObj, ['PAZ Y SALVO GESPROBAN'])),
-          pazSalvoPromotora: parseBool(get(rowObj, ['PAZ Y SALVO PROMOTORA'])),
-
           // =========================
           // Entrega / captación / observaciones
           // =========================
@@ -7499,10 +7568,11 @@ router.post(
           entregaANATI: clean(get(rowObj, ['ENTREGA ANATI'])),
           fechaEntregaVivienda: fechaEntregaViviendaExcel,
 
-          captadoAtencionOficina: parseBool(get(rowObj, ['CAPTADO ATENCION OFICINA', 'CAPTADO ATENCIÓN OFICINA'])) || captureChannel.oficina,
-          captadoMailInternet: parseBool(get(rowObj, ['CAPTADO MAIL INTERNET', 'CAPTADO MAIL / INTERNET'])) || captureChannel.internet,
-          captadoEnProyecto: parseBool(get(rowObj, ['CAPTADO EN PROYECTO'])) || captureChannel.proyecto,
-          captadoMercadeoProspecto: parseBool(get(rowObj, ['CAPTADO MERCADEO PROSPECTO', 'CAPTADO MERCADEO / PROSPECTO'])) || captureChannel.mercadeo,
+          canalCaptacion: captureChannel,
+          captadoAtencionOficina: parseBool(get(rowObj, ['CAPTADO ATENCION OFICINA', 'CAPTADO ATENCIÓN OFICINA'])) || legacyCaptureFlags.oficina,
+          captadoMailInternet: parseBool(get(rowObj, ['CAPTADO MAIL INTERNET', 'CAPTADO MAIL / INTERNET'])) || legacyCaptureFlags.internet,
+          captadoEnProyecto: parseBool(get(rowObj, ['CAPTADO EN PROYECTO'])) || legacyCaptureFlags.proyecto,
+          captadoMercadeoProspecto: parseBool(get(rowObj, ['CAPTADO MERCADEO PROSPECTO', 'CAPTADO MERCADEO / PROSPECTO'])) || legacyCaptureFlags.mercadeo,
 
           proformaSolicitadaPor: clean(get(rowObj, ['PROFORMA SOLICITADA POR'])),
           referidoPor: clean(get(rowObj, ['REFERIDO POR'])),

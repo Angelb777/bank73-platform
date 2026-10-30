@@ -11,22 +11,22 @@ const {
 const { summarizeDatoUnico } = require('../services/datoUnicoPreview');
 const exportRouter = require('../routes/export');
 
-test('exportación Dato Único conserva las 101 columnas definitivas en orden', () => {
-  assert.equal(DATO_UNICO_HEADERS.length, 101);
-  assert.deepEqual(DATO_UNICO_HEADERS.slice(0, 10), [
+test('exportación Dato Único conserva las 102 columnas definitivas en orden', () => {
+  assert.equal(DATO_UNICO_HEADERS.length, 102);
+  assert.deepEqual(DATO_UNICO_HEADERS.slice(0, 11), [
     'ETAPA', 'TORRE', 'NIVEL', 'UNIDAD', 'CLIENTE', 'ESTATUS',
     'PRECIO DE VENTA', 'MONTO CPP', 'PORCENTAJE DE FINANCIAMIENTO2',
-    'BANCO DEL CLIENTE'
+    'BANCO DEL CLIENTE', 'MODALIDAD DE COMPRA'
   ]);
   assert.deepEqual(DATO_UNICO_HEADERS.slice(-4), [
     'FECHA DE INSCRIPCION', 'FECHA DESEMBOLSO',
     'FECHA DE ENTREGA DE VIVIENDA', 'COMENTARIOS'
   ]);
-  assert.deepEqual(DATO_UNICO_HEADERS.slice(68, 72), [
+  assert.deepEqual(DATO_UNICO_HEADERS.slice(69, 73), [
     'POLIZA VIDA', 'TIPO POLIZA DE VIDA', 'POLIZA INCENDIO', 'TIPO POLIZA DE INCENDIO'
   ]);
-  assert.equal(DATO_UNICO_HEADERS[78], ' RESOLUCION PERMISO CONSTRUCCION ');
-  assert.deepEqual(DATO_UNICO_HEADERS.slice(85, 100), [
+  assert.equal(DATO_UNICO_HEADERS[79], ' RESOLUCION PERMISO CONSTRUCCION ');
+  assert.deepEqual(DATO_UNICO_HEADERS.slice(86, 101), [
     'CONSTRUCTOR', 'SOLICITUD AVALUO', 'FECHA AVALUO', 'EMPRESA AVALUADORA',
     'MINUTA PRÉSTAMO', 'PROTOCOLO FIRMA CLIENTE', 'PROTOCOLO FIRMA PROMOTOR',
     'FIRMA PROTOCOLO BANCO INTERINO', 'FIRMA PROTOCOLO BANCO CLIENTE',
@@ -46,9 +46,9 @@ test('exportación Dato Único combina correctamente unidad, cliente y expedient
   };
   const venta = {
     precioVenta: 200000, montoFinanciamientoCPP: 160000,
-    banco: 'Banco Uno', primerNombre: 'Ana', primerApellido: 'Pérez',
+    banco: 'Banco Uno', modalidadFinanciamiento: 'Interés preferencial', primerNombre: 'Ana', primerApellido: 'Pérez',
     celular: '6000-0000', ingresoMensual: 3500,
-    captadoMailInternet: true, fechaReserva: '2026-10-10T00:00:00.000Z',
+    canalCaptacion: 'Redes sociales', fechaReserva: '2026-10-10T00:00:00.000Z',
     numCPP: 'CPP-77', aperturaCtaBanco: true, polizas: true,
     polizaVidaEntregada: true, tipoPolizaVida: 'Endosada',
     polizaIncendioEntregada: true, tipoPolizaIncendio: 'Colectiva',
@@ -71,10 +71,11 @@ test('exportación Dato Único combina correctamente unidad, cliente y expedient
   assert.equal(row.CLIENTE, 'Ana Pérez');
   assert.equal(row.ESTATUS, 'CON CPP');
   assert.equal(row['PORCENTAJE DE FINANCIAMIENTO2'], 80);
+  assert.equal(row['MODALIDAD DE COMPRA'], 'Interés preferencial');
   assert.equal(row['AREA TOTAL CONSTRUCCIÓN'], 105);
   assert.equal(row.CEDULA, '8-100-200');
   assert.equal(row.EMAIL, 'ana@example.com');
-  assert.equal(row['CAPTACIÓN DE CLIENTE'], 'Mail / Internet');
+  assert.equal(row['CAPTACIÓN DE CLIENTE'], 'Redes sociales');
   assert.equal(row['APERTURA CUENTA BANCO'], 'SI');
   assert.equal(row['POLIZA VIDA'], 'SI');
   assert.equal(row['TIPO POLIZA DE VIDA'], 'Endosada');
@@ -109,8 +110,12 @@ test('XLSX comercial usa la hoja y fila de cabeceras del modelo definitivo', asy
   assert.deepEqual(headers, DATO_UNICO_HEADERS);
   assert.equal(exportedSheet.getCell('A4').value, 'E1');
   assert.equal(exportedSheet.getCell('D4').value, '101');
-  assert.ok(exportedSheet.getCell('BH4').value instanceof Date);
-  assert.equal(exportedSheet.autoFilter, 'A3:CW3');
+  assert.ok(exportedSheet.getCell('BI4').value instanceof Date);
+  assert.equal(exportedSheet.getCell('K4').dataValidation.type, 'list');
+  const captureColumn = DATO_UNICO_HEADERS.indexOf('CAPTACIÓN DE CLIENTE') + 1;
+  assert.equal(exportedSheet.getCell(4, captureColumn).dataValidation.type, 'list');
+  assert.match(exportedSheet.getCell(4, captureColumn).dataValidation.formulae[0], /Mercadeo \/ volanteo/);
+  assert.equal(exportedSheet.autoFilter, 'A3:CX3');
 
   const reimportPreview = summarizeDatoUnico(Buffer.from(buffer));
   assert.equal(reimportPreview.sheet, 'EXPEDIENTES-BANCO');

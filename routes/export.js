@@ -175,6 +175,29 @@ function styleDatoUnicoWorksheet(worksheet, rows) {
     from: { row: 3, column: 1 },
     to: { row: 3, column: DATO_UNICO_HEADERS.length }
   };
+
+  const purchaseModeColumn = DATO_UNICO_HEADERS.indexOf('MODALIDAD DE COMPRA') + 1;
+  if (purchaseModeColumn > 0) {
+    for (let rowNumber = 4; rowNumber <= Math.max(rows.length + 3, 1000); rowNumber++) {
+      worksheet.getCell(rowNumber, purchaseModeColumn).dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: ['"Interés preferencial,Tasa libre,Al contado"']
+      };
+    }
+  }
+
+  const captureChannelColumn = DATO_UNICO_HEADERS.indexOf('CAPTACIÓN DE CLIENTE') + 1;
+  if (captureChannelColumn > 0) {
+    const captureChannelList = 'Ferias,Referido,Valla publicitaria,Broker,Redes sociales,Portales inmobiliarios,En proyecto,Oficina,Mercadeo / volanteo';
+    for (let rowNumber = 4; rowNumber <= Math.max(rows.length + 3, 1000); rowNumber++) {
+      worksheet.getCell(rowNumber, captureChannelColumn).dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: [`"${captureChannelList}"`]
+      };
+    }
+  }
 }
 
 router.get('/comercial.csv', requireProjectAccess(), async (req, res) => {

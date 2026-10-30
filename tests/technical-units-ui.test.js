@@ -49,6 +49,19 @@ test('la fase de construcción se edita una sola vez desde la ficha por proceso'
   assert.match(ventas.match(/const TECHNICAL_FIELDS[\s\S]*?\]\);/)?.[0] || '', /faseConstruccion/);
 });
 
+test('el resumen técnico mantiene la gráfica de fase alimentada por el estatus de obra actual', () => {
+  const html = read('public/project.html');
+  const js = read('public/js/project.js');
+  const projects = read('routes/projects.js');
+
+  assert.match(html, /id="sumConstructionStatus"/);
+  assert.match(html, /id="sumConstructionPhase"|<h3>Fase de construcción<\/h3>/);
+  assert.match(js, /sumConstructionPhase/);
+  assert.doesNotMatch(js, /ventaUpdate\.faseConstruccion|faseConstruccion:\s*vVal/);
+  assert.match(projects, /clean\(venta\?\.estatusConstruccion\)\s*\|\|\s*clean\(venta\?\.faseConstruccion\)/);
+  assert.match(projects, /constructionPhaseMap\.set\(estatusConstruccion/);
+});
+
 test('precioVenta es la fuente comercial única y no vive en Unit', () => {
   const units = read('routes/units.js');
   const projects = read('routes/projects.js');

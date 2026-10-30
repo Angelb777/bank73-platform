@@ -100,7 +100,14 @@ test('Excel export contains the redesigned financial views and totals', async ()
   await exportFinanceXlsx({
     req: {}, response, res: response,
     projectId: 'project-1', projectName: 'Proyecto prueba', projectCurrency: 'PAB',
-    updatedAt: new Date('2026-04-01T00:00:00Z'), doc: sampleFinanceDocument(), chartsPayload: {}, phaseId: 'phase-1'
+    updatedAt: new Date('2026-04-01T00:00:00Z'), doc: sampleFinanceDocument(), chartsPayload: {}, phaseId: 'phase-1',
+    commercialUnits: [{
+      unitLabel: '1-A1', clientName: 'Cliente prueba',
+      customerPaymentAccounts: [{
+        concept: 'Abono del cliente', recipient: 'promoter', summary: { agreed: 6000, status: 'partial' },
+        payments: [{ paymentDate: new Date('2026-03-20T00:00:00Z'), recipient: 'bank', receiptNumber: 'REC-9', amount: 1000 }]
+      }]
+    }]
   });
   await finished;
   const output = buffer();
@@ -110,17 +117,27 @@ test('Excel export contains the redesigned financial views and totals', async ()
     fs.writeFileSync(path.join(outputDir, 'finance-preview.xlsx'), output);
   }
   const workbook = XLSX.read(output, { type: 'buffer' });
-  assert.deepEqual(workbook.SheetNames, ['Resumen', 'Usos y fuentes', 'Líneas bancarias', 'Movimientos']);
+  assert.deepEqual(workbook.SheetNames, ['Resumen', 'Usos y fuentes', 'Líneas bancarias', 'Movimientos', 'Abonos clientes']);
   const summary = XLSX.utils.sheet_to_json(workbook.Sheets.Resumen, { header: 1, defval: null });
   assert.equal(summary[4][0], 'Financiación aprobada');
   assert.equal(summary[5][0], 650000);
   assert.equal(summary[7][4], 'Capital pendiente');
   assert.equal(summary[8][4], 525000);
+  assert.equal(summary[8][2], 131000);
   const lines = XLSX.utils.sheet_to_json(workbook.Sheets['Líneas bancarias'], { header: 1, defval: null });
   assert.equal(lines[4][10], 'Total pagado banco');
   assert.equal(lines[4].includes('Cálculo'), false);
   assert.equal(lines[4][13], 'Notas');
   assert.equal(lines.at(-1)[10], 130000);
+  const payments = XLSX.utils.sheet_to_json(workbook.Sheets['Abonos clientes'], { header: 1, defval: null });
+  assert.equal(payments[4][0], 'Unidad');
+  assert.equal(payments[4][9], 'Saldo pendiente');
+  assert.equal(payments[5][0], '1-A1');
+  assert.equal(payments[5][2], 'Cliente prueba');
+  assert.equal(payments[5][3], 'Banco');
+  assert.equal(payments[5][5], 'REC-9');
+  assert.equal(payments[5][9], 5000);
+  assert.equal(payments[4].includes('Notas'), false);
 });
 
 test('PDF export produces a non-empty landscape report', async () => {

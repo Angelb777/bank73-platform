@@ -1,4 +1,5 @@
 'use strict';
+const { customerPaymentSummary } = require('./customerPayments');
 
 // El visor no guarda negocio. Proyecta la ficha Comercial única:
 // Unit contiene el activo; Venta contiene sus procesos comercial y técnico.
@@ -45,6 +46,7 @@ function buildViewer3DUnitRecord({ unit = {}, venta = {}, project = {} }) {
     ? 'unknown'
     : margin > 0 ? 'onTrack' : margin === 0 ? 'attention' : 'deviation';
   const currency = project.currency || 'PAB';
+  const customerPayments = customerPaymentSummary(venta);
 
   return {
     id: String(unit._id || ''),
@@ -71,7 +73,7 @@ function buildViewer3DUnitRecord({ unit = {}, venta = {}, project = {} }) {
       actualCost: null,
       variance: null,
       salePrice,
-      collected: positiveNumber(venta.abonoCliente),
+      collected: customerPayments.totals.paid || null,
       estimatedMargin: margin,
       currency,
       dataKind: 'unit-record'

@@ -11,6 +11,22 @@ const ChecklistStepSchema = new mongoose.Schema({
   doneAt: { type: Date }
 }, { _id: false });
 
+const CustomerPaymentSchema = new mongoose.Schema({
+  paymentDate: { type: Date, required: true },
+  recipient: { type: String, enum: ['bank', 'promoter', 'other'], default: 'promoter' },
+  receiptNumber: { type: String, trim: true, required: true },
+  amount: { type: Number, min: 0.01, required: true }
+}, { _id: true, timestamps: true });
+
+const CustomerPaymentAccountSchema = new mongoose.Schema({
+  source: { type: String, enum: ['sale_gap', 'manual'], default: 'manual' },
+  concept: { type: String, trim: true, required: true },
+  agreedAmount: { type: Number, min: 0, default: 0 },
+  recipient: { type: String, enum: ['bank', 'promoter', 'other'], default: 'promoter' },
+  requiredForClearance: { type: Boolean, default: true },
+  payments: { type: [CustomerPaymentSchema], default: [] }
+}, { _id: true, timestamps: true });
+
 const VentaSchema = new mongoose.Schema({
   // ====== Claves ======
   projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', index: true, required: true },
@@ -132,6 +148,11 @@ const VentaSchema = new mongoose.Schema({
   // =========================================================
   // BANCO / CPP / FINANCIAMIENTO
   // =========================================================
+  modalidadFinanciamiento: {
+    type: String,
+    enum: ['', 'Interés preferencial', 'Tasa libre', 'Al contado'],
+    default: ''
+  },
   banco:        { type: String, default: '' },
   oficialBanco: { type: String, default: '' },
   statusBanco:  { type: String, default: '' },
@@ -144,8 +165,12 @@ const VentaSchema = new mongoose.Schema({
   // legacy
   valor: { type: Number, default: 0 },
 
+  // Campos históricos de solo lectura. Los nuevos importes se derivan de
+  // precioVenta/CPP y del historial único customerPaymentAccounts.
   abonoCliente:              { type: Number, default: 0 },
   abonoInicial:              { type: Number, default: 0 },
+  customerPaymentAccounts:   { type: [CustomerPaymentAccountSchema], default: [] },
+  customerPaymentsVersion:   { type: Number, min: 0, default: 0 },
   porcentajeFinanciamiento:  { type: Number, default: 0 },
   cesionAFavorDe:            { type: String, default: '' },
 
@@ -256,6 +281,7 @@ const VentaSchema = new mongoose.Schema({
   mPrestamo:    { type: String, default: '' },
 
   // ====== Paz y salvo ======
+  // Legado: el paz y salvo activo se calcula desde customerPaymentAccounts.
   pazSalvoGesproban: { type: Boolean, default: false },
   pazSalvoPromotora: { type: Boolean, default: false },
 
@@ -271,6 +297,11 @@ const VentaSchema = new mongoose.Schema({
   // =========================================================
   // CAPTACIÓN / PROFORMA COMERCIAL
   // =========================================================
+  canalCaptacion: {
+    type: String,
+    enum: ['', 'Ferias', 'Referido', 'Valla publicitaria', 'Broker', 'Redes sociales', 'Portales inmobiliarios', 'En proyecto', 'Oficina', 'Mercadeo / volanteo'],
+    default: ''
+  },
   captadoAtencionOficina:    { type: Boolean, default: false },
   captadoMailInternet:       { type: Boolean, default: false },
   captadoEnProyecto:         { type: Boolean, default: false },

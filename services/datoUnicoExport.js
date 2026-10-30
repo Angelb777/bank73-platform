@@ -1,8 +1,11 @@
 'use strict';
 
+const { captureChannelForVenta } = require('./captureChannel');
+
 const DATO_UNICO_HEADERS = [
   'ETAPA', 'TORRE', 'NIVEL', 'UNIDAD', 'CLIENTE', 'ESTATUS', 'PRECIO DE VENTA',
   'MONTO CPP', 'PORCENTAJE DE FINANCIAMIENTO2', 'BANCO DEL CLIENTE',
+  'MODALIDAD DE COMPRA',
   'AREA TERRENO M2', 'NUMERO DE FINCA', 'CODIGO DE UBICACIÓN', 'CALLE',
   'MODELO VIVIENDA', 'AREA ABIERTA VIVIENDA', 'AREA CERRADA VIVIENDA',
   'AREA TOTAL CONSTRUCCIÓN', 'RECÁMARAS', 'BAÑOS', 'PRIMER NOMBRE',
@@ -50,18 +53,18 @@ const DATO_UNICO_MONEY_HEADERS = new Set([
 ]);
 
 const DATO_UNICO_GROUPS = [
-  { title: 'DATOS BÁSICOS', from: 1, to: 10 },
-  { title: 'DATOS DE LA UNIDAD', from: 11, to: 20 },
-  { title: 'DATOS DEL CLIENTE 1', from: 21, to: 36 },
-  { title: 'DATOS DEL CLIENTE 2 (SI APLICA)', from: 37, to: 52 },
-  { title: 'REFERENCIAS PERSONALES', from: 53, to: 59 },
-  { title: 'RESERVA', from: 60, to: 64 },
-  { title: 'CARTA PROMESA DE PAGO Y CONTRATO', from: 65, to: 78 },
-  { title: 'CONSTRUCCIÓN', from: 79, to: 86 },
-  { title: 'AVALÚO', from: 87, to: 89 },
-  { title: 'PROTOCOLO / ESCRITURAS', from: 90, to: 94 },
-  { title: 'CIERRE NOTARIAL / REGISTRO PÚBLICO', from: 95, to: 98 },
-  { title: 'DESEMBOLSO Y ENTREGA', from: 99, to: 100 }
+  { title: 'DATOS BÁSICOS', from: 1, to: 11 },
+  { title: 'DATOS DE LA UNIDAD', from: 12, to: 21 },
+  { title: 'DATOS DEL CLIENTE 1', from: 22, to: 37 },
+  { title: 'DATOS DEL CLIENTE 2 (SI APLICA)', from: 38, to: 53 },
+  { title: 'REFERENCIAS PERSONALES', from: 54, to: 60 },
+  { title: 'RESERVA', from: 61, to: 65 },
+  { title: 'CARTA PROMESA DE PAGO Y CONTRATO', from: 66, to: 79 },
+  { title: 'CONSTRUCCIÓN', from: 80, to: 87 },
+  { title: 'AVALÚO', from: 88, to: 90 },
+  { title: 'PROTOCOLO / ESCRITURAS', from: 91, to: 95 },
+  { title: 'CIERRE NOTARIAL / REGISTRO PÚBLICO', from: 96, to: 99 },
+  { title: 'DESEMBOLSO Y ENTREGA', from: 100, to: 101 }
 ];
 
 function text(value) {
@@ -107,12 +110,7 @@ function statusLabel(value) {
 }
 
 function captureChannel(venta) {
-  const values = [];
-  if (venta.captadoAtencionOficina) values.push('Atención en oficina');
-  if (venta.captadoMailInternet) values.push('Mail / Internet');
-  if (venta.captadoEnProyecto) values.push('En proyecto');
-  if (venta.captadoMercadeoProspecto) values.push('Mercadeo / Prospecto');
-  return values.join(' / ');
+  return captureChannelForVenta(venta);
 }
 
 function buildDatoUnicoExportRow(unit, venta = {}) {
@@ -145,6 +143,7 @@ function buildDatoUnicoExportRow(unit, venta = {}) {
     'MONTO CPP': cpp,
     'PORCENTAJE DE FINANCIAMIENTO2': percentage,
     'BANCO DEL CLIENTE': text(venta.banco),
+    'MODALIDAD DE COMPRA': text(venta.modalidadFinanciamiento),
     'AREA TERRENO M2': firstNumber(unit.m2, venta.metrajeLote),
     'NUMERO DE FINCA': text(unit.numeroFinca || venta.numeroFinca),
     'CODIGO DE UBICACIÓN': text(unit.codigoUbicacion || venta.codigoUbicacion),
