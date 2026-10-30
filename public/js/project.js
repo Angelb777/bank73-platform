@@ -464,7 +464,7 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
   ev.preventDefault();
   const key = btn.dataset.tab;
   activateTab(key);
-  if (key === 'chat') loadChatMessages({ append:false }); // 👈
+  if (key === 'chat') loadChatMessages({ append:false, markRead:true }); // 👈
   });
   activateTab(document.querySelector('.tab.active')?.dataset.tab || 'resumen');
 
@@ -17419,8 +17419,53 @@ const chatListEl   = document.getElementById('chatList');
 const chatForm     = document.getElementById('chatForm');
 const chatInput    = document.getElementById('chatInput');
 const chatLoadMore = document.getElementById('chatLoadMore');
+const chatTabBtn   = document.getElementById('tabBtn-chat');
+let chatUnreadPollId = null;
 
-async function loadChatMessages({ append=false } = {}) {
+function setChatUnreadIndicator(hasUnread) {
+  if (!chatTabBtn) return;
+  chatTabBtn.classList.toggle('chat-has-unread', !!hasUnread);
+  chatTabBtn.setAttribute('aria-label', hasUnread ? 'Chat, hay mensajes nuevos sin leer' : 'Chat');
+  chatTabBtn.title = hasUnread ? 'Hay mensajes nuevos sin leer' : '';
+}
+
+async function refreshChatUnreadStatus() {
+  if (!chatTabBtn || document.hidden) return;
+  try {
+    const result = await API.get(`/api/chat/projects/${id}/unread?ts=${Date.now()}`);
+    if (result?.hasUnread && chatTabBtn.classList.contains('active')) {
+      await loadChatMessages({ append:false, markRead:true });
+      return;
+    }
+    setChatUnreadIndicator(!!result?.hasUnread);
+  } catch (error) {
+    console.warn('[chat] No se pudo consultar el estado de lectura', error);
+  }
+}
+
+async function markVisibleChatAsRead(messages) {
+  const newestMessageId = messages?.[0]?._id;
+  if (!newestMessageId) {
+    setChatUnreadIndicator(false);
+    return;
+  }
+  try {
+    await API.post(`/api/chat/projects/${id}/read`, { messageId: newestMessageId });
+    setChatUnreadIndicator(false);
+  } catch (error) {
+    console.warn('[chat] No se pudo marcar el chat como leido', error);
+  }
+}
+
+function startChatUnreadPolling() {
+  if (!chatTabBtn || chatUnreadPollId) return;
+  chatUnreadPollId = window.setInterval(refreshChatUnreadStatus, 30000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshChatUnreadStatus();
+  });
+}
+
+async function loadChatMessages({ append=false, markRead=false } = {}) {
   if (!chatListEl) return;
   if (!append) chatBeforeCursor = null;            // reset
 
@@ -17428,7 +17473,11 @@ async function loadChatMessages({ append=false } = {}) {
   if (chatBeforeCursor) url += `&before=${encodeURIComponent(chatBeforeCursor)}`;
   url += `&ts=${Date.now()}`;
 
-  const res = await API.get(url).catch(()=>({ messages:[] }));
+  const res = await API.get(url).catch(error => {
+    console.warn('[chat] No se pudieron cargar los mensajes', error);
+    return null;
+  });
+  if (!res) return;
   const msgs = res.messages || [];
 
   if (!append) chatListEl.innerHTML = '';
@@ -17450,6 +17499,8 @@ async function loadChatMessages({ append=false } = {}) {
     chatListEl.innerHTML = '<div class="small muted">No hay mensajes aún</div>';
     chatLoadMore.style.display = 'none';
   }
+
+  if (!append && markRead) await markVisibleChatAsRead(msgs);
 }
 
 function renderChatMessage(m) {
@@ -17576,6 +17627,8 @@ if (myRole === 'tecnico') {
   await refreshCommercialDossier(true);
   await loadChatMessages();
 }
+await refreshChatUnreadStatus();
+startChatUnreadPolling();
 } finally {
   finishInitialProjectLoad();
 }

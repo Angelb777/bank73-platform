@@ -952,6 +952,19 @@ select option { color: #000; }
   border-radius: 999px;
   background: rgba(255,255,255,.72);
 }
+
+.tabs .tab.chat-has-unread::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #ef4444;
+  border: 2px solid var(--surface, #ffffff);
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, .18);
+}
 .tabpane { display: none; }
 .tabpane.active { display: block; }
 

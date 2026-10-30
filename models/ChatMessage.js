@@ -15,11 +15,16 @@ const chatMessageSchema = new mongoose.Schema(
 
     // contenido
     text:      { type: String, required: true, trim: true, maxlength: 2000 },
+
+    // Solo los mensajes creados desde la activacion de las notificaciones
+    // generan avisos. Los documentos historicos, sin este campo, se ignoran.
+    notifyUnread: { type: Boolean, default: true, index: true },
   },
   { timestamps: true }
 );
 
 // índice para listar rápido por proyecto y fecha
 chatMessageSchema.index({ projectId: 1, createdAt: -1 });
+chatMessageSchema.index({ tenantKey: 1, projectId: 1, notifyUnread: 1, createdAt: -1 });
 
 module.exports = mongoose.model('ChatMessage', chatMessageSchema);

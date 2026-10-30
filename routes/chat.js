@@ -4,6 +4,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const ChatMessage = require('../models/ChatMessage');
+const ChatReadState = require('../models/ChatReadState');
 const Project = require('../models/Project');
 const { requireProjectAccess, _helpers: rbacHelpers } = require('../middleware/rbac');
 
@@ -70,6 +71,10 @@ function canUseProjectChat(req) {
   return rbacHelpers.isUserAssignedToProject(req.project, rbacHelpers.getUserId(req));
 }
 
+function getCurrentUserId(req) {
+  return rbacHelpers.getUserId(req);
+}
+
 /* ============== ENDPOINTS ============== */
 
 // GET lista (con paginación ?before & ?limit)
@@ -101,6 +106,89 @@ res.json({ ok: true, messages });
   }
 );
 
+// GET indica si el usuario tiene mensajes nuevos de otras personas.
+router.get(
+  '/projects/:projectId/unread',
+  normalizeProjectParam,
+  requireProjectAccess({ commercialOnlySales: false }),
+  ensureProjectReadable,
+  async (req, res, next) => {
+    try {
+      const { projectId } = req.params;
+      const tenantKey = await getTenantKey(req);
+      const userId = getCurrentUserId(req);
+      if (!mongoose.isValidObjectId(userId)) {
+        return res.status(401).json({ ok: false, error: 'invalid_user' });
+      }
+
+      const readState = await ChatReadState.findOne({ tenantKey, projectId, userId })
+        .select('lastReadAt')
+        .lean();
+      const query = {
+        tenantKey,
+        projectId,
+        notifyUnread: true,
+        userId: { $ne: userId }
+      };
+      if (readState?.lastReadAt) query.createdAt = { $gt: readState.lastReadAt };
+
+      const latestUnread = await ChatMessage.findOne(query)
+        .sort({ createdAt: -1 })
+        .select('_id createdAt')
+        .lean();
+
+      res.set('Cache-Control', 'no-store');
+      res.json({
+        ok: true,
+        hasUnread: !!latestUnread,
+        latestUnreadAt: latestUnread?.createdAt || null
+      });
+    } catch (err) { next(err); }
+  }
+);
+
+// POST marca como leidos todos los mensajes visibles hasta messageId.
+router.post(
+  '/projects/:projectId/read',
+  normalizeProjectParam,
+  requireProjectAccess({ commercialOnlySales: false }),
+  ensureProjectReadable,
+  async (req, res, next) => {
+    try {
+      const { projectId } = req.params;
+      const tenantKey = await getTenantKey(req);
+      const userId = getCurrentUserId(req);
+      const messageId = req.body?.messageId;
+      if (!mongoose.isValidObjectId(userId)) {
+        return res.status(401).json({ ok: false, error: 'invalid_user' });
+      }
+      if (!mongoose.isValidObjectId(messageId)) {
+        return res.status(400).json({ ok: false, error: 'bad_message_id' });
+      }
+
+      const message = await ChatMessage.findOne({ _id: messageId, tenantKey, projectId })
+        .select('createdAt')
+        .lean();
+      if (!message) return res.status(404).json({ ok: false, error: 'message_not_found' });
+
+      const readStateFilter = { tenantKey, projectId, userId };
+      const readStateUpdate = {
+        $max: { lastReadAt: message.createdAt },
+        $setOnInsert: { tenantKey, projectId, userId }
+      };
+      try {
+        await ChatReadState.updateOne(readStateFilter, readStateUpdate, { upsert: true });
+      } catch (error) {
+        // Dos pestañas pueden intentar crear el primer estado a la vez.
+        if (error?.code !== 11000) throw error;
+        await ChatReadState.updateOne(readStateFilter, { $max: { lastReadAt: message.createdAt } });
+      }
+
+      res.json({ ok: true, lastReadAt: message.createdAt });
+    } catch (err) { next(err); }
+  }
+);
+
 // POST crear mensaje
 router.post(
   '/projects/:projectId',
@@ -121,10 +209,11 @@ router.post(
       const msg = await ChatMessage.create({
         tenantKey,
         projectId,
-        userId: req?.user?._id || null,
+        userId: getCurrentUserId(req) || null,
         userEmail: (req?.user?.email || 'desconocido@local').toLowerCase(),
         userName: req?.user?.name || req?.user?.fullName || null,
-        text
+        text,
+        notifyUnread: true
       });
       res.status(201).json({ ok: true, message: msg });
     } catch (err) { next(err); }
