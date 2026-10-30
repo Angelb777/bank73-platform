@@ -15848,7 +15848,10 @@ function renderTechnicalKpis() {
   const approved = activePermits.filter(item => technicalPermitEffectiveStatus(item) === 'approved').length;
   const progress = activePermits.length ? Math.round(approved / activePermits.length * 100) : 0;
   const inConstruction = technicalWorkspace.units.filter(unit => ventas.get(String(unit._id))?.enConstruccion).length;
-  const completed = technicalWorkspace.units.filter(unit => technicalConstructionPhase(ventas.get(String(unit._id))?.estatusConstruccion) === 'Terminada').length;
+  const completed = technicalWorkspace.units.filter(unit => {
+    const venta = ventas.get(String(unit._id)) || {};
+    return technicalConstructionPhase(venta.estatusConstruccion, venta.avanceConstruccionPct) === 'Terminada';
+  }).length;
   const missingOccupation = technicalWorkspace.units.filter(unit => !ventas.get(String(unit._id))?.permisoOcupacion).length;
   const expiringPolicies = projectInsurancePolicies().filter(policy => {
     const days = technicalDaysUntil(policy.expiryDate);
@@ -16125,7 +16128,7 @@ function technicalUnitMatchesFilters(unit, venta) {
   const construction = document.getElementById('technicalConstructionFilter')?.value || '';
   const permitFilter = document.getElementById('technicalPermitFilter')?.value || '';
   const query = String(document.getElementById('technicalUnitSearch')?.value || '').trim().toLowerCase();
-  if (construction && technicalConstructionPhase(venta?.estatusConstruccion) !== construction) return false;
+  if (construction && technicalConstructionPhase(venta?.estatusConstruccion, venta?.avanceConstruccionPct) !== construction) return false;
   if (permitFilter === 'missing-construction' && venta?.permisoConstruccionMunicipal) return false;
   if (permitFilter === 'missing-occupation' && venta?.permisoOcupacion) return false;
   if (permitFilter === 'complete' && !(venta?.permisoConstruccionMunicipal && venta?.permisoOcupacion)) return false;
@@ -16136,9 +16139,9 @@ function technicalUnitMatchesFilters(unit, venta) {
   return true;
 }
 
-function technicalConstructionPhase(value = '') {
+function technicalConstructionPhase(value = '', progress = null) {
   const normalized = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-  if (normalized === 'culminada' || normalized === 'terminada') return 'Terminada';
+  if (Number(progress) >= 100 || ['culminado', 'culminada', 'terminado', 'terminada'].includes(normalized)) return 'Terminada';
   if (normalized === 'obra gris') return 'Obra gris';
   if (normalized === 'acabados') return 'Acabados';
   return 'Pendiente';
@@ -16147,7 +16150,7 @@ function technicalConstructionPhase(value = '') {
 function technicalConstructionTone(value, active = false) {
   const normalized = String(value || (active ? 'En construcción' : 'Pendiente'))
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-  if (normalized === 'culminada' || normalized === 'terminada') return 'completed';
+  if (['culminado', 'culminada', 'terminado', 'terminada'].includes(normalized)) return 'completed';
   if (normalized === 'acabados') return 'finishes';
   if (normalized === 'obra gris') return 'gray-work';
   if (normalized.includes('construccion') || active) return 'in-progress';
@@ -16158,7 +16161,9 @@ function technicalUnitCard(unit) {
   const venta = technicalWorkspace.ventas.get(String(unit._id)) || {};
   const policies = technicalPoliciesForUnit(unit);
   const idValue = String(unit._id);
-  const construction = venta.enConstruccion && !venta.estatusConstruccion ? 'En construcción' : technicalConstructionPhase(venta.estatusConstruccion);
+  const construction = venta.enConstruccion && !venta.estatusConstruccion
+    ? 'En construcción'
+    : technicalConstructionPhase(venta.estatusConstruccion, venta.avanceConstruccionPct);
   const constructionTone = technicalConstructionTone(construction, venta.enConstruccion);
   return `<article class="unit-card construction-${escapeHtml(constructionTone)} ${technicalWorkspace.selected.has(idValue) ? 'selected' : ''}" data-technical-unit="${escapeHtml(idValue)}" draggable="true">
     <div class="head"><div class="title"><b>${escapeHtml(unitDisplayName(unit))}</b><span class="status">${escapeHtml(technicalUnitStateLabel(unit.estado || 'disponible'))}</span></div><label class="sel-wrap" title="Seleccionar"><input class="sel" type="checkbox" ${technicalWorkspace.selected.has(idValue) ? 'checked' : ''}><span class="sel-box"></span></label></div>
@@ -16184,7 +16189,10 @@ function renderTechnicalUnits() {
   const filtered = all.filter(unit => technicalUnitMatchesFilters(unit, technicalWorkspace.ventas.get(String(unit._id)) || {}));
   const ventas = technicalWorkspace.ventas;
   const inWork = all.filter(unit => ventas.get(String(unit._id))?.enConstruccion).length;
-  const completed = all.filter(unit => technicalConstructionPhase(ventas.get(String(unit._id))?.estatusConstruccion) === 'Terminada').length;
+  const completed = all.filter(unit => {
+    const venta = ventas.get(String(unit._id)) || {};
+    return technicalConstructionPhase(venta.estatusConstruccion, venta.avanceConstruccionPct) === 'Terminada';
+  }).length;
   const missingConstruction = all.filter(unit => !ventas.get(String(unit._id))?.permisoConstruccionMunicipal).length;
   const missingOccupation = all.filter(unit => !ventas.get(String(unit._id))?.permisoOcupacion).length;
   kpiHost.innerHTML = [
