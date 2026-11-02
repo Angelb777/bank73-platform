@@ -4869,6 +4869,54 @@ body.light-theme .finance-modal-funding-summary strong { color: #172033; }
 .requirements-copy-toolbar label { display: grid; gap: 5px; font-size: .78rem; font-weight: 750; }
 .requirements-copy-toolbar select { min-width: 240px; border: 1px solid #94a3b8; border-radius: 9px; background: #fff; color: #0f172a; padding: 8px 10px; }
 
+.requirements-manage-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 20px;
+  border-bottom: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: .75rem;
+}
+.requirement-definition-editor {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(280px, 2fr) minmax(135px, .8fr) minmax(150px, .9fr) minmax(210px, 1.1fr) minmax(150px, .75fr) minmax(180px, 1fr);
+  align-items: end;
+  gap: 10px;
+  padding: 12px 20px;
+  border-bottom: 1px solid #bfdbfe;
+  background: #eff6ff;
+}
+.requirement-definition-editor[hidden] { display: none !important; }
+.requirement-definition-editor [hidden] { display: none !important; }
+.requirement-definition-editor label { display: grid; gap: 5px; color: #334155; font-size: .72rem; font-weight: 750; }
+.requirement-definition-editor label small { color: #64748b; font-size: .62rem; font-weight: 600; line-height: 1.3; }
+.requirement-definition-editor > div { grid-column: 1 / -1; display: flex; gap: 7px; }
+.requirement-periodicity-control { display: grid; grid-template-columns: minmax(70px, .7fr) minmax(105px, 1fr); gap: 6px; }
+.requirement-periodicity-control > * { min-width: 0; width: 100%; }
+
+.requirements-category-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); gap: 8px; }
+.requirements-category-group > header {
+  grid-column: 1 / -1;
+  position: sticky;
+  top: -18px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 11px;
+  background: rgba(248, 250, 252, .96);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, .06);
+}
+.requirements-category-group > header h4 { margin: 0; color: #0f172a; font-size: .9rem; }
+.requirements-category-group > header span { color: #64748b; font-size: .72rem; font-weight: 750; }
+
 .finance-requirements-progress {
   flex: 0 0 auto;
   display: grid;
@@ -4892,13 +4940,74 @@ body.light-theme .finance-modal-funding-summary strong { color: #172033; }
 
 .requirement-card {
   display: block;
-  padding: 15px 16px;
+  min-width: 0;
+  padding: 11px 12px;
   border: 1px solid #cbd5e1;
   border-radius: 14px;
   background: #fff !important;
   color: #0f172a !important;
   box-shadow: 0 3px 10px rgba(15, 23, 42, .05);
 }
+.requirement-card.is-expanded { grid-column: 1 / -1; }
+.requirement-card.has-follow-up { border-left: 5px solid #f59e0b; }
+.requirement-card-topline { display: flex; min-height: 145px; flex-direction: column; align-items: stretch; gap: 10px; }
+.requirement-card-controls { display: flex; align-items: center; justify-content: flex-start; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 9px; border-top: 1px solid #e2e8f0; }
+.requirement-card-controls .btn { flex: 0 0 auto; white-space: nowrap; }
+.requirement-card-controls .requirement-completion-check { flex: 0 0 auto; margin-left: auto; }
+.requirement-card-body[hidden] { display: none !important; }
+.requirement-card-body { margin-top: 9px; }
+.requirement-card-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 4px; }
+.requirement-category,
+.requirement-follow-up-badge,
+.requirement-department {
+  display: inline-flex;
+  align-items: center;
+  min-height: 21px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: .64rem;
+  font-weight: 750;
+}
+.requirements-category-group .requirement-category { display: none; }
+.requirement-follow-up-badge { border: 1px solid #fcd34d; background: #fffbeb; color: #92400e; }
+.requirement-department { border: 1px solid #e2e8f0; background: #fff; }
+.requirement-definition-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.requirement-definition-actions .is-danger { color: #b91c1c !important; }
+.requirement-completion-meta { margin: 6px 0 0; color: #64748b; font-size: .69rem; }
+
+.requirement-completion-check {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  width: 64px;
+  padding: 5px 4px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #64748b;
+  cursor: pointer;
+}
+.requirement-completion-check input { position: absolute; opacity: 0; pointer-events: none; }
+.requirement-completion-check > span {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border: 2px solid #94a3b8;
+  border-radius: 8px;
+  background: #fff;
+  transition: .15s ease;
+}
+.requirement-completion-check > span::after { content: '✓'; opacity: 0; color: #fff; font-size: 1.35rem; font-weight: 900; transform: scale(.7); transition: .15s ease; }
+.requirement-completion-check b { font-size: .61rem; text-align: center; }
+.requirement-completion-check:has(input:checked) { border-color: #86efac; background: #f0fdf4; color: #166534; }
+.requirement-completion-check input:checked + span { border-color: #16a34a; background: #16a34a; }
+.requirement-completion-check input:checked + span::after { opacity: 1; transform: scale(1); }
+.requirement-completion-check:has(input:focus-visible) { outline: 3px solid rgba(37, 99, 235, .25); outline-offset: 2px; }
+.requirement-completion-check:has(input:disabled) { cursor: default; opacity: .78; }
 
 .requirement-card.is-presales-target-reached,
 .requirement-card.is-requirement-target-reached {
@@ -4912,10 +5021,15 @@ body.light-theme .finance-modal-funding-summary strong { color: #172033; }
 .requirement-card.is-requirement-expired .requirement-structured { border-color:#fca5a5; background:#fffafa; }
 
 .requirement-card-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
+  display: block;
+  min-width: 0;
+}
+
+.requirement-card-summary {
+  margin: 7px 0 0 33px;
+  color: #64748b;
+  font-size: .72rem;
+  line-height: 1.42;
 }
 
 .requirement-title {
@@ -4923,7 +5037,7 @@ body.light-theme .finance-modal-funding-summary strong { color: #172033; }
   align-items: flex-start;
   gap: 9px;
   color: #0f172a !important;
-  font-size: .98rem;
+  font-size: .84rem;
   font-weight: 800;
   line-height: 1.45;
 }
@@ -4932,13 +5046,13 @@ body.light-theme .finance-modal-funding-summary strong { color: #172033; }
   flex: 0 0 auto;
   display: inline-grid;
   place-items: center;
-  min-width: 28px;
-  height: 28px;
-  padding: 0 6px;
-  border-radius: 8px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 5px;
+  border-radius: 7px;
   background: #dbeafe;
   color: #1d4ed8 !important;
-  font-size: .78rem;
+  font-size: .7rem;
 }
 
 .requirement-source,
@@ -4963,7 +5077,7 @@ body.light-theme .finance-modal-funding-summary strong { color: #172033; }
 .requirement-status.is-pending { border-color: #fcd34d; background: #fffbeb; color: #92400e !important; }
 
 .requirement-help {
-  margin: 9px 0 0 37px;
+  margin: 8px 0 0;
   padding: 8px 10px;
   border-left: 3px solid #60a5fa;
   border-radius: 0 8px 8px 0;
@@ -4971,6 +5085,11 @@ body.light-theme .finance-modal-funding-summary strong { color: #172033; }
   color: #334155 !important;
   font-size: .78rem;
   line-height: 1.45;
+}
+
+@media (max-width: 1150px) {
+  .requirement-definition-editor { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .requirements-category-group { grid-template-columns: 1fr; }
 }
 
 .requirement-structured {
@@ -5162,6 +5281,11 @@ body.light-theme #tab-tecnico .commercial-folder-head .folder-actions { color:#6
   border-top: 1px solid #cbd5e1;
   background: #fff;
 }
+.requirements-autosave-status { margin-right: auto; color: #64748b; font-size: .72rem; font-weight: 800; }
+.requirements-autosave-status.is-pending { color: #a16207; }
+.requirements-autosave-status.is-saving { color: #0369a1; }
+.requirements-autosave-status.is-saved { color: #166534; }
+.requirements-autosave-status.is-error { color: #b91c1c; }
 
 .requirements-modal-backdrop.is-fullscreen {
   width: 100dvw !important;
@@ -5188,6 +5312,12 @@ body.light-theme #tab-tecnico .commercial-folder-head .folder-actions { color:#6
   .requirements-modal-header-actions .btn:last-child { width: 42px; overflow: hidden; white-space: nowrap; font-size: 0; }
   .requirements-modal-header-actions .btn:last-child::before { content: '✕'; color: #fff; font-size: .95rem; }
   .requirements-modal-list { padding: 12px; }
+  .requirement-definition-editor { grid-template-columns: 1fr; padding: 12px; }
+  .requirement-card-topline { min-height: 0; }
+  .requirement-card-controls { max-width: none; }
+  .requirement-definition-actions { justify-content: flex-end; }
+  .requirement-completion-check { width: 60px; }
+  .requirement-completion-meta { margin-left: 0; }
   .requirements-copy-toolbar { align-items: stretch; padding: 10px 12px; flex-direction: column; }
   .requirements-copy-toolbar select { width: 100%; min-width: 0; }
   .finance-requirements-progress,
@@ -5199,6 +5329,7 @@ body.light-theme #tab-tecnico .commercial-folder-head .folder-actions { color:#6
   .create-architectural-plans { grid-template-columns: 1fr; }
   .create-architectural-plans > span { grid-column: auto; }
   .requirement-help { margin-left: 0; }
+  .requirement-card-summary { margin-left: 0; }
   .requirements-modal-actions { padding: 11px 12px; }
 }
 

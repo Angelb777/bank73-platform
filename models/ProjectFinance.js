@@ -60,8 +60,15 @@ const PhaseFinancialConditionsSchema = new Schema({
 }, { _id: false });
 
 const PhaseRequirementSchema = new Schema({
-  number: { type: Number, required: true, min: 1, max: 30 },
+  code: { type: String, trim: true, default: '' },
+  number: { type: Number, required: true, min: 1, max: 9999 },
   title: { type: String, required: true, trim: true },
+  category: { type: String, enum: ['general', 'technical', 'legal', 'financial', 'commercial'], default: undefined },
+  trackingType: { type: String, enum: ['none', 'dynamic', 'recurring'], default: undefined },
+  responsibleDepartment: { type: String, trim: true, default: '' },
+  sortOrder: { type: Number, default: undefined },
+  isCustom: { type: Boolean, default: false },
+  isArchived: { type: Boolean, default: false },
   information: { type: String, trim: true, default: '' },
   manualInformation: { type: String, trim: true, default: '' },
   structuredData: { type: Schema.Types.Mixed, default: undefined },
@@ -70,6 +77,9 @@ const PhaseRequirementSchema = new Schema({
   sourceLabel: { type: String, trim: true, default: 'Entrada manual' },
   status: { type: String, enum: ['PENDIENTE', 'CUMPLIDO'], default: 'PENDIENTE' },
   observations: { type: String, trim: true, default: '' },
+  completedAt: { type: Date, default: null },
+  completedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  completedByRole: { type: String, trim: true, default: '' },
 }, { _id: true, timestamps: true });
 
 const PhaseSchema = new Schema({

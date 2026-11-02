@@ -10,6 +10,7 @@ const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment
 const Inspection = require('../models/Inspection');
 const InspectionUnit = require('../models/InspectionUnit');
 const AvaluationTemplate = require('../models/AvaluationTemplate');
+const ProjectFinance = require('../models/ProjectFinance');
 const inspectionReportContext = require('../services/inspectionReportContext');
 
 const IDS = {
@@ -133,11 +134,13 @@ function mockAuthorizedInspection(t, options = {}) {
   const originalAssignmentFindOne = ProjectAvaluatorAssignment.findOne;
   const originalProjectFindOne = Project.findOne;
   const originalBuildContext = inspectionReportContext.buildInspectionReportContext;
+  const originalFinanceUpdateMany = ProjectFinance.updateMany;
   t.after(() => {
     Inspection.findOne = originalInspectionFindOne;
     ProjectAvaluatorAssignment.findOne = originalAssignmentFindOne;
     Project.findOne = originalProjectFindOne;
     inspectionReportContext.buildInspectionReportContext = originalBuildContext;
+    ProjectFinance.updateMany = originalFinanceUpdateMany;
   });
   Inspection.findOne = () => ({ lean: async () => inspectionValue });
   ProjectAvaluatorAssignment.findOne = () => ({ lean: async () => assignmentValue });
@@ -149,6 +152,7 @@ function mockAuthorizedInspection(t, options = {}) {
     metrics: { physicalProgress: {} },
     inventory: { folders: [], units: [] }
   });
+  ProjectFinance.updateMany = async () => ({ acknowledged: true, matchedCount: 0, modifiedCount: 0 });
 }
 
 test('inspection schemas keep history outside Unit and define required unique indexes', async () => {

@@ -6322,7 +6322,7 @@ function financeProgressWidth(value, base) {
 }
 
 function financeRequirementProgress(requirements = []) {
-  const items = Array.isArray(requirements) ? requirements : [];
+  const items = Array.isArray(requirements) ? requirements.filter(item => item?.isArchived !== true) : [];
   const total = items.length;
   const completed = items.filter(item => String(item?.status || '').toUpperCase() === 'CUMPLIDO').length;
   const pending = Math.max(0, total - completed);
@@ -6853,7 +6853,7 @@ function financeDisbursementWorkflowCell(entry = {}, saved = false) {
 
 function openFinanceRequestDialog({ entry = {}, phase = {} } = {}) {
   return new Promise(resolve => {
-    const requirements = Array.isArray(phase?.requirements) ? phase.requirements : [];
+    const requirements = Array.isArray(phase?.requirements) ? phase.requirements.filter(item => item?.isArchived !== true) : [];
     const overlay = document.createElement('div');
     overlay.className = 'finance-disbursement-dialog-backdrop';
     overlay.innerHTML = `
@@ -9700,6 +9700,51 @@ let FINANCE_REQUIREMENT_DOCS = [];
 let ARCHITECTURAL_PLAN_DOCS = [];
 let INSURANCE_UNITS_CACHE = [];
 
+const FINANCE_REQUIREMENT_CATEGORY_LABELS = {
+  general: 'Información general', technical: 'Técnico', legal: 'Legal y cumplimiento',
+  financial: 'Financiero', commercial: 'Comercial'
+};
+const FINANCE_REQUIREMENT_CATEGORY_ORDER = ['general', 'technical', 'legal', 'financial', 'commercial'];
+const FINANCE_REQUIREMENT_SUMMARIES = [
+  'Presupuesto y partidas económicas ya registradas para el proyecto y la fase.',
+  'Trayectoria del promotor y experiencia declarada del contratista.',
+  'Sociedad promotora, RUC y distribución de sus accionistas.',
+  'Imágenes del proyecto y planta del modelo o unidad correspondiente.',
+  'Análisis externo de demanda, competencia, precios y mercado objetivo.',
+  'Valoración única del terreno sobre el que se desarrolla el proyecto.',
+  'Estados financieros vigentes de la sociedad deudora.',
+  'Estados financieros o declaración de renta de los accionistas.',
+  'Identificación de accionistas, dignatarios y cargos de la sociedad.',
+  'Resolución aprobatoria del Estudio de Impacto Ambiental.',
+  'Fechas previstas de inicio y finalización de la fase de obra.',
+  'Usos y fuentes que explican cómo se financia el proyecto.',
+  'Documento que acredita la actividad económica autorizada.',
+  'Autorización para consultar la información crediticia de sociedad y accionistas.',
+  'Certificación de que la sociedad está al día con la Seguridad Social.',
+  'Planos del anteproyecto firmados por los profesionales responsables.',
+  'Formulario de conocimiento y debida diligencia del cliente.',
+  'Manual interno de prevención y cumplimiento de la sociedad.',
+  'Estudio de inundación y validación de niveles incorporados a los planos.',
+  'Preventas exigidas para el periodo y cesión suficiente para cubrir la facilidad.',
+  'Certificación inicial independiente de costes, permisos, pólizas y documentos.',
+  'Validación del presupuesto de construcción realizada por Ingeniería.',
+  'Contrato vigente entre el promotor y la empresa constructora.',
+  'Pólizas CAR o incendio y condiciones de cobertura exigidas por el banco.',
+  'Fianza de cumplimiento exigida para la etapa financiada.',
+  'Fianza de pago exigida para la etapa financiada.',
+  'Inspección periódica realizada por el departamento de Ingeniería del banco.',
+  'Cuenta de avance asociada a la solicitud de desembolso vigente.'
+];
+
+function financeRequirementCardSummary(item = {}) {
+  return FINANCE_REQUIREMENT_SUMMARIES[Number(item.number) - 1]
+    || `Evidencia solicitada para acreditar “${String(item.title || 'este requisito')}”.`;
+}
+
+function financeRequirementCategoryOptions(selected = 'general') {
+  return FINANCE_REQUIREMENT_CATEGORY_ORDER.map(key => `<option value="${key}" ${selected === key ? 'selected' : ''}>${escapeHtml(FINANCE_REQUIREMENT_CATEGORY_LABELS[key])}</option>`).join('');
+}
+
 function financeRequirementInputGuidance(title) {
   return `Información solicitada: ${title}. Describe los datos disponibles y adjunta la documentación correspondiente.`;
 }
@@ -9858,6 +9903,17 @@ function financeAddMonthsClamped(dateValue, months) {
   return `${targetYear}-${String(normalizedMonth + 1).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
 }
 
+function financeAddPeriodClamped(dateValue, value, unit = 'months') {
+  const date = String(dateValue || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return '';
+  const amount = Math.max(1, Math.min(520, Math.round(Number(value) || 1)));
+  if (unit === 'years') return financeAddMonthsClamped(date, amount * 12);
+  if (unit === 'months') return financeAddMonthsClamped(date, amount);
+  const [year, month, day] = date.split('-').map(Number);
+  const target = new Date(Date.UTC(year, month - 1, day + amount * 7));
+  return target.toISOString().slice(0, 10);
+}
+
 function financePeriodicFollowUpMeta(data = {}) {
   const nextReviewDate = String(data.nextReviewDate || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(nextReviewDate)) return { current:false, due:false, label:'Sin primer documento' };
@@ -9869,25 +9925,34 @@ function financePeriodicFollowUpMeta(data = {}) {
     : { current:false, due:true, label:`Revisión pendiente desde ${nextReviewDate}` };
 }
 
+function financePeriodicityLabel(data = {}) {
+  const value = Number(data.periodicityValue || data.periodicityMonths || 1);
+  const unit = data.periodicityUnit || 'months';
+  const labels = unit === 'weeks'
+    ? ['semana', 'semanas']
+    : unit === 'years' ? ['año', 'años'] : ['mes', 'meses'];
+  return `${value} ${labels[value === 1 ? 0 : 1]}`;
+}
+
 function financeStructuredRequirementHtml(item, editable, mode = 'plan') {
   const data = item.structuredData || {};
   if (!data.kind) return '';
   if (data.kind === 'budget') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Total del proyecto', data.projectTotal, { money:true })}${requirementMetric('Presupuesto de la fase', data.phaseTotal, { money:true })}</div>${requirementLinesHtml('Usos de la fase', data.uses || [])}</div>`;
-  if (data.kind === 'presales') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Unidades totales', data.total)}${requirementMetric('Reservadas', data.reserved)}${requirementMetric('Con CPP', data.cpp)}${requirementMetric('Trámite legal', data.legal)}${requirementMetric('Escrituradas', data.deeded)}${requirementMetric('Entregadas', data.delivered)}${requirementMetric('Preventas', data.presales)}${requirementMetric('% preventa actual', data.presalesPct, { pct:true })}${requirementMetric('% preventa requerido', data.requiredPresalesPct ?? 50, { pct:true })}${requirementMetric('Valor asociado', data.saleValue, { money:true })}${requirementMetric('Monto CPP', data.cppAmount, { money:true })}</div></div>`;
+  if (data.kind === 'presales') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Unidades totales', data.total)}${requirementMetric('Reservadas', data.reserved)}${requirementMetric('Con CPP', data.cpp)}${requirementMetric('Trámite legal', data.legal)}${requirementMetric('Escrituradas', data.deeded)}${requirementMetric('Entregadas', data.delivered)}${requirementMetric('Preventas', data.presales)}${requirementMetric('Preventa actual', data.presalesPct, { pct:true })}${requirementMetric('Preventa requerida', data.requiredPresalesPct ?? 50, { pct:true })}${requirementMetric('Valor asociado', data.saleValue, { money:true })}${requirementMetric('Monto CPP', data.cppAmount, { money:true })}</div></div>`;
   if (data.kind === 'performanceBond') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Valor de la fase', data.phaseValue, { money:true })}${requirementMetric('% de fianza requerido', data.requiredPct ?? 50, { pct:true })}${requirementMetric('Importe requerido', data.requiredAmount, { money:true })}${mode === 'real' ? `${requirementMetric('Importe informado', data.actualAmount, { money:true })}${financeBondValidityMetric(data)}` : ''}</div>${mode === 'real' ? `<div class="requirement-profile-grid" style="margin-top:10px;"><label><span>Importe de la fianza</span><input class="input" type="number" min="0" step=".01" data-performance-bond-field="actualAmount" value="${escapeHtml(data.actualAmount || '')}" ${editable ? '' : 'readonly'}></label><label><span>Nº de fianza</span><input class="input" data-performance-bond-field="bondNumber" value="${escapeHtml(data.bondNumber || '')}" ${editable ? '' : 'readonly'}></label><label><span>Entidad emisora</span><input class="input" data-performance-bond-field="issuer" value="${escapeHtml(data.issuer || '')}" ${editable ? '' : 'readonly'}></label><label><span>Fecha de inicio</span><input class="input" type="date" data-performance-bond-field="startDate" value="${escapeHtml(String(data.startDate || '').slice(0,10))}" ${editable ? '' : 'readonly'}></label><label><span>Fecha de vencimiento</span><input class="input" type="date" data-performance-bond-field="expiryDate" value="${escapeHtml(String(data.expiryDate || '').slice(0,10))}" ${editable ? '' : 'readonly'}></label><label><span>Días de antelación para alerta</span><input class="input" type="number" min="0" max="3650" step="1" data-performance-bond-field="alertDaysBefore" value="${escapeHtml(data.alertDaysBefore ?? 30)}" ${editable ? '' : 'readonly'}></label></div>` : ''}</div>`;
   if (data.kind === 'paymentBond') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Valor de la fase', data.phaseValue, { money:true })}${requirementMetric('% de fianza de pago requerido', data.requiredPct ?? 25, { pct:true })}${requirementMetric('Importe requerido', data.requiredAmount, { money:true })}${mode === 'real' ? `${requirementMetric('Importe informado', data.actualAmount, { money:true })}${financeBondValidityMetric(data)}` : ''}</div>${mode === 'real' ? `<div class="requirement-profile-grid" style="margin-top:10px;"><label><span>Importe de la fianza de pago</span><input class="input" type="number" min="0" step=".01" data-payment-bond-field="actualAmount" value="${escapeHtml(data.actualAmount || '')}" ${editable ? '' : 'readonly'}></label><label><span>Nº de fianza</span><input class="input" data-payment-bond-field="bondNumber" value="${escapeHtml(data.bondNumber || '')}" ${editable ? '' : 'readonly'}></label><label><span>Entidad emisora</span><input class="input" data-payment-bond-field="issuer" value="${escapeHtml(data.issuer || '')}" ${editable ? '' : 'readonly'}></label><label><span>Fecha de inicio</span><input class="input" type="date" data-payment-bond-field="startDate" value="${escapeHtml(String(data.startDate || '').slice(0,10))}" ${editable ? '' : 'readonly'}></label><label><span>Fecha de vencimiento</span><input class="input" type="date" data-payment-bond-field="expiryDate" value="${escapeHtml(String(data.expiryDate || '').slice(0,10))}" ${editable ? '' : 'readonly'}></label><label><span>Días de antelación para alerta</span><input class="input" type="number" min="0" max="3650" step="1" data-payment-bond-field="alertDaysBefore" value="${escapeHtml(data.alertDaysBefore ?? 30)}" ${editable ? '' : 'readonly'}></label></div>` : ''}</div>`;
-  if (data.kind === 'periodicFollowUp') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Periodicidad', `${data.periodicityMonths || (item.number === 27 ? 4 : 1)} meses`)}${mode === 'real' ? `${requirementMetric('Último documento', data.lastRecordDate || '—')}<div class="requirement-metric"><span>Seguimiento</span><strong data-follow-up-status-label>${escapeHtml(financePeriodicFollowUpMeta(data).label)}</strong></div>` : ''}</div>${mode === 'real' ? `<div class="requirement-profile-grid" style="margin-top:10px;"><label><span>Periodicidad (meses)</span><input class="input" type="number" min="1" max="120" step="1" data-follow-up-field="periodicityMonths" value="${escapeHtml(data.periodicityMonths || (item.number === 27 ? 4 : 1))}" ${editable ? '' : 'readonly'}></label><label><span>Fecha del nuevo documento</span><input class="input" type="date" data-follow-up-field="lastRecordDate" value="${escapeHtml(String(data.lastRecordDate || '').slice(0,10))}" ${editable ? '' : 'readonly'}></label><label><span>Próxima revisión</span><input class="input" type="date" data-follow-up-field="nextReviewDate" value="${escapeHtml(String(data.nextReviewDate || '').slice(0,10))}" readonly></label></div>` : ''}</div>`;
+  if (data.kind === 'periodicFollowUp') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Periodicidad', financePeriodicityLabel(data))}${mode === 'real' ? `${requirementMetric('Último documento', data.lastRecordDate || '—')}<div class="requirement-metric"><span>Seguimiento</span><strong data-follow-up-status-label>${escapeHtml(financePeriodicFollowUpMeta(data).label)}</strong></div>` : ''}</div>${mode === 'real' ? `<div class="requirement-profile-grid" style="margin-top:10px;"><label><span>Periodicidad</span><div class="requirement-periodicity-control"><input class="input" type="number" min="1" max="520" step="1" data-follow-up-field="periodicityValue" value="${escapeHtml(data.periodicityValue || data.periodicityMonths || 1)}" ${editable ? '' : 'readonly'}><select class="input" data-follow-up-field="periodicityUnit" ${editable ? '' : 'disabled'}><option value="weeks" ${data.periodicityUnit === 'weeks' ? 'selected' : ''}>semanas</option><option value="months" ${(data.periodicityUnit || 'months') === 'months' ? 'selected' : ''}>meses</option><option value="years" ${data.periodicityUnit === 'years' ? 'selected' : ''}>años</option></select></div></label><label><span>Fecha del nuevo documento</span><input class="input" type="date" data-follow-up-field="lastRecordDate" value="${escapeHtml(String(data.lastRecordDate || '').slice(0,10))}" ${editable ? '' : 'readonly'}></label><label><span>Próxima revisión</span><input class="input" type="date" data-follow-up-field="nextReviewDate" value="${escapeHtml(String(data.nextReviewDate || '').slice(0,10))}" readonly></label></div>` : ''}</div>`;
   if (data.kind === 'experience') return `<div class="requirement-structured" data-promoter-experience data-promoter-id="${escapeHtml(data.promoterId || '')}"><div class="requirement-structured-section"><strong>Experiencia del promotor</strong><div class="requirement-profile-grid">${REQUIREMENT_PROMOTER_FIELDS.map(([key,label,type]) => { const value = Array.isArray(data.promoter?.[key]) ? data.promoter[key].join(', ') : (data.promoter?.[key] ?? ''); const field = type === 'yesno' ? `<select class="input" data-promoter-field="${key}" data-field-type="${type}" ${editable ? '' : 'disabled'}><option value="">No definido</option><option value="Sí" ${value === 'Sí' ? 'selected' : ''}>Sí</option><option value="No" ${value === 'No' ? 'selected' : ''}>No</option></select>` : type === 'doclevel' ? `<select class="input" data-promoter-field="${key}" data-field-type="${type}" ${editable ? '' : 'disabled'}><option value="">No definido</option>${['Baja','Media','Alta'].map(option => `<option value="${option}" ${value === option ? 'selected' : ''}>${option}</option>`).join('')}</select>` : `<input class="input" data-promoter-field="${key}" data-field-type="${type}" ${type === 'number' ? 'type="number" min="0"' : ''} value="${escapeHtml(value)}" ${editable ? '' : 'readonly'}>`; return `<label><span>${escapeHtml(label)}</span>${field}</label>`; }).join('')}</div></div></div>`;
-  if (data.kind === 'shareholders') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Accionistas</strong><div data-legal-rows="shareholder">${legalRowsHtml(data.shareholders || [], 'shareholder', editable)}</div>${editable ? '<button class="btn btn-ghost btn-xs" type="button" data-add-legal-row="shareholder">+ Accionista</button>' : ''}</div></div>`;
-  if (data.kind === 'architecturalPlans') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Modelos/tipologías — información actual de Comercial</strong><div class="requirement-model-grid">${(data.models || []).map(model => `<div><strong>${escapeHtml(model.name || 'Modelo')}</strong><span>${escapeHtml(String(model.unitsCount || 0))} unidades · ${escapeHtml(String(model.bedrooms || 0))} rec. · ${escapeHtml(String(model.bathrooms || 0))} baños</span><span>${escapeHtml(String(model.openAreaM2 || 0))} m² abiertos · ${escapeHtml(String(model.closedAreaM2 || 0))} m² cerrados</span></div>`).join('') || '<span class="requirement-empty">Sin modelos informados.</span>'}</div><p class="requirement-context-warning">Las tipologías son solo contexto. No cuentan como planos ni acreditan por sí solas el requisito.</p></div></div>`;
+  if (data.kind === 'shareholders') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Sociedad promotora</strong><div class="requirement-metrics">${requirementMetric('Promotor', data.company?.promoterName || 'No informado')}${requirementMetric('Razón social', data.company?.legalName || 'No informada')}${requirementMetric('RUC', data.company?.ruc || 'No informado')}</div><p class="requirement-structured-note">Estos datos proceden de la sociedad seleccionada en el proyecto.</p></div><div class="requirement-structured-section"><strong>Composición accionarial</strong><div data-legal-rows="shareholder">${legalRowsHtml(data.shareholders || [], 'shareholder', editable)}</div>${editable ? '<button class="btn btn-ghost btn-xs" type="button" data-add-legal-row="shareholder">+ Accionista</button>' : ''}</div></div>`;
   if (data.kind === 'legalParties') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Accionistas e identificación</strong><div data-legal-rows="shareholder-id">${legalRowsHtml(data.shareholders || [], 'shareholder-id', editable)}</div>${editable ? '<button class="btn btn-ghost btn-xs" type="button" data-add-legal-row="shareholder-id">+ Accionista</button>' : ''}</div><div class="requirement-structured-section"><strong>Dignatarios</strong><div data-legal-rows="dignitary">${legalRowsHtml(data.dignitaries || [], 'dignitary', editable)}</div>${editable ? '<button class="btn btn-ghost btn-xs" type="button" data-add-legal-row="dignitary">+ Dignatario</button>' : ''}</div></div>`;
   if (data.kind === 'cashflow') return `<div class="requirement-structured">${requirementLinesHtml('Usos', data.uses || [])}${requirementLinesHtml('Fuentes', data.sources || [])}</div>`;
   if (data.kind === 'schedule') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Fase', data.phaseName || '—')}${requirementMetric('Inicio previsto', data.startDate ? String(data.startDate).slice(0,10) : '—')}${requirementMetric('Fin previsto', data.endDate ? String(data.endDate).slice(0,10) : '—')}</div></div>`;
   if (data.kind === 'plans') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Anteproyecto', data.preliminaryDesign === true ? 'Informado' : 'No informado')}${requirementMetric('Planos aprobados', data.approvedPlans === true ? 'Sí' : 'No informado')}</div></div>`;
   if (data.kind === 'flag') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric(data.label || 'Estado', data.value ? 'Sí' : 'No')}</div></div>`;
-  if (data.kind === 'insurancePolicies') return `<div class="requirement-structured"><div class="requirement-structured-section"><strong>Pólizas aplicables registradas en Datos técnicos</strong>${insurancePolicyCardsHtml(data.policies || projectInsurancePolicies())}</div></div>`;
+  if (data.kind === 'insurancePolicies') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Cobertura exigida', data.requiredCoveragePct ?? 100, { pct:true })}</div><div class="requirement-structured-section"><strong>Pólizas aplicables registradas en Datos técnicos</strong>${insurancePolicyCardsHtml(data.policies || projectInsurancePolicies())}</div></div>`;
+  if (data.kind === 'accountAdvance') return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Cuenta de avance', data.advanceAccountNumber || '—')}${requirementMetric('Solicitud', data.requestedAt ? String(data.requestedAt).slice(0,10) : '—')}</div>${data.requestDocumentId ? `<a class="btn btn-ghost btn-xs js-secure-file" href="#" data-url="${secureDocUrl(data.requestDocumentId)}" data-filename="${escapeHtml(data.requestDocumentName || 'Solicitud de desembolso.pdf')}" data-action="view">${escapeHtml(data.requestDocumentName || 'Ver solicitud')}</a>` : ''}</div>`;
   const simpleValue = data.technicalInspector ?? data.value ?? (data.exists === true ? 'Sí' : data.exists === false ? 'No' : 'No informado');
-  return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Dato registrado en Bank73', simpleValue || 'No informado')}</div></div>`;
+  return `<div class="requirement-structured"><div class="requirement-metrics">${requirementMetric('Dato del proyecto', simpleValue || 'No informado')}</div></div>`;
 }
 
 function setFinanceRequirementsFullscreen(modal, full) {
@@ -9915,12 +9980,33 @@ function ensureFinanceRequirementsModal() {
       <div class="requirements-modal-header-actions"><button class="btn btn-ghost requirements-modal-icon" type="button" data-toggle-finance-requirements-fullscreen aria-label="Pantalla completa" title="Pantalla completa">⛶</button><button class="btn btn-ghost" type="button" data-close-finance-requirements>✕ Cerrar</button></div>
     </header>
     <div class="requirements-copy-toolbar" data-finance-requirements-copy><label>Reutilizar información de <select class="input" data-finance-requirements-source></select></label><button class="btn btn-ghost btn-xs" type="button" data-copy-finance-requirements>Copiar información</button></div>
+    ${['admin','bank'].includes(myRole) ? `<div class="requirements-manage-toolbar"><button class="btn btn-ghost btn-xs" type="button" data-add-finance-requirement>+ Añadir requisito</button><span>La lista solo puede modificarla el banco o el superadmin.</span></div>
+    <form class="requirement-definition-editor" data-finance-requirement-editor hidden>
+      <input type="hidden" data-editor-id>
+      <label><span>Nombre del requisito</span><input class="input" data-editor-title maxlength="500" required></label>
+      <label><span>Categoría</span><select class="input" data-editor-category>${financeRequirementCategoryOptions()}</select></label>
+      <label><span>Actualización</span><select class="input" data-editor-tracking><option value="none">Solo una vez</option><option value="dynamic">Cuando cambien los datos</option><option value="recurring">Cada cierto periodo</option></select></label>
+      <label data-editor-periodicity-wrap hidden><span>Periodicidad</span><div class="requirement-periodicity-control"><input class="input" data-editor-periodicity type="number" min="1" max="520" value="1"><select class="input" data-editor-periodicity-unit><option value="weeks">semanas</option><option value="months" selected>meses</option><option value="years">años</option></select></div></label>
+      <label data-editor-presales-wrap hidden><span>Preventa requerida (%)</span><input class="input" data-editor-presales type="number" min="0" max="100" step="0.1" value="50"></label>
+      <label data-editor-coverage-wrap hidden><span>Cobertura exigida (%)</span><input class="input" data-editor-coverage type="number" min="0" max="100" step="0.1" value="100"></label>
+      <label><span>Responsable (opcional)</span><input class="input" data-editor-department maxlength="240"></label>
+      <div><button class="btn btn-ghost btn-xs" type="button" data-cancel-finance-requirement>Cancelar</button><button class="btn btn-xs" type="submit">Guardar definición</button></div>
+    </form>` : ''}
     <div data-finance-requirements-progress></div>
     <div class="requirements-modal-list" data-finance-requirements-list></div>
-    <footer class="requirements-modal-actions" data-finance-requirements-actions><button class="btn" type="button" data-save-finance-requirements>Guardar requisitos</button></footer>
+    <footer class="requirements-modal-actions" data-finance-requirements-actions><span class="requirements-autosave-status is-saved" data-finance-requirements-autosave>Autoguardado activo</span><button class="btn" type="button" data-save-finance-requirements>Guardar ahora</button></footer>
   </div>`;
   document.body.appendChild(modal);
   modal.querySelector('[data-close-finance-requirements]').onclick = () => {
+    if (modal._requirementsAutosaveTimer) {
+      clearTimeout(modal._requirementsAutosaveTimer);
+      modal._requirementsAutosaveTimer = null;
+      const saveButton = modal.querySelector('[data-save-finance-requirements]');
+      if (saveButton && saveButton.style.display !== 'none' && !saveButton.disabled) {
+        modal.dataset.requirementsAutosave = 'true';
+        saveButton.click();
+      }
+    }
     setFinanceRequirementsFullscreen(modal, false);
     modal.style.display = 'none';
   };
@@ -9933,7 +10019,8 @@ function ensureFinanceRequirementsModal() {
 function updateFinanceRequirementProgressFromModal(modal) {
   const cards = Array.from(modal.querySelectorAll('[data-finance-requirement]'));
   const requirements = cards.map(card => ({
-    status: card.querySelector('[data-requirement-status]')?.value
+    status: card.querySelector('[data-requirement-completed]')?.checked ? 'CUMPLIDO'
+      : card.querySelector('[data-requirement-status]')?.value
       || (card.querySelector('.requirement-status')?.classList.contains('is-complete') ? 'CUMPLIDO' : 'PENDIENTE')
   }));
   const host = modal.querySelector('[data-finance-requirements-progress]');
@@ -9942,7 +10029,7 @@ function updateFinanceRequirementProgressFromModal(modal) {
 
 function financeRequirementDocsHtml(requirement) {
   const requirementIds = new Set([requirement?._id, ...(requirement?.legacyRequirementIds || [])].map(String).filter(Boolean));
-  const docs = Number(requirement?.number) === 4
+  const docs = Number(requirement?.number) === 16
     ? ARCHITECTURAL_PLAN_DOCS
     : FINANCE_REQUIREMENT_DOCS.filter(doc => requirementIds.has(String(doc.requirementId || '')));
   if (!docs.length) return '<span class="small muted">Sin documentos adjuntos</span>';
@@ -9951,9 +10038,11 @@ function financeRequirementDocsHtml(requirement) {
 
 async function openFinanceRequirements(phase, mode = 'plan') {
   const editable = mode === 'real' && ['admin', 'promoter', 'financiero', 'contable', 'gerencia', 'socios'].includes(myRole);
+  const canUpdateCompletion = true;
+  const canManageDefinitions = ['admin', 'bank'].includes(myRole);
   const modal = ensureFinanceRequirementsModal();
   setFinanceRequirementsFullscreen(modal, false);
-  const requirements = Array.isArray(phase?.requirements) ? phase.requirements.map(item => ({ ...item })) : [];
+  const requirements = Array.isArray(phase?.requirements) ? phase.requirements.filter(item => item?.isArchived !== true).map(item => ({ ...item })) : [];
   if (!INSURANCE_UNITS_CACHE.length) {
     try { INSURANCE_UNITS_CACHE = await apiGet(`/api/units?projectId=${id}`); } catch (_) { /* La cobertura global sigue disponible. */ }
   }
@@ -9972,7 +10061,13 @@ async function openFinanceRequirements(phase, mode = 'plan') {
     ? 'REAL · Cumplimiento y evidencias'
     : 'ESTIMACIÓN · Información prevista/exigida';
   modal.querySelector('[data-finance-requirements-title]').textContent = `Requisitos — ${phase?.name || 'Fase'}`;
-  modal.querySelector('[data-finance-requirements-actions]').style.display = editable ? '' : 'none';
+  modal.querySelector('[data-finance-requirements-actions]').style.display = '';
+  modal.querySelector('[data-save-finance-requirements]').style.display = editable ? '' : 'none';
+  const initialAutosaveStatus = modal.querySelector('[data-finance-requirements-autosave]');
+  if (initialAutosaveStatus) {
+    initialAutosaveStatus.className = 'requirements-autosave-status is-saved';
+    initialAutosaveStatus.textContent = 'Autoguardado activo';
+  }
   const progressHost = modal.querySelector('[data-finance-requirements-progress]');
   if (progressHost) progressHost.innerHTML = financeRequirementProgressHtml(requirements);
   const copyToolbar = modal.querySelector('[data-finance-requirements-copy]');
@@ -9980,7 +10075,78 @@ async function openFinanceRequirements(phase, mode = 'plan') {
   const otherPhases = (FINANCE?.phases || []).filter(item => String(item._id) !== String(phase?._id));
   copyToolbar.style.display = editable && otherPhases.length ? '' : 'none';
   sourceSelect.innerHTML = '<option value="">Selecciona una fase</option>' + otherPhases.map(item => `<option value="${escapeHtml(item._id)}">${escapeHtml(item.name || 'Fase')}</option>`).join('');
-  modal.querySelector('[data-finance-requirements-list]').innerHTML = requirements.map(item => {
+  const definitionEditor = modal.querySelector('[data-finance-requirement-editor]');
+  const definitionTracking = definitionEditor?.querySelector('[data-editor-tracking]');
+  const syncDefinitionPeriodicity = () => {
+    const wrap = definitionEditor?.querySelector('[data-editor-periodicity-wrap]');
+    if (wrap) wrap.hidden = definitionTracking?.value !== 'recurring';
+    const presalesWrap = definitionEditor?.querySelector('[data-editor-presales-wrap]');
+    if (presalesWrap) presalesWrap.hidden = Number(definitionEditor?.dataset.requirementNumber || 0) !== 20;
+    const coverageWrap = definitionEditor?.querySelector('[data-editor-coverage-wrap]');
+    if (coverageWrap) coverageWrap.hidden = Number(definitionEditor?.dataset.requirementNumber || 0) !== 24;
+  };
+  if (definitionTracking) definitionTracking.onchange = syncDefinitionPeriodicity;
+  const openDefinitionEditor = item => {
+    if (!definitionEditor) return;
+    definitionEditor.reset();
+    const dynamicOption = definitionEditor.querySelector('[data-editor-tracking] option[value="dynamic"]');
+    if (dynamicOption) {
+      dynamicOption.disabled = !item || item.isCustom === true || (item.sourceKey !== 'bank73' && !item.structuredData);
+      dynamicOption.title = dynamicOption.disabled ? 'Solo disponible para requisitos conectados con un dato del proyecto.' : '';
+    }
+    definitionEditor.dataset.requirementNumber = String(item?.number || '');
+    definitionEditor.querySelector('[data-editor-id]').value = item?._id || '';
+    definitionEditor.querySelector('[data-editor-title]').value = item?.title || '';
+    definitionEditor.querySelector('[data-editor-category]').innerHTML = financeRequirementCategoryOptions(item?.category || 'general');
+    definitionEditor.querySelector('[data-editor-tracking]').value = item?.trackingType || 'none';
+    definitionEditor.querySelector('[data-editor-periodicity]').value = item?.structuredData?.periodicityValue || item?.structuredData?.periodicityMonths || 1;
+    definitionEditor.querySelector('[data-editor-periodicity-unit]').value = item?.structuredData?.periodicityUnit || 'months';
+    definitionEditor.querySelector('[data-editor-presales]').value = item?.structuredData?.requiredPresalesPct ?? 50;
+    definitionEditor.querySelector('[data-editor-coverage]').value = item?.structuredData?.requiredCoveragePct ?? 100;
+    definitionEditor.querySelector('[data-editor-department]').value = item?.responsibleDepartment || '';
+    definitionEditor.hidden = false;
+    syncDefinitionPeriodicity();
+    definitionEditor.querySelector('[data-editor-title]').focus();
+  };
+  const addDefinitionButton = modal.querySelector('[data-add-finance-requirement]');
+  if (addDefinitionButton) addDefinitionButton.onclick = () => openDefinitionEditor(null);
+  const cancelDefinitionButton = modal.querySelector('[data-cancel-finance-requirement]');
+  if (cancelDefinitionButton) cancelDefinitionButton.onclick = () => { definitionEditor.hidden = true; };
+  if (definitionEditor) definitionEditor.onsubmit = async event => {
+    event.preventDefault();
+    const requirementId = definitionEditor.querySelector('[data-editor-id]').value;
+    const payload = {
+      title:definitionEditor.querySelector('[data-editor-title]').value.trim(),
+      category:definitionEditor.querySelector('[data-editor-category]').value,
+      trackingType:definitionEditor.querySelector('[data-editor-tracking]').value,
+      periodicityMonths:Number(definitionEditor.querySelector('[data-editor-periodicity]').value || 1),
+      periodicityValue:Number(definitionEditor.querySelector('[data-editor-periodicity]').value || 1),
+      periodicityUnit:definitionEditor.querySelector('[data-editor-periodicity-unit]').value,
+      requiredPresalesPct:Number(definitionEditor.querySelector('[data-editor-presales]').value || 0),
+      requiredCoveragePct:Number(definitionEditor.querySelector('[data-editor-coverage]').value || 100),
+      responsibleDepartment:definitionEditor.querySelector('[data-editor-department]').value.trim()
+    };
+    if (!payload.title) return;
+    const submit = definitionEditor.querySelector('[type="submit"]');
+    submit.disabled = true;
+    try {
+      if (requirementId) await API.patch(`/api/projects/${id}/finance/phases/${phase._id}/requirements/${requirementId}`, payload);
+      else await API.post(`/api/projects/${id}/finance/phases/${phase._id}/requirements`, payload);
+      definitionEditor.hidden = true;
+      await loadFinance();
+      const refreshed = (FINANCE?.phases || []).find(item => String(item._id) === String(phase._id));
+      if (refreshed) await openFinanceRequirements(refreshed, mode);
+    } catch (error) {
+      alert(error.message || 'No se pudo guardar el requisito.');
+    } finally {
+      submit.disabled = false;
+    }
+  };
+  const orderedRequirements = FINANCE_REQUIREMENT_CATEGORY_ORDER.flatMap(category =>
+    requirements.filter(item => (item.category || 'general') === category)
+  );
+  const displayNumberByRequirement = new Map(orderedRequirements.map((item, index) => [String(item._id || item.code || item.number), index + 1]));
+  const financeRequirementCardHtml = item => {
     const isManual = item.sourceKey !== 'bank73';
     const guidance = financeRequirementInputGuidance(item.title || '');
     const presalesTargetReached = mode === 'real' && Number(item.number) === 20
@@ -9995,51 +10161,123 @@ async function openFinanceRequirements(phase, mode = 'plan') {
       && numOr0(item.structuredData?.requiredAmount) > 0;
     const bondExpired = mode === 'real' && [25, 26].includes(Number(item.number))
       && financeBondValidity(item.structuredData).status === 'EXPIRED';
-    const followUpMeta = mode === 'real' && [27, 29].includes(Number(item.number))
+    const followUpMeta = mode === 'real' && item.trackingType === 'recurring'
       ? financePeriodicFollowUpMeta(item.structuredData)
       : { current:false, due:false };
     const displayedStatus = bondExpired
       ? 'VENCIDA / PENDIENTE'
       : followUpMeta.due ? 'REVISIÓN PENDIENTE' : (item.status || 'PENDIENTE');
+    const displayNumber = displayNumberByRequirement.get(String(item._id || item.code || item.number)) || item.number;
+    const documentsLabel = Number(item.number) === 16
+      ? 'Planos firmados del proyecto'
+      : Number(item.number) === 4 ? 'Imágenes y planta de la unidad' : 'Documentos/evidencias';
     return `
-    <article class="requirement-card${presalesTargetReached || performanceBondReached || paymentBondReached || followUpMeta.current ? ' is-requirement-target-reached' : ''}${bondExpired || followUpMeta.due ? ' is-requirement-expired' : ''}" data-finance-requirement="${escapeHtml(item._id || '')}" data-requirement-number="${item.number}">
-      <div class="requirement-card-heading">
-        <strong class="requirement-title"><span>${item.number}</span>${escapeHtml(item.title || '')}</strong>
-        <span class="requirement-status ${item.status === 'CUMPLIDO' && !bondExpired ? 'is-complete' : 'is-pending'}">${escapeHtml(displayedStatus)}</span>
+    <article class="requirement-card${item.trackingType !== 'none' ? ' has-follow-up' : ''}${presalesTargetReached || performanceBondReached || paymentBondReached || followUpMeta.current ? ' is-requirement-target-reached' : ''}${bondExpired || followUpMeta.due ? ' is-requirement-expired' : ''}" data-finance-requirement="${escapeHtml(item._id || '')}" data-requirement-number="${item.number}">
+      <div class="requirement-card-topline">
+        <div class="requirement-card-heading">
+          <strong class="requirement-title"><span>${displayNumber}</span>${escapeHtml(item.title || '')}</strong>
+          <p class="requirement-card-summary">${escapeHtml(financeRequirementCardSummary(item))}</p>
+          <div class="requirement-card-tags"><span class="requirement-category">${escapeHtml(FINANCE_REQUIREMENT_CATEGORY_LABELS[item.category] || FINANCE_REQUIREMENT_CATEGORY_LABELS.general)}</span>${item.trackingType !== 'none' ? `<span class="requirement-follow-up-badge">${item.trackingType === 'recurring' ? 'Se renueva por periodo' : 'Se actualiza con los datos'}</span>` : ''}<span class="requirement-source ${isManual ? 'is-manual' : 'is-bank73'}">${escapeHtml(item.sourceLabel || 'Entrada manual')}</span>${item.responsibleDepartment ? `<span class="requirement-department">${escapeHtml(item.responsibleDepartment)}</span>` : ''}</div>
+        </div>
+        <div class="requirement-card-controls">
+          <button class="btn btn-ghost btn-xs requirement-details-toggle" type="button" data-toggle-requirement-details aria-expanded="false">Ver detalle</button>
+          ${canManageDefinitions ? `<div class="requirement-definition-actions"><button class="btn btn-ghost btn-xs" type="button" data-edit-finance-requirement>Editar</button><button class="btn btn-ghost btn-xs is-danger" type="button" data-delete-finance-requirement>Eliminar</button></div>` : ''}
+          <label class="requirement-completion-check"><input type="checkbox" data-requirement-completed ${item.status === 'CUMPLIDO' && !bondExpired ? 'checked' : ''} ${canUpdateCompletion ? '' : 'disabled'}><span aria-hidden="true"></span><b>${escapeHtml(displayedStatus === 'CUMPLIDO' ? 'Cumplido' : displayedStatus === 'PENDIENTE' ? 'Pendiente' : displayedStatus)}</b></label>
+        </div>
       </div>
-      <div class="requirement-source ${isManual ? 'is-manual' : 'is-bank73'}">${escapeHtml(item.sourceLabel || 'Entrada manual')}</div>
-      <div class="requirement-help">${escapeHtml(guidance)}</div>
-      ${financeStructuredRequirementHtml(item, editable, mode)}
-      ${Number(item.number) === 24 && editable ? `<div class="requirement-structured-section"><strong>Editar pólizas en la fuente de Datos técnicos</strong><div data-requirement-policy-editor>${projectInsurancePolicies().map(policy => insurancePolicyEditorRow(policy)).join('')}</div><button class="btn btn-ghost btn-xs" type="button" data-add-requirement-policy>+ Añadir póliza</button></div>` : ''}
-      <label class="requirement-field"><span>${item.number === 2 ? 'Experiencia del contratista' : 'Información manual o adicional'}</span>
-        <textarea class="input" rows="3" data-requirement-information placeholder="Introduce información adicional…" ${editable ? '' : 'readonly'}>${escapeHtml(item.manualInformation || (item.sourceKey === 'manual' ? item.information || '' : ''))}</textarea>
-      </label>
-      ${mode === 'real' ? `<div style="display:grid;grid-template-columns:minmax(180px,260px) 1fr;gap:10px;margin-top:8px;">
-        <label>Estado<select class="input" data-requirement-status ${editable && ![25, 26, 27, 29].includes(Number(item.number)) ? '' : 'disabled'}><option value="PENDIENTE" ${item.status !== 'CUMPLIDO' ? 'selected' : ''}>Pendiente</option><option value="CUMPLIDO" ${item.status === 'CUMPLIDO' ? 'selected' : ''}>Cumplido</option></select></label>
-        <label>Observaciones<textarea class="input" rows="2" data-requirement-observations ${editable ? '' : 'readonly'}>${escapeHtml(item.observations || '')}</textarea></label>
-      </div>` : ''}
-      ${Number(item.number) === 24 ? '' : `<div class="requirement-evidence"><strong>${item.number === 4 ? 'Planos compartidos con Datos técnicos' : 'Documentos/evidencias'}</strong>${financeRequirementDocsHtml(item)}</div>`}
-      ${editable && Number(item.number) !== 24 ? `<div class="requirement-documents-row"><label class="btn btn-ghost btn-xs requirement-upload-button">${item.number === 4 ? 'Adjuntar planos' : 'Adjuntar documentos'}<input type="file" multiple data-requirement-files ${item.number === 4 ? 'accept=".pdf,.jpg,.jpeg,.png"' : ''}></label><span class="requirement-file-name" data-requirement-file-name>Sin nuevos archivos</span></div>` : ''}
+      <div class="requirement-card-body" data-requirement-card-body hidden>
+        ${item.completedAt ? `<div class="requirement-completion-meta">Marcado como cumplido el ${escapeHtml(String(item.completedAt).slice(0, 10))}${item.completedByRole ? ` · ${escapeHtml(item.completedByRole)}` : ''}</div>` : ''}
+        <div class="requirement-help">${escapeHtml(guidance)}</div>
+        ${financeStructuredRequirementHtml(item, editable, mode)}
+        ${Number(item.number) === 24 && editable ? `<div class="requirement-structured-section"><strong>Editar pólizas en la fuente de Datos técnicos</strong><div data-requirement-policy-editor>${projectInsurancePolicies().map(policy => insurancePolicyEditorRow(policy)).join('')}</div><button class="btn btn-ghost btn-xs" type="button" data-add-requirement-policy>+ Añadir póliza</button></div>` : ''}
+        <label class="requirement-field"><span>${item.number === 2 ? 'Experiencia del contratista' : 'Información manual o adicional'}</span>
+          <textarea class="input" rows="2" data-requirement-information placeholder="Introduce información adicional…" ${editable ? '' : 'readonly'}>${escapeHtml(item.manualInformation || (item.sourceKey === 'manual' ? item.information || '' : ''))}</textarea>
+        </label>
+        ${mode === 'real' ? `<label class="requirement-field"><span>Observaciones</span><textarea class="input" rows="2" data-requirement-observations ${editable ? '' : 'readonly'}>${escapeHtml(item.observations || '')}</textarea></label>` : ''}
+        ${Number(item.number) === 24 ? '' : `<div class="requirement-evidence"><strong>${documentsLabel}</strong>${financeRequirementDocsHtml(item)}</div>`}
+        ${canUpdateCompletion && Number(item.number) !== 24 ? `<div class="requirement-documents-row"><label class="btn btn-ghost btn-xs requirement-upload-button">Adjuntar archivos<input type="file" multiple data-requirement-files ${[4, 16].includes(Number(item.number)) ? 'accept=".pdf,.jpg,.jpeg,.png"' : ''}></label><span class="requirement-file-name" data-requirement-file-name>Sin nuevos archivos</span></div>` : ''}
+      </div>
     </article>`;
+  };
+  modal.querySelector('[data-finance-requirements-list]').innerHTML = FINANCE_REQUIREMENT_CATEGORY_ORDER.map(category => {
+    const items = requirements.filter(item => (item.category || 'general') === category);
+    if (!items.length) return '';
+    return `<section class="requirements-category-group" data-requirement-category="${category}"><header><h4>${escapeHtml(FINANCE_REQUIREMENT_CATEGORY_LABELS[category])}</h4><span>${items.length} requisito${items.length === 1 ? '' : 's'}</span></header>${items.map(financeRequirementCardHtml).join('')}</section>`;
   }).join('') || '<div class="small muted">No hay requisitos configurados para esta fase.</div>';
 
-  modal.querySelectorAll('[data-requirement-files]').forEach(input => input.addEventListener('change', () => {
+  modal.querySelectorAll('[data-toggle-requirement-details]').forEach(button => button.addEventListener('click', () => {
+    const card = button.closest('[data-finance-requirement]');
+    const body = card?.querySelector('[data-requirement-card-body]');
+    if (!card || !body) return;
+    const expanded = body.hidden;
+    body.hidden = !expanded;
+    card.classList.toggle('is-expanded', expanded);
+    button.setAttribute('aria-expanded', String(expanded));
+    button.textContent = expanded ? 'Ocultar detalle' : 'Ver detalle';
+  }));
+
+  modal.querySelectorAll('[data-requirement-files]').forEach(input => input.addEventListener('change', async () => {
     const label = input.closest('[data-finance-requirement]').querySelector('[data-requirement-file-name]');
     const files = Array.from(input.files || []);
     if (label) label.textContent = files.length ? files.map(file => file.name).join(', ') : 'Sin nuevos archivos';
-  }));
-  modal.querySelectorAll('[data-requirement-status]').forEach(select => {
-    select.addEventListener('change', () => {
-      const badge = select.closest('[data-finance-requirement]')?.querySelector('.requirement-status');
-      const completed = select.value === 'CUMPLIDO';
-      if (badge) {
-        badge.textContent = completed ? 'CUMPLIDO' : 'PENDIENTE';
-        badge.classList.toggle('is-complete', completed);
-        badge.classList.toggle('is-pending', !completed);
+    if (!files.length) return;
+    input.disabled = true;
+    try {
+      const row = input.closest('[data-finance-requirement]');
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append('files', file);
+        fd.append('projectId', id);
+        if (Number(row.dataset.requirementNumber) === 16) {
+          fd.append('category', 'architecturalPlans');
+          fd.append('folder', 'tecnico');
+          await API.upload('/api/documents/upload?category=architecturalPlans', fd);
+        } else {
+          fd.append('requirementId', row.dataset.financeRequirement);
+          fd.append('financePhaseId', phase._id);
+          fd.append('category', 'financeRequirement');
+          fd.append('folder', 'financiero');
+          await API.upload('/api/documents/upload?category=financeRequirement', fd);
+        }
       }
+      input.value = '';
+      if (label) label.textContent = 'Documentos adjuntados';
+    } catch (error) {
+      alert(error.message || 'No se pudieron adjuntar los documentos.');
+    } finally {
+      input.disabled = false;
+    }
+  }));
+  modal.querySelectorAll('[data-requirement-completed]').forEach(input => input.addEventListener('change', async () => {
+    const card = input.closest('[data-finance-requirement]');
+    const label = input.parentElement.querySelector('b');
+    const autosaveStatus = modal.querySelector('[data-finance-requirements-autosave]');
+    if (autosaveStatus) {
+      autosaveStatus.className = 'requirements-autosave-status is-saving';
+      autosaveStatus.textContent = 'Autoguardado: guardando…';
+    }
+    input.disabled = true;
+    try {
+      const result = await API.patch(`/api/projects/${id}/finance/phases/${phase._id}/requirements/${card.dataset.financeRequirement}/status`, { completed:input.checked });
+      const item = requirements.find(entry => String(entry._id) === String(card.dataset.financeRequirement));
+      if (item) item.status = result?.requirement?.status || (input.checked ? 'CUMPLIDO' : 'PENDIENTE');
+      if (label) label.textContent = input.checked ? 'Cumplido' : 'Pendiente';
       updateFinanceRequirementProgressFromModal(modal);
-    });
-  });
+      if (autosaveStatus) {
+        autosaveStatus.className = 'requirements-autosave-status is-saved';
+        autosaveStatus.textContent = 'Autoguardado: guardado';
+      }
+    } catch (error) {
+      input.checked = !input.checked;
+      if (autosaveStatus) {
+        autosaveStatus.className = 'requirements-autosave-status is-error';
+        autosaveStatus.textContent = 'Autoguardado: error al guardar';
+      }
+      alert(error.message || 'No se pudo actualizar el cumplimiento.');
+    } finally {
+      input.disabled = false;
+    }
+  }));
   const syncBondRequirementCard = card => {
     const number = Number(card?.dataset.requirementNumber);
     if (![25, 26].includes(number)) return;
@@ -10060,6 +10298,12 @@ async function openFinanceRequirements(phase, mode = 'plan') {
     }
     const status = card.querySelector('[data-requirement-status]');
     if (status) status.value = reached ? 'CUMPLIDO' : 'PENDIENTE';
+    const completion = card.querySelector('[data-requirement-completed]');
+    if (completion) {
+      completion.checked = reached;
+      const text = completion.parentElement.querySelector('b');
+      if (text) text.textContent = expired ? 'Vencida / pendiente' : reached ? 'Cumplido' : 'Pendiente';
+    }
     const validityLabel = card.querySelector('[data-bond-validity-label]');
     if (validityLabel) validityLabel.textContent = validity.label;
     updateFinanceRequirementProgressFromModal(modal);
@@ -10071,9 +10315,10 @@ async function openFinanceRequirements(phase, mode = 'plan') {
   });
   const syncPeriodicFollowUpCard = card => {
     if (!card) return;
-    const periodicityMonths = Math.max(1, Math.min(120, Math.round(Number(card.querySelector('[data-follow-up-field="periodicityMonths"]')?.value) || (Number(card.dataset.requirementNumber) === 27 ? 4 : 1))));
+    const periodicityValue = Math.max(1, Math.min(520, Math.round(Number(card.querySelector('[data-follow-up-field="periodicityValue"]')?.value) || (Number(card.dataset.requirementNumber) === 27 ? 4 : 1))));
+    const periodicityUnit = card.querySelector('[data-follow-up-field="periodicityUnit"]')?.value || (Number(card.dataset.requirementNumber) === 27 ? 'months' : 'years');
     const lastRecordDate = card.querySelector('[data-follow-up-field="lastRecordDate"]')?.value || '';
-    const nextReviewDate = financeAddMonthsClamped(lastRecordDate, periodicityMonths);
+    const nextReviewDate = financeAddPeriodClamped(lastRecordDate, periodicityValue, periodicityUnit);
     const nextInput = card.querySelector('[data-follow-up-field="nextReviewDate"]');
     if (nextInput) nextInput.value = nextReviewDate;
     const meta = financePeriodicFollowUpMeta({ nextReviewDate });
@@ -10089,9 +10334,15 @@ async function openFinanceRequirements(phase, mode = 'plan') {
     }
     const status = card.querySelector('[data-requirement-status]');
     if (status) status.value = meta.current ? 'CUMPLIDO' : 'PENDIENTE';
+    const completion = card.querySelector('[data-requirement-completed]');
+    if (completion) {
+      completion.checked = meta.current;
+      const text = completion.parentElement.querySelector('b');
+      if (text) text.textContent = meta.due ? 'Revisión pendiente' : meta.current ? 'Cumplido' : 'Pendiente';
+    }
     updateFinanceRequirementProgressFromModal(modal);
   };
-  modal.querySelectorAll('[data-follow-up-field="periodicityMonths"], [data-follow-up-field="lastRecordDate"]').forEach(input => {
+  modal.querySelectorAll('[data-follow-up-field="periodicityValue"], [data-follow-up-field="periodicityUnit"], [data-follow-up-field="lastRecordDate"]').forEach(input => {
     input.addEventListener('input', () => syncPeriodicFollowUpCard(input.closest('[data-finance-requirement]')));
   });
   bindInsurancePolicyEditor(modal);
@@ -10123,6 +10374,28 @@ async function openFinanceRequirements(phase, mode = 'plan') {
   };
 
   modal.querySelector('[data-finance-requirements-list]').onclick = event => {
+    const editDefinition = event.target.closest('[data-edit-finance-requirement]');
+    if (editDefinition) {
+      const card = editDefinition.closest('[data-finance-requirement]');
+      const item = requirements.find(entry => String(entry._id) === String(card?.dataset.financeRequirement));
+      if (item) openDefinitionEditor(item);
+      return;
+    }
+    const deleteDefinition = event.target.closest('[data-delete-finance-requirement]');
+    if (deleteDefinition) {
+      const card = deleteDefinition.closest('[data-finance-requirement]');
+      const item = requirements.find(entry => String(entry._id) === String(card?.dataset.financeRequirement));
+      if (!item || !confirm(`¿Eliminar el requisito "${item.title}" de esta fase?`)) return;
+      deleteDefinition.disabled = true;
+      API.del(`/api/projects/${id}/finance/phases/${phase._id}/requirements/${item._id}`)
+        .then(async () => {
+          await loadFinance();
+          const refreshed = (FINANCE?.phases || []).find(entry => String(entry._id) === String(phase._id));
+          if (refreshed) await openFinanceRequirements(refreshed, mode);
+        })
+        .catch(error => { deleteDefinition.disabled = false; alert(error.message || 'No se pudo eliminar el requisito.'); });
+      return;
+    }
     const remove = event.target.closest('[data-remove-legal-row]');
     if (remove) return remove.closest('[data-legal-row]')?.remove();
     const add = event.target.closest('[data-add-legal-row]');
@@ -10134,6 +10407,13 @@ async function openFinanceRequirements(phase, mode = 'plan') {
 
   modal.querySelector('[data-save-finance-requirements]').onclick = async event => {
     const button = event.currentTarget;
+    const autosave = modal.dataset.requirementsAutosave === 'true';
+    delete modal.dataset.requirementsAutosave;
+    const autosaveStatus = modal.querySelector('[data-finance-requirements-autosave]');
+    if (autosaveStatus) {
+      autosaveStatus.className = 'requirements-autosave-status is-saving';
+      autosaveStatus.textContent = 'Autoguardado: guardando…';
+    }
     button.disabled = true;
     try {
       const rows = Array.from(modal.querySelectorAll('[data-finance-requirement]'));
@@ -10147,7 +10427,13 @@ async function openFinanceRequirements(phase, mode = 'plan') {
           values[input.dataset.promoterField] = type === 'number' ? (input.value === '' ? null : Number(input.value)) : type === 'list' ? input.value.split(',').map(value => value.trim()).filter(Boolean) : input.value.trim();
         });
         const overwrites = Object.keys(values).some(key => originalPromoter[key] !== null && originalPromoter[key] !== '' && (!Array.isArray(originalPromoter[key]) || originalPromoter[key].length) && JSON.stringify(values[key]) !== JSON.stringify(originalPromoter[key]));
-        if (overwrites && !confirm('Has modificado datos ya existentes del perfil del promotor. ¿Quieres actualizar también el perfil original?')) return;
+        if (overwrites && !confirm('Has modificado datos ya existentes del perfil del promotor. ¿Quieres actualizar también el perfil original?')) {
+          if (autosaveStatus) {
+            autosaveStatus.className = 'requirements-autosave-status is-pending';
+            autosaveStatus.textContent = 'Autoguardado: cambios pendientes';
+          }
+          return;
+        }
         if (JSON.stringify(values) !== JSON.stringify(originalPromoter)) await API.put(`/api/projects/${id}/finance/promoter-experience`, { values, base: originalPromoter, allowOverwrite: overwrites });
       }
 
@@ -10165,11 +10451,17 @@ async function openFinanceRequirements(phase, mode = 'plan') {
       const legalValues = { shareholders, dignitaries };
       if (JSON.stringify(legalValues) !== JSON.stringify(legalBase)) {
         const hasExistingLegal = legalBase.shareholders.length || legalBase.dignitaries.length;
-        if (hasExistingLegal && !confirm('Has modificado datos legales ya existentes. ¿Quieres actualizar también los datos legales originales del proyecto?')) return;
+        if (hasExistingLegal && !confirm('Has modificado datos legales ya existentes. ¿Quieres actualizar también los datos legales originales del proyecto?')) {
+          if (autosaveStatus) {
+            autosaveStatus.className = 'requirements-autosave-status is-pending';
+            autosaveStatus.textContent = 'Autoguardado: cambios pendientes';
+          }
+          return;
+        }
         await API.put(`/api/projects/${id}/finance/legal-parties`, { values: legalValues, base: legalBase, allowOverwrite: !!hasExistingLegal });
       }
 
-      const followUpWithoutDate = rows.find(row => [27, 29].includes(Number(row.dataset.requirementNumber))
+      const followUpWithoutDate = rows.find(row => [7, 27].includes(Number(row.dataset.requirementNumber))
         && (row.querySelector('[data-requirement-files]')?.files?.length || 0) > 0
         && !row.querySelector('[data-follow-up-field="lastRecordDate"]')?.value);
       if (followUpWithoutDate) {
@@ -10200,17 +10492,19 @@ async function openFinanceRequirements(phase, mode = 'plan') {
           startDate: row.querySelector('[data-payment-bond-field="startDate"]')?.value || null,
           expiryDate: row.querySelector('[data-payment-bond-field="expiryDate"]')?.value || null,
           alertDaysBefore: Math.max(0, Math.min(3650, Math.round(Number(row.querySelector('[data-payment-bond-field="alertDaysBefore"]')?.value ?? 30))))
-        } : [27, 29].includes(number) ? {
+        } : [7, 27].includes(number) ? {
           ...(original.structuredData || {}),
           kind: 'periodicFollowUp',
-          followUpType: number === 27 ? 'engineeringInspection' : 'accountAdvance',
-          periodicityMonths: Math.max(1, Math.min(120, Math.round(Number(row.querySelector('[data-follow-up-field="periodicityMonths"]')?.value) || (number === 27 ? 4 : 1)))),
+          followUpType: number === 27 ? 'engineeringInspection' : 'debtorFinancialStatements',
+          periodicityValue: Math.max(1, Math.min(520, Math.round(Number(row.querySelector('[data-follow-up-field="periodicityValue"]')?.value) || original.structuredData?.periodicityValue || (number === 27 ? 4 : 1)))),
+          periodicityUnit: row.querySelector('[data-follow-up-field="periodicityUnit"]')?.value || original.structuredData?.periodicityUnit || (number === 27 ? 'months' : 'years'),
+          periodicityMonths: original.structuredData?.periodicityMonths || (number === 27 ? 4 : 12),
           lastRecordDate: row.querySelector('[data-follow-up-field="lastRecordDate"]')?.value || null,
           nextReviewDate: row.querySelector('[data-follow-up-field="nextReviewDate"]')?.value || null
         } : original.structuredData;
         const automaticStatus = [25, 26].includes(number)
           ? (financeBondValidity(structuredData).status === 'CURRENT' && numOr0(structuredData?.requiredAmount) > 0 && numOr0(structuredData?.actualAmount) >= numOr0(structuredData?.requiredAmount) ? 'CUMPLIDO' : 'PENDIENTE')
-          : [27, 29].includes(number)
+          : [7, 27].includes(number)
             ? (financePeriodicFollowUpMeta(structuredData).current ? 'CUMPLIDO' : 'PENDIENTE')
             : null;
         return {
@@ -10220,45 +10514,55 @@ async function openFinanceRequirements(phase, mode = 'plan') {
           manualInformation,
           information: original.information || manualInformation,
           sourceKey: original.structuredData?.kind ? (original.sourceKey || 'bank73') : 'manual',
-          sourceLabel: original.structuredData?.kind ? (original.sourceLabel || 'Precargado desde Bank73') : 'Entrada manual',
+          sourceLabel: original.structuredData?.kind ? (original.sourceLabel || 'Dato del proyecto') : 'Entrada manual',
           status: automaticStatus || row.querySelector('[data-requirement-status]')?.value || original.status || 'PENDIENTE',
           observations: row.querySelector('[data-requirement-observations]')?.value.trim() || ''
         };
       });
       await API.put(`/api/projects/${id}/finance/phases/${phase._id}`, { requirements: updated });
-      for (const row of rows) {
-        const requirementId = row.dataset.financeRequirement;
-        const files = Array.from(row.querySelector('[data-requirement-files]')?.files || []);
-        for (const file of files) {
-          const fd = new FormData();
-          fd.append('files', file);
-          fd.append('projectId', id);
-          const requirementNumber = Number(row.dataset.requirementNumber);
-          if (requirementNumber === 4) {
-            fd.append('category', 'architecturalPlans');
-            fd.append('folder', 'tecnico');
-            await API.upload('/api/documents/upload?category=architecturalPlans', fd);
-          } else {
-            fd.append('requirementId', requirementId);
-            fd.append('financePhaseId', phase._id);
-            fd.append('category', 'financeRequirement');
-            fd.append('folder', 'financiero');
-            await API.upload('/api/documents/upload?category=financeRequirement', fd);
-          }
-        }
+      if (!autosave) {
+        setFinanceRequirementsFullscreen(modal, false);
+        modal.style.display = 'none';
       }
-      setFinanceRequirementsFullscreen(modal, false);
-      modal.style.display = 'none';
       await loadFinance();
+      const refreshedPhase = (FINANCE?.phases || []).find(entry => String(entry._id) === String(phase._id));
+      if (refreshedPhase?.requirements) requirements.splice(0, requirements.length, ...refreshedPhase.requirements.map(item => ({ ...item })));
       await markProjectDataChanged();
       await window.refreshProjectExpiryAlerts?.();
+      if (autosaveStatus) {
+        autosaveStatus.className = 'requirements-autosave-status is-saved';
+        autosaveStatus.textContent = 'Autoguardado: guardado';
+      }
     } catch (error) {
       console.error(error);
-      alert(error.message || 'No se pudieron guardar los requisitos.');
+      if (autosaveStatus) {
+        autosaveStatus.className = 'requirements-autosave-status is-error';
+        autosaveStatus.textContent = 'Autoguardado: error al guardar';
+      }
+      if (!autosave) alert(error.message || 'No se pudieron guardar los requisitos.');
     } finally {
       button.disabled = false;
     }
   };
+  const queueRequirementsAutosave = () => {
+    if (!editable) return;
+    const autosaveStatus = modal.querySelector('[data-finance-requirements-autosave]');
+    if (autosaveStatus) {
+      autosaveStatus.className = 'requirements-autosave-status is-pending';
+      autosaveStatus.textContent = 'Autoguardado: cambios pendientes';
+    }
+    clearTimeout(modal._requirementsAutosaveTimer);
+    modal._requirementsAutosaveTimer = setTimeout(() => {
+      const button = modal.querySelector('[data-save-finance-requirements]');
+      if (button?.disabled) return queueRequirementsAutosave();
+      modal.dataset.requirementsAutosave = 'true';
+      button?.click();
+    }, 900);
+  };
+  modal.querySelectorAll('[data-finance-requirements-list] input:not([type="file"]):not([data-requirement-completed]), [data-finance-requirements-list] textarea, [data-finance-requirements-list] select').forEach(control => {
+    control.addEventListener('input', queueRequirementsAutosave);
+    control.addEventListener('change', queueRequirementsAutosave);
+  });
   modal.style.display = 'flex';
   await hydrateSecureImages(modal);
 }
@@ -12874,20 +13178,20 @@ async function getPeriodicRequirementAlerts() {
     const res = await getProjectFinanceSnapshot();
     return (res?.finance?.phases || []).flatMap(phase => (phase.requirements || []).map(requirement => {
       const number = Number(requirement.number);
-      if (![27, 29].includes(number)) return null;
+      if (![7, 27].includes(number)) return null;
       const data = requirement.structuredData || {};
       const days = daysUntil(data.nextReviewDate);
       if (days === null || days > 0) return null;
       const due = String(data.nextReviewDate).slice(0, 10);
       const sourceId = `${phase._id || 'phase'}:${requirement._id || number}`;
       return {
-        kind: number === 27 ? 'engineering_inspection_follow_up' : 'account_advance_follow_up',
+        kind: number === 27 ? 'engineering_inspection_follow_up' : 'financial_statements_follow_up',
         sourceId,
-        alertKey: expiryAlertKey(number === 27 ? 'engineering_inspection_follow_up' : 'account_advance_follow_up', sourceId, due),
+        alertKey: expiryAlertKey(number === 27 ? 'engineering_inspection_follow_up' : 'financial_statements_follow_up', sourceId, due),
         days,
         due,
         phaseName: phase.name || 'Fase',
-        periodicityMonths: data.periodicityMonths || (number === 27 ? 4 : 1)
+        periodicityMonths: data.periodicityMonths || (number === 27 ? 4 : 12)
       };
     }).filter(Boolean));
   } catch (error) {

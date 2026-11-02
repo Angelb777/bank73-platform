@@ -183,7 +183,7 @@ async function buildBaseSnapshot({ scope, inspectionDate = new Date(), excludeIn
 
   const phaseSource = finance?.phases?.length ? finance.phases : (project.financePhases || []);
   const phases = phaseSource.map(phase => phaseDto(phase, new Date(inspectionDate)));
-  const requirements = phaseSource.flatMap(phase => (phase.requirements || []).map(requirement => ({
+  const requirements = phaseSource.flatMap(phase => (phase.requirements || []).filter(requirement => requirement?.isArchived !== true).map(requirement => ({
     ...plain(requirement),
     phaseId: id(phase._id),
     phaseName: phase.name,
@@ -354,7 +354,7 @@ async function buildBaseSnapshot({ scope, inspectionDate = new Date(), excludeIn
       finance: !!finance,
       previousInspection: !!previousInspection,
       permits: permitItems.length > 0,
-      requirements: phaseSource.some(phase => (phase.requirements || []).length > 0),
+      requirements: phaseSource.some(phase => (phase.requirements || []).some(requirement => requirement?.isArchived !== true)),
       policies: (project.technicalData?.insurancePolicies || []).length > 0,
       units: units.length > 0
     }

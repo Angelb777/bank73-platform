@@ -1648,6 +1648,32 @@ router.post('/inspections/:inspectionId/finalize', async (req, res) => {
       { new: true, runValidators: true }
     ).lean();
     if (!inspection) return res.status(409).json({ error: 'version_conflict' });
+    const finalizedDay = finalizedAt.toISOString().slice(0, 10);
+    await ProjectFinance.updateMany(
+      {
+        project: inspection.projectId,
+        tenantKey: inspection.projectTenantKey,
+        phases: { $elemMatch: { isCompleted: { $ne: true }, requirements: { $elemMatch: { number: 27, isArchived: { $ne: true } } } } }
+      },
+      {
+        $set: {
+          'phases.$[phase].requirements.$[requirement].status': 'CUMPLIDO',
+          'phases.$[phase].requirements.$[requirement].completedAt': finalizedAt,
+          'phases.$[phase].requirements.$[requirement].completedBy': resolved.context.userId,
+          'phases.$[phase].requirements.$[requirement].completedByRole': 'avaluador',
+          'phases.$[phase].requirements.$[requirement].structuredData.lastRecordDate': finalizedDay,
+          'phases.$[phase].requirements.$[requirement].structuredData.nextReviewDate': null,
+          'phases.$[phase].requirements.$[requirement].structuredData.inspectionId': String(inspection._id),
+          'phases.$[phase].requirements.$[requirement].structuredData.reportNumber': String(inspection.reportNumber || '')
+        }
+      },
+      {
+        arrayFilters: [
+          { 'phase.isCompleted': { $ne: true } },
+          { 'requirement.number': 27, 'requirement.isArchived': { $ne: true } }
+        ]
+      }
+    );
     if (inspection.revisesInspectionId) {
       await Inspection.updateOne(
         { _id: inspection.revisesInspectionId, status: 'finalized', supersededByInspectionId: null },

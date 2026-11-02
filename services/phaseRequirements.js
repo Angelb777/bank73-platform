@@ -5,7 +5,7 @@ const REQUIREMENT_TITLES = Object.freeze([
   'Imágenes del proyecto y planta arquitectónica del modelo de la unidad',
   'Estudio de mercado realizado por un tercero',
   'Avalúo del terreno donde se desarrollará el proyecto',
-  'Estados financieros de la sociedad deudora (si aplica)',
+  'Estados financieros de la sociedad deudora',
   'Estados financieros y/o declaración de renta de los accionistas',
   'Identificación de accionistas y dignatarios',
   'Estudio de Impacto Ambiental (EIA) con resolución aprobada',
@@ -26,11 +26,48 @@ const REQUIREMENT_TITLES = Object.freeze([
   'Fianza de cumplimiento requerida sobre el valor de la etapa',
   'Fianza de pago requerida sobre el valor de la etapa',
   'Informe de Inspección de Ingeniería',
-  'Revisión y validación del presupuesto de construcción por la Gerencia de Ingeniería',
   'Cuenta Avance'
 ]);
 
 const REQUIREMENT_STATUSES = Object.freeze(['PENDIENTE', 'CUMPLIDO']);
+
+const REQUIREMENT_CATEGORIES = Object.freeze(['general', 'technical', 'legal', 'financial', 'commercial']);
+const REQUIREMENT_TRACKING_TYPES = Object.freeze(['none', 'dynamic', 'recurring']);
+const REQUIREMENT_CATEGORY_LABELS = Object.freeze({
+  general: 'Información general',
+  technical: 'Técnico',
+  legal: 'Legal y cumplimiento',
+  financial: 'Financiero',
+  commercial: 'Comercial'
+});
+
+// Metadatos genéricos. Los títulos no pertenecen a una entidad concreta y
+// cada proyecto puede personalizarlos sin perder la precarga de dato único.
+const DEFAULT_REQUIREMENT_META = Object.freeze([
+  ['financial', 'none'], ['general', 'none'], ['general', 'none'], ['technical', 'none'],
+  ['commercial', 'none'], ['technical', 'none'], ['financial', 'recurring'], ['financial', 'none'],
+  ['legal', 'none'], ['technical', 'none'], ['technical', 'dynamic'], ['financial', 'none'],
+  ['legal', 'none'], ['legal', 'none'], ['legal', 'none'], ['technical', 'none'],
+  ['legal', 'none'], ['legal', 'none'], ['technical', 'none'], ['commercial', 'dynamic'],
+  ['technical', 'none'], ['technical', 'none'], ['legal', 'none'], ['financial', 'dynamic'],
+  ['financial', 'dynamic'], ['financial', 'dynamic'], ['technical', 'recurring'],
+  ['financial', 'dynamic']
+].map(([category, trackingType], index) => Object.freeze({
+  code: `REQ-${String(index + 1).padStart(3, '0')}`,
+  category,
+  trackingType,
+  sortOrder: index + 1
+})));
+
+function normalizeRequirementCategory(value, fallback = 'general') {
+  const normalized = String(value || '').trim().toLowerCase();
+  return REQUIREMENT_CATEGORIES.includes(normalized) ? normalized : fallback;
+}
+
+function normalizeRequirementTrackingType(value, fallback = 'none') {
+  const normalized = String(value || '').trim().toLowerCase();
+  return REQUIREMENT_TRACKING_TYPES.includes(normalized) ? normalized : fallback;
+}
 
 function cleanText(value, max = 12000) {
   return String(value || '').trim().slice(0, max);
@@ -78,6 +115,24 @@ function addMonthsClamped(dateValue, months) {
   const normalizedMonth = ((targetMonth % 12) + 12) % 12;
   const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
   return `${targetYear}-${String(normalizedMonth + 1).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
+}
+
+function normalizePeriodicityUnit(value, fallback = 'months') {
+  return ['weeks', 'months', 'years'].includes(String(value || '').toLowerCase())
+    ? String(value).toLowerCase()
+    : fallback;
+}
+
+function addPeriodClamped(dateValue, value, unit = 'months') {
+  const date = cleanDate(dateValue);
+  if (!date) return null;
+  const amount = Math.max(1, Math.min(520, Math.round(Number(value) || 1)));
+  const normalizedUnit = normalizePeriodicityUnit(unit);
+  if (normalizedUnit === 'years') return addMonthsClamped(date, amount * 12);
+  if (normalizedUnit === 'months') return addMonthsClamped(date, amount);
+  const [year, month, day] = date.split('-').map(Number);
+  const target = new Date(Date.UTC(year, month - 1, day + amount * 7));
+  return target.toISOString().slice(0, 10);
 }
 
 function periodicFollowUpStatus(nextReviewDate, now = new Date()) {
@@ -255,8 +310,17 @@ function defaultRequirementStructuredData(number, { project = {}, promoterProfil
   const conditions = phase.financialConditions || {};
   if (number === 1) return { kind: 'budget', projectTotal: Number(project.financialConditions?.projectTotal || project.budgetApproved || conditions.phaseTotal || 0), phaseTotal: Number(conditions.phaseTotal || 0), uses: phase.planUses || [] };
   if (number === 2) return { kind: 'experience', promoterId: String(project.assignedPromoters?.[0] || ''), promoter: Object.fromEntries(PROMOTER_EXPERIENCE_FIELDS.map(key => [key, promoterProfile?.[key] ?? (['countries','banksWorkedWith'].includes(key) ? [] : null)])) };
-  if (number === 3) return { kind: 'shareholders', shareholders: legal.shareholders || [] };
-  if (number === 4) return { kind: 'architecturalPlans', models: architecturalModelsStructured(project, commercialUnits) };
+  if (number === 3) return {
+    kind: 'shareholders',
+    company: {
+      promoterName: cleanText(legal.promoterName, 180),
+      legalName: cleanText(legal.promoterLegalName || project.legalCompanyName || project.sociedad, 240),
+      ruc: cleanText(legal.promoterRuc, 120)
+    },
+    shareholders: legal.shareholders || []
+  };
+  // El requisito 4 conserva evidencias documentales propias. No se mezcla con el
+  // requisito 16, que reutiliza los planos técnicos firmados del proyecto.
   if (number === 9) return { kind: 'legalParties', shareholders: legal.shareholders || [], dignitaries: legal.boardMembers || [] };
   if (number === 10) return { kind: 'flag', label: 'EIA aprobado', value: !!project.financialConditions?.precedentConditions?.environmentalStudyApproved };
   if (number === 11) return { kind: 'schedule', phaseName: phase.name || '', startDate: phase.startDate || null, endDate: phase.endDate || null };
@@ -269,7 +333,7 @@ function defaultRequirementStructuredData(number, { project = {}, promoterProfil
     requiredPresalesPct: requiredPresalesPct(conditions.requiredPresales)
   };
   if (number === 21) return { kind: 'inspector', technicalInspector: cleanText(conditions.technicalInspector) };
-  if (number === 22 || number === 28) return { kind: 'constructionBudget', exists: technical.assessment?.constructionBudget ?? null };
+  if (number === 22) return { kind: 'constructionBudget', exists: technical.assessment?.constructionBudget ?? null };
   if (number === 24) return {
     kind: 'insurancePolicies',
     policies: (Array.isArray(technical.insurancePolicies) ? technical.insurancePolicies : []).map(policy => ({
@@ -297,8 +361,9 @@ function defaultRequirementStructuredData(number, { project = {}, promoterProfil
     const phaseValue = Number(conditions.phaseTotal || 0);
     return { kind: 'paymentBond', phaseValue, requiredPct: 25, requiredAmount: phaseValue * 0.25, actualAmount: 0, bondNumber: '', issuer: '', startDate: null, expiryDate: null, alertDaysBefore: 30, validityStatus: 'MISSING_DATES', daysUntilExpiry: null };
   }
-  if (number === 27) return { kind: 'periodicFollowUp', followUpType: 'engineeringInspection', periodicityMonths: 4, lastRecordDate: null, nextReviewDate: null };
-  if (number === 29) return { kind: 'periodicFollowUp', followUpType: 'accountAdvance', periodicityMonths: 1, lastRecordDate: null, nextReviewDate: null };
+  if (number === 7) return { kind: 'periodicFollowUp', followUpType: 'debtorFinancialStatements', periodicityValue: 1, periodicityUnit: 'years', periodicityMonths: 12, lastRecordDate: null, nextReviewDate: null };
+  if (number === 27) return { kind: 'periodicFollowUp', followUpType: 'engineeringInspection', periodicityValue: 4, periodicityUnit: 'months', periodicityMonths: 4, lastRecordDate: null, nextReviewDate: null };
+  if (number === 28) return { kind: 'accountAdvance', requestId: '', advanceAccountNumber: null, requestedAt: null, requestDocumentId: '', requestDocumentName: '' };
   return undefined;
 }
 
@@ -319,7 +384,7 @@ function defaultRequirementInformation(number, { project = {}, promoterProfile =
         listAmounts(phase.planUses || [])
       ].filter(Boolean).join('\n');
     case 2:
-      return promoterExperience(promoterProfile) ? `Promotor (perfil Bank73): ${promoterExperience(promoterProfile)}` : '';
+      return promoterExperience(promoterProfile) ? `Promotor (perfil del proyecto): ${promoterExperience(promoterProfile)}` : '';
     case 3:
       return shareholders.map(item => `${item.name || 'Accionista'}: ${Number(item.percentage || 0)}%`).join('; ');
     case 4:
@@ -331,7 +396,7 @@ function defaultRequirementInformation(number, { project = {}, promoterProfile =
         ...directors.map(item => `Dignatario: ${item.name || ''}${item.position ? `, ${item.position}` : ''}${item.cedula ? `, identificación ${item.cedula}` : ''}`)
       ].join('\n');
     case 10:
-      return project.financialConditions?.precedentConditions?.environmentalStudyApproved ? 'Estudio ambiental marcado como aprobado en Bank73.' : '';
+      return project.financialConditions?.precedentConditions?.environmentalStudyApproved ? 'Estudio ambiental marcado como aprobado en los datos del proyecto.' : '';
     case 11:
       return [
         phase.name || '',
@@ -346,7 +411,7 @@ function defaultRequirementInformation(number, { project = {}, promoterProfile =
     case 16:
       if (project.seeksFinancing !== true) return '';
       return technical.assessment?.preliminaryDesign === true || technical.assessment?.approvedPlans === true
-        ? `Anteproyecto: ${technical.assessment?.preliminaryDesign === true ? 'informado' : 'no informado'}; planos aprobados: ${technical.assessment?.approvedPlans === true ? 'sí' : 'no informado'}. Bank73 no registra aquí las firmas del arquitecto y el ingeniero.`
+        ? `Anteproyecto: ${technical.assessment?.preliminaryDesign === true ? 'informado' : 'no informado'}; planos aprobados: ${technical.assessment?.approvedPlans === true ? 'sí' : 'no informado'}. Las firmas del arquitecto y el ingeniero deben acreditarse documentalmente.`
         : '';
     case 20:
       return [
@@ -356,9 +421,8 @@ function defaultRequirementInformation(number, { project = {}, promoterProfile =
     case 21:
       return conditions.technicalInspector ? `Inspector técnico registrado: ${conditions.technicalInspector}. Este dato no acredita por sí solo la certificación inicial.` : '';
     case 22:
-    case 28:
       return technical.assessment?.constructionBudget === true
-        ? 'Bank73 registra la existencia de un presupuesto de construcción; no consta aquí su validación por la Gerencia de Ingeniería.'
+        ? 'Existe un presupuesto de construcción en los datos técnicos; su validación por Ingeniería debe acreditarse documentalmente.'
         : '';
     case 24:
       return (technical.insurancePolicies || []).length ? `${technical.insurancePolicies.length} póliza(s) CAR/incendio registrada(s) en Datos técnicos.` : '';
@@ -373,7 +437,9 @@ function defaultRequirementInformation(number, { project = {}, promoterProfile =
 
 function normalizePhaseRequirements(raw = [], context = {}) {
   const original = Array.isArray(raw) ? raw : [];
-  const legacyNumbering = original.some(item => Number(item?.number) === 30)
+  const legacyNumbering = original.some(item => Number(item?.number) === 30 && (
+    item?.structuredData?.followUpType === 'accountAdvance' || /Cuenta Avance/i.test(String(item?.title || ''))
+  ))
     || original.some(item => Number(item?.number) === 29 && (item?.structuredData?.kind === 'plans' || /Planos de anteproyecto/i.test(String(item?.title || ''))));
   let prepared = original;
   if (legacyNumbering) {
@@ -399,10 +465,45 @@ function normalizePhaseRequirements(raw = [], context = {}) {
       .concat(unifiedPlans ? [unifiedPlans] : [])
       .concat(old30 ? [{ ...old30, number: 29 }] : []);
   }
+  // El listado original repite literalmente la validación del presupuesto en
+  // los números 22 y 28. Conservamos un solo requisito y toda su trazabilidad.
+  const duplicateBudget = prepared.find(item => Number(item?.number) === 28
+    && /validaci[oó]n del presupuesto de construcci[oó]n/i.test(String(item?.title || '')));
+  const primaryBudget = prepared.find(item => Number(item?.number) === 22);
+  if (duplicateBudget) {
+    const mergeText = (...values) => [...new Set(values.map(value => cleanText(value)).filter(Boolean))].join('\n');
+    const unifiedBudget = {
+      ...(primaryBudget || duplicateBudget),
+      number: 22,
+      information: mergeText(primaryBudget?.information, duplicateBudget?.information),
+      manualInformation: mergeText(primaryBudget?.manualInformation, duplicateBudget?.manualInformation),
+      observations: mergeText(primaryBudget?.observations, duplicateBudget?.observations),
+      status: primaryBudget?.status === 'CUMPLIDO' || duplicateBudget?.status === 'CUMPLIDO' ? 'CUMPLIDO' : 'PENDIENTE',
+      legacyRequirementIds: [...new Set([
+        ...(primaryBudget?.legacyRequirementIds || []).map(String),
+        ...(duplicateBudget?.legacyRequirementIds || []).map(String),
+        ...(primaryBudget?._id && duplicateBudget?._id && String(primaryBudget._id) !== String(duplicateBudget._id) ? [String(duplicateBudget._id)] : [])
+      ])]
+    };
+    prepared = prepared.filter(item => ![22, 28].includes(Number(item?.number))).concat(unifiedBudget);
+  }
+  // Cuenta Avance era 30 en el Excel y 29 tras la primera consolidación.
+  // Pasa a ser 28 al retirar la segunda duplicidad.
+  prepared = prepared.map(item => {
+    const isAccountAdvance = [29, 30].includes(Number(item?.number))
+      && (item?.structuredData?.followUpType === 'accountAdvance'
+        || item?.structuredData?.kind === 'accountAdvance'
+        || /Cuenta Avance/i.test(String(item?.title || '')));
+    return isAccountAdvance ? { ...item, number: 28 } : item;
+  });
   const byNumber = new Map(prepared.map(item => [Number(item?.number), item]));
-  return REQUIREMENT_TITLES.map((title, index) => {
+  const defaults = REQUIREMENT_TITLES.map((title, index) => {
     const number = index + 1;
     const existing = byNumber.get(number) || {};
+    const meta = DEFAULT_REQUIREMENT_META[index];
+    const trackingType = number === 11 && (!existing.trackingType || existing.trackingType === 'none')
+      ? 'dynamic'
+      : normalizeRequirementTrackingType(existing.trackingType, meta.trackingType);
     let status = REQUIREMENT_STATUSES.includes(String(existing.status || '').toUpperCase())
       ? String(existing.status).toUpperCase()
       : 'PENDIENTE';
@@ -472,15 +573,69 @@ function normalizePhaseRequirements(raw = [], context = {}) {
         ? 'CUMPLIDO'
         : 'PENDIENTE';
     }
-    if ([27, 29].includes(number) && automaticStructuredData) {
+    if ([7, 27].includes(number) && automaticStructuredData) {
       const stored = existing.structuredData || {};
-      const defaultMonths = number === 27 ? 4 : 1;
-      const periodicityMonths = Math.max(1, Math.min(120, Math.round(Number(stored.periodicityMonths) || defaultMonths)));
+      const defaultMonths = number === 27 ? 4 : 12;
+      const defaultUnit = number === 7 ? 'years' : 'months';
+      const defaultValue = number === 7 ? 1 : 4;
+      const hasLegacyMonths = !stored.periodicityUnit && Number(stored.periodicityMonths) > 0;
+      const periodicityUnit = normalizePeriodicityUnit(stored.periodicityUnit, hasLegacyMonths ? 'months' : defaultUnit);
+      const periodicityValue = Math.max(1, Math.min(520, Math.round(Number(stored.periodicityValue) || (stored.periodicityMonths ? Number(stored.periodicityMonths) : defaultValue))));
+      const periodicityMonths = periodicityUnit === 'years' ? periodicityValue * 12 : periodicityUnit === 'months' ? periodicityValue : defaultMonths;
       const lastRecordDate = cleanDate(stored.lastRecordDate);
-      const nextReviewDate = lastRecordDate ? addMonthsClamped(lastRecordDate, periodicityMonths) : null;
+      const nextReviewDate = lastRecordDate ? addPeriodClamped(lastRecordDate, periodicityValue, periodicityUnit) : null;
       automaticStructuredData = {
         ...automaticStructuredData,
+        periodicityValue,
+        periodicityUnit,
         periodicityMonths,
+        lastRecordDate,
+        nextReviewDate,
+        ...(number === 27 && stored.inspectionId ? { inspectionId: cleanText(stored.inspectionId, 80) } : {}),
+        ...(number === 27 && stored.reportNumber ? { reportNumber: cleanText(stored.reportNumber, 120) } : {})
+      };
+      status = periodicFollowUpStatus(nextReviewDate);
+    }
+    if (number === 11 && status === 'CUMPLIDO' && existing.structuredData?.kind === 'schedule' && automaticStructuredData) {
+      const previousSchedule = existing.structuredData;
+      const scheduleChanged = cleanText(previousSchedule.phaseName) !== cleanText(automaticStructuredData.phaseName)
+        || cleanDate(previousSchedule.startDate) !== cleanDate(automaticStructuredData.startDate)
+        || cleanDate(previousSchedule.endDate) !== cleanDate(automaticStructuredData.endDate);
+      if (scheduleChanged) status = 'PENDIENTE';
+    }
+    if (number === 24 && automaticStructuredData) {
+      automaticStructuredData.requiredCoveragePct = requiredPresalesPct(existing.structuredData?.requiredCoveragePct, 100);
+      const policySignature = policies => JSON.stringify((policies || []).map(policy => ({
+        type: cleanText(policy?.type, 80),
+        policyNumber: cleanText(policy?.policyNumber, 120),
+        insuredAmount: Number(policy?.insuredAmount || 0),
+        expiryDate: cleanDate(policy?.expiryDate),
+        endorsedToBank: policy?.endorsedToBank === true,
+        bank: cleanText(policy?.bank, 180),
+        documentId: cleanText(policy?.documentId, 80)
+      })));
+      if (status === 'CUMPLIDO' && existing.structuredData?.kind === 'insurancePolicies'
+        && policySignature(existing.structuredData.policies) !== policySignature(automaticStructuredData.policies)) {
+        status = 'PENDIENTE';
+      }
+    }
+    if (number === 20 && trackingType === 'dynamic' && automaticStructuredData) {
+      status = Number(automaticStructuredData.total || 0) > 0
+        && Number(automaticStructuredData.presalesPct || 0) >= Number(automaticStructuredData.requiredPresalesPct || 0)
+        ? 'CUMPLIDO'
+        : 'PENDIENTE';
+    }
+    if (trackingType === 'recurring' && ![7, 27].includes(number) && automaticStructuredData) {
+      const stored = existing.structuredData || {};
+      const periodicityUnit = normalizePeriodicityUnit(stored.periodicityUnit, 'months');
+      const periodicityValue = Math.max(1, Math.min(520, Math.round(Number(stored.periodicityValue) || Number(stored.periodicityMonths) || 1)));
+      const lastRecordDate = cleanDate(stored.lastRecordDate);
+      const nextReviewDate = lastRecordDate ? addPeriodClamped(lastRecordDate, periodicityValue, periodicityUnit) : null;
+      automaticStructuredData = {
+        ...automaticStructuredData,
+        periodicityValue,
+        periodicityUnit,
+        periodicityMonths: periodicityUnit === 'years' ? periodicityValue * 12 : periodicityUnit === 'months' ? periodicityValue : 1,
         lastRecordDate,
         nextReviewDate
       };
@@ -500,27 +655,97 @@ function normalizePhaseRequirements(raw = [], context = {}) {
       ...(existing._id ? { _id: existing._id } : {}),
       ...(existing.legacyRequirementIds?.length ? { legacyRequirementIds: existing.legacyRequirementIds } : {}),
       number,
-      title,
+      code: cleanText(existing.code || meta.code, 80),
+      title: number === 7 && /\(si aplica\)/i.test(String(existing.title || ''))
+        ? title
+        : cleanText(existing.title || title, 500),
+      category: number === 3 && (!existing.category || existing.category === 'legal')
+        ? 'general'
+        : normalizeRequirementCategory(existing.category, meta.category),
+      trackingType,
+      responsibleDepartment: cleanText(existing.responsibleDepartment, 240),
+      sortOrder: Number.isFinite(Number(existing.sortOrder)) ? Number(existing.sortOrder) : meta.sortOrder,
+      isCustom: existing.isCustom === true,
+      isArchived: existing.isArchived === true,
       information,
       manualInformation: stripGeneratedGuidance(existing.manualInformation ?? (String(existing.sourceKey || '').toLowerCase() === 'manual' ? existing.information : '')),
       ...(automaticStructuredData ? { structuredData: automaticStructuredData } : (existing.structuredData && !(number === 16 && context.project?.seeksFinancing !== true) ? { structuredData: existing.structuredData } : {})),
       sourceKey,
-      sourceLabel: sourceKey === 'bank73' ? (number === 4 ? 'Contexto desde Bank73' : 'Precargado desde Bank73') : 'Entrada manual',
+      sourceLabel: sourceKey === 'bank73' ? 'Dato del proyecto' : 'Entrada manual',
       status,
-      observations: cleanText(existing.observations)
+      observations: cleanText(existing.observations),
+      ...(status === 'CUMPLIDO' && existing.completedAt ? { completedAt: existing.completedAt } : {}),
+      ...(status === 'CUMPLIDO' && existing.completedBy ? { completedBy: existing.completedBy } : {}),
+      completedByRole: status === 'CUMPLIDO' ? cleanText(existing.completedByRole, 80) : ''
     };
   });
+
+  const custom = prepared
+    .filter(item => item?.isCustom === true || Number(item?.number) > REQUIREMENT_TITLES.length)
+    .map((item, index) => {
+      const number = Math.max(REQUIREMENT_TITLES.length + 1, Number(item?.number) || REQUIREMENT_TITLES.length + index + 1);
+      const trackingType = normalizeRequirementTrackingType(item?.trackingType, 'none');
+      const periodicityUnit = normalizePeriodicityUnit(item?.structuredData?.periodicityUnit, 'months');
+      const periodicityValue = Math.max(1, Math.min(520, Math.round(Number(item?.structuredData?.periodicityValue) || Number(item?.structuredData?.periodicityMonths) || 1)));
+      const periodicityMonths = periodicityUnit === 'years' ? periodicityValue * 12 : periodicityUnit === 'months' ? periodicityValue : 1;
+      const lastRecordDate = cleanDate(item?.structuredData?.lastRecordDate);
+      const nextReviewDate = lastRecordDate ? addPeriodClamped(lastRecordDate, periodicityValue, periodicityUnit) : null;
+      return {
+        ...(item?._id ? { _id: item._id } : {}),
+        code: cleanText(item?.code || `CUSTOM-${number}`, 80),
+        number,
+        title: cleanText(item?.title || `Requisito ${number}`, 500),
+        category: normalizeRequirementCategory(item?.category, 'general'),
+        trackingType,
+        responsibleDepartment: cleanText(item?.responsibleDepartment, 240),
+        sortOrder: Number.isFinite(Number(item?.sortOrder)) ? Number(item.sortOrder) : number,
+        isCustom: true,
+        isArchived: item?.isArchived === true,
+        information: cleanText(item?.information),
+        manualInformation: cleanText(item?.manualInformation),
+        ...(trackingType === 'recurring' ? {
+          structuredData: {
+            ...(item?.structuredData || {}),
+            kind: 'periodicFollowUp',
+            periodicityValue,
+            periodicityUnit,
+            periodicityMonths,
+            lastRecordDate,
+            nextReviewDate
+          }
+        } : (item?.structuredData ? { structuredData: item.structuredData } : {})),
+        sourceKey: 'manual',
+        sourceLabel: 'Entrada manual',
+        status: trackingType === 'recurring'
+          ? periodicFollowUpStatus(nextReviewDate)
+          : (REQUIREMENT_STATUSES.includes(String(item?.status || '').toUpperCase()) ? String(item.status).toUpperCase() : 'PENDIENTE'),
+        observations: cleanText(item?.observations),
+        ...(item?.completedAt ? { completedAt: item.completedAt } : {}),
+        ...(item?.completedBy ? { completedBy: item.completedBy } : {}),
+        completedByRole: cleanText(item?.completedByRole, 80)
+      };
+    });
+
+  return [...defaults, ...custom].sort((a, b) => Number(a.sortOrder || a.number) - Number(b.sortOrder || b.number));
 }
 
 module.exports = {
   REQUIREMENT_TITLES,
   REQUIREMENT_STATUSES,
+  REQUIREMENT_CATEGORIES,
+  REQUIREMENT_TRACKING_TYPES,
+  REQUIREMENT_CATEGORY_LABELS,
+  DEFAULT_REQUIREMENT_META,
+  normalizeRequirementCategory,
+  normalizeRequirementTrackingType,
   normalizePhaseRequirements,
   defaultRequirementInformation,
   defaultRequirementStructuredData,
   architecturalModelsStructured,
   bondValidity,
   addMonthsClamped,
+  addPeriodClamped,
+  normalizePeriodicityUnit,
   periodicFollowUpStatus,
   PROMOTER_EXPERIENCE_FIELDS
 };

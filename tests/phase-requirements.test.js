@@ -6,16 +6,16 @@ const {
   defaultRequirementStructuredData
 } = require('../services/phaseRequirements');
 
-test('Caja de Ahorros template keeps 29 numbered requirements after unifying the duplicated plans item', () => {
-  assert.equal(REQUIREMENT_TITLES.length, 29);
-  assert.equal(REQUIREMENT_TITLES[21], REQUIREMENT_TITLES[27]);
+test('generic financing template keeps 28 requirements after unifying both duplicated items', () => {
+  assert.equal(REQUIREMENT_TITLES.length, 28);
+  assert.equal(REQUIREMENT_TITLES.filter(title => title === 'Revisión y validación del presupuesto de construcción por la Gerencia de Ingeniería').length, 1);
   assert.equal(REQUIREMENT_TITLES.filter(title => title === 'Planos de anteproyecto firmados por arquitecto e ingeniero').length, 1);
-  assert.equal(REQUIREMENT_TITLES[28], 'Cuenta Avance');
+  assert.equal(REQUIREMENT_TITLES[27], 'Cuenta Avance');
   assert.equal(REQUIREMENT_TITLES[19], 'Preventas netas requeridas de la etapa a financiar y cesión suficiente para cubrir la facilidad aprobada');
   assert.equal(REQUIREMENT_TITLES[24], 'Fianza de cumplimiento requerida sobre el valor de la etapa');
 });
 
-test('phase requirements reuse Bank73 data and preserve manual information', () => {
+test('phase requirements reuse project data and preserve manual information', () => {
   const requirements = normalizePhaseRequirements([
     { number: 5, information: 'Estudio externo de Mercado, S.A.', status: 'CUMPLIDO', observations: 'Validado' }
   ], {
@@ -31,13 +31,34 @@ test('phase requirements reuse Bank73 data and preserve manual information', () 
     }
   });
 
-  assert.equal(requirements.length, 29);
+  assert.equal(requirements.length, 28);
   assert.match(requirements[0].information, /1,250,000\.00/);
   assert.match(requirements[1].information, /12 años de experiencia/);
   assert.match(requirements[2].information, /Accionista A: 60%/);
   assert.equal(requirements[4].information, 'Estudio externo de Mercado, S.A.');
   assert.equal(requirements[4].status, 'CUMPLIDO');
   assert.equal(requirements[4].observations, 'Validado');
+});
+
+test('shareholder composition belongs to general information and reuses the project company', () => {
+  const requirements = normalizePhaseRequirements([{ number: 3, category: 'legal' }], {
+    project: {
+      legalData: {
+        promoterName: 'Promotor Demo',
+        promoterLegalName: 'Sociedad Proyecto, S.A.',
+        promoterRuc: '155600-1-123456',
+        shareholders: [{ name: 'Accionista A', percentage: 65 }, { name: 'Accionista B', percentage: 35 }]
+      }
+    }
+  });
+
+  assert.equal(requirements[2].category, 'general');
+  assert.deepEqual(requirements[2].structuredData.company, {
+    promoterName: 'Promotor Demo',
+    legalName: 'Sociedad Proyecto, S.A.',
+    ruc: '155600-1-123456'
+  });
+  assert.equal(requirements[2].structuredData.shareholders.length, 2);
 });
 
 test('an explicitly cleared manual value is not refilled automatically', () => {
@@ -61,9 +82,8 @@ test('project cover and model names do not prefill the architectural images requ
   });
 
   assert.equal(requirements[3].information, '');
-  assert.equal(requirements[3].sourceKey, 'bank73');
-  assert.equal(requirements[3].structuredData.kind, 'architecturalPlans');
-  assert.equal(requirements[3].structuredData.models[0].name, 'Modelo A');
+  assert.equal(requirements[3].sourceKey, 'manual');
+  assert.equal(requirements[3].structuredData, undefined);
 });
 
 test('presales prefill summarizes current Commercial unit data', () => {
@@ -82,13 +102,13 @@ test('presales prefill summarizes current Commercial unit data', () => {
   assert.match(requirements[19].information, /Monto CPP registrado: B\/. 205,000\.00/);
 });
 
-test('legacy Bank73 cover prefill is removed instead of being treated as evidence', () => {
+test('legacy platform cover prefill is removed instead of being treated as evidence', () => {
   const requirements = normalizePhaseRequirements([
     { number: 4, information: 'Bank73 dispone de una imagen de portada del proyecto.', sourceKey: 'bank73' }
   ], { project: { coverImage: { path: '/uploads/cover.jpg' } } });
 
   assert.equal(requirements[3].information, '');
-  assert.equal(requirements[3].sourceKey, 'bank73');
+  assert.equal(requirements[3].sourceKey, 'manual');
 });
 
 test('an automatic presales value refreshes from current Commercial data', () => {
@@ -151,7 +171,7 @@ test('structured presales include counts, percentage and associated amounts', ()
   assert.equal(presales.saleValue, 275000);
   assert.equal(presales.cppAmount, 110000);
   assert.equal(presales.requiredPresalesPct, 50);
-  assert.equal(requirements[19].status, 'PENDIENTE');
+  assert.equal(requirements[19].status, 'CUMPLIDO');
 });
 
 test('requirement 20 reads the editable target from the existing phase presales condition', () => {
@@ -166,10 +186,40 @@ test('requirement 20 reads the editable target from the existing phase presales 
 
   assert.equal(requirements[19].structuredData.requiredPresalesPct, 62.5);
   assert.equal(requirements[19].structuredData.presalesPct, 2 / 3 * 100);
+  assert.equal(requirements[19].status, 'CUMPLIDO');
+});
+
+test('dynamic presales reopen when the current percentage is below the required target', () => {
+  const requirements = normalizePhaseRequirements([], {
+    phase: { financialConditions: { requiredPresales: '70%' } },
+    commercialUnits: [
+      { commercialStatus: 'reservado' },
+      { commercialStatus: 'reservado' },
+      { commercialStatus: 'disponible' }
+    ]
+  });
+
+  assert.equal(requirements[19].structuredData.presalesPct, 2 / 3 * 100);
+  assert.equal(requirements[19].structuredData.requiredPresalesPct, 70);
   assert.equal(requirements[19].status, 'PENDIENTE');
 });
 
-test('requirement 4 model context refreshes from Commercial units before project seed models', () => {
+test('periodic presales preserve their commercial data while adding the review period', () => {
+  const requirements = normalizePhaseRequirements([{
+    number: 20,
+    trackingType: 'recurring',
+    structuredData: { kind: 'presales', periodicityValue: 3, periodicityUnit: 'months', lastRecordDate: '2026-01-15' }
+  }], {
+    commercialUnits: [{ commercialStatus: 'reservado' }, { commercialStatus: 'disponible' }]
+  });
+
+  assert.equal(requirements[19].structuredData.kind, 'presales');
+  assert.equal(requirements[19].structuredData.presalesPct, 50);
+  assert.equal(requirements[19].structuredData.periodicityValue, 3);
+  assert.equal(requirements[19].structuredData.nextReviewDate, '2026-04-15');
+});
+
+test('requirement 4 remains exclusively documentary and does not duplicate Commercial models', () => {
   const requirements = normalizePhaseRequirements([], {
     project: { housingModels: [{ name: 'Modelo antiguo', unitsCount: 20 }] },
     commercialUnits: [
@@ -179,10 +229,7 @@ test('requirement 4 model context refreshes from Commercial units before project
     ]
   });
 
-  assert.deepEqual(requirements[3].structuredData.models.map(model => [model.name, model.unitsCount]), [
-    ['Tipología Comercial A', 2],
-    ['Tipología Comercial B', 1]
-  ]);
+  assert.equal(requirements[3].structuredData, undefined);
   assert.equal(requirements[3].status, 'PENDIENTE');
   assert.equal(requirements[3].information, '');
 });
@@ -208,7 +255,7 @@ test('requirement 24 reads CAR and fire policies from technical project data', (
           insuredAmount: 250000,
           expiryDate: '2027-01-31',
           endorsedToBank: true,
-          bank: 'Caja de Ahorros',
+          bank: 'Banco Demo',
           appliesToAllUnits: true,
           documentId: 'doc-1',
           documentName: 'poliza-car.pdf'
@@ -222,7 +269,7 @@ test('requirement 24 reads CAR and fire policies from technical project data', (
   assert.equal(structured.policies.length, 1);
   assert.equal(structured.policies[0].policyNumber, 'CAR-001');
   assert.equal(structured.policies[0].endorsedToBank, true);
-  assert.equal(structured.policies[0].bank, 'Caja de Ahorros');
+  assert.equal(structured.policies[0].bank, 'Banco Demo');
   assert.equal(structured.policies[0].documentName, 'poliza-car.pdf');
 });
 
@@ -306,21 +353,20 @@ test('requirement 26 calculates the payment bond and derives its status from the
   assert.equal(pending[25].status, 'PENDIENTE');
 });
 
-test('requirements 27 and 29 calculate their next periodic review', () => {
+test('annual financial statements and requirement 27 calculate their next periodic review', () => {
   const requirements = normalizePhaseRequirements([
+    { number: 7, structuredData: { kind: 'periodicFollowUp', periodicityMonths: 12, lastRecordDate: '2099-01-31' } },
     { number: 27, structuredData: { kind: 'periodicFollowUp', periodicityMonths: 4, lastRecordDate: '2099-01-31' } },
-    { number: 29, structuredData: { kind: 'periodicFollowUp', periodicityMonths: 1, lastRecordDate: '2000-01-31' } }
   ]);
+
+  assert.equal(requirements[6].structuredData.followUpType, 'debtorFinancialStatements');
+  assert.equal(requirements[6].structuredData.nextReviewDate, '2100-01-31');
 
   assert.equal(requirements[26].structuredData.followUpType, 'engineeringInspection');
   assert.equal(requirements[26].structuredData.periodicityMonths, 4);
   assert.equal(requirements[26].structuredData.nextReviewDate, '2099-05-31');
   assert.equal(requirements[26].status, 'CUMPLIDO');
 
-  assert.equal(requirements[28].structuredData.followUpType, 'accountAdvance');
-  assert.equal(requirements[28].structuredData.periodicityMonths, 1);
-  assert.equal(requirements[28].structuredData.nextReviewDate, '2000-02-29');
-  assert.equal(requirements[28].status, 'PENDIENTE');
 });
 
 test('requirement 16 shows financing plan checks only when the project seeks financing', () => {
@@ -334,19 +380,102 @@ test('requirement 16 shows financing plan checks only when the project seeks fin
   assert.equal(financed[15].status, 'PENDIENTE');
 });
 
-test('legacy requirements 16 and 29 are unified while old account advance 30 becomes 29', () => {
+test('legacy duplicates are unified while old account advance 30 becomes 28', () => {
   const requirements = normalizePhaseRequirements([
     { _id: '64b000000000000000000016', number: 16, title: 'Planos de anteproyecto firmados por arquitecto e ingeniero', manualInformation: 'Documento principal' },
     { _id: '64b000000000000000000029', number: 29, title: 'Planos de anteproyecto firmados por arquitecto e ingeniero', observations: 'Documento duplicado' },
     { _id: '64b000000000000000000030', number: 30, title: 'Cuenta Avance', structuredData: { kind: 'periodicFollowUp', periodicityMonths: 2, lastRecordDate: '2099-01-01' } }
   ], { project: { seeksFinancing: true } });
 
-  assert.equal(requirements.length, 29);
+  assert.equal(requirements.length, 28);
   assert.equal(String(requirements[15]._id), '64b000000000000000000016');
   assert.deepEqual(requirements[15].legacyRequirementIds, ['64b000000000000000000029']);
   assert.equal(requirements[15].observations, 'Documento duplicado');
-  assert.equal(requirements[28].number, 29);
-  assert.equal(String(requirements[28]._id), '64b000000000000000000030');
-  assert.equal(requirements[28].structuredData.followUpType, 'accountAdvance');
-  assert.equal(requirements[28].structuredData.periodicityMonths, 2);
+  assert.equal(requirements[27].number, 28);
+  assert.equal(String(requirements[27]._id), '64b000000000000000000030');
+  assert.equal(requirements[27].structuredData.kind, 'accountAdvance');
+});
+
+test('requirements receive generic categories and tracking metadata', () => {
+  const requirements = normalizePhaseRequirements([]);
+
+  assert.equal(requirements[0].category, 'financial');
+  assert.equal(requirements[2].category, 'general');
+  assert.equal(requirements[3].category, 'technical');
+  assert.equal(requirements[19].category, 'commercial');
+  assert.equal(requirements[19].trackingType, 'dynamic');
+  assert.equal(requirements[10].trackingType, 'dynamic');
+  assert.equal(requirements[6].trackingType, 'recurring');
+  assert.equal(requirements[26].trackingType, 'recurring');
+  assert.equal(requirements[27].trackingType, 'dynamic');
+});
+
+test('custom and archived requirements survive normalization', () => {
+  const requirements = normalizePhaseRequirements([
+    { number: 1, title: 'Presupuesto adaptado', category: 'general', isArchived: true },
+    { number: 30, code: 'CUSTOM-30', title: 'Condición adicional', category: 'legal', trackingType: 'none', isCustom: true, status: 'CUMPLIDO' }
+  ]);
+
+  assert.equal(requirements.length, 29);
+  assert.equal(requirements.find(item => item.number === 1).title, 'Presupuesto adaptado');
+  assert.equal(requirements.find(item => item.number === 1).isArchived, true);
+  assert.equal(requirements.find(item => item.number === 30).title, 'Condición adicional');
+  assert.equal(requirements.find(item => item.number === 30).category, 'legal');
+  assert.equal(requirements.find(item => item.number === 30).status, 'CUMPLIDO');
+});
+
+test('the duplicated construction-budget requirement is merged without losing its history', () => {
+  const requirements = normalizePhaseRequirements([
+    { _id: '64b000000000000000000022', number: 22, title: REQUIREMENT_TITLES[21], status: 'PENDIENTE', manualInformation: 'Primera revisión' },
+    { _id: '64b000000000000000000028', number: 28, title: REQUIREMENT_TITLES[21], status: 'CUMPLIDO', observations: 'Validado por Ingeniería' },
+    { _id: '64b000000000000000000029', number: 29, title: 'Cuenta Avance', structuredData: { kind: 'accountAdvance' } }
+  ]);
+
+  assert.equal(requirements.length, 28);
+  assert.equal(requirements[21].status, 'CUMPLIDO');
+  assert.equal(requirements[21].manualInformation, 'Primera revisión');
+  assert.equal(requirements[21].observations, 'Validado por Ingeniería');
+  assert.deepEqual(requirements[21].legacyRequirementIds, ['64b000000000000000000028']);
+  assert.equal(String(requirements[27]._id), '64b000000000000000000029');
+});
+
+test('changing the canonical phase schedule reopens its completed requirement', () => {
+  const requirements = normalizePhaseRequirements([{
+    number: 11,
+    status: 'CUMPLIDO',
+    completedAt: '2026-01-10T00:00:00.000Z',
+    structuredData: { kind: 'schedule', phaseName: 'Fase 1', startDate: '2026-01-01', endDate: '2026-12-31' }
+  }], {
+    phase: { name: 'Fase 1', startDate: '2026-02-01', endDate: '2026-12-31' }
+  });
+
+  assert.equal(requirements[10].status, 'PENDIENTE');
+  assert.equal(requirements[10].completedAt, undefined);
+  assert.equal(requirements[10].structuredData.startDate, '2026-02-01');
+});
+
+test('CAR coverage starts at 100 percent and preserves the bank configuration', () => {
+  const requirements = normalizePhaseRequirements([{ number: 24, structuredData: { requiredCoveragePct: 80 } }]);
+  assert.equal(requirements[23].structuredData.requiredCoveragePct, 80);
+});
+
+test('a completed policy requirement reopens when its canonical policy changes', () => {
+  const requirements = normalizePhaseRequirements([{
+    number: 24,
+    status: 'CUMPLIDO',
+    structuredData: {
+      kind: 'insurancePolicies',
+      requiredCoveragePct: 80,
+      policies: [{ type: 'CAR', policyNumber: 'CAR-1', insuredAmount: 100000, expiryDate: '2027-01-01' }]
+    }
+  }], {
+    project: {
+      technicalData: {
+        insurancePolicies: [{ type: 'CAR', policyNumber: 'CAR-1', insuredAmount: 120000, expiryDate: '2027-01-01' }]
+      }
+    }
+  });
+
+  assert.equal(requirements[23].structuredData.requiredCoveragePct, 80);
+  assert.equal(requirements[23].status, 'PENDIENTE');
 });

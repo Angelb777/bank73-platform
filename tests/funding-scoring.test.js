@@ -111,6 +111,10 @@ test('bank write guard allows only the explicit bank write workflows', () => {
   assert.equal(runBankGuard('POST', '/api/funding/opportunities/abc123/interests').nextCalled, true);
   assert.equal(runBankGuard('PATCH', '/api/projects/project1/finance/loan-lines/line1/entries/entry1/status').nextCalled, true);
   assert.equal(runBankGuard('DELETE', '/api/projects/project1/finance/loan-lines/line1/entries/entry1').nextCalled, true);
+  assert.equal(runBankGuard('POST', '/api/projects/project1/finance/phases/phase1/requirements').nextCalled, true);
+  assert.equal(runBankGuard('PATCH', '/api/projects/project1/finance/phases/phase1/requirements/requirement1').nextCalled, true);
+  assert.equal(runBankGuard('PATCH', '/api/projects/project1/finance/phases/phase1/requirements/requirement1/status').nextCalled, true);
+  assert.equal(runBankGuard('DELETE', '/api/projects/project1/finance/phases/phase1/requirements/requirement1').nextCalled, true);
   const blocked = runBankGuard('PATCH', '/api/projects/abc123');
   assert.equal(blocked.nextCalled, false);
   assert.equal(blocked.responseStatus, 403);

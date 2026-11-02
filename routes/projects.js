@@ -17,7 +17,7 @@ const ProjectFinance    = require('../models/ProjectFinance');
 const ProjectFunding    = require('../models/ProjectFunding');
 const { calculateFundingScore } = require('../services/fundingScoring');
 const { buildViewer3DUnitRecord } = require('../services/viewer3d_unit_record');
-const { normalizePhaseRequirements } = require('../services/phaseRequirements');
+const { normalizePhaseRequirements, REQUIREMENT_TITLES } = require('../services/phaseRequirements');
 const { dateInReportPeriod, anyDateInReportPeriod, buildPeriodActivity } = require('../services/reportActivity');
 const { buildFinanceControlSummary } = require('../services/financeReportContext');
 const { syncUnitCommercialState } = require('../services/unitCommercialState');
@@ -1838,9 +1838,21 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
     const primaryPromoter = p.assignedPromoters?.[0]
       ? await User.findById(p.assignedPromoters[0]).select('promoterProfile promoterCategory').lean()
       : null;
+    const canManageRequirementDefinitions = ['admin', 'bank'].includes(creatorRole);
     const financePhasesWithRequirements = body.financePhases.map(phase => ({
       ...phase,
-      requirements: normalizePhaseRequirements(phase.requirements || [], {
+      requirements: normalizePhaseRequirements((phase.requirements || [])
+        .filter(item => canManageRequirementDefinitions || (item?.isCustom !== true && Number(item?.number) <= REQUIREMENT_TITLES.length))
+        .map(item => canManageRequirementDefinitions ? item : {
+          number: item.number,
+          information: item.information,
+          manualInformation: item.manualInformation,
+          structuredData: item.structuredData,
+          sourceKey: item.sourceKey,
+          sourceLabel: item.sourceLabel,
+          status: item.status,
+          observations: item.observations
+        }), {
         project: p.toObject(),
         promoterProfile: primaryPromoter?.promoterProfile || {},
         phase
@@ -1880,7 +1892,7 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
     const initialFinancePhaseIds = {};
     (initialFinance?.phases || []).forEach((phase, phaseIndex) => {
       initialFinancePhaseIds[String(phaseIndex)] = String(phase._id);
-      (phase.requirements || []).forEach(requirement => {
+      (phase.requirements || []).filter(requirement => requirement?.isArchived !== true).forEach(requirement => {
         initialRequirementIds[`${phaseIndex}:${requirement.number}`] = String(requirement._id);
       });
     });

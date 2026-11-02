@@ -13,7 +13,13 @@ const Inspection = require('../models/Inspection');
 const Document = require('../models/Document');
 const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment');
 const { requireProjectAccess } = require('../middleware/rbac');
-const { REQUIREMENT_TITLES, PROMOTER_EXPERIENCE_FIELDS, normalizePhaseRequirements } = require('../services/phaseRequirements');
+const {
+  REQUIREMENT_TITLES,
+  PROMOTER_EXPERIENCE_FIELDS,
+  normalizePhaseRequirements,
+  normalizeRequirementCategory,
+  normalizeRequirementTrackingType
+} = require('../services/phaseRequirements');
 const {
   financeApprovedTotals,
   buildFinanceControlSummary: sharedBuildFinanceControlSummary,
@@ -105,14 +111,20 @@ async function ensureFinanceRequirements(doc, project, commercialUnits = []) {
       phase: phase.toObject ? phase.toObject() : phase,
       commercialUnits
     });
-    const needsNormalization = current.length !== REQUIREMENT_TITLES.length || current.some((item, index) => (
-      Number(item?.number) !== index + 1 || String(item?.title || '') !== REQUIREMENT_TITLES[index]
-      || String(item?.information || '') !== String(normalized[index]?.information || '')
-      || String(item?.manualInformation || '') !== String(normalized[index]?.manualInformation || '')
-      || JSON.stringify(item?.structuredData || null) !== JSON.stringify(normalized[index]?.structuredData || null)
-      || String(item?.sourceKey || '') !== String(normalized[index]?.sourceKey || '')
-      || String(item?.sourceLabel || '') !== String(normalized[index]?.sourceLabel || '')
-    ));
+    const comparable = item => {
+      const raw = item?.toObject ? item.toObject() : (item || {});
+      return {
+        code: String(raw.code || ''), number: Number(raw.number || 0), title: String(raw.title || ''),
+        category: String(raw.category || ''), trackingType: String(raw.trackingType || ''),
+        responsibleDepartment: String(raw.responsibleDepartment || ''), sortOrder: Number(raw.sortOrder || 0),
+        isCustom: raw.isCustom === true, isArchived: raw.isArchived === true,
+        information: String(raw.information || ''), manualInformation: String(raw.manualInformation || ''),
+        structuredData: raw.structuredData || null, sourceKey: String(raw.sourceKey || ''),
+        sourceLabel: String(raw.sourceLabel || ''), status: String(raw.status || ''),
+        observations: String(raw.observations || '')
+      };
+    };
+    const needsNormalization = JSON.stringify(current.map(comparable)) !== JSON.stringify(normalized.map(comparable));
     if (!needsNormalization) continue;
     phase.requirements = normalized;
     changed = true;
@@ -287,7 +299,7 @@ function assignAdvanceAccountNumbers(lines = [], currentDoc) {
 }
 
 function snapshotPhaseRequirements(phase) {
-  return (phase?.requirements || []).map((item, index) => {
+  return (phase?.requirements || []).filter(item => item?.isArchived !== true).map((item, index) => {
     const raw = item?.toObject ? item.toObject() : item;
     const validity = String(raw?.structuredData?.validityStatus || '').toUpperCase();
     const compliant = String(raw?.status || '').toUpperCase() === 'CUMPLIDO' && !['EXPIRED', 'MISSING'].includes(validity);
@@ -296,6 +308,8 @@ function snapshotPhaseRequirements(phase) {
       legacyRequirementIds: Array.isArray(raw?.legacyRequirementIds) ? raw.legacyRequirementIds.map(String) : [],
       number: Number(raw?.number || index + 1),
       title: String(raw?.title || `Requisito ${index + 1}`).trim(),
+      category: String(raw?.category || 'general'),
+      trackingType: String(raw?.trackingType || 'none'),
       status: String(raw?.status || 'PENDIENTE').toUpperCase(),
       reviewStatus: compliant ? 'compliant' : (validity === 'EXPIRED' ? 'expired' : 'pending'),
       information: String(raw?.information || '').trim().slice(0, 2000),
@@ -1099,6 +1113,23 @@ router.patch('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId/s
           mimetype: String(document.mimetype || '')
         }))
       }));
+      // La solicitud conserva la foto de los requisitos revisados y, a
+      // continuación, abre el nuevo ciclo de Cuenta Avance en el proyecto.
+      const accountAdvanceRequirement = (phase?.requirements || []).find(item => Number(item?.number) === 28);
+      if (accountAdvanceRequirement) {
+        accountAdvanceRequirement.status = 'PENDIENTE';
+        accountAdvanceRequirement.completedAt = null;
+        accountAdvanceRequirement.completedBy = null;
+        accountAdvanceRequirement.completedByRole = '';
+        accountAdvanceRequirement.structuredData = {
+          kind: 'accountAdvance',
+          requestId: String(entry._id),
+          advanceAccountNumber: Number(entry.advanceAccountNumber || 0) || null,
+          requestedAt: now,
+          requestDocumentId: String(requestDocument._id),
+          requestDocumentName: String(requestDocument.originalname || 'Carta de solicitud.pdf')
+        };
+      }
       entry.requirementsConfirmedAt = now;
       entry.requirementsConfirmedBy = actorId;
       entry.requirementsConfirmedByRole = role;
@@ -1460,12 +1491,17 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
       if (f === 'financialConditions') ph[f] = normalizePhaseFinancialConditions(req.body[f] || {});
       else if (f === 'financierBanks') ph[f] = normalizeFinancierBanks(req.body[f] || []);
       else if (f === 'financingLines') ph[f] = normalizePhaseFinancingLines(req.body[f] || []);
-      else if (f === 'requirements') ph[f] = normalizePhaseRequirements(req.body[f] || [], {
-        project: project.toObject ? project.toObject() : project,
-        promoterProfile: requirementPromoter?.promoterProfile || {},
-        phase: ph.toObject ? ph.toObject() : ph,
-        commercialUnits: requirementCommercialUnits
-      });
+      else if (f === 'requirements') {
+        const incomingRequirements = canManageRequirements(req)
+          ? (req.body[f] || [])
+          : mergeRequirementStateUpdates(ph.requirements || [], req.body[f] || []);
+        ph[f] = normalizePhaseRequirements(incomingRequirements, {
+          project: project.toObject ? project.toObject() : project,
+          promoterProfile: requirementPromoter?.promoterProfile || {},
+          phase: ph.toObject ? ph.toObject() : ph,
+          commercialUnits: requirementCommercialUnits
+        });
+      }
       else ph[f] = req.body[f];
     }
     if (!hadActualDisbursement && toNum(ph.disbActual) > 0 && !ph.disbActualAt) {
@@ -1487,6 +1523,194 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
   } catch (err) {
     console.error('PUT phase error', err);
     res.status(err.status || 500).json({ error: err.status ? err.message : 'Error al actualizar fase' });
+  }
+});
+
+function requirementActorRole(req) {
+  return String(req.user?.role || '').trim().toLowerCase();
+}
+
+function canManageRequirements(req) {
+  return ['admin', 'bank'].includes(requirementActorRole(req));
+}
+
+function mergeRequirementStateUpdates(current = [], incoming = []) {
+  const incomingById = new Map((incoming || []).filter(item => item?._id).map(item => [String(item._id), item]));
+  const incomingByNumber = new Map((incoming || []).map(item => [Number(item?.number), item]));
+  return (current || []).map(item => {
+    const raw = item?.toObject ? item.toObject() : { ...item };
+    const update = (raw._id && incomingById.get(String(raw._id))) || incomingByNumber.get(Number(raw.number));
+    if (!update) return raw;
+    return {
+      ...raw,
+      information: update.information,
+      manualInformation: update.manualInformation,
+      structuredData: update.structuredData,
+      sourceKey: update.sourceKey,
+      sourceLabel: update.sourceLabel,
+      status: update.status,
+      observations: update.observations
+    };
+  });
+}
+
+function cleanRequirementTitle(value) {
+  return String(value || '').trim().slice(0, 500);
+}
+
+router.post('/projects/:projectId/finance/phases/:phaseId/requirements', async (req, res) => {
+  try {
+    if (!canManageRequirements(req)) return res.status(403).json({ error: 'Solo el banco o el superadmin pueden añadir requisitos.' });
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+    const title = cleanRequirementTitle(req.body?.title);
+    if (!title) return res.status(400).json({ error: 'Indica el nombre del requisito.' });
+    const doc = await getOrCreate(req.params.projectId, project.tenantKey);
+    const phase = doc.phases.id(req.params.phaseId);
+    if (!phase) return res.status(404).json({ error: 'Fase no encontrada' });
+    const nextNumber = Math.max(REQUIREMENT_TITLES.length, ...(phase.requirements || []).map(item => Number(item.number || 0))) + 1;
+    const trackingType = normalizeRequirementTrackingType(req.body?.trackingType, 'none');
+    const periodicityUnit = ['weeks', 'months', 'years'].includes(String(req.body?.periodicityUnit || '').toLowerCase()) ? String(req.body.periodicityUnit).toLowerCase() : 'months';
+    const periodicityValue = Math.max(1, Math.min(520, Math.round(Number(req.body?.periodicityValue ?? req.body?.periodicityMonths) || 1)));
+    const periodicityMonths = periodicityUnit === 'years' ? periodicityValue * 12 : periodicityUnit === 'months' ? periodicityValue : 1;
+    phase.requirements.push({
+      code: `CUSTOM-${nextNumber}`,
+      number: nextNumber,
+      title,
+      category: normalizeRequirementCategory(req.body?.category, 'general'),
+      trackingType,
+      responsibleDepartment: String(req.body?.responsibleDepartment || '').trim().slice(0, 240),
+      sortOrder: nextNumber,
+      isCustom: true,
+      sourceKey: 'manual',
+      sourceLabel: 'Entrada manual',
+      status: 'PENDIENTE',
+      ...(trackingType === 'recurring' ? { structuredData: { kind: 'periodicFollowUp', periodicityValue, periodicityUnit, periodicityMonths, lastRecordDate: null, nextReviewDate: null } } : {})
+    });
+    await doc.save();
+    const requirement = phase.requirements[phase.requirements.length - 1];
+    await audit(req, 'finance.requirement_created', { targetType: 'project', targetId: project._id, projectId: project._id, message: `Requisito añadido: ${title}` });
+    return res.status(201).json({ ok: true, requirement, phase });
+  } catch (err) {
+    console.error('POST requirement error', err);
+    return res.status(500).json({ error: 'No se pudo añadir el requisito.' });
+  }
+});
+
+router.patch('/projects/:projectId/finance/phases/:phaseId/requirements/:requirementId/status', async (req, res) => {
+  try {
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+    const doc = await getOrCreate(req.params.projectId, project.tenantKey);
+    const phase = doc.phases.id(req.params.phaseId);
+    if (!phase) return res.status(404).json({ error: 'Fase no encontrada' });
+    const requirement = phase.requirements.id(req.params.requirementId);
+    if (!requirement || requirement.isArchived) return res.status(404).json({ error: 'Requisito no encontrado' });
+    const completed = req.body?.completed === true;
+    requirement.status = completed ? 'CUMPLIDO' : 'PENDIENTE';
+    requirement.completedAt = completed ? new Date() : null;
+    requirement.completedBy = completed && mongoose.isValidObjectId(req.user?._id || req.user?.id) ? (req.user?._id || req.user?.id) : null;
+    requirement.completedByRole = completed ? requirementActorRole(req) : '';
+    if (String(requirement.trackingType) === 'recurring') {
+      const structured = requirement.structuredData || {};
+      const periodicityUnit = ['weeks', 'months', 'years'].includes(String(structured.periodicityUnit || '').toLowerCase()) ? String(structured.periodicityUnit).toLowerCase() : 'months';
+      const periodicityValue = Math.max(1, Math.min(520, Math.round(Number(structured.periodicityValue ?? structured.periodicityMonths) || 1)));
+      requirement.structuredData = {
+        ...structured,
+        kind: structured.kind || 'periodicFollowUp',
+        periodicityValue,
+        periodicityUnit,
+        periodicityMonths: periodicityUnit === 'years' ? periodicityValue * 12 : periodicityUnit === 'months' ? periodicityValue : 1,
+        lastRecordDate: completed ? new Date().toISOString().slice(0, 10) : null,
+        nextReviewDate: null
+      };
+    }
+    await doc.save();
+    await audit(req, completed ? 'finance.requirement_completed' : 'finance.requirement_reopened', { targetType: 'project', targetId: project._id, projectId: project._id, message: `${completed ? 'Requisito cumplido' : 'Requisito reabierto'}: ${requirement.title}` });
+    return res.json({ ok: true, requirement });
+  } catch (err) {
+    console.error('PATCH requirement status error', err);
+    return res.status(500).json({ error: 'No se pudo actualizar el cumplimiento.' });
+  }
+});
+
+router.patch('/projects/:projectId/finance/phases/:phaseId/requirements/:requirementId', async (req, res) => {
+  try {
+    if (!canManageRequirements(req)) return res.status(403).json({ error: 'Solo el banco o el superadmin pueden editar requisitos.' });
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+    const doc = await getOrCreate(req.params.projectId, project.tenantKey);
+    const phase = doc.phases.id(req.params.phaseId);
+    if (!phase) return res.status(404).json({ error: 'Fase no encontrada' });
+    const requirement = phase.requirements.id(req.params.requirementId);
+    if (!requirement || requirement.isArchived) return res.status(404).json({ error: 'Requisito no encontrado' });
+    const title = cleanRequirementTitle(req.body?.title);
+    if (!title) return res.status(400).json({ error: 'Indica el nombre del requisito.' });
+    requirement.title = title;
+    requirement.category = normalizeRequirementCategory(req.body?.category, requirement.category || 'general');
+    requirement.trackingType = normalizeRequirementTrackingType(req.body?.trackingType, requirement.trackingType || 'none');
+    requirement.responsibleDepartment = String(req.body?.responsibleDepartment || '').trim().slice(0, 240);
+    if (requirement.trackingType === 'recurring') {
+      const periodicityUnit = ['weeks', 'months', 'years'].includes(String(req.body?.periodicityUnit || '').toLowerCase()) ? String(req.body.periodicityUnit).toLowerCase() : String(requirement.structuredData?.periodicityUnit || 'months');
+      const periodicityValue = Math.max(1, Math.min(520, Math.round(Number(req.body?.periodicityValue ?? req.body?.periodicityMonths ?? requirement.structuredData?.periodicityValue ?? requirement.structuredData?.periodicityMonths) || 1)));
+      requirement.structuredData = {
+        ...(requirement.structuredData || {}),
+        kind: requirement.structuredData?.kind || 'periodicFollowUp',
+        periodicityValue,
+        periodicityUnit,
+        periodicityMonths: periodicityUnit === 'years' ? periodicityValue * 12 : periodicityUnit === 'months' ? periodicityValue : 1
+      };
+    }
+    if (Number(requirement.number) === 24) {
+      const previousCoveragePct = Number(requirement.structuredData?.requiredCoveragePct ?? 100);
+      const requiredCoveragePct = Math.max(0, Math.min(100, Number(req.body?.requiredCoveragePct ?? previousCoveragePct)));
+      requirement.structuredData = {
+        ...(requirement.structuredData || {}),
+        requiredCoveragePct
+      };
+      if (requiredCoveragePct !== previousCoveragePct) {
+        requirement.status = 'PENDIENTE';
+        requirement.completedAt = null;
+        requirement.completedBy = null;
+        requirement.completedByRole = '';
+      }
+    }
+    if (Number(requirement.number) === 20) {
+      const requiredPresalesPct = Math.max(0, Math.min(100, Number(req.body?.requiredPresalesPct ?? requirement.structuredData?.requiredPresalesPct ?? 50)));
+      requirement.structuredData = {
+        ...(requirement.structuredData || {}),
+        requiredPresalesPct,
+        requiredPresales: `${requiredPresalesPct}%`
+      };
+      phase.financialConditions = phase.financialConditions || {};
+      phase.financialConditions.requiredPresales = `${requiredPresalesPct}%`;
+    }
+    await doc.save();
+    await audit(req, 'finance.requirement_updated', { targetType: 'project', targetId: project._id, projectId: project._id, message: `Requisito editado: ${title}` });
+    return res.json({ ok: true, requirement });
+  } catch (err) {
+    console.error('PATCH requirement error', err);
+    return res.status(500).json({ error: 'No se pudo editar el requisito.' });
+  }
+});
+
+router.delete('/projects/:projectId/finance/phases/:phaseId/requirements/:requirementId', async (req, res) => {
+  try {
+    if (!canManageRequirements(req)) return res.status(403).json({ error: 'Solo el banco o el superadmin pueden eliminar requisitos.' });
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+    const doc = await getOrCreate(req.params.projectId, project.tenantKey);
+    const phase = doc.phases.id(req.params.phaseId);
+    if (!phase) return res.status(404).json({ error: 'Fase no encontrada' });
+    const requirement = phase.requirements.id(req.params.requirementId);
+    if (!requirement || requirement.isArchived) return res.status(404).json({ error: 'Requisito no encontrado' });
+    requirement.isArchived = true;
+    await doc.save();
+    await audit(req, 'finance.requirement_archived', { targetType: 'project', targetId: project._id, projectId: project._id, message: `Requisito eliminado: ${requirement.title}` });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE requirement error', err);
+    return res.status(500).json({ error: 'No se pudo eliminar el requisito.' });
   }
 });
 
