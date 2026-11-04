@@ -1038,17 +1038,27 @@ updatePermitsByInstitutionChart(); // ✅ para que el resumen use __permits ya c
 
 // ===== Helpers de Permisos (fases, dependencias) =====
 const PHASE_ORDER = [
-  'Anteproyecto',
+  'Certificación de Uso de Suelo',
+  'Calificación PH Horizontal',
   'Informe SINAPROC',
   'Estudio de Impacto',
+  'Estudio de Impacto Ambiental',
+  'Estudio de Movilidad',
+  'Anteproyecto',
+  'Planos de Construcción',
   'Permiso Provisional',
   'Construcción',
+  'Movimiento de Tierra',
+  'Movimientos de tierra',
   'Permiso de Construcción',
   'Permiso de Ocupación',
+  'Régimen de Propiedad Horizontal',
+  'Plano de Finca en PH',
   'Urbanización',
-  'Movimientos de tierra',
   'Segregación',
   'Inscripción',
+  'Inscripción de PH',
+  'Permisos de Operación',
   'Traspaso de calle'
 ];
 
@@ -1076,7 +1086,9 @@ function groupByPhase(items) {
 }
 
 function buildIndexByCode(items) { const m={}; (items||[]).forEach(i=>m[i.code]=i); return m; }
-function depsApproved(it, idx) { return (it.dependencies||[]).every(c => idx[c] && idx[c].status==='approved'); }
+function depsApproved(it, idx) {
+  return (it.dependencies || []).every(code => idx[code] && ['approved', 'waived'].includes(idx[code].status));
+}
 function phaseProgress(list) {
   const valid = (list || []).filter(i => i.status !== 'waived');
   const tot   = valid.length;
@@ -16202,10 +16214,12 @@ function technicalPermitEffectiveStatus(item) {
 function technicalPermitDependencies(item, index) {
   return (item?.dependencies || []).map(code => {
     const dependency = index[code];
+    const status = technicalPermitEffectiveStatus(dependency);
     return {
       code,
       title: dependency?.title || code,
-      approved: technicalPermitEffectiveStatus(dependency) === 'approved'
+      status,
+      approved: ['approved', 'waived'].includes(status)
     };
   });
 }
@@ -16309,7 +16323,7 @@ function openTechnicalPermitDetail(code) {
   const status = technicalPermitEffectiveStatus(item);
   const meta = TECHNICAL_PERMIT_META[status] || TECHNICAL_PERMIT_META.pending;
   const list = (values, empty) => values?.length ? `<ul>${values.map(value => `<li>${escapeHtml(value)}</li>`).join('')}</ul>` : `<div class="technical-detail-empty">${empty}</div>`;
-  const dependencyHtml = dependencies.length ? dependencies.map(dependency => `<div class="technical-dependency-row ${dependency.approved ? 'is-approved' : 'is-pending'}"><span>${dependency.approved ? '✓' : '!'}</span><div><strong>${escapeHtml(dependency.title)}</strong><small>${dependency.approved ? 'Aprobado' : 'Pendiente de aprobación'}</small></div></div>`).join('') : '<div class="technical-detail-empty">Este trámite no necesita una aprobación previa.</div>';
+  const dependencyHtml = dependencies.length ? dependencies.map(dependency => `<div class="technical-dependency-row ${dependency.approved ? 'is-approved' : 'is-pending'}"><span>${dependency.approved ? '✓' : '!'}</span><div><strong>${escapeHtml(dependency.title)}</strong><small>${dependency.status === 'waived' ? 'No aplica' : dependency.approved ? 'Aprobado' : 'Pendiente de aprobación'}</small></div></div>`).join('') : '<div class="technical-detail-empty">Este trámite no necesita una aprobación previa.</div>';
   const unitHtml = aggregate ? `<section class="technical-detail-section"><h4>Estado por unidad comercial</h4><div class="technical-detail-units">${aggregate.rows.length ? aggregate.rows.map(row => `<div><span>${escapeHtml(row.unit)}</span><strong>${escapeHtml(row.number)}</strong><em class="${row.approved ? 'is-approved' : 'is-pending'}">${row.approved ? 'Aprobado' : 'Pendiente'}</em></div>`).join('') : '<div class="technical-detail-empty">No hay unidades comerciales.</div>'}</div></section>` : '';
   openModal(item.title || item.code, `
     <div class="technical-permit-detail" style="--permit-color:${meta.color}">

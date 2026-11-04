@@ -1271,14 +1271,37 @@
     if (!select || createPermitTemplatesLoaded) return;
     try {
       createPermitTemplates = await API.get('/api/permits/templates');
-      select.innerHTML = '<option value="">Sin plantilla inicial</option>' + (createPermitTemplates || [])
-        .map(t => `<option value="${escapeHtml(t._id)}">${escapeHtml(t.name || 'Plantilla')} (v${escapeHtml(t.version || 1)})</option>`)
-        .join('');
       createPermitTemplatesLoaded = true;
+      renderCreatePermitTemplateOptions();
     } catch (e) {
       select.innerHTML = '<option value="">No se pudieron cargar plantillas</option>';
       console.warn('No se pudieron cargar plantillas de permisos', e);
     }
+  }
+
+  function createPermitTemplateScore(template, projectType) {
+    const normalizedType = String(projectType || '').trim().toLowerCase();
+    if (!normalizedType) return 0;
+    if ((template?.projectTypes || []).some(value => String(value || '').trim().toLowerCase() === normalizedType)) return 100;
+    const haystack = `${template?.name || ''} ${(template?.projectTypes || []).join(' ')}`.toLowerCase();
+    return normalizedType
+      .split(/[^a-záéíóúñ]+/i)
+      .filter(token => token.length > 4)
+      .reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0);
+  }
+
+  function renderCreatePermitTemplateOptions() {
+    const select = document.getElementById('createPermitTemplate');
+    if (!select || !createPermitTemplatesLoaded) return;
+    const selected = select.value;
+    const projectType = document.getElementById('pProjectType')?.value || '';
+    const ranked = [...(createPermitTemplates || [])]
+      .sort((a, b) => createPermitTemplateScore(b, projectType) - createPermitTemplateScore(a, projectType));
+    const topScore = ranked.length ? createPermitTemplateScore(ranked[0], projectType) : 0;
+    select.innerHTML = '<option value="">Sin plantilla inicial</option>' + ranked
+      .map((template, index) => `<option value="${escapeHtml(template._id)}">${index === 0 && topScore > 0 ? '★ Recomendada · ' : ''}${escapeHtml(template.name || 'Plantilla')} (v${escapeHtml(template.version || 1)})</option>`)
+      .join('');
+    if ([...select.options].some(option => option.value === selected)) select.value = selected;
   }
 
   function renderCreateDatoUnicoTemplate() {
@@ -3776,6 +3799,10 @@
     if (btnCancel) btnCancel.addEventListener('click', closeModal);
     if (btnCloseCreate) btnCloseCreate.addEventListener('click', closeModal);
     document.getElementById('createPermitTemplate')?.addEventListener('change', renderCreatePermitItems);
+    document.getElementById('pProjectType')?.addEventListener('change', () => {
+      renderCreatePermitTemplateOptions();
+      renderCreatePermitItems();
+    });
     document.getElementById('downloadCreateDatoUnicoTemplate')?.addEventListener('click', downloadCreateDatoUnicoTemplate);
     document.getElementById('ld-promoterProfileSelect')?.addEventListener('change', ev => {
       const user = createPromoterProfiles.get(String(ev.target.value || ''));
