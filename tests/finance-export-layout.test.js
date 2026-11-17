@@ -4,9 +4,10 @@ const { PassThrough } = require('node:stream');
 const fs = require('node:fs');
 const path = require('node:path');
 const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 
 const financeRouter = require('../routes/finance');
-const { buildFinanceSnapshot, exportFinanceXlsx, exportFinancePdf } = financeRouter.__financeExport;
+const { buildFinanceSnapshot, exportFinanceXlsx, exportFinancePdf, parseFinancePhaseWorkbook, uniqueFinanceUnitCandidates, selectFinanceUnitCandidate, financeUnitDisplayName, normalizeFinanceUnitAlias, financeImportedUsesWithFunding } = financeRouter.__financeExport;
 
 function sampleFinanceDocument() {
   return {
@@ -111,6 +112,7 @@ test('Excel export contains the redesigned financial views and totals', async ()
   });
   await finished;
   const output = buffer();
+  assert.equal(response.headers['content-disposition'], 'attachment; filename="Lineas_y_movimientos_Fase_1.xlsx"');
   if (process.env.WRITE_FINANCE_EXPORT_FIXTURES === '1') {
     const outputDir = path.join(process.cwd(), 'tmp', 'finance-export-preview');
     fs.mkdirSync(outputDir, { recursive: true });
@@ -138,6 +140,26 @@ test('Excel export contains the redesigned financial views and totals', async ()
   assert.equal(payments[5][5], 'REC-9');
   assert.equal(payments[5][9], 5000);
   assert.equal(payments[4].includes('Notas'), false);
+
+  const importedWorkbook = new ExcelJS.Workbook();
+  await importedWorkbook.xlsx.load(output);
+  const parsed = parseFinancePhaseWorkbook(importedWorkbook, { name: 'Fase 1' });
+  assert.deepEqual(parsed.errors, []);
+  assert.equal(parsed.lines.length, 1);
+  assert.equal(parsed.lines[0].name, 'Terreno');
+  assert.equal(parsed.lines[0].approvedAmount, 650000);
+  assert.deepEqual(parsed.phaseSummary.planUses, [
+    { name: 'Terreno', amount: 650000 },
+    { name: 'Construcción', amount: 850000 }
+  ]);
+  assert.deepEqual(parsed.phaseSummary.sources, [
+    { name: 'Banco', amount: 1050000 },
+    { name: 'Promotor', amount: 100000 }
+  ]);
+  assert.deepEqual(parsed.movements.map(item => item.entry.entryType), [
+    'disbursement', 'manual_amortization', 'interest_payment', 'sale_amortization'
+  ]);
+  assert.equal(parsed.movements.at(-1).saleUnitLabel, '1-A1 · Cliente prueba');
 });
 
 test('PDF export produces a non-empty landscape report', async () => {
@@ -157,4 +179,40 @@ test('PDF export produces a non-empty landscape report', async () => {
   }
   assert.equal(output.subarray(0, 4).toString(), '%PDF');
   assert.ok(output.length > 5000);
+});
+
+test('finance import treats commercial and financial representations as one unit', () => {
+  const canonical = { _id: 'finance-1', unitId: 'unit-106', lot: '106' };
+  const duplicate = { _id: 'finance-2', unitId: 'unit-106', lot: '106' };
+  assert.deepEqual(uniqueFinanceUnitCandidates([canonical, duplicate], '106'), [canonical]);
+
+  const legacy = { _id: 'legacy-106', lot: '106' };
+  const commercial = { __commercialSource: { unitId: 'unit-106', lot: '106' } };
+  assert.deepEqual(uniqueFinanceUnitCandidates([legacy, commercial], '106'), [commercial]);
+
+  const linked = { _id: 'finance-linked', unitId: 'unit-a', lot: '106', allocations: [{ amount: 1 }] };
+  const duplicateUnit = { _id: 'finance-empty', unitId: 'unit-b', lot: '106', allocations: [] };
+  assert.equal(selectFinanceUnitCandidate([duplicateUnit, linked]), linked);
+});
+
+test('finance uses the same imported unit name shown in Commercial', () => {
+  assert.equal(financeUnitDisplayName({ etapa: 'Fase 1', manzana: '1', lote: '106' }), '106');
+  assert.equal(financeUnitDisplayName({ manzana: '1', lote: '106' }), '1-106');
+  assert.equal(normalizeFinanceUnitAlias('74A'), normalizeFinanceUnitAlias('74-A'));
+  assert.equal(normalizeFinanceUnitAlias('74A'), normalizeFinanceUnitAlias('L-74A'));
+  assert.equal(normalizeFinanceUnitAlias('77A'), normalizeFinanceUnitAlias('77 A'));
+  assert.equal(normalizeFinanceUnitAlias('75A'), normalizeFinanceUnitAlias('75-A'));
+});
+
+test('finance import rebuilds the global use funding distribution', () => {
+  const uses = financeImportedUsesWithFunding(
+    [{ name: 'Terreno', amount: 650000 }, { name: 'Construcción', amount: 500000 }],
+    [{ name: 'Banco', amount: 1050000 }, { name: 'Promotor', amount: 100000 }],
+    [{ name: 'Terreno', approvedAmount: 650000 }]
+  );
+  assert.deepEqual(uses[0].fundingSources, [{ name: 'Banco', amount: 650000 }]);
+  assert.deepEqual(uses[1].fundingSources, [
+    { name: 'Banco', amount: 400000 },
+    { name: 'Promotor', amount: 100000 }
+  ]);
 });

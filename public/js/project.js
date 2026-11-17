@@ -5678,6 +5678,8 @@ let FINANCE_COMMERCIAL_UNITS = [];
 let FINANCE_LOAN_LINES_SAVE_IN_PROGRESS = false;
 let FINANCE_LOAN_LINES_RENDER_TIMER = null;
 let FINANCE_LOAN_LINES_AUTOSAVE_TIMER = null;
+let FINANCE_LOAN_LINES_RETRY_TIMER = null;
+let FINANCE_LOAN_LINES_RETRY_ATTEMPT = 0;
 let FINANCE_LOAN_LINES_DIRTY = false;
 let FINANCE_LOAN_LINES_SAVE_QUEUE = Promise.resolve();
 let FINANCE_UNIT_AUTOSAVE_TIMER = null;
@@ -7293,7 +7295,9 @@ function mergedFinanceUnitAmortizations() {
       _id: savedItem._id || `new-${idx}`,
       unitId: unit.unitId,
       clientName: savedItem.clientName || unit.clientName || '',
-      lot: savedItem.lot || unit.lot || unit.unitLabel || '',
+      // Comercial es la fuente canónica del nombre visible. No reutilizamos el
+      // prefijo de fase guardado por versiones antiguas de Finanzas.
+      lot: unit.lot || unit.unitLabel || savedItem.lot || '',
       buyerBank: savedItem.buyerBank || unit.buyerBank || '',
       checkNumber: savedItem.checkNumber || '',
       checkDate: savedItem.checkDate || '',
@@ -7605,9 +7609,17 @@ function saveFinanceLoanLines(btn = null, { showAlert = !!btn, force = !!btn } =
   setFinanceButtonState(btn, 'Guardando...', true);
   setFinanceAutosaveStatus('financeLoanLinesSaveStatus', 'Guardando...', 'saving');
   FINANCE_LOAN_LINES_SAVE_QUEUE = FINANCE_CONTROL_SAVE_QUEUE.catch(() => {}).then(async () => {
-    const response = await API.put(`/api/projects/${id}/finance/loan-lines`, { loanLines });
+    // El modal solo edita una fase. Enviar el bloque completo permitia que una
+    // copia antigua de otra fase sobrescribiera movimientos guardados despues.
+    const payload = FINANCE_SELECTED_PHASE_ID
+      ? { phaseId: FINANCE_SELECTED_PHASE_ID, phaseLoanLines: visibleLines }
+      : { loanLines };
+    const response = await API.put(`/api/projects/${id}/finance/loan-lines`, payload);
     applyFinanceControlSaveResponse(response);
     reconcileSavedFinanceLines(FINANCE_CONTROL?.loanLines || []);
+    FINANCE_LOAN_LINES_RETRY_ATTEMPT = 0;
+    clearTimeout(FINANCE_LOAN_LINES_RETRY_TIMER);
+    FINANCE_LOAN_LINES_RETRY_TIMER = null;
     setFinanceButtonState(btn, 'Guardado', true);
     setFinanceAutosaveStatus('financeLoanLinesSaveStatus', FINANCE_LOAN_LINES_DIRTY ? 'Cambios pendientes' : 'Guardado', FINANCE_LOAN_LINES_DIRTY ? 'pending' : 'saved');
     renderFinanceLoanGlobalSummary(collectFinanceLoanLines());
@@ -7624,6 +7636,18 @@ function saveFinanceLoanLines(btn = null, { showAlert = !!btn, force = !!btn } =
     setFinanceAutosaveStatus('financeLoanLinesSaveStatus', 'No se pudo guardar', 'error');
     console.error('[Finance] error guardando lineas', error);
     if (showAlert) alert(error.message || 'No se pudieron guardar las líneas bancarias');
+    // Un fallo transitorio no debe dejar el autoguardado detenido para siempre.
+    // Reintentamos mientras el modal siga abierto y conservamos el estado dirty.
+    clearTimeout(FINANCE_LOAN_LINES_RETRY_TIMER);
+    const retryDelay = Math.min(1000 * (2 ** FINANCE_LOAN_LINES_RETRY_ATTEMPT), 15000);
+    FINANCE_LOAN_LINES_RETRY_ATTEMPT += 1;
+    FINANCE_LOAN_LINES_RETRY_TIMER = setTimeout(() => {
+      FINANCE_LOAN_LINES_RETRY_TIMER = null;
+      const modal = document.getElementById('financePhaseLinesModal');
+      if (FINANCE_LOAN_LINES_DIRTY && modal && !modal.hidden) {
+        saveFinanceLoanLines(null, { showAlert: false }).catch(() => {});
+      }
+    }, retryDelay);
     throw error;
   }).finally(() => {
     FINANCE_LOAN_LINES_SAVE_IN_PROGRESS = false;
@@ -7876,6 +7900,14 @@ function bindFinanceOnce() {
   document.querySelectorAll('[data-finance-phase-tab]').forEach(button => button.addEventListener('click', async () => { await setFinancePhaseModalTab(button.dataset.financePhaseTab); }));
   document.getElementById('financeExportPhasePdf')?.addEventListener('click', () => downloadFinanceExport('pdf', FINANCE_SELECTED_PHASE_ID));
   document.getElementById('financeExportPhaseXlsx')?.addEventListener('click', () => downloadFinanceExport('xlsx', FINANCE_SELECTED_PHASE_ID));
+  const financeImportInput = document.getElementById('financeImportPhaseXlsxFile');
+  document.getElementById('financeImportPhaseXlsx')?.addEventListener('click', () => financeImportInput?.click());
+  financeImportInput?.addEventListener('change', async () => {
+    const file = financeImportInput.files?.[0];
+    financeImportInput.value = '';
+    if (!file) return;
+    await importFinancePhaseExcel(file);
+  });
   document.addEventListener('keydown', ev => {
     if (ev.key === 'Escape' && !document.getElementById('financePhaseLinesModal')?.hidden) closeFinancePhaseModal();
   });
@@ -7908,6 +7940,13 @@ function bindFinanceOnce() {
       if (FINANCE_LOAN_LINES_SAVE_IN_PROGRESS) return;
       renderFinanceLoanLines(collectFinanceLoanLines());
     }, 120);
+  });
+  document.getElementById('financeLoanLinesBody')?.addEventListener('focusout', () => {
+    // Al terminar un importe no esperamos al debounce. Asi el ultimo valor se
+    // envia incluso si la persona cambia de pestana o cierra el modal enseguida.
+    setTimeout(() => {
+      if (FINANCE_LOAN_LINES_DIRTY) flushFinanceLoanLinesAutosave({ showAlert: false }).catch(() => {});
+    }, 0);
   });
   document.getElementById('financeLoanLinesBody')?.addEventListener('click', async (ev) => {
     const workflowButton = ev.target.closest('[data-finance-disbursement-action]');
@@ -8107,6 +8146,65 @@ function bindFinanceOnce() {
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+function financePhaseExportFilename(phaseName, extension = 'xlsx') {
+  const clean = String(phaseName || 'Fase')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'Fase';
+  const phaseLabel = /^fase(?:_|$)/i.test(clean) ? clean : `Fase_${clean}`;
+  return `Lineas_y_movimientos_${phaseLabel}.${extension}`;
+}
+
+async function importFinancePhaseExcel(file) {
+  const button = document.getElementById('financeImportPhaseXlsx');
+  if (!FINANCE_SELECTED_PHASE_ID) return alert('Selecciona una fase antes de importar.');
+  if (!/\.xlsx$/i.test(file?.name || '')) return alert('Selecciona un archivo Excel .xlsx exportado por Bank73.');
+  if (!confirm(`La importación sustituirá todas las líneas y movimientos actuales de “${FINANCE_SELECTED_PHASE_NAME || 'esta fase'}” por los datos del Excel. ¿Continuar?`)) return;
+
+  const originalLabel = button?.textContent || 'Importar Excel';
+  try {
+    if (button) { button.disabled = true; button.textContent = 'Validando Excel...'; }
+    await flushFinanceLoanLinesAutosave({ showAlert: true });
+    await flushFinanceUnitAutosave({ showAlert: true });
+
+    const form = new FormData();
+    form.append('file', file);
+    form.append('phaseId', FINANCE_SELECTED_PHASE_ID);
+    const auth = API.getAuth();
+    const response = await fetch(`/api/projects/${id}/finance/import`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${auth.token}`,
+        'x-tenant': auth.tenantKey || auth.tenant || ''
+      },
+      body: form
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const details = Array.isArray(result.errors) && result.errors.length
+        ? `\n\n${result.errors.slice(0, 12).join('\n')}${result.errors.length > 12 ? `\n... y ${result.errors.length - 12} errores más` : ''}`
+        : '';
+      throw new Error(`${result.error || 'No se pudo importar el Excel.'}${details}`);
+    }
+
+    await loadFinance();
+    const phase = (FINANCE?.phases || []).find(item => String(item._id) === String(FINANCE_SELECTED_PHASE_ID));
+    if (phase) {
+      renderFinanceLoanLines(financeLinesForPhase(FINANCE_SELECTED_PHASE_ID));
+      renderFinancePhaseFundingSummary(phase);
+      await setFinancePhaseModalTab('lines');
+    }
+    await markProjectDataChanged({ refreshHeader: false });
+    const resolvedUnits = Number(result.resolvedAmbiguousUnits || 0);
+    alert(`Importación completada.\nResumen global: ${result.importedPhaseSummary ? 'actualizado' : 'sin hoja Usos y fuentes'}\nLíneas nuevas: ${result.createdLines || 0}\nLíneas sustituidas: ${result.updatedLines || 0}\nMovimientos importados: ${result.importedMovements || 0}\nAmortizaciones por venta vinculadas: ${result.importedSaleAmortizations || 0}\nMovimientos anteriores sustituidos: ${result.replacedMovements || 0}${resolvedUnits ? `\nUnidades duplicadas resueltas: ${resolvedUnits}` : ''}`);
+  } catch (error) {
+    console.error('[Finance] error importando Excel', error);
+    alert(error.message || 'No se pudo importar el Excel.');
+  } finally {
+    if (button) { button.disabled = false; button.textContent = originalLabel; }
+  }
+}
+
 async function downloadFinanceExport(format, phaseId = '') {
   try {
     const token =
@@ -8160,7 +8258,9 @@ async function downloadFinanceExport(format, phaseId = '') {
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = blobUrl;
-    a.download = phaseId ? `fase_${FINANCE_SELECTED_PHASE_NAME || phaseId}.${ext}` : `finanzas_${id}.${ext}`;
+    a.download = phaseId && format === 'xlsx'
+      ? financePhaseExportFilename(FINANCE_SELECTED_PHASE_NAME || phaseId, ext)
+      : phaseId ? `fase_${FINANCE_SELECTED_PHASE_NAME || phaseId}.${ext}` : `finanzas_${id}.${ext}`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -9291,6 +9391,8 @@ async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = '
   modal.querySelectorAll('[data-finance-phase-tab="lines"], [data-finance-phase-tab="charts"]').forEach(button => {
     button.hidden = !isRealContext;
   });
+  const importExcelButton = document.getElementById('financeImportPhaseXlsx');
+  if (importExcelButton) importExcelButton.hidden = !isRealContext;
   const guide = modal.querySelector('.finance-phase-guide');
   if (guide) {
     guide.innerHTML = isRealContext
@@ -9322,7 +9424,7 @@ async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = '
   const canEditPhase = ['admin', 'financiero', 'gerencia', 'socios'].includes(myRole);
   if (!canEditPhase) {
     modal.querySelectorAll('input, select, textarea').forEach(control => { control.disabled = true; });
-    modal.querySelectorAll('[data-save-phase-overview], [data-copy-plan-to-real], #financeAddLoanLineBtn, [data-finance-add-entry], [data-finance-save-line], [data-finance-remove-line], [data-finance-manual-line], [data-remove-budget-row], [data-add-budget-row]').forEach(control => { control.hidden = true; });
+    modal.querySelectorAll('[data-save-phase-overview], [data-copy-plan-to-real], #financeAddLoanLineBtn, #financeImportPhaseXlsx, [data-finance-add-entry], [data-finance-save-line], [data-finance-remove-line], [data-finance-manual-line], [data-remove-budget-row], [data-add-budget-row]').forEach(control => { control.hidden = true; });
     if (!['admin', 'promoter', 'bank'].includes(myRole)) {
       modal.querySelectorAll('[data-finance-remove-entry]').forEach(control => { control.hidden = true; });
     }

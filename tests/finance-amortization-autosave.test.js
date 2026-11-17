@@ -23,6 +23,7 @@ test('las amortizaciones por unidad se autoguardan después de persistir las lí
   assert.match(projectJs, /scheduleFinanceUnitAutosave[\s\S]*?flushFinanceUnitAutosave\(\{ showAlert: false \}\)/);
   assert.match(projectJs, /financeUnitAmortizations'\)\?\.addEventListener\('focusout'/);
   assert.match(projectHtml, /id="financeUnitSaveStatus"[^>]*>Autoguardado: guardado</);
+  assert.match(projectJs, /lot:\s*unit\.lot\s*\|\|\s*unit\.unitLabel\s*\|\|\s*savedItem\.lot/);
 });
 
 test('la tabla de movimientos unifica visualmente los importes sin alterar sus campos financieros', () => {

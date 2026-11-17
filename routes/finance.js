@@ -42,6 +42,18 @@ const { fetchRemoteImage } = require('../utils/remoteImage');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 const { formatProjectMoney } = require('../utils/currency');
+const multer = require('multer');
+const {
+  MAX_EXCEL_IMPORT_FILE_SIZE,
+  fileFilterFor,
+  handleMulterUpload
+} = require('../utils/uploadSecurity');
+
+const financeExcelUpload = handleMulterUpload(multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_EXCEL_IMPORT_FILE_SIZE },
+  fileFilter: fileFilterFor(new Set(['.xlsx']))
+}).single('file'));
 
 /* =========================================================================
    Helpers base
@@ -521,7 +533,7 @@ function validateLoanLineLimits(doc, rawLines = []) {
   }
 }
 
-async function validateLoanLineReports({ req, project, rawLines, currentDoc }) {
+async function validateLoanLineReports({ req, project, rawLines, currentDoc, allowHistoricalWithoutReport = false }) {
   const assignments = await ProjectAvaluatorAssignment.find(activeAvaluatorAssignmentFilter(req, project)).select('_id bankTenantKey').lean();
   for (const line of rawLines) {
     for (const entry of (Array.isArray(line?.entries) ? line.entries : [])) {
@@ -547,7 +559,7 @@ async function validateLoanLineReports({ req, project, rawLines, currentDoc }) {
       if (previous?.inspectionId && String(previous.inspectionId) !== String(entry.inspectionId || '')) {
         throw Object.assign(new Error('El informe vinculado a un desembolso guardado no se puede sustituir.'), { status: 409 });
       }
-      if (!entry.inspectionId && !isHistorical) {
+      if (!entry.inspectionId && !isHistorical && !allowHistoricalWithoutReport) {
         throw Object.assign(new Error('Selecciona un informe finalizado del avaluador para cada desembolso.'), { status: 400 });
       }
       if (entry.inspectionId) reportIds.push(String(entry.inspectionId));
@@ -674,6 +686,352 @@ function normalizeUnitAmortization(raw = {}) {
   };
 }
 
+const FINANCE_LINE_IMPORT_HEADERS = [
+  'Fase', 'Línea', 'Aprobado', 'Desembolsado banco', 'Disponible',
+  'Amortización manual', 'Amortización por ventas', 'Otras amortizaciones',
+  'Amortización total', 'Intereses pagados', 'Total pagado banco',
+  'Capital pendiente', '% amortizado', 'Notas'
+];
+
+const FINANCE_MOVEMENT_IMPORT_HEADERS = [
+  'Fase', 'Línea', 'Cuenta avance', 'Tipo', 'Aportante', 'Fecha',
+  'Nº préstamo', 'Desembolso banco', 'Aporte promotor', 'Importe pendiente',
+  'Amortización', 'Interés pagado', 'Pago al banco', 'Vencimiento', 'Estado',
+  'Solicitud', 'Confirmado por', 'Referencia', 'Informe avalúo',
+  'Detalle / unidad', 'Notas'
+];
+
+const FINANCE_USE_SOURCE_IMPORT_HEADERS = [
+  'Fase', 'Grupo', 'Partida', 'Plan', 'Real', 'Desviación', '% ejecución'
+];
+
+function normalizeFinanceExcelLabel(value = '') {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/n[º°]/g, 'n').replace(/[^a-z0-9%]+/g, ' ').trim().replace(/\s+/g, ' ');
+}
+
+function normalizeFinanceUnitAlias(value = '') {
+  // 74A, 74-A, 74 A y L-74A representan la misma unidad comercial.
+  return normalizeFinanceExcelLabel(value).replace(/\s+/g, '').replace(/^l(?=\d)/, '');
+}
+
+function financeExcelCellValue(cell) {
+  const value = cell?.value;
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    if ('result' in value) return value.result;
+    if (Array.isArray(value.richText)) return value.richText.map(item => item.text || '').join('');
+    if ('text' in value) return value.text;
+  }
+  return value;
+}
+
+function financeExcelText(cell) {
+  const value = financeExcelCellValue(cell);
+  return value === null || value === undefined ? '' : String(value).trim();
+}
+
+function financeExcelNumber(cell, { sheet, row, column, errors, required = false } = {}) {
+  const raw = financeExcelCellValue(cell);
+  if (raw === '' || raw === null || raw === undefined) {
+    if (required) errors.push(`${sheet}, fila ${row}: ${column} es obligatorio.`);
+    return 0;
+  }
+  const number = typeof raw === 'number' ? raw : Number(String(raw).replace(/[, ]/g, ''));
+  if (!Number.isFinite(number) || number < 0) {
+    errors.push(`${sheet}, fila ${row}: ${column} debe ser un número igual o mayor que cero.`);
+    return 0;
+  }
+  return number;
+}
+
+function financeExcelDate(cell, { sheet, row, column, errors } = {}) {
+  const raw = financeExcelCellValue(cell);
+  if (raw === '' || raw === null || raw === undefined) return null;
+  let date = raw instanceof Date ? new Date(raw) : null;
+  if (!date && typeof raw === 'number') {
+    const parsed = ExcelJS.DateUtils?.excelToDate?.(raw);
+    date = parsed instanceof Date ? parsed : new Date(Date.UTC(1899, 11, 30) + raw * 86400000);
+  }
+  if (!date) date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    errors.push(`${sheet}, fila ${row}: ${column} no contiene una fecha válida.`);
+    return null;
+  }
+  return date;
+}
+
+function validateFinanceExcelHeaders(worksheet, expected, errors) {
+  if (!worksheet) return;
+  const actual = expected.map((_, index) => normalizeFinanceExcelLabel(financeExcelText(worksheet.getRow(5).getCell(index + 1))));
+  const wanted = expected.map(normalizeFinanceExcelLabel);
+  wanted.forEach((header, index) => {
+    if (actual[index] !== header) {
+      errors.push(`${worksheet.name}, columna ${index + 1}: se esperaba “${expected[index]}” y se encontró “${financeExcelText(worksheet.getRow(5).getCell(index + 1)) || 'vacío'}”.`);
+    }
+  });
+}
+
+function financeMovementImportType(value = '') {
+  const type = normalizeFinanceExcelLabel(value);
+  if (type === 'desembolso') return 'disbursement';
+  if (type === 'amortizacion manual') return 'manual_amortization';
+  if (type === 'amortizacion por venta') return 'sale_amortization';
+  if (type === 'interes pagado') return 'interest_payment';
+  if (type === 'historico') return 'legacy';
+  return '';
+}
+
+function financeImportedMovementFingerprint(entry = {}) {
+  const dateKey = value => {
+    if (!value) return '';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+  };
+  return [
+    entry.entryType || 'legacy', dateKey(entry.movementDate || entry.disbursementDate),
+    String(entry.loanNumber || '').trim().toLowerCase(), toNum(entry.disbursementAmount).toFixed(2),
+    toNum(entry.promoterContributionAmount).toFixed(2), toNum(entry.amortizedAmount).toFixed(2),
+    toNum(entry.interestAmount).toFixed(2), dateKey(entry.maturityDate),
+    String(entry.transferReference || '').trim().toLowerCase(), String(entry.notes || '').trim().toLowerCase()
+  ].join('|');
+}
+
+function uniqueFinanceUnitCandidates(rawMatches = [], rawUnitLabel = '') {
+  const matchesByUnit = new Map();
+  rawMatches.forEach(item => {
+    const canonicalUnitId = String(item.unitId || item.__commercialSource?.unitId || '');
+    const canonicalLot = normalizeFinanceUnitAlias(item.lot || item.__commercialSource?.lot || rawUnitLabel);
+    const key = canonicalUnitId ? `unit:${canonicalUnitId}` : canonicalLot ? `lot:${canonicalLot}` : `record:${String(item._id || '')}`;
+    const current = matchesByUnit.get(key);
+    if (!current || (current.__commercialSource && !item.__commercialSource)) matchesByUnit.set(key, item);
+  });
+  let matches = [...matchesByUnit.values()];
+  if (matches.length > 1) {
+    const identifiedMatches = matches.filter(item => item.unitId || item.__commercialSource?.unitId);
+    if (identifiedMatches.length === 1) matches = identifiedMatches;
+  }
+  return matches;
+}
+
+function selectFinanceUnitCandidate(matches = []) {
+  const score = item => (
+    (item.__commercialSource ? 0 : 100) +
+    ((item.allocations || []).length ? 50 : 0) +
+    ((item.unitId || item.__commercialSource?.unitId) ? 20 : 0) +
+    (item.clientName ? 5 : 0)
+  );
+  return [...matches].sort((a, b) => {
+    const scoreDiff = score(b) - score(a);
+    if (scoreDiff) return scoreDiff;
+    const aId = String(a.unitId || a.__commercialSource?.unitId || a._id || '');
+    const bId = String(b.unitId || b.__commercialSource?.unitId || b._id || '');
+    return aId.localeCompare(bId);
+  })[0] || null;
+}
+
+function financeImportedUsesWithFunding(uses = [], sources = [], lines = []) {
+  const safeUses = uses.map(item => ({ name: String(item?.name || '').trim(), amount: Math.max(0, toNum(item?.amount)) }));
+  const allocations = safeUses.map(() => []);
+  const remaining = safeUses.map(item => item.amount);
+  const bankSources = sources.filter(source => /banco|financiacion bancaria|prestamo/.test(normalizedFinanceName(source?.name)));
+  const otherSources = sources.filter(source => !bankSources.includes(source));
+  let bankRemaining = bankSources.reduce((sum, source) => sum + Math.max(0, toNum(source?.amount)), 0);
+  const lineByName = new Map(lines.map(line => [normalizedFinanceName(line?.name), line]));
+
+  safeUses.forEach((use, index) => {
+    const line = lineByName.get(normalizedFinanceName(use.name));
+    const amount = Math.min(remaining[index], Math.max(0, toNum(line?.approvedAmount)), bankRemaining);
+    if (amount > 0) {
+      allocations[index].push({ name: bankSources[0]?.name || 'Banco', amount });
+      remaining[index] -= amount;
+      bankRemaining -= amount;
+    }
+  });
+
+  const allocateAcrossRemaining = (sourceName, requestedAmount) => {
+    let amountLeft = Math.min(Math.max(0, toNum(requestedAmount)), remaining.reduce((sum, amount) => sum + amount, 0));
+    const capacity = remaining.reduce((sum, amount) => sum + amount, 0);
+    if (amountLeft <= 0 || capacity <= 0) return;
+    remaining.forEach((gap, index) => {
+      if (gap <= 0 || amountLeft <= 0) return;
+      const share = index === remaining.length - 1 ? amountLeft : Math.min(gap, requestedAmount * gap / capacity);
+      const amount = Math.min(gap, amountLeft, share);
+      if (amount > 0) {
+        allocations[index].push({ name: sourceName, amount });
+        remaining[index] -= amount;
+        amountLeft -= amount;
+      }
+    });
+    if (amountLeft > 0.000001) {
+      for (let index = 0; index < remaining.length && amountLeft > 0.000001; index += 1) {
+        const amount = Math.min(remaining[index], amountLeft);
+        if (amount <= 0) continue;
+        const existing = allocations[index].find(item => item.name === sourceName);
+        if (existing) existing.amount += amount;
+        else allocations[index].push({ name: sourceName, amount });
+        remaining[index] -= amount;
+        amountLeft -= amount;
+      }
+    }
+  };
+
+  if (bankRemaining > 0) allocateAcrossRemaining(bankSources[0]?.name || 'Banco', bankRemaining);
+  otherSources.forEach(source => allocateAcrossRemaining(source.name || 'Otra fuente', source.amount));
+  return safeUses.map((use, index) => ({ ...use, fundingSources: allocations[index] }));
+}
+
+function parseFinancePhaseWorkbook(workbook, phase) {
+  const errors = [];
+  const linesSheet = workbook.getWorksheet('Líneas bancarias') || workbook.worksheets.find(ws => normalizeFinanceExcelLabel(ws.name) === 'lineas bancarias');
+  const movementsSheet = workbook.getWorksheet('Movimientos') || workbook.worksheets.find(ws => normalizeFinanceExcelLabel(ws.name) === 'movimientos');
+  if (!linesSheet) errors.push('Falta la hoja “Líneas bancarias”.');
+  if (!movementsSheet) errors.push('Falta la hoja “Movimientos”.');
+  if (errors.length) return { errors, lines: [], movements: [] };
+
+  validateFinanceExcelHeaders(linesSheet, FINANCE_LINE_IMPORT_HEADERS, errors);
+  validateFinanceExcelHeaders(movementsSheet, FINANCE_MOVEMENT_IMPORT_HEADERS, errors);
+  const useSourcesSheet = workbook.getWorksheet('Usos y fuentes')
+    || workbook.worksheets.find(ws => normalizeFinanceExcelLabel(ws.name) === 'usos y fuentes');
+  if (useSourcesSheet) validateFinanceExcelHeaders(useSourcesSheet, FINANCE_USE_SOURCE_IMPORT_HEADERS, errors);
+  if (errors.length) return { errors, lines: [], movements: [] };
+
+  const phaseKey = normalizedFinanceName(phase?.name || '');
+  const lines = [];
+  const lineKeys = new Set();
+  for (let rowNumber = 6; rowNumber <= linesSheet.rowCount; rowNumber += 1) {
+    const row = linesSheet.getRow(rowNumber);
+    const phaseName = financeExcelText(row.getCell(1));
+    const lineName = financeExcelText(row.getCell(2));
+    if (!phaseName && !lineName) continue;
+    if (normalizeFinanceExcelLabel(phaseName) === 'total') continue;
+    if (!lineName) { errors.push(`Líneas bancarias, fila ${rowNumber}: falta el nombre de la línea.`); continue; }
+    if (normalizedFinanceName(phaseName) !== phaseKey) {
+      errors.push(`Líneas bancarias, fila ${rowNumber}: la fase “${phaseName}” no corresponde a “${phase.name}”.`);
+    }
+    const lineKey = normalizedFinanceName(lineName);
+    if (lineKeys.has(lineKey)) errors.push(`Líneas bancarias, fila ${rowNumber}: la línea “${lineName}” está duplicada en el archivo.`);
+    lineKeys.add(lineKey);
+    lines.push({
+      rowNumber,
+      key: lineKey,
+      name: lineName,
+      approvedAmount: financeExcelNumber(row.getCell(3), { sheet: 'Líneas bancarias', row: rowNumber, column: 'Aprobado', errors }),
+      notes: financeExcelText(row.getCell(14))
+    });
+  }
+  if (!lines.length) errors.push('La hoja “Líneas bancarias” no contiene ninguna línea para importar.');
+
+  const movements = [];
+  const fileFingerprints = new Set();
+  for (let rowNumber = 6; rowNumber <= movementsSheet.rowCount; rowNumber += 1) {
+    const row = movementsSheet.getRow(rowNumber);
+    const phaseName = financeExcelText(row.getCell(1));
+    const lineName = financeExcelText(row.getCell(2));
+    if (!phaseName && !lineName && !financeExcelText(row.getCell(4))) continue;
+    if (normalizeFinanceExcelLabel(phaseName) === 'total') continue;
+    if (normalizedFinanceName(phaseName) !== phaseKey) errors.push(`Movimientos, fila ${rowNumber}: la fase “${phaseName}” no corresponde a “${phase.name}”.`);
+    const lineKey = normalizedFinanceName(lineName);
+    if (!lineKeys.has(lineKey)) errors.push(`Movimientos, fila ${rowNumber}: la línea “${lineName || 'vacía'}” no existe en la hoja “Líneas bancarias”.`);
+    const entryType = financeMovementImportType(financeExcelText(row.getCell(4)));
+    if (!entryType) { errors.push(`Movimientos, fila ${rowNumber}: tipo de movimiento no reconocido.`); continue; }
+
+    const bankAmount = financeExcelNumber(row.getCell(8), { sheet: 'Movimientos', row: rowNumber, column: 'Desembolso banco', errors });
+    const promoterAmount = financeExcelNumber(row.getCell(9), { sheet: 'Movimientos', row: rowNumber, column: 'Aporte promotor', errors });
+    const pendingAmount = financeExcelNumber(row.getCell(10), { sheet: 'Movimientos', row: rowNumber, column: 'Importe pendiente', errors });
+    const amortizedAmount = financeExcelNumber(row.getCell(11), { sheet: 'Movimientos', row: rowNumber, column: 'Amortización', errors });
+    const interestAmount = financeExcelNumber(row.getCell(12), { sheet: 'Movimientos', row: rowNumber, column: 'Interés pagado', errors });
+    const fundingLabel = normalizeFinanceExcelLabel(financeExcelText(row.getCell(5)));
+    const fundingParty = fundingLabel === 'promotor' ? 'promoter' : fundingLabel === 'mixto' ? 'mixed' : 'bank';
+    const status = normalizeFinanceExcelLabel(financeExcelText(row.getCell(15)));
+    const isPending = pendingAmount > 0 || ['pendiente', 'preparado', 'solicitado', 'devuelto'].includes(status);
+    const workflowStatus = status === 'solicitado' ? 'requested' : status === 'devuelto' ? 'returned' : isPending ? 'prepared' : 'disbursed';
+    const inspectionId = financeExcelText(row.getCell(19));
+    if (inspectionId && !mongoose.isValidObjectId(inspectionId)) errors.push(`Movimientos, fila ${rowNumber}: “Informe avalúo” no contiene un identificador válido.`);
+
+    let disbursementAmount = 0;
+    let promoterContributionAmount = 0;
+    if (entryType === 'disbursement') {
+      if (fundingParty === 'promoter') disbursementAmount = promoterAmount || pendingAmount;
+      else {
+        disbursementAmount = bankAmount || pendingAmount;
+        promoterContributionAmount = fundingParty === 'mixed' ? promoterAmount : 0;
+      }
+      if (!disbursementAmount && !promoterContributionAmount) errors.push(`Movimientos, fila ${rowNumber}: el desembolso no tiene importe.`);
+    } else if (entryType === 'manual_amortization' && !amortizedAmount) {
+      errors.push(`Movimientos, fila ${rowNumber}: la amortización manual no tiene importe.`);
+    } else if (entryType === 'interest_payment' && !interestAmount) {
+      errors.push(`Movimientos, fila ${rowNumber}: el interés pagado no tiene importe.`);
+    }
+
+    const movementDate = financeExcelDate(row.getCell(6), { sheet: 'Movimientos', row: rowNumber, column: 'Fecha', errors });
+    const entry = {
+      entryType,
+      paymentStatus: entryType === 'disbursement' ? (isPending ? 'pending' : 'paid') : 'legacy',
+      workflowStatus: entryType === 'disbursement' ? workflowStatus : 'prepared',
+      advanceAccountNumber: Math.max(0, Math.trunc(financeExcelNumber(row.getCell(3), { sheet: 'Movimientos', row: rowNumber, column: 'Cuenta avance', errors }))) || null,
+      fundingParty,
+      promoterContributionAmount,
+      promoterContributionStatus: promoterContributionAmount > 0 && !isPending ? 'contributed' : 'pending',
+      requestedAt: financeExcelDate(row.getCell(16), { sheet: 'Movimientos', row: rowNumber, column: 'Solicitud', errors }),
+      disbursedByRole: financeExcelText(row.getCell(17)),
+      transferReference: financeExcelText(row.getCell(18)),
+      movementDate: entryType === 'disbursement' ? null : movementDate,
+      disbursementDate: entryType === 'disbursement' ? movementDate : null,
+      loanNumber: financeExcelText(row.getCell(7)),
+      disbursementAmount,
+      maturityDate: financeExcelDate(row.getCell(14), { sheet: 'Movimientos', row: rowNumber, column: 'Vencimiento', errors }),
+      amortizedAmount,
+      interestAmount,
+      inspectionId: inspectionId || null,
+      notes: financeExcelText(row.getCell(21)) || financeExcelText(row.getCell(20))
+    };
+    const fingerprint = `${lineKey}|${financeImportedMovementFingerprint(entry)}`;
+    if (fileFingerprints.has(fingerprint)) errors.push(`Movimientos, fila ${rowNumber}: movimiento duplicado dentro del archivo.`);
+    fileFingerprints.add(fingerprint);
+    movements.push({
+      rowNumber,
+      lineKey,
+      entry,
+      saleUnitLabel: entryType === 'sale_amortization' ? financeExcelText(row.getCell(20)) : ''
+    });
+  }
+
+  let phaseSummary = null;
+  if (useSourcesSheet) {
+    const groups = { uses: [], sources: [] };
+    const seen = new Set();
+    for (let rowNumber = 6; rowNumber <= useSourcesSheet.rowCount; rowNumber += 1) {
+      const row = useSourcesSheet.getRow(rowNumber);
+      const phaseName = financeExcelText(row.getCell(1));
+      const groupLabel = normalizeFinanceExcelLabel(financeExcelText(row.getCell(2)));
+      const name = financeExcelText(row.getCell(3));
+      if (!phaseName && !groupLabel && !name) continue;
+      if (/^total\b/.test(normalizeFinanceExcelLabel(name))) continue;
+      if (normalizedFinanceName(phaseName) !== phaseKey) errors.push(`Usos y fuentes, fila ${rowNumber}: la fase “${phaseName}” no corresponde a “${phase.name}”.`);
+      const group = groupLabel === 'usos' ? 'uses' : groupLabel === 'fuentes' ? 'sources' : '';
+      if (!group) { errors.push(`Usos y fuentes, fila ${rowNumber}: el grupo debe ser “Usos” o “Fuentes”.`); continue; }
+      if (!name) { errors.push(`Usos y fuentes, fila ${rowNumber}: falta el nombre de la partida.`); continue; }
+      const key = `${group}:${normalizedFinanceName(name)}`;
+      if (seen.has(key)) errors.push(`Usos y fuentes, fila ${rowNumber}: la partida “${name}” está duplicada.`);
+      seen.add(key);
+      groups[group].push({
+        name,
+        plan: financeExcelNumber(row.getCell(4), { sheet: 'Usos y fuentes', row: rowNumber, column: 'Plan', errors }),
+        real: financeExcelNumber(row.getCell(5), { sheet: 'Usos y fuentes', row: rowNumber, column: 'Real', errors })
+      });
+    }
+    if (!groups.uses.length || !groups.sources.length) errors.push('La hoja “Usos y fuentes” debe contener al menos un uso y una fuente.');
+    phaseSummary = {
+      planUses: groups.uses.map(item => ({ name: item.name, amount: item.plan })),
+      uses: groups.uses.map(item => ({ name: item.name, amount: item.real })),
+      planSources: groups.sources.map(item => ({ name: item.name, amount: item.plan })),
+      sources: groups.sources.map(item => ({ name: item.name, amount: item.real }))
+    };
+  }
+
+  return { errors, lines, movements, phaseSummary };
+}
+
 function commercialClientName(v = {}) {
   const full = [
     v.primerNombre,
@@ -685,6 +1043,15 @@ function commercialClientName(v = {}) {
   return full || v.clienteNombre || '';
 }
 
+function financeUnitDisplayName(unit = {}) {
+  const lot = String(unit?.lote || '').trim();
+  const hasImportedLocation = [unit?.etapa, unit?.torre, unit?.nivel]
+    .some(value => String(value || '').trim());
+  if (hasImportedLocation && lot) return lot;
+  return [unit?.manzana, lot].map(value => String(value || '').trim()).filter(Boolean).join('-')
+    || unit?.modelo || 'Unidad';
+}
+
 async function getFinanceCommercialUnits(projectId, tenantKey) {
   const unitFilter = { projectId, deletedAt: null };
   const ventaFilter = { projectId };
@@ -694,7 +1061,7 @@ async function getFinanceCommercialUnits(projectId, tenantKey) {
   }
 
   const [units, ventas] = await Promise.all([
-    Unit.find(unitFilter).select('_id manzana lote estado modelo recamaras banos areaAbierta areaCerrada').sort({ manzana: 1, lote: 1 }).lean(),
+    Unit.find(unitFilter).select('_id etapa torre nivel manzana lote estado modelo recamaras banos areaAbierta areaCerrada').sort({ manzana: 1, lote: 1 }).lean(),
     Venta.find(ventaFilter).select('unitId clienteNombre primerNombre segundoNombre primerApellido segundoApellido apellidoCasada banco valor montoFinanciamientoCPP precioVenta numCPP estatusCPP statusBanco customerPaymentAccounts customerPaymentsVersion').lean()
   ]);
 
@@ -703,10 +1070,13 @@ async function getFinanceCommercialUnits(projectId, tenantKey) {
     const venta = ventasByUnit.get(String(u._id)) || {};
     const customerPayments = customerPaymentSummary(venta);
     const initialPayment = Math.max(0, toNum(venta.precioVenta) - toNum(venta.montoFinanciamientoCPP || venta.valor));
+    const displayName = financeUnitDisplayName(u);
+    const legacyLot = [u.manzana, u.lote].map(value => String(value || '').trim()).filter(Boolean).join('-');
     return {
       unitId: String(u._id),
-      lot: [u.manzana, u.lote].filter(Boolean).join('-') || u.lote || u.manzana || '',
-      unitLabel: [u.manzana, u.lote].filter(Boolean).join('-') || u.modelo || 'Unidad',
+      lot: displayName,
+      unitLabel: displayName,
+      legacyLot,
       modelName: u.modelo || '',
       bedrooms: toNum(u.recamaras),
       bathrooms: toNum(u.banos),
@@ -958,7 +1328,19 @@ router.put('/projects/:projectId/finance/loan-lines', async (req, res) => {
     if (!project) return;
 
     const doc = await getOrCreate(projectId, project.tenantKey);
-    const rawLines = Array.isArray(req.body?.loanLines) ? req.body.loanLines : [];
+    const requestedPhaseId = mongoose.isValidObjectId(req.body?.phaseId) ? String(req.body.phaseId) : '';
+    const scopedPhaseLines = Array.isArray(req.body?.phaseLoanLines) ? req.body.phaseLoanLines : null;
+    // El cliente del modal edita una unica fase. Mezclamos esa fase con el
+    // estado mas reciente del servidor para impedir que una copia antigua de
+    // otras fases borre sus lineas o movimientos.
+    const rawLines = requestedPhaseId && scopedPhaseLines
+      ? [
+          ...(doc.loanLines || [])
+            .filter(line => String(line?.phaseId || '') !== requestedPhaseId)
+            .map(line => line?.toObject ? line.toObject() : line),
+          ...scopedPhaseLines.map(line => ({ ...line, phaseId: requestedPhaseId }))
+        ]
+      : (Array.isArray(req.body?.loanLines) ? req.body.loanLines : []);
     const lines = assignAdvanceAccountNumbers(mergeProtectedLoanWorkflow(rawLines, doc), doc);
     validateLoanLineLimits(doc, lines);
     validateLoanFunding(lines);
@@ -972,6 +1354,213 @@ router.put('/projects/:projectId/finance/loan-lines', async (req, res) => {
   } catch (err) {
     console.error('PUT finance loan-lines error', err);
     res.status(err.status || 500).json({ error: err.status ? err.message : 'Error al guardar lineas de prestamo' });
+  }
+});
+
+router.post('/projects/:projectId/finance/import', financeExcelUpload, async (req, res) => {
+  try {
+    const role = String(req.user?.role || '').toLowerCase().trim();
+    if (!['admin', 'financiero', 'gerencia', 'socios'].includes(role)) {
+      return res.status(403).json({ error: 'No tienes permiso para importar líneas y movimientos financieros.' });
+    }
+    if (!req.file?.buffer) return res.status(400).json({ error: 'Selecciona un archivo Excel .xlsx.' });
+    const phaseId = String(req.body?.phaseId || '');
+    if (!mongoose.isValidObjectId(phaseId)) return res.status(400).json({ error: 'La fase seleccionada no es válida.' });
+
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+    const doc = await getOrCreate(req.params.projectId, project.tenantKey);
+    const phase = doc.phases.id(phaseId);
+    if (!phase) return res.status(404).json({ error: 'La fase seleccionada no existe.' });
+
+    const workbook = new ExcelJS.Workbook();
+    try {
+      await workbook.xlsx.load(req.file.buffer);
+    } catch (_error) {
+      return res.status(400).json({ error: 'El archivo no es un Excel .xlsx válido o está dañado.' });
+    }
+    const parsed = parseFinancePhaseWorkbook(workbook, phase);
+    if (parsed.errors.length) {
+      return res.status(400).json({ error: 'El Excel contiene errores y no se ha importado ningún dato.', errors: parsed.errors });
+    }
+
+    const currentPhaseLines = (doc.loanLines || []).filter(line => String(line?.phaseId || '') === phaseId);
+    const existingGroups = new Map();
+    currentPhaseLines.forEach(line => {
+      const key = normalizedFinanceName(line?.name || '');
+      if (!existingGroups.has(key)) existingGroups.set(key, []);
+      existingGroups.get(key).push(line);
+    });
+    const ambiguous = parsed.lines.filter(line => (existingGroups.get(line.key) || []).length > 1);
+    if (ambiguous.length) {
+      return res.status(409).json({
+        error: 'Hay nombres de línea duplicados en la fase y no se puede determinar dónde importar los movimientos.',
+        errors: ambiguous.map(line => `La línea “${line.name}” aparece varias veces en la fase.`)
+      });
+    }
+
+    let createdLines = 0;
+    let updatedLines = 0;
+    let importedMovements = 0;
+    let importedSaleAmortizations = 0;
+    const replacedMovements = currentPhaseLines.reduce((sum, line) => sum + (line?.entries?.length || 0), 0);
+    const importedByKey = new Map();
+    const previousEntriesByLine = new Map();
+    for (const importedLine of parsed.lines) {
+      const existing = (existingGroups.get(importedLine.key) || [])[0];
+      const target = existing?.toObject ? existing.toObject() : existing ? { ...existing } : {
+        _id: new mongoose.Types.ObjectId(),
+        phaseId: phase._id,
+        phaseName: phase.name || '',
+        approvedAmountMode: 'manual',
+        name: importedLine.name,
+        entries: []
+      };
+      previousEntriesByLine.set(importedLine.key, Array.isArray(target.entries) ? target.entries : []);
+      target.phaseId = phase._id;
+      target.phaseName = phase.name || '';
+      target.name = importedLine.name;
+      target.approvedAmount = importedLine.approvedAmount;
+      target.notes = importedLine.notes;
+      // El Excel reemplaza la fase. Solo conservamos la trazabilidad interna
+      // de filas que podamos reconocer como el mismo movimiento.
+      target.entries = [];
+      importedByKey.set(importedLine.key, target);
+      if (existing) updatedLines += 1;
+      else createdLines += 1;
+    }
+
+    const importErrors = [];
+    const saleMovements = [];
+    const resolvedAmbiguousUnits = new Set();
+    for (const movement of parsed.movements) {
+      const target = importedByKey.get(movement.lineKey);
+      if (!target) continue;
+      if (movement.entry.entryType === 'sale_amortization') {
+        saleMovements.push(movement);
+        continue;
+      }
+      const fingerprint = financeImportedMovementFingerprint(movement.entry);
+      const previousEntries = previousEntriesByLine.get(movement.lineKey) || [];
+      const previousIndex = previousEntries.findIndex(entry => financeImportedMovementFingerprint(entry) === fingerprint);
+      const previous = previousIndex >= 0 ? previousEntries.splice(previousIndex, 1)[0] : null;
+      target.entries.push(previous ? { ...previous, ...movement.entry, _id: previous._id } : movement.entry);
+      importedMovements += 1;
+    }
+
+    const commercialUnits = await getFinanceCommercialUnits(req.params.projectId, project.tenantKey);
+    const unitAmortizations = (doc.unitAmortizations || []).map(item => item?.toObject ? item.toObject() : { ...item });
+    const commercialById = new Map(commercialUnits.map(unit => [String(unit.unitId || ''), unit]));
+    const unitCandidates = new Map();
+    const addUnitAlias = (alias, item) => {
+      const key = normalizeFinanceUnitAlias(alias);
+      if (!key) return;
+      if (!unitCandidates.has(key)) unitCandidates.set(key, []);
+      if (!unitCandidates.get(key).includes(item)) unitCandidates.get(key).push(item);
+    };
+    for (const item of unitAmortizations) {
+      const commercial = commercialById.get(String(item.unitId || '')) || {};
+      addUnitAlias(item.lot, item);
+      addUnitAlias(commercial.lot, item);
+      addUnitAlias(commercial.unitLabel, item);
+      addUnitAlias(commercial.legacyLot, item);
+    }
+    for (const commercial of commercialUnits) {
+      let item = unitAmortizations.find(current => String(current.unitId || '') === String(commercial.unitId || ''));
+      if (!item) {
+        const aliases = new Set([commercial.lot, commercial.unitLabel, commercial.legacyLot].map(normalizeFinanceUnitAlias).filter(Boolean));
+        item = unitAmortizations.find(current => aliases.has(normalizeFinanceUnitAlias(current.lot || '')));
+      }
+      if (!item) {
+        // Marcador ligero: solo creamos un registro financiero si el Excel
+        // contiene realmente una amortización para esta unidad.
+        item = { __commercialSource: commercial };
+      }
+      addUnitAlias(commercial.lot, item);
+      addUnitAlias(commercial.unitLabel, item);
+      addUnitAlias(commercial.legacyLot, item);
+    }
+
+    const replacedPhaseLineIds = new Set(currentPhaseLines.map(line => String(line?._id || '')).filter(Boolean));
+    const importedLineNames = new Set(parsed.lines.map(line => line.key));
+    unitAmortizations.forEach(item => {
+      item.allocations = (item.allocations || []).filter(allocation => {
+        const allocationLineId = String(allocation?.loanLineId || '');
+        if (allocationLineId) return !replacedPhaseLineIds.has(allocationLineId);
+        return !importedLineNames.has(normalizedFinanceName(allocation?.loanLineName || ''));
+      });
+    });
+
+    for (const movement of saleMovements) {
+      const rawUnitLabel = String(movement.saleUnitLabel || '').split('·')[0].trim();
+      const rawMatches = unitCandidates.get(normalizeFinanceUnitAlias(rawUnitLabel)) || [];
+      // Una unidad puede aparecer dos veces en memoria: como ficha comercial y
+      // como control financiero histórico. Las agrupamos por unitId para que
+      // ambas representaciones cuenten como un único candidato real.
+      const matches = uniqueFinanceUnitCandidates(rawMatches, rawUnitLabel);
+      if (!rawUnitLabel) {
+        importErrors.push(`Movimientos, fila ${movement.rowNumber}: falta “Detalle / unidad” para vincular la amortización por venta.`);
+        continue;
+      }
+      if (!matches.length) {
+        importErrors.push(`Movimientos, fila ${movement.rowNumber}: no existe la unidad “${rawUnitLabel}” en el proyecto.`);
+        continue;
+      }
+      const targetLine = importedByKey.get(movement.lineKey);
+      const unitItem = selectFinanceUnitCandidate(matches);
+      if (matches.length > 1) resolvedAmbiguousUnits.add(rawUnitLabel);
+      if (unitItem.__commercialSource) {
+        const commercial = unitItem.__commercialSource;
+        Object.assign(unitItem, {
+          _id: new mongoose.Types.ObjectId(), unitId: commercial.unitId || null,
+          clientName: commercial.clientName || '', lot: commercial.lot || commercial.unitLabel || '',
+          buyerBank: commercial.buyerBank || '', checkAmount: commercial.cppAmount || 0,
+          checkAmountSource: 'cpp', allocations: [], promoterAmount: 0, notes: ''
+        });
+        delete unitItem.__commercialSource;
+        unitAmortizations.push(unitItem);
+      }
+      const existingAllocation = (unitItem.allocations || []).find(allocation => String(allocation.loanLineId || '') === String(targetLine._id));
+      if (existingAllocation) existingAllocation.amount = toNum(existingAllocation.amount) + toNum(movement.entry.amortizedAmount);
+      else {
+        unitItem.allocations = unitItem.allocations || [];
+        unitItem.allocations.push({ loanLineId: targetLine._id, loanLineName: targetLine.name, amount: toNum(movement.entry.amortizedAmount) });
+      }
+      importedSaleAmortizations += 1;
+    }
+    if (importErrors.length) {
+      return res.status(400).json({ error: 'No se pudieron relacionar algunas amortizaciones por venta y no se ha modificado ningún dato.', errors: importErrors });
+    }
+
+    const preservedLines = (doc.loanLines || [])
+      .filter(line => String(line?.phaseId || '') !== phaseId)
+      .map(line => line?.toObject ? line.toObject() : line);
+    const rawLines = [...preservedLines, ...importedByKey.values()];
+    if (parsed.phaseSummary) {
+      const importedLines = [...importedByKey.values()];
+      phase.planSources = parsed.phaseSummary.planSources;
+      phase.sources = parsed.phaseSummary.sources;
+      phase.planUses = financeImportedUsesWithFunding(parsed.phaseSummary.planUses, parsed.phaseSummary.planSources, importedLines);
+      phase.uses = financeImportedUsesWithFunding(parsed.phaseSummary.uses, parsed.phaseSummary.sources, importedLines);
+    }
+    const lines = assignAdvanceAccountNumbers(mergeProtectedLoanWorkflow(rawLines, doc), doc);
+    validateLoanLineLimits(doc, lines);
+    validateLoanFunding(lines);
+    await validateLoanLineReports({ req, project, rawLines: lines, currentDoc: doc, allowHistoricalWithoutReport: true });
+    doc.loanLines = lines.map(normalizeLoanLine);
+    doc.unitAmortizations = unitAmortizations.map(normalizeUnitAmortization);
+    await doc.save();
+
+    await audit(req, 'finance.loan_lines_imported', {
+      targetType: 'project', targetId: project._id, projectId: project._id,
+      message: `Excel financiero importado en ${phase.name || 'fase'}`,
+      metadata: { phaseId, createdLines, updatedLines, importedMovements, importedSaleAmortizations, replacedMovements, resolvedAmbiguousUnits: resolvedAmbiguousUnits.size, importedPhaseSummary: !!parsed.phaseSummary }
+    });
+    const control = sharedBuildFinanceControlSummary(doc, project || {});
+    res.json({ ok: true, createdLines, updatedLines, importedMovements, importedSaleAmortizations, replacedMovements, resolvedAmbiguousUnits: resolvedAmbiguousUnits.size, importedPhaseSummary: !!parsed.phaseSummary, financeControl: control });
+  } catch (err) {
+    console.error('POST finance import error', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'No se pudo importar el Excel financiero.' });
   }
 });
 
@@ -2393,8 +2982,13 @@ async function exportFinanceXlsx({ req, res, projectId, projectName, projectCurr
     }
   }
 
+  const exportedPhaseName = String(snap.phases?.[0]?.name || 'Fase')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || 'Fase';
+  const phaseLabel = /^fase(?:_|$)/i.test(exportedPhaseName) ? exportedPhaseName : `Fase_${exportedPhaseName}`;
+  const filename = phaseId ? `Lineas_y_movimientos_${phaseLabel}.xlsx` : `finanzas_${projectId}.xlsx`;
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition', `attachment; filename="${phaseId ? `fase_${phaseId}` : `finanzas_${projectId}`}.xlsx"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   await wb.xlsx.write(res);
   return res.end();
 }
@@ -2861,7 +3455,7 @@ router.get('/projects/:projectId/finance/export', handleFinanceExport);
 router.post('/projects/:projectId/finance/export', handleFinanceExport);
 
 Object.defineProperty(router, '__financeExport', {
-  value: { buildFinanceSnapshot, exportFinanceXlsx, exportFinancePdf },
+  value: { buildFinanceSnapshot, exportFinanceXlsx, exportFinancePdf, parseFinancePhaseWorkbook, uniqueFinanceUnitCandidates, selectFinanceUnitCandidate, financeUnitDisplayName, normalizeFinanceUnitAlias, financeImportedUsesWithFunding },
   enumerable: false
 });
 
