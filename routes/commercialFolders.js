@@ -5,6 +5,16 @@ const Unit = require('../models/Unit');
 const Project = require('../models/Project');
 const { requireProjectAccess } = require('../middleware/rbac');
 
+const COMMERCIAL_FOLDER_COLORS = new Set([
+  '#111827', '#1e3a8a', '#172554', '#134e4a',
+  '#14532d', '#581c87', '#881337', '#7c2d12'
+]);
+
+function normalizeCommercialFolderColor(value) {
+  const color = String(value || '').trim().toLowerCase();
+  return COMMERCIAL_FOLDER_COLORS.has(color) ? color : '#111827';
+}
+
 async function attachProjectFromRequest(req, res, next) {
   try {
     const projectId = req.body?.projectId || req.query?.projectId;
@@ -54,10 +64,10 @@ router.get('/', requireProjectAccess(), attachProjectFromRequest, async (req, re
     .lean();
 
   res.json({
-    folders,
+    folders: folders.map(folder => ({ ...folder, color: normalizeCommercialFolderColor(folder.color) })),
     unassigned: {
       name: project?.commercialUnassignedName || 'Sin carpeta',
-      color: project?.commercialUnassignedColor || '#0f172a'
+      color: normalizeCommercialFolderColor(project?.commercialUnassignedColor)
     }
   });
 });
@@ -78,7 +88,7 @@ router.post('/', attachProjectFromRequest, requireProjectAccess({ promoterCanEdi
     tenantKey: req.tenantKey,
     projectId,
     name: name.trim(),
-    color: color || '#0f172a',
+    color: normalizeCommercialFolderColor(color),
     order: count
   });
 
@@ -99,7 +109,7 @@ router.patch('/unassigned/settings', attachProjectFromRequest, requireProjectAcc
   }
 
   if (color != null) {
-    update.commercialUnassignedColor = String(color || '').trim() || '#0f172a';
+    update.commercialUnassignedColor = normalizeCommercialFolderColor(color);
   }
 
   const filter = { _id: projectId };
@@ -118,7 +128,7 @@ router.patch('/unassigned/settings', attachProjectFromRequest, requireProjectAcc
   res.json({
     ok: true,
     name: project.commercialUnassignedName || 'Sin carpeta',
-    color: project.commercialUnassignedColor || '#0f172a'
+    color: normalizeCommercialFolderColor(project.commercialUnassignedColor)
   });
 });
 
@@ -130,7 +140,7 @@ router.patch('/:id', attachProjectFromFolder, requireProjectAccess({ promoterCan
   }
 
   if (req.body.color != null) {
-    update.color = String(req.body.color || '#0f172a').trim();
+    update.color = normalizeCommercialFolderColor(req.body.color);
   }
 
   const folder = await CommercialFolder.findOneAndUpdate(

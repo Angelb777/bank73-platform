@@ -2148,6 +2148,7 @@ router.post('/:id/expiry-alerts/resolve', requireProjectAccess({ commercialOnlyS
       'insurance_policy',
       'performance_bond',
       'payment_bond',
+      'promissory_note',
       'engineering_inspection_follow_up',
       'account_advance_follow_up'
     ].includes(kind)) {
@@ -2167,6 +2168,25 @@ router.post('/:id/expiry-alerts/resolve', requireProjectAccess({ commercialOnlyS
 
     const existing = (project.expiryAlertResolutions || []).find(item => item.key === key);
     if (existing) return res.json({ ok: true, resolution: existing });
+
+    if (kind === 'promissory_note') {
+      const [ventaId, pagareId, ...extra] = sourceId.split(':');
+      if (extra.length || !mongoose.isValidObjectId(ventaId) || !mongoose.isValidObjectId(pagareId)) {
+        return res.status(400).json({ error: 'Referencia de pagaré no válida' });
+      }
+      const venta = await Venta.findOne({
+        _id: ventaId,
+        projectId: project._id,
+        tenantKey: projectTenantKey,
+        deletedAt: null,
+        'pagares._id': pagareId
+      });
+      if (!venta) return res.status(404).json({ error: 'Pagaré no encontrado' });
+      const pagare = venta.pagares.id(pagareId);
+      pagare.cobrado = true;
+      pagare.cobradoAt = pagare.cobradoAt || new Date();
+      await venta.save();
+    }
 
     const rawUserId = req.user?.userId || req.user?._id || req.user?.id;
     const resolvedBy = mongoose.isValidObjectId(rawUserId) ? rawUserId : null;
@@ -3042,6 +3062,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       0;
 
     const getCppDueDate = (v) =>
+      String(v?.modalidadFinanciamiento || '').trim() === 'Al contado' ? null :
       v?.fechaVencimientoCPP ||
       v?.vencimientoCPP ||
       v?.vencimientoCPPBnMivi ||
@@ -4507,6 +4528,7 @@ router.post('/:id/summary/export', requireProjectAccess(), async (req, res) => {
       0;
 
     const getCppDueDate = (v) =>
+      String(v?.modalidadFinanciamiento || '').trim() === 'Al contado' ? null :
       v?.fechaVencimientoCPP ||
       v?.vencimientoCPP ||
       v?.vencimientoCPPBnMivi ||

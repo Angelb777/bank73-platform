@@ -2458,6 +2458,7 @@ function isSummarySoldUnit(u) {
 }
 
 function isSummaryActiveCpp(v) {
+  if (String(v?.modalidadFinanciamiento || '').trim() === 'Al contado') return false;
   const hasCpp =
     String(v?.estatusCPP || '').toLowerCase().includes('cpp') ||
     String(v?.statusBanco || '').toLowerCase().includes('cpp') ||
@@ -3183,6 +3184,7 @@ if (!isPeriodView) try {
   };
 
   const cppVigentes = (ventas || []).filter(v => {
+    if (String(v?.modalidadFinanciamiento || '').trim() === 'Al contado') return false;
     const hasCpp = String(v?.numCPP || '').trim();
     const days = diffDays(v?.fechaVencimientoCPP);
     return hasCpp && days !== null && days >= 0;
@@ -11169,6 +11171,7 @@ function normalizeUnitEstadoFrontend(v) {
   const fichaCerrarX = document.getElementById('fichaCerrarX');
   const fichaExpandir = document.getElementById('fichaExpandir');
   const fichaGuardar = document.getElementById('fichaGuardar');
+  const fichaDesistirCliente = document.getElementById('fichaDesistirCliente');
 
   const modalBatch = document.getElementById('modalBatch');
   const batchCerrar = document.getElementById('batchCerrar');
@@ -11684,6 +11687,201 @@ if (typeof document !== 'undefined') document.addEventListener('click', async ev
   await persistCustomerPayments({ manual: true });
 });
 
+const COMMERCIAL_SALE_FIELD_DOC_PREFIX = 'commercialSaleField:';
+
+function commercialSaleFieldDocCategory(fieldId = '') {
+  return `${COMMERCIAL_SALE_FIELD_DOC_PREFIX}${String(fieldId || '').trim()}`;
+}
+
+function commercialSaleFieldAttachmentHtml(fieldId = '') {
+  const safeFieldId = safeVal(fieldId);
+  return `<div class="sale-field-documents" data-sale-field-documents="${safeFieldId}">
+    <input type="file" hidden multiple data-sale-field-file="${safeFieldId}">
+    <div class="sale-field-doc-actions">
+      <button type="button" class="sale-field-attach-btn" data-sale-field-upload="${safeFieldId}">Adjuntar archivo</button>
+      <span data-sale-field-count="${safeFieldId}">0 adjuntos</span>
+    </div>
+    <div class="sale-field-doc-list" data-sale-field-docs="${safeFieldId}"><span>Sin adjuntos</span></div>
+  </div>`;
+}
+
+function addCommercialSaleFieldAttachments(body = '') {
+  return String(body).replace(
+    /<div class="unit-process-field([^"]*)">([\s\S]*?)<\/div>/g,
+    (match, classes, content) => {
+      const fieldMatch = content.match(/\b(?:id|for)="(fv-[A-Za-z0-9_-]+)"/);
+      if (!fieldMatch) return match;
+      return `<div class="unit-process-field${classes}">${content}${commercialSaleFieldAttachmentHtml(fieldMatch[1])}</div>`;
+    }
+  );
+}
+
+function renderCommercialSaleFieldDocuments(docs = []) {
+  const activeDocs = Array.isArray(docs)
+    ? docs.filter(doc => doc && doc.status !== 'REPLACED' && String(doc.category || '').startsWith(COMMERCIAL_SALE_FIELD_DOC_PREFIX))
+    : [];
+
+  document.querySelectorAll('#fichaUnidadModal [data-sale-field-documents]').forEach(container => {
+    const fieldId = container.dataset.saleFieldDocuments || '';
+    const fieldDocs = activeDocs.filter(doc => String(doc.category || '') === commercialSaleFieldDocCategory(fieldId));
+    const count = container.querySelector('[data-sale-field-count]');
+    const list = container.querySelector('[data-sale-field-docs]');
+    if (count) count.textContent = `${fieldDocs.length} ${fieldDocs.length === 1 ? 'adjunto' : 'adjuntos'}`;
+    if (!list) return;
+    list.innerHTML = fieldDocs.length
+      ? fieldDocs.map(doc => {
+          const name = doc.originalname || doc.title || doc.filename || 'Documento';
+          return `<div class="sale-field-doc-row">
+            <span title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+            <span class="sale-field-doc-links">
+              <a class="js-secure-file" href="#" data-url="${secureDocUrl(doc._id)}" data-filename="${escapeHtml(name)}" data-action="view">Ver</a>
+              <a class="js-secure-file" href="#" data-url="${secureDocUrl(doc._id)}" data-filename="${escapeHtml(name)}" data-action="download">Descargar</a>
+            </span>
+          </div>`;
+        }).join('')
+      : '<span>Sin adjuntos</span>';
+  });
+}
+
+async function loadCommercialSaleFieldDocuments(projectId, unitId) {
+  const qs = new URLSearchParams({
+    projectId: String(projectId || ''),
+    unitId: String(unitId || ''),
+    department: 'commercial',
+    ts: String(Date.now())
+  });
+  const docs = await API.get(`/api/documents?${qs.toString()}`);
+  if (String(fichaUnitId || '') === String(unitId || '')) {
+    renderCommercialSaleFieldDocuments(docs);
+  }
+  return docs;
+}
+
+function bindCommercialSaleFieldDocuments(host, projectId, unitId) {
+  if (!host || host.dataset.saleFieldDocumentsBound === 'true') return;
+  host.dataset.saleFieldDocumentsBound = 'true';
+
+  host.addEventListener('click', event => {
+    const button = event.target.closest('[data-sale-field-upload]');
+    if (!button) return;
+    const fieldId = button.dataset.saleFieldUpload || '';
+    host.querySelector(`[data-sale-field-file="${fieldId}"]`)?.click();
+  });
+
+  host.addEventListener('change', async event => {
+    const input = event.target.closest('[data-sale-field-file]');
+    if (!input || !input.files?.length) return;
+    const fieldId = input.dataset.saleFieldFile || '';
+    const button = host.querySelector(`[data-sale-field-upload="${fieldId}"]`);
+    const files = [...input.files];
+    const formData = new FormData();
+    formData.append('projectId', String(projectId));
+    formData.append('unitId', String(unitId));
+    formData.append('department', 'commercial');
+    formData.append('folder', 'comercial');
+    formData.append('category', commercialSaleFieldDocCategory(fieldId));
+    files.forEach(file => formData.append('files', file));
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = files.length === 1 ? 'Subiendo…' : `Subiendo ${files.length}…`;
+    }
+    try {
+      await API.upload('/api/documents/upload', formData);
+      await loadCommercialSaleFieldDocuments(projectId, unitId);
+    } catch (error) {
+      console.error('[Commercial sale field upload]', error);
+      alert(`No se pudo adjuntar el archivo: ${error.message || 'Error desconocido'}`);
+    } finally {
+      input.value = '';
+      if (button) {
+        button.disabled = false;
+        button.textContent = 'Adjuntar archivo';
+      }
+    }
+  });
+}
+
+function createPagareClientId() {
+  if (globalThis.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(12);
+    globalThis.crypto.getRandomValues(bytes);
+    return [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
+  }
+  return `${Math.floor(Date.now() / 1000).toString(16).padStart(8, '0')}${Math.random().toString(16).slice(2).padEnd(16, '0').slice(0, 16)}`;
+}
+
+function pagareRowHtml(pagare = {}) {
+  const pagareId = /^[a-f\d]{24}$/i.test(String(pagare?._id || ''))
+    ? String(pagare._id)
+    : createPagareClientId();
+  const due = String(pagare.fechaVencimiento || '').slice(0, 10);
+  const cobradoAt = pagare.cobradoAt ? String(pagare.cobradoAt) : '';
+  return `<div class="pagare-row ${pagare.cobrado ? 'is-collected' : ''}" data-pagare-row data-pagare-id="${pagareId}" data-pagare-cobrado-at="${escapeHtml(cobradoAt)}">
+    <div class="pagare-input-field"><label><span>Nº de pagaré</span><input type="text" data-pagare-field="numero" value="${escapeHtml(pagare.numero || '')}" placeholder="Ej. PG-001"></label>${commercialSaleFieldAttachmentHtml(`pagare-${pagareId}-numero`)}</div>
+    <div class="pagare-input-field"><label><span>Monto</span><input type="text" inputmode="decimal" data-pagare-field="monto" value="${pagare.monto ? escapeHtml(formatPanamaNumber(pagare.monto)) : ''}" placeholder="0.00"></label>${commercialSaleFieldAttachmentHtml(`pagare-${pagareId}-monto`)}</div>
+    <div class="pagare-input-field"><label><span>Fecha de vencimiento</span><input type="date" data-pagare-field="fechaVencimiento" value="${escapeHtml(due)}"></label>${commercialSaleFieldAttachmentHtml(`pagare-${pagareId}-fechaVencimiento`)}</div>
+    <label class="pagare-collected"><input type="checkbox" data-pagare-field="cobrado" ${pagare.cobrado ? 'checked' : ''}><span>Cobrado</span></label>
+    <button type="button" class="pagare-remove" data-remove-pagare title="Eliminar pagaré">Eliminar</button>
+  </div>`;
+}
+
+function pagaresSectionHtml(pagares = []) {
+  const items = Array.isArray(pagares) ? pagares : [];
+  return `<div class="pagares-manager">
+    <div class="pagares-list" data-pagares-list>${items.length ? items.map(pagareRowHtml).join('') : '<div class="pagares-empty" data-pagares-empty>No hay pagarés registrados.</div>'}</div>
+    <button type="button" class="pagare-add" data-add-pagare>+ Añadir pagaré</button>
+  </div>`;
+}
+
+function collectPagaresFromFicha() {
+  return [...document.querySelectorAll('#fichaUnidadModal [data-pagare-row]')].map(row => {
+    const read = field => row.querySelector(`[data-pagare-field="${field}"]`);
+    const cobrado = !!read('cobrado')?.checked;
+    return {
+      _id: row.dataset.pagareId,
+      numero: String(read('numero')?.value || '').trim(),
+      monto: Math.max(0, parsePanamaNumber(read('monto')?.value || 0)),
+      fechaVencimiento: String(read('fechaVencimiento')?.value || '').trim() || null,
+      cobrado,
+      cobradoAt: cobrado ? (row.dataset.pagareCobradoAt || new Date().toISOString()) : null
+    };
+  }).filter(item => item.numero || item.monto > 0 || item.fechaVencimiento);
+}
+
+function bindPagaresManager(host) {
+  if (!host || host.dataset.pagaresBound === 'true') return;
+  host.dataset.pagaresBound = 'true';
+  host.addEventListener('click', event => {
+    const addButton = event.target.closest('[data-add-pagare]');
+    if (addButton) {
+      const list = host.querySelector('[data-pagares-list]');
+      list?.querySelector('[data-pagares-empty]')?.remove();
+      list?.insertAdjacentHTML('beforeend', pagareRowHtml());
+      list?.lastElementChild?.querySelector('[data-pagare-field="numero"]')?.focus();
+      return;
+    }
+    const removeButton = event.target.closest('[data-remove-pagare]');
+    if (!removeButton) return;
+    const row = removeButton.closest('[data-pagare-row]');
+    if (!row || !confirm('¿Eliminar este pagaré?')) return;
+    const list = row.parentElement;
+    row.remove();
+    if (list && !list.querySelector('[data-pagare-row]')) {
+      list.innerHTML = '<div class="pagares-empty" data-pagares-empty>No hay pagarés registrados.</div>';
+    }
+    scheduleFichaAutosave(150);
+  });
+  host.addEventListener('change', event => {
+    const checkbox = event.target.closest('[data-pagare-field="cobrado"]');
+    if (!checkbox) return;
+    const row = checkbox.closest('[data-pagare-row]');
+    if (!row) return;
+    row.classList.toggle('is-collected', checkbox.checked);
+    row.dataset.pagareCobradoAt = checkbox.checked ? (row.dataset.pagareCobradoAt || new Date().toISOString()) : '';
+  });
+}
+
 function renderCommercialProcessFicha(u = {}, v = {}) {
   const options = (items, value = '') => {
     const current = String(value || '');
@@ -11713,7 +11911,7 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
       <span class="unit-stage-number">${state.cls === 'is-complete' ? '✓' : num}</span>
       <span class="unit-stage-copy"><strong>${title}</strong><small>${state.filled} de ${values.length} campos</small></span>
       <span class="unit-stage-status">${state.label}</span><span class="unit-stage-chevron">⌄</span>
-    </summary><div class="unit-stage-body">${body}</div></details>`;
+    </summary><div class="unit-stage-body">${addCommercialSaleFieldAttachments(body)}</div></details>`;
   };
   const profileOpts = [{v:'',l:'—'},{v:'Independiente',l:'Independiente'},{v:'Asalariado',l:'Asalariado'}];
   const companyOpts = [{v:'',l:'—'},{v:'Privada',l:'Privada'},{v:'Gubernamental',l:'Gubernamental'}];
@@ -11775,7 +11973,7 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
   const reservationAge = reservationAgeInfo(u, v);
   const stages = [
     stage(1,'Reserva',stageValues[0],`${date('fv-fechaReserva','Fecha de reserva',v.fechaReserva)}${date('fv-fechaProforma','Fecha proforma',v.fechaProforma)}${date('fv-fechaProbableEntrega','Fecha probable de entrega',v.fechaProbableEntrega)}${field('fv-cesionAFavorDe','Cesión a favor de',v.cesionAFavorDe)}${select('fv-estatusCPP','Estatus de CPP',[{v:'',l:'—'},{v:'Documentación entregada',l:'Documentación entregada'},{v:'En comité',l:'En comité'},{v:'Aprobado',l:'Aprobado'},{v:'CPP recibida',l:'CPP recibida'}],v.estatusCPP)}`,stageStates[0]),
-    stage(2,'Carta promesa de pago y contrato',stageValues[1],`<h4>Carta promesa de pago</h4>${field('fv-numCPP','No. de CPP',v.numCPP)}${date('fv-fechaValorCPP','Fecha de CPP',v.fechaValorCPP)}${date('fv-fechaVencimientoCPP','Vencimiento de CPP',v.fechaVencimientoCPP)}${check('fv-aperturaCtaBanco','Apertura de cuenta en banco',v.aperturaCtaBanco)}<h4>Pólizas</h4>${check('fv-polizaVidaEntregada','Póliza de vida entregada',lifePolicyDelivered)}${select('fv-tipoPolizaVida','Modalidad de póliza de vida',policyTypeOpts,lifePolicyType)}${check('fv-polizaIncendioEntregada','Póliza de incendio entregada',firePolicyDelivered)}${select('fv-tipoPolizaIncendio','Modalidad de póliza de incendio',policyTypeOpts,firePolicyType)}<div class="unit-process-field is-wide"><label class="unit-process-check unit-policy-summary" for="fv-polizas"><input id="fv-polizas" type="checkbox" ${allPoliciesDelivered ? 'checked' : ''} disabled aria-readonly="true"><span>Pólizas entregadas <small>Se marca automáticamente al recibir ambas</small></span></label></div><h4>Contrato</h4>${date('fv-fechaContratoCliente','Fecha de contrato',v.fechaContratoCliente)}${number('fv-montoContrato','Monto de contrato',v.montoContrato)}${number('fv-valorMejoras','Valor mejoras',u.valorMejoras||v.valorMejoras)}${number('fv-valorTerreno','Valor terreno',u.valorTerreno||v.valorTerreno)}<h4>Minutas</h4>${select('fv-mLiberacion','Minuta de liberación / desafectación',minuteOpts,v.mLiberacion)}${select('fv-mSegregacion','Minuta de segregación / venta',minuteOpts,v.mSegregacion)}`,stageStates[1]),
+    stage(2,'Carta promesa de pago y contrato',stageValues[1],`<h4>Carta promesa de pago</h4>${field('fv-numCPP','No. de CPP',v.numCPP)}${date('fv-fechaValorCPP','Fecha de CPP',v.fechaValorCPP)}${date('fv-fechaVencimientoCPP','Vencimiento de CPP',v.fechaVencimientoCPP)}${check('fv-aperturaCtaBanco','Apertura de cuenta en banco',v.aperturaCtaBanco)}<h4>Pólizas</h4>${check('fv-polizaVidaEntregada','Póliza de vida entregada',lifePolicyDelivered)}${select('fv-tipoPolizaVida','Modalidad de póliza de vida',policyTypeOpts,lifePolicyType)}${check('fv-polizaIncendioEntregada','Póliza de incendio entregada',firePolicyDelivered)}${select('fv-tipoPolizaIncendio','Modalidad de póliza de incendio',policyTypeOpts,firePolicyType)}<div class="unit-process-field is-wide"><label class="unit-process-check unit-policy-summary" for="fv-polizas"><input id="fv-polizas" type="checkbox" ${allPoliciesDelivered ? 'checked' : ''} disabled aria-readonly="true"><span>Pólizas entregadas <small>Se marca automáticamente al recibir ambas</small></span></label></div><h4>Contrato</h4>${date('fv-fechaContratoCliente','Fecha de contrato',v.fechaContratoCliente)}${number('fv-montoContrato','Monto de contrato',v.montoContrato)}${number('fv-valorMejoras','Valor mejoras',u.valorMejoras||v.valorMejoras)}${number('fv-valorTerreno','Valor terreno',u.valorTerreno||v.valorTerreno)}<h4>Pagaré</h4>${pagaresSectionHtml(v.pagares)}<h4>Minutas</h4>${select('fv-mLiberacion','Minuta de liberación / desafectación',minuteOpts,v.mLiberacion)}${select('fv-mSegregacion','Minuta de segregación / venta',minuteOpts,v.mSegregacion)}`,stageStates[1]),
     stage(3,'Avalúo',stageValues[2],`${date('fv-solicitudAvaluo','Solicitud avalúo (fecha)',v.solicitudAvaluo)}${date('fv-fechaAvaluo','Avalúo (fecha)',v.fechaAvaluo)}${field('fv-empresaAvaluadora','Empresa avaluadora',v.empresaAvaluadora)}`,stageStates[2]),
     stage(4,'Protocolo / Escrituras',stageValues[3],`${select('fv-mPrestamo','Minuta préstamo / hipoteca',minuteOpts,v.mPrestamo)}${date('fv-fechaProtocoloFirmaCliente','Firma del cliente',v.fechaProtocoloFirmaCliente)}${date('fv-fechaProtocoloFirmaPromotora','Firma del promotor',v.fechaProtocoloFirmaPromotora)}${date('fv-fechaProtocoloFirmaBancoInterino','Firma del banco interino',v.fechaProtocoloFirmaBancoInterino)}${date('fv-fechaProtocoloFirmaBancoCliente','Firma del banco del cliente',v.fechaProtocoloFirmaBancoCliente)}`,stageStates[3]),
     stage(5,'Cierre notarial / Registro Público',stageValues[4],`${date('fv-fechaPagoImpuesto','Fecha de pago de impuestos',v.fechaPagoImpuesto)}${date('fv-fechaCierreEscritura','Cierre de notaría (fecha de escritura)',v.fechaCierreEscritura||v.fechaFirma)}${date('fv-fechaIngresoRP','Ingreso al Registro Público',v.fechaIngresoRP)}${date('fv-fechaInscripcion','Fecha de inscripción',v.fechaInscripcion)}`,stageStates[4]),
@@ -11895,6 +12093,49 @@ const COMMERCIAL_STAGE_FIELD_IDS = [
   ['fv-fechaDesembolso','fv-fechaEntregaVivienda']
 ];
 
+const COMMERCIAL_CASH_DISABLED_FIELD_IDS = new Set([
+  'fv-montoFinanciamientoCPP', 'fv-banco',
+  'fv-fechaProforma', 'fv-fechaProbableEntrega', 'fv-estatusCPP',
+  'fv-numCPP', 'fv-fechaValorCPP', 'fv-fechaVencimientoCPP', 'fv-aperturaCtaBanco',
+  'fv-polizaVidaEntregada', 'fv-tipoPolizaVida', 'fv-polizaIncendioEntregada', 'fv-tipoPolizaIncendio',
+  'fv-mLiberacion', 'fv-mSegregacion',
+  'fv-solicitudAvaluo', 'fv-fechaAvaluo', 'fv-empresaAvaluadora',
+  'fv-mPrestamo', 'fv-fechaProtocoloFirmaBancoCliente'
+]);
+
+function isCashPurchaseMode() {
+  return String(document.getElementById('fv-modalidadFinanciamiento')?.value || '').trim() === 'Al contado';
+}
+
+function applyCashPurchaseMode() {
+  const cashPurchase = isCashPurchaseMode();
+  COMMERCIAL_CASH_DISABLED_FIELD_IDS.forEach(fieldId => {
+    const control = document.getElementById(fieldId);
+    if (!control) return;
+    control.disabled = cashPurchase;
+    control.setAttribute('aria-disabled', String(cashPurchase));
+    const container = control.closest('.unit-process-field, .unit-summary-card');
+    if (container) {
+      container.classList.toggle('is-cash-disabled', cashPurchase);
+      let note = container.querySelector(':scope > .cash-purchase-note');
+      if (cashPurchase && !note) {
+        note = document.createElement('span');
+        note.className = 'cash-purchase-note';
+        note.textContent = 'No aplica · compra al contado';
+        container.appendChild(note);
+      }
+      if (!cashPurchase) note?.remove();
+      container.querySelectorAll('[data-sale-field-upload]').forEach(button => {
+        button.disabled = cashPurchase;
+      });
+    }
+  });
+  const bankOther = document.getElementById('fv-bancoOther');
+  if (bankOther) bankOther.disabled = cashPurchase;
+  refreshCommercialProcessProgress();
+  refreshCommercialSummaryKpis();
+}
+
 function refreshPolicyDeliverySummary() {
   const life = document.getElementById('fv-polizaVidaEntregada');
   const fire = document.getElementById('fv-polizaIncendioEntregada');
@@ -11907,7 +12148,11 @@ function refreshPolicyDeliverySummary() {
 function refreshCommercialProcessProgress() {
   const cards = [...document.querySelectorAll('#fichaUnidadModal .unit-process-stage[data-stage-index]')];
   if (!cards.length) return;
-  const values = COMMERCIAL_STAGE_FIELD_IDS.map(ids => ids.map(id => {
+  const cashPurchase = isCashPurchaseMode();
+  const applicableIds = COMMERCIAL_STAGE_FIELD_IDS.map(ids => cashPurchase
+    ? ids.filter(id => !COMMERCIAL_CASH_DISABLED_FIELD_IDS.has(id))
+    : ids);
+  const values = applicableIds.map(ids => ids.map(id => {
     const control = document.getElementById(id);
     return control?.type === 'checkbox' ? !!control.checked : String(control?.value || '').trim();
   }));
@@ -11920,8 +12165,9 @@ function refreshCommercialProcessProgress() {
     const counter = card.querySelector('.unit-stage-copy small');
     const status = card.querySelector('.unit-stage-status');
     if (number) number.textContent = state.complete ? '✓' : String(index + 1);
-    if (counter) counter.textContent = `${state.filled} de ${values[index].length} campos`;
-    if (status) status.textContent = state.label;
+    const notApplicable = cashPurchase && applicableIds[index].length === 0;
+    if (counter) counter.textContent = notApplicable ? 'No aplica · compra al contado' : `${state.filled} de ${values[index].length} campos`;
+    if (status) status.textContent = notApplicable ? 'No aplica' : state.label;
   });
   const complete = states.filter(state => state.complete).length;
   const headingCount = document.querySelector('#fichaUnidadModal .unit-process-heading > div > span');
@@ -11931,7 +12177,10 @@ function refreshCommercialProcessProgress() {
 }
 
 function openFichaCommercialState() {
-  const value = id => String(document.getElementById(id)?.value || '').trim();
+  const value = id => {
+    const control = document.getElementById(id);
+    return control?.disabled ? '' : String(control?.value || '').trim();
+  };
   if (value('fv-fechaInscripcion')) return { estado:'escriturado_traspasado', motivo:'Inscripción en Registro Público registrada' };
   if (value('fv-solicitudAvaluo')) return { estado:'tramite_legal_activado', motivo:'Solicitud de avalúo registrada' };
   if (value('fv-fechaValorCPP') || /cpp\s*recibid/i.test(value('fv-estatusCPP'))) {
@@ -11952,6 +12201,7 @@ function refreshOpenFichaCommercialStatePreview() {
   const canAdvanceManual = fichaEstadoModo !== 'automatico' && suggestionRank > currentRank;
   if (fichaEstadoModo === 'automatico' || canAdvanceManual) {
     const nextState = fichaEstadoModo === 'automatico' &&
+      !isCashPurchaseMode() &&
       !['disponible','inventario'].includes(suggestion.estado) &&
       currentRank > suggestionRank
       ? normalizeUnitEstadoFrontend(stateSelect?.value)
@@ -12840,12 +13090,48 @@ function setCommercialFolderCollapsed(folderId, closed) {
   localStorage.setItem(`bank73_com_folder_closed_${id}_${folderId || 'unassigned'}`, closed ? '1' : '0');
 }
 
+const COMMERCIAL_FOLDER_COLOR_PALETTE = [
+  { value:'#111827', label:'Grafito' },
+  { value:'#1e3a8a', label:'Azul' },
+  { value:'#172554', label:'Marino' },
+  { value:'#134e4a', label:'Turquesa' },
+  { value:'#14532d', label:'Verde' },
+  { value:'#581c87', label:'Morado' },
+  { value:'#881337', label:'Granate' },
+  { value:'#7c2d12', label:'Terracota' }
+];
+
+function commercialFolderColorRgb(value = '') {
+  const hex = String(value || '').trim().match(/^#([a-f\d]{6})$/i)?.[1];
+  return hex ? [0, 2, 4].map(index => parseInt(hex.slice(index, index + 2), 16)) : null;
+}
+
+function normalizeCommercialFolderColor(value = '') {
+  const current = String(value || '').trim().toLowerCase();
+  const exact = COMMERCIAL_FOLDER_COLOR_PALETTE.find(item => item.value === current);
+  if (exact) return exact.value;
+  const rgb = commercialFolderColorRgb(current);
+  if (!rgb) return COMMERCIAL_FOLDER_COLOR_PALETTE[0].value;
+  return COMMERCIAL_FOLDER_COLOR_PALETTE.reduce((best, item) => {
+    const target = commercialFolderColorRgb(item.value);
+    const distance = target.reduce((sum, channel, index) => sum + ((channel - rgb[index]) ** 2), 0);
+    return distance < best.distance ? { value:item.value, distance } : best;
+  }, { value:COMMERCIAL_FOLDER_COLOR_PALETTE[0].value, distance:Infinity }).value;
+}
+
+function commercialFolderColorOptions(value = '') {
+  const current = normalizeCommercialFolderColor(value);
+  return COMMERCIAL_FOLDER_COLOR_PALETTE.map(item =>
+    `<option value="${item.value}" ${item.value === current ? 'selected' : ''} style="background:${item.value};color:#fff;">${item.label}</option>`
+  ).join('');
+}
+
 function getUnassignedFolderName() {
   return unassignedSettings?.name || 'Sin carpeta';
 }
 
 function getUnassignedFolderColor() {
-  return unassignedSettings?.color || '#0f172a';
+  return normalizeCommercialFolderColor(unassignedSettings?.color);
 }
 
 function selectAllVisible() {
@@ -12953,6 +13239,7 @@ function expiryAlertKey(kind, sourceId, due) {
 
 function getCppExpiryAlert(u, venta, { includeOverdue = false } = {}) {
   if (normalizeUnitEstadoFrontend(u?.estado) === 'escriturado_traspasado') return null;
+  if (String(venta?.modalidadFinanciamiento || '').trim() === 'Al contado') return null;
 
   const days = daysUntil(venta?.fechaVencimientoCPP);
 
@@ -12971,6 +13258,34 @@ function getCppExpiryAlert(u, venta, { includeOverdue = false } = {}) {
     banco: venta?.banco || '',
     cpp: venta?.numCPP || ''
   };
+}
+
+function getPagareExpiryAlerts() {
+  const alerts = [];
+  ventasMap.forEach((venta, unitId) => {
+    const unit = unitsCache.find(item => String(item._id) === String(unitId));
+    (Array.isArray(venta?.pagares) ? venta.pagares : []).forEach(pagare => {
+      if (pagare?.cobrado) return;
+      const days = daysUntil(pagare?.fechaVencimiento);
+      if (days === null || days > 30) return;
+      const due = String(pagare.fechaVencimiento).slice(0, 10);
+      const ventaId = String(venta?._id || '');
+      const pagareId = String(pagare?._id || '');
+      if (!ventaId || !pagareId) return;
+      const sourceId = `${ventaId}:${pagareId}`;
+      alerts.push({
+        kind: 'promissory_note',
+        sourceId,
+        alertKey: expiryAlertKey('promissory_note', sourceId, due),
+        unit: unitLabel(unit || {}),
+        days,
+        due,
+        pagareNumber: pagare.numero || '',
+        amount: Number(pagare.monto || 0)
+      });
+    });
+  });
+  return alerts;
 }
 
 async function getCreditLineExpiryAlerts() {
@@ -13115,7 +13430,7 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
             color:#64748b;
             font-size:14px;
           ">
-            Revisa CPP, líneas de crédito, pólizas, fianzas y seguimientos periódicos.
+            Revisa CPP, pagarés, líneas de crédito, pólizas, fianzas y seguimientos periódicos.
           </div>
         </div>
 
@@ -13152,7 +13467,9 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
                 font-weight:900;
                 color:#991b1b;
               ">
-                ${a.kind === 'credit_line'
+                ${a.kind === 'promissory_note'
+                  ? `Pagaré ${escapeHtml(a.pagareNumber || 'sin número')} · Unidad ${escapeHtml(a.unit || '—')}`
+                  : a.kind === 'credit_line'
                   ? `${a.line}${a.loanNumber ? ` · ${a.loanNumber}` : ''}`
                   : a.kind === 'insurance_policy'
                     ? `Póliza ${a.policyType}${a.policyNumber ? ` · ${a.policyNumber}` : ''}`
@@ -13179,6 +13496,7 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
                 ${a.issuer ? ` · Entidad emisora: <b>${escapeHtml(a.issuer)}</b>` : ''}
                 ${a.periodicityMonths ? ` · Periodicidad: <b>${escapeHtml(a.periodicityMonths)} meses</b>` : ''}
                 ${a.balance ? ` · Saldo: <b>${financeMoney(a.balance)}</b>` : ''}
+                ${a.amount ? ` · Monto: <b>${formatProjectMoney(a.amount)}</b>` : ''}
               </div>
               ${canResolveExpiryAlerts && a.alertKey && a.sourceId ? `
                 <button type="button" class="btn btn-xs js-resolve-expiry-alert" data-alert-key="${escapeHtml(a.alertKey)}" style="margin-top:10px;">
@@ -13338,12 +13656,13 @@ async function refreshProjectExpiryAlerts() {
     .map(unit => getCppExpiryAlert(unit, ventasMap.get(String(unit._id)), { includeOverdue: true }))
     .filter(Boolean);
   const creditLineAlerts = await getCreditLineExpiryAlerts();
+  const pagareAlerts = getPagareExpiryAlerts();
   const insurancePolicyAlerts = getInsurancePolicyExpiryAlerts();
   const requirementBondAlerts = await getRequirementBondExpiryAlerts();
   const periodicRequirementAlerts = await getPeriodicRequirementAlerts();
   resolvedExpiryAlertKeys = await getResolvedExpiryAlertKeys();
   showCppExpiryPopup(
-    [...cppAlerts, ...creditLineAlerts, ...insurancePolicyAlerts, ...requirementBondAlerts, ...periodicRequirementAlerts]
+    [...cppAlerts, ...pagareAlerts, ...creditLineAlerts, ...insurancePolicyAlerts, ...requirementBondAlerts, ...periodicRequirementAlerts]
       .filter(alertItem => !resolvedExpiryAlertKeys.has(alertItem.alertKey))
       .sort((a, b) => (a.days ?? 9999) - (b.days ?? 9999))
   );
@@ -13462,12 +13781,9 @@ grid.innerHTML = `
   ${isCommercialFolderCollapsed('unassigned') ? 'Mostrar' : 'Ocultar'}
   </button>
 
-  <input
-    type="color"
-    class="folder-color-unassigned"
-    value="${getUnassignedFolderColor()}"
-    title="Color del sector"
-  >
+  <select class="folder-color folder-color-unassigned" style="background:${getUnassignedFolderColor()};" title="Color del sector" aria-label="Color del sector">
+    ${commercialFolderColorOptions(getUnassignedFolderColor())}
+  </select>
 
   <button type="button" class="btn mini folder-rename-unassigned">
     Renombrar
@@ -13482,14 +13798,14 @@ grid.innerHTML = `
 
   ${foldersCache.map(folder => {
     const folderUnits = byFolder.get(String(folder._id)) || [];
-    const color = folder.color || '#0f172a';
+    const color = normalizeCommercialFolderColor(folder.color);
 
     return `
       <div class="commercial-folder ${isCommercialFolderCollapsed(folder._id) ? 'collapsed' : ''}"
      data-folder-id="${folder._id}"
      style="--folder-color:${color};">
         <div class="commercial-folder-head">
-          <h3 class="folder-title">${folder.name}</h3>
+          <h3 class="folder-title">${escapeHtml(folder.name)}</h3>
 
           <div class="folder-actions">
             <span>${folderUnits.length} unidades</span>
@@ -13498,13 +13814,9 @@ grid.innerHTML = `
             ${isCommercialFolderCollapsed('unassigned') ? 'Mostrar' : 'Ocultar'}
             </button>
 
-            <input
-              type="color"
-              class="folder-color"
-              data-id="${folder._id}"
-              value="${color}"
-              title="Color de carpeta"
-            >
+            <select class="folder-color" data-id="${folder._id}" style="background:${color};" title="Color de carpeta" aria-label="Color de ${escapeHtml(folder.name)}">
+              ${commercialFolderColorOptions(color)}
+            </select>
 
             <button type="button" class="btn mini folder-rename" data-id="${folder._id}">
               Renombrar
@@ -13964,12 +14276,12 @@ function wireCommercialFolders() {
 });
   });
 
-  grid.querySelectorAll('.folder-color').forEach(input => {
+  grid.querySelectorAll('.folder-color:not(.folder-color-unassigned)').forEach(input => {
     input.addEventListener('change', async ev => {
       ev.stopPropagation();
 
       const folderId = input.dataset.id;
-      const color = input.value || '#0f172a';
+      const color = normalizeCommercialFolderColor(input.value);
 
       await apiPatch(`/api/commercial-folders/${folderId}`, {
         color
@@ -14039,7 +14351,7 @@ grid.querySelector('.folder-color-unassigned')?.addEventListener('change', async
 
   await apiPatch('/api/commercial-folders/unassigned/settings', {
     projectId: id,
-    color: ev.target.value || '#0f172a'
+    color: normalizeCommercialFolderColor(ev.target.value)
   });
 
   await loadUnits();
@@ -14082,7 +14394,7 @@ async function crearCarpetaComercial() {
   await apiPost('/api/commercial-folders', {
     projectId: id,
     name: name.trim(),
-    color: '#0f172a'
+    color: COMMERCIAL_FOLDER_COLOR_PALETTE[foldersCache.length % COMMERCIAL_FOLDER_COLOR_PALETTE.length].value
   });
 
   await loadUnits();
@@ -14447,6 +14759,21 @@ function scheduleFichaAutosave(delay = 1400) {
   const u = unitWithCanonicalModel(rawUnit);
   const rawV = ventasMap.get(String(unitId)) || {};
   const v = Object.assign(Object.create(null), rawV);
+  if (fichaDesistirCliente) {
+    const canDesist = ['admin', 'promoter', 'gerencia', 'socios', 'financiero', 'contable', 'commercial'].includes(myRole);
+    const hasClientData = [
+      v.clienteNombre, v.primerNombre, v.segundoNombre, v.primerApellido, v.segundoApellido,
+      v.cliente2PrimerNombre, v.cliente2SegundoNombre, v.cliente2PrimerApellido, v.cliente2SegundoApellido,
+      v.cedula, v.cliente2Cedula, v.celular, v.cliente2Celular, v.correo, v.cliente2Correo,
+      v.fechaReserva, v.numCPP, v.fechaValorCPP, v.fechaContratoCliente, v.banco,
+      v.canalCaptacion, v.comentario
+    ].some(value => String(value || '').trim()) ||
+      (Array.isArray(v.customerPaymentAccounts) && v.customerPaymentAccounts.length > 0) ||
+      (Array.isArray(v.pagares) && v.pagares.length > 0);
+    fichaDesistirCliente.hidden = fichaMode !== 'commercial' || !hasClientData || !canDesist || (myRole === 'commercial' && !!window.__COMMERCIAL_LOCKED);
+    fichaDesistirCliente.disabled = false;
+    fichaDesistirCliente.textContent = 'Desistir cliente';
+  }
 
   const info = (txt) => `
   <span class="info-wrap">
@@ -15082,7 +15409,20 @@ document.getElementById('btnFichaEstadoAutomatico')?.addEventListener('click', (
 });
 const commercialProcessView = document.getElementById('view-ficha');
 if (commercialProcessView && fichaMode === 'commercial') {
+  bindPagaresManager(commercialProcessView);
+  bindCommercialSaleFieldDocuments(commercialProcessView, id, unitId);
+  loadCommercialSaleFieldDocuments(id, unitId).catch(error => {
+    console.error('[Commercial sale field documents]', error);
+    commercialProcessView.querySelectorAll('[data-sale-field-docs]').forEach(list => {
+      list.innerHTML = '<span class="is-error">No se pudieron cargar los adjuntos</span>';
+    });
+  });
   const refreshCommercialLiveUi = event => {
+    if (event.target.id === 'fv-modalidadFinanciamiento') {
+      applyCashPurchaseMode();
+      fichaEstadoControl = 'automatico';
+      refreshOpenFichaCommercialStatePreview();
+    }
     if (['fv-polizaVidaEntregada','fv-polizaIncendioEntregada'].includes(event.target.id)) {
       refreshPolicyDeliverySummary();
     }
@@ -15104,6 +15444,7 @@ if (commercialProcessView && fichaMode === 'commercial') {
   commercialProcessView.addEventListener('input', refreshCommercialLiveUi);
   commercialProcessView.addEventListener('change', refreshCommercialLiveUi);
   refreshPolicyDeliverySummary();
+  applyCashPurchaseMode();
   refreshCommercialProcessProgress();
   refreshReservationAgeNotice();
   refreshCommercialSummaryKpis({ normalizeCpp:true });
@@ -15500,6 +15841,7 @@ const uBody = {
       estatusContrato: vVal('fv-estatusContrato'),
       montoContrato: vNum('fv-montoContrato'),
       pagare: vVal('fv-pagare'),
+      pagares: collectPagaresFromFicha(),
       contratoFirmado: vChk('fv-contratoFirmado'),
 
       fechaActivacionTramite: vDate('fv-fechaActivacionTramite'),
@@ -16043,6 +16385,33 @@ const uBody = {
     modalFicha.style.display = 'none';
   }
 
+  async function desistirClienteActual() {
+    if (!fichaUnitId || fichaMode !== 'commercial' || fichaSaving) return;
+    if (!confirm('¿Estás seguro de que quieres borrar todos los datos del cliente?')) return;
+
+    clearTimeout(fichaAutosaveTimer);
+    fichaAutosaveReady = false;
+    fichaDirty = false;
+    fichaDesistirCliente.disabled = true;
+    fichaDesistirCliente.textContent = 'Procesando…';
+    if (fichaGuardar) fichaGuardar.disabled = true;
+    setFichaSaveStatus('Procesando desistimiento…', 'saving');
+
+    try {
+      await apiPost(`/api/ventas/by-unit/${encodeURIComponent(fichaUnitId)}/desist-client`, {});
+      await loadUnits();
+      await abrirFichaUnidad(fichaUnitId, { mode: 'commercial' });
+      setFichaSaveStatus('Datos del cliente eliminados', 'saved');
+    } catch (error) {
+      fichaAutosaveReady = true;
+      fichaDesistirCliente.disabled = false;
+      fichaDesistirCliente.textContent = 'Desistir cliente';
+      if (fichaGuardar) fichaGuardar.disabled = false;
+      setFichaSaveStatus('No se pudo procesar el desistimiento', 'error');
+      alert(error.message || 'No se pudo procesar el desistimiento del cliente');
+    }
+  }
+
   function toggleFichaFullscreen() {
     modalFicha.classList.toggle('is-fullscreen');
     const full = modalFicha.classList.contains('is-fullscreen');
@@ -16057,6 +16426,7 @@ const uBody = {
     clearTimeout(fichaAutosaveTimer);
     guardarFicha({ close: true, silent: false });
   });
+  if (fichaDesistirCliente) fichaDesistirCliente.addEventListener('click', desistirClienteActual);
   if (fichaCerrarX) fichaCerrarX.addEventListener('click', cerrarFichaUnidadModal);
   if (fichaExpandir) fichaExpandir.addEventListener('click', toggleFichaFullscreen);
   if (modalFicha) {
@@ -16632,7 +17002,7 @@ function renderTechnicalUnits() {
     const folderId = isUnassigned ? '' : String(folder._id);
     const collapseKey = isUnassigned ? 'unassigned' : folderId;
     const collapsed = technicalFolderCollapsed(collapseKey);
-    return `<section class="commercial-folder ${isUnassigned ? 'unassigned' : ''} ${collapsed ? 'collapsed' : ''}" data-technical-folder="${escapeHtml(folderId)}" style="--folder-color:${escapeHtml(folder.color || '#0f172a')}">
+    return `<section class="commercial-folder ${isUnassigned ? 'unassigned' : ''} ${collapsed ? 'collapsed' : ''}" data-technical-folder="${escapeHtml(folderId)}" style="--folder-color:${normalizeCommercialFolderColor(folder.color)}">
       <div class="commercial-folder-head"><h3>${escapeHtml(folder.name || 'Sin carpeta')}</h3><div class="folder-actions"><span>${units.length} unidades</span><button type="button" class="btn mini" data-technical-folder-toggle="${escapeHtml(collapseKey)}">${collapsed ? 'Mostrar' : 'Ocultar'}</button></div></div>
       <div class="commercial-folder-body">${units.map(technicalUnitCard).join('') || '<div class="empty">No hay unidades en esta vista.</div>'}</div>
     </section>`;

@@ -27,6 +27,14 @@ const CustomerPaymentAccountSchema = new mongoose.Schema({
   payments: { type: [CustomerPaymentSchema], default: [] }
 }, { _id: true, timestamps: true });
 
+const PagareSchema = new mongoose.Schema({
+  numero: { type: String, trim: true, default: '' },
+  monto: { type: Number, min: 0, default: 0 },
+  fechaVencimiento: { type: Date, default: null },
+  cobrado: { type: Boolean, default: false },
+  cobradoAt: { type: Date, default: null }
+}, { _id: true, timestamps: true });
+
 const VentaSchema = new mongoose.Schema({
   // ====== Claves ======
   projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', index: true, required: true },
@@ -205,6 +213,7 @@ const VentaSchema = new mongoose.Schema({
   estatusContrato:      { type: String, default: '' },
   montoContrato:        { type: Number, default: 0 },
   pagare:               { type: String, default: '' },
+  pagares:              { type: [PagareSchema], default: [] },
   fechaFirma:           { type: Date },
   contratoFirmado:      { type: Boolean, default: false },
 

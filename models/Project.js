@@ -46,6 +46,7 @@ const projectSchema = new Schema({
           'insurance_policy',
           'performance_bond',
           'payment_bond',
+          'promissory_note',
           'engineering_inspection_follow_up',
           'account_advance_follow_up'
         ],

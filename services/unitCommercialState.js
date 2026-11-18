@@ -37,16 +37,18 @@ function deriveCommercialState(venta = {}, baseState = 'disponible') {
     };
   }
 
-  if (hasText(venta.solicitudAvaluo)) {
+  const cashPurchase = String(venta.modalidadFinanciamiento || '').trim() === 'Al contado';
+
+  if (!cashPurchase && hasText(venta.solicitudAvaluo)) {
     return { estado: 'tramite_legal_activado', motivo: 'Solicitud de avalúo registrada' };
   }
 
   const cppStatus = String(venta.estatusCPP || '').trim();
-  if (
+  if (!cashPurchase && (
     hasDate(venta.fechaValorCPP) ||
     hasDate(venta.recibidoCPP) ||
     /cpp\s*recibid|recibid[ao]?\s*(?:de\s*)?cpp/i.test(cppStatus)
-  ) {
+  )) {
     return { estado: 'con_cpp', motivo: 'CPP recibida o fecha de CPP registrada' };
   }
 
@@ -97,7 +99,8 @@ async function syncUnitCommercialState({
 
   // Una fecha de CPP acredita que la carta ya fue recibida. Se normaliza el
   // selector para que la ficha, la exportación y el estado no se contradigan.
-  if (hasDate(commercialData.fechaValorCPP) && !/cpp\s*recibid/i.test(String(commercialData.estatusCPP || ''))) {
+  const cashPurchase = String(commercialData.modalidadFinanciamiento || '').trim() === 'Al contado';
+  if (!cashPurchase && hasDate(commercialData.fechaValorCPP) && !/cpp\s*recibid/i.test(String(commercialData.estatusCPP || ''))) {
     await Venta.updateOne(
       { tenantKey, projectId, unitId, deletedAt: null },
       { $set: { estatusCPP: 'CPP recibida' } }

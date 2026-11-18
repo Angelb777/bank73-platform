@@ -5,6 +5,7 @@ const router = express.Router();
 const Venta = require('../models/Venta');
 const Project = require('../models/Project'); // ROLE-SEP
 const Unit = require('../models/Unit'); // ROLE-SEP
+const Document = require('../models/Document');
 const { requireProjectAccess } = require('../middleware/rbac'); // ROLE-SEP
 const { recomputeCommercialKpis } = require('../services/comercial_kpis');
 const { customerPaymentSummary } = require('../services/customerPayments');
@@ -63,7 +64,7 @@ const ALLOWED_FIELDS = new Set([
   'polizaIncendioEntregada', 'tipoPolizaIncendio', 'abonoAlte',
 
   // contrato / protocolo / notaría / RP
-  'fechaContratoCliente', 'estatusContrato', 'montoContrato', 'pagare',
+  'fechaContratoCliente', 'estatusContrato', 'montoContrato', 'pagare', 'pagares',
   'fechaFirma', 'contratoFirmado', 'fechaActivacionTramite',
   'protocoloFirmaCliente', 'protocoloFirmaPromotora', 'fechaEntregaBanco',
   'fechaProtocoloFirmaCliente', 'fechaProtocoloFirmaPromotora',
@@ -113,6 +114,18 @@ const TECHNICAL_FIELDS = new Set([
   'constructora'
 ]);
 
+const DESIST_PRESERVED_FIELDS = new Set([
+  '_id', '__v', 'projectId', 'unitId', 'tenantKey', 'createdAt', 'updatedAt', 'deletedAt',
+  'manzana', 'lote', 'numeroFinca', 'codigoUbicacion', 'ubicacion', 'calle',
+  'metrajeLote', 'loteEsquina', 'metrosExtra', 'precioLoteEsquina', 'precioM2Extra',
+  'areaAbierta', 'areaCerrada', 'areaTotalConstruccion', 'recamaras', 'banos',
+  'valorMejoras', 'valorTerreno',
+  'enConstruccion', 'estatusConstruccion', 'faseConstruccion', 'avanceConstruccionPct',
+  'permisoConstruccionMunicipal', 'permisoConstruccionNum',
+  'fechaPermisoConstruccion', 'permisoConstruccionVencimiento',
+  'permisoOcupacion', 'permisoOcupacionNum', 'fechaEmisionPermisoOcupacion', 'constructora'
+]);
+
 const STEP_STATES = ['pendiente', 'en_proceso', 'completado', 'bloqueado'];
 
 function sanitizeChecklist(input) {
@@ -158,6 +171,21 @@ function sanitizeCustomerPaymentAccounts(input) {
   }).filter(account => account.source === 'sale_gap' || account.concept);
 }
 
+function sanitizePagares(input) {
+  if (!Array.isArray(input)) return [];
+  return input.slice(0, 100).map(item => {
+    const cobrado = item?.cobrado === true;
+    return {
+      ...(String(item?._id || '').match(/^[a-f\d]{24}$/i) ? { _id: item._id } : {}),
+      numero: String(item?.numero || '').trim().slice(0, 80),
+      monto: Math.max(0, Number(item?.monto) || 0),
+      fechaVencimiento: cleanDate(item?.fechaVencimiento),
+      cobrado,
+      cobradoAt: cobrado ? (cleanDate(item?.cobradoAt) || new Date()) : null
+    };
+  }).filter(item => item.numero || item.monto > 0 || item.fechaVencimiento);
+}
+
 function assertCustomerPaymentsFitSale(venta = {}) {
   const summary = customerPaymentSummary(venta);
   if (summary.totals.overpaid > 0.01) {
@@ -183,6 +211,9 @@ function pickAllowed(obj = {}) {
     out.captadoMailInternet = false;
     out.captadoEnProyecto = channel === 'En proyecto';
     out.captadoMercadeoProspecto = channel === 'Mercadeo / volanteo';
+  }
+  if (Object.hasOwn(out, 'pagares')) {
+    out.pagares = sanitizePagares(out.pagares);
   }
   return out;
 }
@@ -339,6 +370,112 @@ router.put(
       res.json({ venta: dto, customerPayments: summary });
     } catch (e) {
       res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+router.post(
+  '/by-unit/:unitId/desist-client',
+  attachProjectByUnitIdFromVenta,
+  requireProjectAccess({ promoterCanEditAssigned: true }),
+  async (req, res) => {
+    try {
+      const venta = req._venta;
+      if (!venta) return res.status(404).json({ error: 'No existe expediente comercial para esta unidad' });
+
+      const unset = {};
+      Object.keys(Venta.schema.paths).forEach(field => {
+        if (!field.includes('.') && !DESIST_PRESERVED_FIELDS.has(field)) unset[field] = 1;
+      });
+      const now = new Date();
+      const set = {
+        customerPaymentAccounts: [],
+        customerPaymentsVersion: 0,
+        pagares: [],
+        checklist: [],
+        estadoVenta: 'caida',
+        fechaCaida: now,
+        motivoCaida: 'Cliente desistió; expediente comercial limpiado'
+      };
+      Object.keys(set).forEach(field => delete unset[field]);
+
+      const updated = await Venta.findOneAndUpdate(
+        { _id: venta._id, tenantKey: req.tenantKey, deletedAt: null },
+        { $unset: unset, $set: set },
+        { new: true, runValidators: true }
+      );
+      if (!updated) return res.status(404).json({ error: 'No existe expediente comercial para esta unidad' });
+
+      const baseState = Number(updated.avanceConstruccionPct || 0) > 0 ? 'inventario' : 'disponible';
+      const baseReason = baseState === 'inventario'
+        ? 'Cliente desistió; la unidad vuelve a inventario con construcción iniciada'
+        : 'Cliente desistió; la unidad vuelve a estar disponible';
+      const unit = await Unit.findOneAndUpdate(
+        { _id: req.params.unitId, tenantKey: req.tenantKey, projectId: req.project._id, deletedAt: null },
+        { $set: {
+          estado: baseState,
+          status: baseState.toUpperCase(),
+          estadoModo: 'automatico',
+          estadoManualAt: null,
+          estadoManualBy: null,
+          estadoAutomaticoBase: baseState,
+          estadoAutomaticoSugerido: baseState,
+          estadoAutomaticoMotivo: baseReason,
+          estadoAutomaticoActualizadoAt: now
+        } },
+        { new: true }
+      );
+
+      const archiveCategory = `withdrawnClient:${now.toISOString()}`;
+      const archivedDocuments = await Document.updateMany(
+        {
+          tenantKey: req.tenantKey,
+          projectId: req.project._id,
+          unitId: req.params.unitId,
+          department: 'commercial',
+          category: /^commercialSaleField:/
+        },
+        { $set: {
+          category: archiveCategory,
+          status: 'COMPLETED',
+          completedAt: now,
+          completionNote: 'Archivado automáticamente por desistimiento del cliente'
+        } }
+      );
+
+      const project = await Project.findOne({ _id: req.project._id, tenantKey: req.tenantKey });
+      if (project) {
+        const ventaId = String(venta._id);
+        project.expiryAlertResolutions = (project.expiryAlertResolutions || []).filter(item => {
+          const sourceId = String(item?.sourceId || '');
+          return !(sourceId === ventaId || sourceId.startsWith(`${ventaId}:`));
+        });
+        await project.save();
+      }
+
+      await syncProjectKpisSafe(req, req.project._id);
+      await audit(req, 'sale.client_withdrawn', {
+        targetType: 'sale',
+        targetId: venta._id,
+        projectId: req.project._id,
+        status: 'warning',
+        message: 'Cliente desistido y expediente comercial limpiado',
+        metadata: {
+          unitId: req.params.unitId,
+          archivedDocuments: archivedDocuments.modifiedCount || 0,
+          preservedState: baseState
+        }
+      });
+
+      res.json({
+        ok: true,
+        venta: updated.toObject(),
+        unit,
+        archivedDocuments: archivedDocuments.modifiedCount || 0
+      });
+    } catch (error) {
+      console.error('[ventas.desist-client] error:', error);
+      res.status(500).json({ error: 'No se pudo procesar el desistimiento del cliente' });
     }
   }
 );

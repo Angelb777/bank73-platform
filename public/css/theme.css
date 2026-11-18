@@ -2204,6 +2204,9 @@ body.ba-viewer-open {
 #fichaUnidadModal .unit-save-status.is-pending { color:#f59e0b; }
 #fichaUnidadModal .unit-save-status.is-saving { color:#60a5fa; }
 #fichaUnidadModal .unit-save-status.is-saved { color:#4ade80; }
+#fichaUnidadModal .unit-desist-client { min-height:40px; padding:8px 14px; border:1px solid rgba(239,68,68,.5); background:rgba(239,68,68,.1); color:#ef4444; font-weight:850; }
+#fichaUnidadModal .unit-desist-client:hover { background:rgba(239,68,68,.18); }
+#fichaUnidadModal .unit-desist-client:disabled { opacity:.6; cursor:wait; }
 #fichaUnidadModal .unit-save-status.is-error { color:#fb7185; }
 body.light-theme #fichaUnidadModal .unit-save-status.is-saved { color:#15803d; }
 body.light-theme #fichaUnidadModal .unit-save-status.is-error { color:#b42335; }
@@ -2492,6 +2495,12 @@ body.light-theme #fichaUnidadModal .unit-summary-card select option { background
 #fichaUnidadModal .unit-process-field select:focus,
 #fichaUnidadModal .unit-comments textarea:focus { border-color:var(--unit-accent); outline:3px solid var(--unit-accent-soft); }
 #fichaUnidadModal .unit-process-field input[readonly] { opacity:.78; cursor:not-allowed; }
+#fichaUnidadModal .unit-process-field.is-cash-disabled,
+#fichaUnidadModal .unit-summary-card.is-cash-disabled { border-color:rgba(148,163,184,.35); background:color-mix(in srgb,var(--unit-surface-2) 86%,#94a3b8 14%); }
+#fichaUnidadModal .is-cash-disabled input,
+#fichaUnidadModal .is-cash-disabled select { opacity:.58; cursor:not-allowed; }
+#fichaUnidadModal .cash-purchase-note { color:var(--unit-muted); font-size:11px; font-weight:800; line-height:1.25; }
+#fichaUnidadModal .is-cash-disabled .sale-field-documents { opacity:.58; }
 #fichaUnidadModal .unit-policy-summary { width:100%; padding:9px 11px; border:1px dashed var(--unit-line); border-radius:10px; background:var(--unit-surface-2); }
 #fichaUnidadModal .unit-policy-summary input:disabled { opacity:1; cursor:default; }
 #fichaUnidadModal .unit-policy-summary span { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
@@ -2523,6 +2532,37 @@ body.light-theme #fichaUnidadModal .unit-reservation-age { color:#9a5b00; backgr
 body.light-theme #fichaUnidadModal .is-current .unit-stage-status { color:color-mix(in srgb,var(--stage-accent) 82%,#172033); }
 #fichaUnidadModal .unit-stage-body { border-top-color:var(--unit-line); }
 #fichaUnidadModal .unit-stage-body h4 { color:var(--stage-accent); }
+#fichaUnidadModal .sale-field-documents { margin-top:3px; padding-top:8px; border-top:1px dashed color-mix(in srgb,var(--stage-accent) 30%,var(--unit-line)); }
+#fichaUnidadModal .sale-field-doc-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+#fichaUnidadModal .sale-field-attach-btn { min-height:30px; padding:5px 9px; border:1px solid color-mix(in srgb,var(--stage-accent) 55%,var(--unit-line)); border-radius:8px; background:color-mix(in srgb,var(--stage-accent) 10%,var(--unit-surface)); color:var(--unit-copy); font:inherit; font-size:12px; font-weight:800; cursor:pointer; }
+#fichaUnidadModal .sale-field-attach-btn:hover { background:color-mix(in srgb,var(--stage-accent) 18%,var(--unit-surface)); }
+#fichaUnidadModal .sale-field-attach-btn:disabled { opacity:.6; cursor:wait; }
+#fichaUnidadModal .sale-field-doc-actions > span { color:var(--unit-muted); font-size:11px; font-weight:700; white-space:nowrap; }
+#fichaUnidadModal .sale-field-doc-list { display:grid; gap:5px; margin-top:6px; color:var(--unit-muted); font-size:11px; }
+#fichaUnidadModal .sale-field-doc-list > span { font-style:italic; }
+#fichaUnidadModal .sale-field-doc-list .is-error { color:#ef4444; }
+#fichaUnidadModal .sale-field-doc-row { display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; padding:6px 8px; border:1px solid var(--unit-line); border-radius:8px; background:var(--unit-surface-2); }
+#fichaUnidadModal .sale-field-doc-row > span:first-child { overflow:hidden; color:var(--unit-copy); font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
+#fichaUnidadModal .sale-field-doc-links { display:flex; gap:7px; flex:0 0 auto; }
+#fichaUnidadModal .sale-field-doc-links a { color:var(--stage-accent); font-weight:800; text-decoration:none; }
+#fichaUnidadModal .sale-field-doc-links a:hover { text-decoration:underline; }
+#fichaUnidadModal .pagares-manager { grid-column:1/-1; display:grid; gap:10px; }
+#fichaUnidadModal .pagares-list { display:grid; gap:9px; }
+#fichaUnidadModal .pagares-empty { padding:13px; border:1px dashed var(--unit-line); border-radius:10px; color:var(--unit-muted); font-size:13px; text-align:center; }
+#fichaUnidadModal .pagare-row { display:grid; grid-template-columns:minmax(150px,1.1fr) minmax(130px,.8fr) minmax(160px,1fr) auto auto; align-items:end; gap:10px; padding:12px; border:1px solid var(--unit-line); border-left:4px solid var(--stage-accent); border-radius:12px; background:var(--unit-surface-2); }
+#fichaUnidadModal .pagare-row.is-collected { border-left-color:#22c55e; opacity:.78; }
+#fichaUnidadModal .pagare-input-field,
+#fichaUnidadModal .pagare-input-field > label { display:grid; gap:5px; min-width:0; }
+#fichaUnidadModal .pagare-row label > span { color:var(--unit-muted); font-size:12px; font-weight:750; }
+#fichaUnidadModal .pagare-row input[type="text"],
+#fichaUnidadModal .pagare-row input[type="date"] { width:100%; min-height:40px; border:1px solid var(--unit-line); border-radius:9px; background:var(--unit-input-bg); color:var(--unit-copy); padding:8px 10px; }
+#fichaUnidadModal .pagare-collected { display:flex; align-items:center; gap:7px; min-height:40px; padding:0 8px; border:1px solid var(--unit-line); border-radius:9px; cursor:pointer; white-space:nowrap; }
+#fichaUnidadModal .pagare-collected input { width:17px; height:17px; accent-color:#22c55e; }
+#fichaUnidadModal .pagare-remove,
+#fichaUnidadModal .pagare-add { min-height:38px; border-radius:9px; font:inherit; font-size:12px; font-weight:850; cursor:pointer; }
+#fichaUnidadModal .pagare-remove { padding:7px 10px; border:1px solid rgba(239,68,68,.4); background:rgba(239,68,68,.08); color:#ef4444; }
+#fichaUnidadModal .pagare-add { justify-self:start; padding:8px 13px; border:1px solid color-mix(in srgb,var(--stage-accent) 55%,var(--unit-line)); background:color-mix(in srgb,var(--stage-accent) 12%,var(--unit-surface)); color:var(--unit-copy); }
+#fichaUnidadModal .pagare-add:hover { background:color-mix(in srgb,var(--stage-accent) 20%,var(--unit-surface)); }
 #fichaUnidadModal .unit-comments { padding:14px 16px; }
 #fichaUnidadModal .unit-comments h3 { font-size:16px; }
 
@@ -2560,6 +2600,7 @@ body.light-theme #fichaUnidadModal .is-current .unit-stage-status { color:color-
   #fichaUnidadModal .unit-process-right { grid-template-columns:1fr; }
   #fichaUnidadModal .unit-process-right { grid-column:auto; }
   #fichaUnidadModal .unit-stage-body { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  #fichaUnidadModal .pagare-row { grid-template-columns:repeat(2,minmax(0,1fr)); align-items:end; }
   #fichaUnidadModal.is-technical #fichaTitulo { grid-template-columns:1fr; }
   #fichaUnidadModal.is-technical .unit-title-project-name,
   #fichaUnidadModal.is-technical .unit-title-identity,
@@ -2573,6 +2614,7 @@ body.light-theme #fichaUnidadModal .is-current .unit-stage-status { color:color-
   #fichaUnidadModal .unit-title-status { justify-content:space-between; }
   #fichaUnidadModal .unit-process-summary { grid-template-columns:1fr; }
   #fichaUnidadModal .unit-stage-body { grid-template-columns:1fr; }
+  #fichaUnidadModal .pagare-row { grid-template-columns:1fr; }
 }
 
 /* ===== Finanzas: tarjetas de fases ===== */
@@ -9028,6 +9070,23 @@ body.light-theme .project-experience.viewer-active #tab-resumen #summaryHeader .
   height:34px !important;
   min-width:34px !important;
   border-radius:10px !important;
+}
+
+.folder-actions select.folder-color{
+  width:132px !important;
+  min-width:132px !important;
+  padding:0 28px 0 10px !important;
+  border:1px solid rgba(255,255,255,.38) !important;
+  color:#fff !important;
+  font-size:12px !important;
+  font-weight:800 !important;
+  color-scheme:dark;
+  cursor:pointer;
+}
+
+.folder-actions select.folder-color option{
+  color:#fff;
+  font-weight:750;
 }
 
 .folder-actions .btn,
