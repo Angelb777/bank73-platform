@@ -1,0 +1,134 @@
+/* Bank73 platform palette: colour overrides only. */
+html[data-brand="bank73"] {
+  --primary: #57a2f8;
+  --bg: #102f49;
+  --panel: #153a57;
+  --panel-2: #1b4565;
+  --card-bg: #12344f;
+  --btn-bg: #57a2f8;
+  --technical-blue: #3788e8;
+  --admin-bg-1: #0b263c;
+  --admin-bg-2: #102f49;
+  --admin-panel: rgba(16,47,73,.78);
+  --admin-panel-2: rgba(16,47,73,.54);
+  --admin-blue: #3788e8;
+  --admin-blue-2: #57a2f8;
+}
+
+html[data-brand="bank73"] body:not(.light-theme) {
+  background:
+    radial-gradient(circle at top left, rgba(87,162,248,.18), transparent 32%),
+    linear-gradient(135deg, #0b263c, #102f49);
+}
+
+html[data-brand="bank73"] body:not(.light-theme) .topbar {
+  background: rgba(11,38,60,.88);
+}
+
+html[data-brand="bank73"] .btn.primary,
+html[data-brand="bank73"] .btn-primary,
+html[data-brand="bank73"] button.primary,
+html[data-brand="bank73"] .fab {
+  background: #57a2f8;
+  border-color: #57a2f8;
+}
+
+html[data-brand="bank73"] .btn.primary:hover,
+html[data-brand="bank73"] .btn-primary:hover,
+html[data-brand="bank73"] button.primary:hover,
+html[data-brand="bank73"] .fab:hover {
+  background: #76b6ff;
+  border-color: #76b6ff;
+}
+
+html[data-brand="bank73"] .admin-tab:hover {
+  background: rgba(87,162,248,.14);
+}
+
+html[data-brand="bank73"] .admin-tab.active {
+  background: linear-gradient(135deg, #57a2f8, #3788e8);
+  border-color: rgba(154,203,255,.42);
+  box-shadow: 0 12px 34px rgba(55,136,232,.28);
+}
+
+html[data-brand="bank73"] .tabs .tab.active,
+html[data-brand="bank73"] .tab.active,
+html[data-brand="bank73"] [role="tab"][aria-selected="true"] {
+  color: #fff;
+  background-color: #3788e8;
+  border-color: #57a2f8;
+}
+
+html[data-brand="bank73"] a.link,
+html[data-brand="bank73"] .link {
+  color: #57a2f8;
+}
+
+html[data-brand="bank73"] input:focus,
+html[data-brand="bank73"] textarea:focus,
+html[data-brand="bank73"] select:focus {
+  border-color: #57a2f8;
+  box-shadow: 0 0 0 3px rgba(87,162,248,.16);
+}
+
+html[data-brand="bank73"] .project-loading-screen {
+  background:
+    radial-gradient(circle at 50% 42%, rgba(87,162,248,.14), transparent 34%),
+    #102f49;
+}
+
+html[data-brand="bank73"] .project-loading-spinner {
+  border-top-color: #57a2f8;
+}
+
+html[data-brand="bank73"] #cards .portfolio-project-card.status-FINALIZADO {
+  --project-accent: #57a2f8;
+}
+
+html[data-brand="bank73"] #cards .portfolio-card-cover-fallback {
+  background:
+    radial-gradient(circle at 82% 20%, rgba(87,162,248,.30), transparent 30%),
+    linear-gradient(135deg, #102f49, #3788e8);
+}
+
+html[data-brand="bank73"] #tab-comercial .estado-con_cpp,
+html[data-brand="bank73"] #tab-finanzas .finance-unit-card.estado-con_cpp {
+  --accent: #57a2f8;
+}
+
+html[data-brand="bank73"] #fichaUnidadModal .unit-title-status.unit-status-con_cpp {
+  --unit-accent: #57a2f8;
+  --unit-accent-soft: rgba(87,162,248,.16);
+}
+
+html[data-brand="bank73"] #fichaUnidadModal .unit-process-stage:nth-child(2) {
+  --stage-accent: #57a2f8;
+}
+
+html[data-brand="bank73"] #tab-finanzas {
+  --fin-accent: #57a2f8;
+}
+
+html[data-brand="bank73"] #tab-finanzas .finance-kpi-card.is-cpp {
+  --fin-accent: #57a2f8;
+}
+
+html[data-brand="bank73"] #tab-comercial #kpisComercial {
+  --commercial-kpi-accent: #57a2f8;
+}
+
+html[data-brand="bank73"] #tab-comercial #kpisComercial .commercial-kpi-cpp {
+  --commercial-kpi-accent: #57a2f8;
+}
+
+html[data-brand="bank73"] #modalBatch .commercial-batch-card.is-stage-2 {
+  --batch-accent: #57a2f8;
+}
+
+html[data-brand="bank73"] #tab-tecnico {
+  --technical-blue: #3788e8;
+}
+
+html[data-brand="bank73"] #tab-tecnico .construction-in-progress {
+  --accent: #57a2f8;
+}

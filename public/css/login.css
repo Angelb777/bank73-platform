@@ -1,0 +1,117 @@
+html[data-brand="bank73"] body.bank73-login {
+  --login-navy: #102f49;
+  --login-blue: #57a2f8;
+  --login-blue-strong: #3788e8;
+  --login-paper: #f7f9fb;
+  --login-muted: #647b8d;
+  min-height: 100%;
+  color: var(--login-navy);
+  background: var(--login-paper);
+  font-family: "Manrope", "Segoe UI", Arial, sans-serif;
+  overflow: hidden;
+  zoom: 1;
+}
+html[data-brand="bank73"] .bank73-login .login-wrap {
+  width: 100%; min-height: 100vh; min-height: 100svh; height: 100vh; height: 100svh; margin: 0; padding: 12px;
+  grid-template-columns: 1.08fr .92fr; gap: 12px;
+}
+html[data-brand="bank73"] .bank73-login .brand-panel {
+  height: calc(100vh - 24px); height: calc(100svh - 24px); min-height: 680px; color: white; background: var(--login-navy); border: 0; border-radius: 30px; box-shadow: none;
+}
+html[data-brand="bank73"] .bank73-login .brand-panel::before {
+  content: ""; position: absolute; right: -150px; bottom: -170px; width: 470px; height: 470px;
+  border: 105px solid rgba(87,162,248,.12); border-radius: 50%;
+}
+html[data-brand="bank73"] .bank73-login .brand-panel::after {
+  inset: 0; height: auto; background: radial-gradient(circle at 18% 12%, rgba(87,162,248,.18), transparent 34%);
+}
+html[data-brand="bank73"] .bank73-login .brand-content {
+  position: relative; z-index: 1; width: min(86%, 760px); max-width: none; padding: clamp(46px,5vw,84px); text-align: left; transform: translateY(14px);
+}
+html[data-brand="bank73"] .bank73-login .brand-logo { width: min(440px, 90%); max-width: none; height: auto; filter: none; }
+html[data-brand="bank73"] .bank73-login .brand-subtitle {
+  max-width: 620px; margin: 34px 0 0; color: white; font-size: clamp(30px, 2.8vw, 46px);
+  font-weight: 700; letter-spacing: -.035em; line-height: 1.05;
+}
+html[data-brand="bank73"] .bank73-login .brand-benefits-title {
+  margin: 46px 0 8px; color: var(--login-blue); font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+}
+html[data-brand="bank73"] .bank73-login .brand-kpis {
+  display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); justify-content: stretch; margin-top: 0; gap: 0 30px;
+}
+html[data-brand="bank73"] .bank73-login .kpi-pill {
+  display: flex; align-items: center; gap: 12px; min-height: 62px; padding: 15px 0; color: white; background: transparent;
+  border: 0; border-top: 1px solid rgba(87,162,248,.34); border-radius: 0; font-size: clamp(15px,1.25vw,19px); font-weight: 600;
+}
+html[data-brand="bank73"] .bank73-login .kpi-pill::before {
+  content: "✓"; display: grid; flex: 0 0 28px; place-items: center; width: 28px; height: 28px; color: var(--login-navy);
+  background: var(--login-blue); border-radius: 50%; font-size: 13px; font-weight: 700;
+}
+html[data-brand="bank73"] .bank73-login .brand-footer { margin-top: 34px; color: rgba(255,255,255,.58); }
+html[data-brand="bank73"] .bank73-login .login-card.glass {
+  display: flex; flex-direction: column; justify-content: center; align-self: stretch; width: 100%; max-width: none; height: calc(100vh - 24px); height: calc(100svh - 24px); min-height: 680px; padding: clamp(48px,7vw,120px); color: var(--login-navy); background: white;
+  border: 1px solid #dce7f0; border-radius: 30px; box-shadow: 0 24px 60px rgba(16,47,73,.12); backdrop-filter: none;
+}
+html[data-brand="bank73"] .bank73-login .login-card > * { width: min(100%,720px); margin-inline: auto; }
+html[data-brand="bank73"] .bank73-login .login-eyebrow {
+  margin: 0 0 14px; color: var(--login-blue-strong); font-size: 12px; font-weight: 700;
+  letter-spacing: .11em; text-transform: uppercase;
+}
+html[data-brand="bank73"] .bank73-login .login-header { text-align: center; }
+html[data-brand="bank73"] .bank73-login .login-header h1,
+html[data-brand="bank73"] .bank73-login .login-header h2 {
+  margin: 0; font-size: clamp(50px,4vw,68px); font-weight: 700; letter-spacing: -.04em; line-height: 1;
+}
+html[data-brand="bank73"] .bank73-login .login-header .muted {
+  margin: 13px auto 0; color: var(--login-muted); font-size: 15px; text-align: center;
+}
+html[data-brand="bank73"] .bank73-login .login-form { margin-top: 34px; gap: 11px; }
+html[data-brand="bank73"] .bank73-login label {
+  margin-top: 5px; color: var(--login-navy); font-size: 13px; font-weight: 600;
+}
+html[data-brand="bank73"] .bank73-login input[type="email"],
+html[data-brand="bank73"] .bank73-login input[type="password"],
+html[data-brand="bank73"] .bank73-login input[type="text"] {
+  min-height: 54px; padding: 14px 16px; color: var(--login-navy); background: #f1f6fa;
+  border: 2px solid transparent; border-radius: 15px; font: 500 15px "Manrope", "Segoe UI", Arial, sans-serif;
+}
+html[data-brand="bank73"] .bank73-login input::placeholder { color: #8ba0b0; }
+html[data-brand="bank73"] .bank73-login input:focus {
+  background: white; border-color: var(--login-blue); box-shadow: 0 0 0 4px rgba(87,162,248,.14);
+}
+html[data-brand="bank73"] .bank73-login .input-with-action { position: relative; display: block; }
+html[data-brand="bank73"] .bank73-login .input-with-action input { padding-right: 72px; border-radius: 15px; }
+html[data-brand="bank73"] .bank73-login .input-with-action #togglePwd {
+  position: absolute !important; top: 50%; right: 9px; transform: translateY(-50%); min-width: 52px; height: 38px; padding: 0 9px; color: var(--login-blue-strong);
+  background: transparent; border: 0; border-radius: 10px; font-family: inherit; font-weight: 700;
+}
+html[data-brand="bank73"] .bank73-login .btn.primary {
+  min-height: 54px; margin-top: 13px; color: var(--login-navy); background: var(--login-blue);
+  border: 0; border-radius: 999px; font: 700 15px "Manrope", "Segoe UI", Arial, sans-serif;
+  box-shadow: 0 10px 24px rgba(55,136,232,.22);
+}
+html[data-brand="bank73"] .bank73-login .btn.primary:hover { background: #76b6ff; }
+html[data-brand="bank73"] .bank73-login .login-meta { margin-top: 25px; color: var(--login-muted); text-align: center; }
+html[data-brand="bank73"] .bank73-login .login-meta .small { font-size: 13px; }
+html[data-brand="bank73"] .bank73-login .login-meta .link { color: var(--login-blue-strong); font-weight: 700; }
+@media (max-width: 900px) {
+  html[data-brand="bank73"] body.bank73-login { overflow: auto; }
+  html[data-brand="bank73"] .bank73-login .login-wrap { height: auto; grid-template-columns: 1fr; }
+  html[data-brand="bank73"] .bank73-login .brand-panel { height: auto; min-height: 520px; }
+  html[data-brand="bank73"] .bank73-login .brand-content { padding: 44px; text-align: center; }
+  html[data-brand="bank73"] .bank73-login .brand-kpis { justify-content: center; }
+  html[data-brand="bank73"] .bank73-login .brand-subtitle { margin-inline: auto; }
+  html[data-brand="bank73"] .bank73-login .login-card.glass { height: auto; min-height: 650px; max-width: none; }
+}
+@media (max-width: 560px) {
+  html[data-brand="bank73"] .bank73-login .login-wrap { padding: 14px; gap: 14px; }
+  html[data-brand="bank73"] .bank73-login .brand-panel { min-height: 310px; border-radius: 26px; }
+  html[data-brand="bank73"] .bank73-login .brand-content { padding: 32px 24px; }
+  html[data-brand="bank73"] .bank73-login .brand-subtitle { margin-top: 24px; font-size: 32px; }
+  html[data-brand="bank73"] .bank73-login .brand-kpis { margin-top: 24px; }
+  html[data-brand="bank73"] .bank73-login .brand-kpis { grid-template-columns: 1fr; }
+  html[data-brand="bank73"] .bank73-login .brand-footer { margin-top: 28px; }
+  html[data-brand="bank73"] .bank73-login .login-card.glass { padding: 36px 24px; border-radius: 26px; }
+  html[data-brand="bank73"] .bank73-login .login-header h1,
+  html[data-brand="bank73"] .bank73-login .login-header h2 { font-size: 40px; }
+}
