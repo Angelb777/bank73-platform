@@ -38,6 +38,18 @@ test('la tarjeta técnica usa el estado de obra como acento y conserva el estado
   assert.match(css, /\.technical-signal/);
 });
 
+test('Tecnico puede reutilizar el normalizador compartido de colores de carpeta', () => {
+  const js = read('public/js/project.js');
+  const normalizer = js.indexOf('function normalizeCommercialFolderColor');
+  const commercialModule = js.indexOf('(function initComercial()');
+  const technicalRenderer = js.indexOf('function renderTechnicalUnits()');
+
+  assert.ok(normalizer >= 0);
+  assert.ok(normalizer < commercialModule);
+  assert.ok(commercialModule < technicalRenderer);
+  assert.match(js.slice(technicalRenderer), /normalizeCommercialFolderColor\(folder\.color\)/);
+});
+
 test('la fase de construcción se edita una sola vez desde la ficha por proceso', () => {
   const html = read('public/project.html');
   const js = read('public/js/project.js');

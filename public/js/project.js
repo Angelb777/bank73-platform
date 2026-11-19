@@ -11076,6 +11076,35 @@ function normalizeUnitEstadoFrontend(v) {
   return s || 'disponible';
 }
 
+const COMMERCIAL_FOLDER_COLOR_PALETTE = [
+  { value:'#111827', label:'Grafito' },
+  { value:'#1e3a8a', label:'Azul' },
+  { value:'#172554', label:'Marino' },
+  { value:'#134e4a', label:'Turquesa' },
+  { value:'#14532d', label:'Verde' },
+  { value:'#581c87', label:'Morado' },
+  { value:'#881337', label:'Granate' },
+  { value:'#7c2d12', label:'Terracota' }
+];
+
+function commercialFolderColorRgb(value = '') {
+  const hex = String(value || '').trim().match(/^#([a-f\d]{6})$/i)?.[1];
+  return hex ? [0, 2, 4].map(index => parseInt(hex.slice(index, index + 2), 16)) : null;
+}
+
+function normalizeCommercialFolderColor(value = '') {
+  const current = String(value || '').trim().toLowerCase();
+  const exact = COMMERCIAL_FOLDER_COLOR_PALETTE.find(item => item.value === current);
+  if (exact) return exact.value;
+  const rgb = commercialFolderColorRgb(current);
+  if (!rgb) return COMMERCIAL_FOLDER_COLOR_PALETTE[0].value;
+  return COMMERCIAL_FOLDER_COLOR_PALETTE.reduce((best, item) => {
+    const target = commercialFolderColorRgb(item.value);
+    const distance = target.reduce((sum, channel, index) => sum + ((channel - rgb[index]) ** 2), 0);
+    return distance < best.distance ? { value:item.value, distance } : best;
+  }, { value:COMMERCIAL_FOLDER_COLOR_PALETTE[0].value, distance:Infinity }).value;
+}
+
 // ====== Comercial ======
 (function initComercial() {
     // ===== Export helpers (Comercial) =====
@@ -13089,35 +13118,6 @@ function isCommercialFolderCollapsed(folderId) {
 
 function setCommercialFolderCollapsed(folderId, closed) {
   localStorage.setItem(`bank73_com_folder_closed_${id}_${folderId || 'unassigned'}`, closed ? '1' : '0');
-}
-
-const COMMERCIAL_FOLDER_COLOR_PALETTE = [
-  { value:'#111827', label:'Grafito' },
-  { value:'#1e3a8a', label:'Azul' },
-  { value:'#172554', label:'Marino' },
-  { value:'#134e4a', label:'Turquesa' },
-  { value:'#14532d', label:'Verde' },
-  { value:'#581c87', label:'Morado' },
-  { value:'#881337', label:'Granate' },
-  { value:'#7c2d12', label:'Terracota' }
-];
-
-function commercialFolderColorRgb(value = '') {
-  const hex = String(value || '').trim().match(/^#([a-f\d]{6})$/i)?.[1];
-  return hex ? [0, 2, 4].map(index => parseInt(hex.slice(index, index + 2), 16)) : null;
-}
-
-function normalizeCommercialFolderColor(value = '') {
-  const current = String(value || '').trim().toLowerCase();
-  const exact = COMMERCIAL_FOLDER_COLOR_PALETTE.find(item => item.value === current);
-  if (exact) return exact.value;
-  const rgb = commercialFolderColorRgb(current);
-  if (!rgb) return COMMERCIAL_FOLDER_COLOR_PALETTE[0].value;
-  return COMMERCIAL_FOLDER_COLOR_PALETTE.reduce((best, item) => {
-    const target = commercialFolderColorRgb(item.value);
-    const distance = target.reduce((sum, channel, index) => sum + ((channel - rgb[index]) ** 2), 0);
-    return distance < best.distance ? { value:item.value, distance } : best;
-  }, { value:COMMERCIAL_FOLDER_COLOR_PALETTE[0].value, distance:Infinity }).value;
 }
 
 function commercialFolderColorOptions(value = '') {
