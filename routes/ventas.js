@@ -433,7 +433,7 @@ router.post(
           projectId: req.project._id,
           unitId: req.params.unitId,
           department: 'commercial',
-          category: /^commercialSaleField:/
+          category: /^commercialSale(?:Field|Stage):/
         },
         { $set: {
           category: archiveCategory,

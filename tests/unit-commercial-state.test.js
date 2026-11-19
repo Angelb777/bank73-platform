@@ -144,6 +144,43 @@ test('liberar una unidad limpia reactiva el modo automático y la siguiente rese
   }
 });
 
+test('cambiar manualmente de lote libre a inventario no vuelve a lote libre', async () => {
+  const originals = {
+    findOne: Unit.findOne,
+    findOneAndUpdate: Unit.findOneAndUpdate,
+    ventaUpdateOne: Venta.updateOne
+  };
+  let writtenSet;
+  try {
+    Unit.findOne = () => ({
+      lean: async () => ({ _id:'unit-manual-inventory', estado:'inventario', estadoModo:'manual' })
+    });
+    Unit.findOneAndUpdate = async (_filter, update) => {
+      writtenSet = update.$set;
+      return { estado:'inventario', estadoModo:'manual', ...update.$set };
+    };
+    Venta.updateOne = async () => ({ modifiedCount:0 });
+
+    const result = await syncUnitCommercialState({
+      tenantKey:'demo',
+      projectId:'project-1',
+      unitId:'unit-manual-inventory',
+      venta:{ avanceConstruccionPct:0 },
+      activateAutomaticAtBase:true
+    });
+
+    assert.equal(writtenSet.estadoAutomaticoSugerido, 'disponible');
+    assert.equal(Object.hasOwn(writtenSet, 'estado'), false);
+    assert.equal(Object.hasOwn(writtenSet, 'estadoModo'), false);
+    assert.equal(result.estado, 'inventario');
+    assert.equal(result.estadoModo, 'manual');
+  } finally {
+    Unit.findOne = originals.findOne;
+    Unit.findOneAndUpdate = originals.findOneAndUpdate;
+    Venta.updateOne = originals.ventaUpdateOne;
+  }
+});
+
 test('una fecha de CPP normaliza el selector a CPP recibida', async () => {
   const originals = {
     findOne: Unit.findOne,

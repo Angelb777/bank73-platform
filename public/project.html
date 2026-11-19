@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="/js/branding.js"></script>
   <link href="/css/base.css" rel="stylesheet" />
-  <link href="/css/theme.css?v=commercial-folder-palette-v1" rel="stylesheet" />
+  <link href="/css/theme.css?v=commercial-batch-modal-v1" rel="stylesheet" />
   <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
 
   <style>
@@ -2664,10 +2664,13 @@ body.light-theme .provider-exclusive {
 
   <!-- Modal edición por lote -->
   <div id="modalBatch" class="modal-backdrop" style="display:none;">
-    <div class="modal" style="width:min(1120px, 96vw);">
+    <div class="modal commercial-batch-modal">
       <div class="modal-head">
         <b>Editar selección (lote)</b>
-        <button class="btn btn-ghost btn-xs" id="batchCerrar">Cerrar</button>
+        <div class="commercial-batch-head-actions">
+          <button class="btn btn-ghost btn-xs" id="batchExpandir" type="button" aria-pressed="false">Ampliar</button>
+          <button class="btn btn-ghost btn-xs" id="batchCerrar" type="button">Cerrar</button>
+        </div>
       </div>
       <div class="modal-body">
         <div class="muted">Se aplicarán solo los campos que completes.</div>
@@ -3133,7 +3136,7 @@ body.light-theme .provider-exclusive {
   <script src="/lib/chart.umd.min.js"></script>
   <script src="/js/theme-toggle.js"></script>
   <script src="/js/project-3d.js?v=commercial-six-states-v4"></script>
-  <script src="/js/project.js?v=commercial-folder-palette-v1"><!-- ROLE-SEP: bump --></script>
+  <script src="/js/project.js?v=commercial-batch-modal-v1"><!-- ROLE-SEP: bump --></script>
   <script src="/js/avaluadores.js?v=2"></script>
 
 </body>

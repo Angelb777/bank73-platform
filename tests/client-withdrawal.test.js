@@ -32,7 +32,7 @@ test('el servidor limpia el expediente y conserva unidad y construcción', () =>
   assert.match(route, /customerPaymentAccounts: \[\]/);
   assert.match(route, /pagares: \[\]/);
   assert.match(route, /estadoVenta: 'caida'/);
-  assert.match(route, /category: \/\^commercialSaleField:\//);
+  assert.match(route, /category: \/\^commercialSale\(\?:Field\|Stage\):\//);
   assert.match(route, /category: archiveCategory/);
   assert.match(route, /audit\(req, 'sale\.client_withdrawn'/);
 });

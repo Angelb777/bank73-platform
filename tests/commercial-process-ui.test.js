@@ -8,6 +8,21 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
+test('el editor comercial en lote mantiene contraste, ancho adaptable y modo ampliado', () => {
+  const html = read('public/project.html');
+  const js = read('public/js/project.js');
+  const css = read('public/css/theme.css');
+
+  assert.match(html, /class="modal commercial-batch-modal"/);
+  assert.match(html, /id="batchExpandir"[^>]*>Ampliar</);
+  assert.match(js, /function setBatchExpanded\(expanded\)/);
+  assert.match(js, /modalBatch\?\.classList\.toggle\('is-expanded', expanded\)/);
+  assert.match(css, /#modalBatch\.is-expanded \.commercial-batch-modal/);
+  assert.match(css, /#modalBatch \.modal-body \{[\s\S]*?overflow-x: hidden !important;/);
+  assert.match(css, /#modalBatch \.commercial-batch-card > summary \{[\s\S]*?background: #ffffff !important;[\s\S]*?color: #0f172a !important;/);
+  assert.match(css, /grid-template-columns: minmax\(0, \.85fr\) minmax\(0, 1\.55fr\) minmax\(0, \.9fr\)/);
+});
+
 test('la ficha comercial sigue el proceso de venta propuesto y mantiene sus campos editables', () => {
   const js = read('public/js/project.js');
   const css = read('public/css/theme.css');

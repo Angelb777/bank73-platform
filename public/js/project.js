@@ -11175,6 +11175,7 @@ function normalizeUnitEstadoFrontend(v) {
 
   const modalBatch = document.getElementById('modalBatch');
   const batchCerrar = document.getElementById('batchCerrar');
+  const batchExpandir = document.getElementById('batchExpandir');
   const batchAplicar = document.getElementById('batchAplicar');
 
   const modalDel = document.getElementById('modalDel');
@@ -11688,52 +11689,55 @@ if (typeof document !== 'undefined') document.addEventListener('click', async ev
 });
 
 const COMMERCIAL_SALE_FIELD_DOC_PREFIX = 'commercialSaleField:';
+const COMMERCIAL_SALE_STAGE_DOC_PREFIX = 'commercialSaleStage:';
 
-function commercialSaleFieldDocCategory(fieldId = '') {
-  return `${COMMERCIAL_SALE_FIELD_DOC_PREFIX}${String(fieldId || '').trim()}`;
+function commercialSaleStageDocCategory(stageNumber) {
+  return `${COMMERCIAL_SALE_STAGE_DOC_PREFIX}${Number(stageNumber)}`;
 }
 
-function commercialSaleFieldAttachmentHtml(fieldId = '') {
-  const safeFieldId = safeVal(fieldId);
-  return `<div class="sale-field-documents" data-sale-field-documents="${safeFieldId}">
-    <input type="file" hidden multiple data-sale-field-file="${safeFieldId}">
-    <div class="sale-field-doc-actions">
-      <button type="button" class="sale-field-attach-btn" data-sale-field-upload="${safeFieldId}">Adjuntar archivo</button>
-      <span data-sale-field-count="${safeFieldId}">0 adjuntos</span>
+function commercialSaleStageAttachmentHtml(stageNumber) {
+  const stage = Number(stageNumber);
+  return `<div class="sale-stage-documents" data-sale-stage-documents="${stage}">
+    <input type="file" hidden multiple data-sale-stage-file="${stage}">
+    <div class="sale-stage-doc-actions">
+      <button type="button" class="sale-stage-attach-btn" data-sale-stage-upload="${stage}">Adjuntar archivos</button>
+      <span data-sale-stage-count="${stage}">0 adjuntos</span>
     </div>
-    <div class="sale-field-doc-list" data-sale-field-docs="${safeFieldId}"><span>Sin adjuntos</span></div>
+    <div class="sale-stage-doc-list" data-sale-stage-docs="${stage}"><span>Sin adjuntos</span></div>
   </div>`;
 }
 
-function addCommercialSaleFieldAttachments(body = '') {
-  return String(body).replace(
-    /<div class="unit-process-field([^"]*)">([\s\S]*?)<\/div>/g,
-    (match, classes, content) => {
-      const fieldMatch = content.match(/\b(?:id|for)="(fv-[A-Za-z0-9_-]+)"/);
-      if (!fieldMatch) return match;
-      return `<div class="unit-process-field${classes}">${content}${commercialSaleFieldAttachmentHtml(fieldMatch[1])}</div>`;
-    }
-  );
+function commercialSaleDocumentStage(doc = {}) {
+  const category = String(doc.category || '');
+  if (category.startsWith(COMMERCIAL_SALE_STAGE_DOC_PREFIX)) {
+    const stage = Number(category.slice(COMMERCIAL_SALE_STAGE_DOC_PREFIX.length));
+    return stage >= 1 && stage <= 6 ? stage : null;
+  }
+  if (!category.startsWith(COMMERCIAL_SALE_FIELD_DOC_PREFIX)) return null;
+  const fieldId = category.slice(COMMERCIAL_SALE_FIELD_DOC_PREFIX.length);
+  if (fieldId === 'fv-polizas' || fieldId.startsWith('pagare-')) return 2;
+  const index = COMMERCIAL_STAGE_FIELD_IDS.findIndex(ids => ids.includes(fieldId));
+  return index >= 0 ? index + 1 : null;
 }
 
-function renderCommercialSaleFieldDocuments(docs = []) {
+function renderCommercialSaleStageDocuments(docs = []) {
   const activeDocs = Array.isArray(docs)
-    ? docs.filter(doc => doc && doc.status !== 'REPLACED' && String(doc.category || '').startsWith(COMMERCIAL_SALE_FIELD_DOC_PREFIX))
+    ? docs.filter(doc => doc && doc.status !== 'REPLACED' && commercialSaleDocumentStage(doc))
     : [];
 
-  document.querySelectorAll('#fichaUnidadModal [data-sale-field-documents]').forEach(container => {
-    const fieldId = container.dataset.saleFieldDocuments || '';
-    const fieldDocs = activeDocs.filter(doc => String(doc.category || '') === commercialSaleFieldDocCategory(fieldId));
-    const count = container.querySelector('[data-sale-field-count]');
-    const list = container.querySelector('[data-sale-field-docs]');
-    if (count) count.textContent = `${fieldDocs.length} ${fieldDocs.length === 1 ? 'adjunto' : 'adjuntos'}`;
+  document.querySelectorAll('#fichaUnidadModal [data-sale-stage-documents]').forEach(container => {
+    const stage = Number(container.dataset.saleStageDocuments);
+    const stageDocs = activeDocs.filter(doc => commercialSaleDocumentStage(doc) === stage);
+    const count = container.querySelector('[data-sale-stage-count]');
+    const list = container.querySelector('[data-sale-stage-docs]');
+    if (count) count.textContent = `${stageDocs.length} ${stageDocs.length === 1 ? 'adjunto' : 'adjuntos'}`;
     if (!list) return;
-    list.innerHTML = fieldDocs.length
-      ? fieldDocs.map(doc => {
+    list.innerHTML = stageDocs.length
+      ? stageDocs.map(doc => {
           const name = doc.originalname || doc.title || doc.filename || 'Documento';
-          return `<div class="sale-field-doc-row">
+          return `<div class="sale-stage-doc-row">
             <span title="${escapeHtml(name)}">${escapeHtml(name)}</span>
-            <span class="sale-field-doc-links">
+            <span class="sale-stage-doc-links">
               <a class="js-secure-file" href="#" data-url="${secureDocUrl(doc._id)}" data-filename="${escapeHtml(name)}" data-action="view">Ver</a>
               <a class="js-secure-file" href="#" data-url="${secureDocUrl(doc._id)}" data-filename="${escapeHtml(name)}" data-action="download">Descargar</a>
             </span>
@@ -11743,7 +11747,7 @@ function renderCommercialSaleFieldDocuments(docs = []) {
   });
 }
 
-async function loadCommercialSaleFieldDocuments(projectId, unitId) {
+async function loadCommercialSaleStageDocuments(projectId, unitId) {
   const qs = new URLSearchParams({
     projectId: String(projectId || ''),
     unitId: String(unitId || ''),
@@ -11752,34 +11756,34 @@ async function loadCommercialSaleFieldDocuments(projectId, unitId) {
   });
   const docs = await API.get(`/api/documents?${qs.toString()}`);
   if (String(fichaUnitId || '') === String(unitId || '')) {
-    renderCommercialSaleFieldDocuments(docs);
+    renderCommercialSaleStageDocuments(docs);
   }
   return docs;
 }
 
-function bindCommercialSaleFieldDocuments(host, projectId, unitId) {
-  if (!host || host.dataset.saleFieldDocumentsBound === 'true') return;
-  host.dataset.saleFieldDocumentsBound = 'true';
+function bindCommercialSaleStageDocuments(host, projectId, unitId) {
+  if (!host || host.dataset.saleStageDocumentsBound === 'true') return;
+  host.dataset.saleStageDocumentsBound = 'true';
 
   host.addEventListener('click', event => {
-    const button = event.target.closest('[data-sale-field-upload]');
+    const button = event.target.closest('[data-sale-stage-upload]');
     if (!button) return;
-    const fieldId = button.dataset.saleFieldUpload || '';
-    host.querySelector(`[data-sale-field-file="${fieldId}"]`)?.click();
+    const stage = button.dataset.saleStageUpload || '';
+    host.querySelector(`[data-sale-stage-file="${stage}"]`)?.click();
   });
 
   host.addEventListener('change', async event => {
-    const input = event.target.closest('[data-sale-field-file]');
+    const input = event.target.closest('[data-sale-stage-file]');
     if (!input || !input.files?.length) return;
-    const fieldId = input.dataset.saleFieldFile || '';
-    const button = host.querySelector(`[data-sale-field-upload="${fieldId}"]`);
+    const stage = input.dataset.saleStageFile || '';
+    const button = host.querySelector(`[data-sale-stage-upload="${stage}"]`);
     const files = [...input.files];
     const formData = new FormData();
     formData.append('projectId', String(projectId));
     formData.append('unitId', String(unitId));
     formData.append('department', 'commercial');
     formData.append('folder', 'comercial');
-    formData.append('category', commercialSaleFieldDocCategory(fieldId));
+    formData.append('category', commercialSaleStageDocCategory(stage));
     files.forEach(file => formData.append('files', file));
 
     if (button) {
@@ -11788,7 +11792,7 @@ function bindCommercialSaleFieldDocuments(host, projectId, unitId) {
     }
     try {
       await API.upload('/api/documents/upload', formData);
-      await loadCommercialSaleFieldDocuments(projectId, unitId);
+      await loadCommercialSaleStageDocuments(projectId, unitId);
     } catch (error) {
       console.error('[Commercial sale field upload]', error);
       alert(`No se pudo adjuntar el archivo: ${error.message || 'Error desconocido'}`);
@@ -11796,7 +11800,7 @@ function bindCommercialSaleFieldDocuments(host, projectId, unitId) {
       input.value = '';
       if (button) {
         button.disabled = false;
-        button.textContent = 'Adjuntar archivo';
+        button.textContent = 'Adjuntar archivos';
       }
     }
   });
@@ -11818,9 +11822,9 @@ function pagareRowHtml(pagare = {}) {
   const due = String(pagare.fechaVencimiento || '').slice(0, 10);
   const cobradoAt = pagare.cobradoAt ? String(pagare.cobradoAt) : '';
   return `<div class="pagare-row ${pagare.cobrado ? 'is-collected' : ''}" data-pagare-row data-pagare-id="${pagareId}" data-pagare-cobrado-at="${escapeHtml(cobradoAt)}">
-    <div class="pagare-input-field"><label><span>Nº de pagaré</span><input type="text" data-pagare-field="numero" value="${escapeHtml(pagare.numero || '')}" placeholder="Ej. PG-001"></label>${commercialSaleFieldAttachmentHtml(`pagare-${pagareId}-numero`)}</div>
-    <div class="pagare-input-field"><label><span>Monto</span><input type="text" inputmode="decimal" data-pagare-field="monto" value="${pagare.monto ? escapeHtml(formatPanamaNumber(pagare.monto)) : ''}" placeholder="0.00"></label>${commercialSaleFieldAttachmentHtml(`pagare-${pagareId}-monto`)}</div>
-    <div class="pagare-input-field"><label><span>Fecha de vencimiento</span><input type="date" data-pagare-field="fechaVencimiento" value="${escapeHtml(due)}"></label>${commercialSaleFieldAttachmentHtml(`pagare-${pagareId}-fechaVencimiento`)}</div>
+    <div class="pagare-input-field"><label><span>Nº de pagaré</span><input type="text" data-pagare-field="numero" value="${escapeHtml(pagare.numero || '')}" placeholder="Ej. PG-001"></label></div>
+    <div class="pagare-input-field"><label><span>Monto</span><input type="text" inputmode="decimal" data-pagare-field="monto" value="${pagare.monto ? escapeHtml(formatPanamaNumber(pagare.monto)) : ''}" placeholder="0.00"></label></div>
+    <div class="pagare-input-field"><label><span>Fecha de vencimiento</span><input type="date" data-pagare-field="fechaVencimiento" value="${escapeHtml(due)}"></label></div>
     <label class="pagare-collected"><input type="checkbox" data-pagare-field="cobrado" ${pagare.cobrado ? 'checked' : ''}><span>Cobrado</span></label>
     <button type="button" class="pagare-remove" data-remove-pagare title="Eliminar pagaré">Eliminar</button>
   </div>`;
@@ -11911,7 +11915,7 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
       <span class="unit-stage-number">${state.cls === 'is-complete' ? '✓' : num}</span>
       <span class="unit-stage-copy"><strong>${title}</strong><small>${state.filled} de ${values.length} campos</small></span>
       <span class="unit-stage-status">${state.label}</span><span class="unit-stage-chevron">⌄</span>
-    </summary><div class="unit-stage-body">${addCommercialSaleFieldAttachments(body)}</div></details>`;
+    </summary><div class="unit-stage-body">${body}${commercialSaleStageAttachmentHtml(num)}</div></details>`;
   };
   const profileOpts = [{v:'',l:'—'},{v:'Independiente',l:'Independiente'},{v:'Asalariado',l:'Asalariado'}];
   const companyOpts = [{v:'',l:'—'},{v:'Privada',l:'Privada'},{v:'Gubernamental',l:'Gubernamental'}];
@@ -12125,9 +12129,6 @@ function applyCashPurchaseMode() {
         container.appendChild(note);
       }
       if (!cashPurchase) note?.remove();
-      container.querySelectorAll('[data-sale-field-upload]').forEach(button => {
-        button.disabled = cashPurchase;
-      });
     }
   });
   const bankOther = document.getElementById('fv-bancoOther');
@@ -15410,10 +15411,10 @@ document.getElementById('btnFichaEstadoAutomatico')?.addEventListener('click', (
 const commercialProcessView = document.getElementById('view-ficha');
 if (commercialProcessView && fichaMode === 'commercial') {
   bindPagaresManager(commercialProcessView);
-  bindCommercialSaleFieldDocuments(commercialProcessView, id, unitId);
-  loadCommercialSaleFieldDocuments(id, unitId).catch(error => {
-    console.error('[Commercial sale field documents]', error);
-    commercialProcessView.querySelectorAll('[data-sale-field-docs]').forEach(list => {
+  bindCommercialSaleStageDocuments(commercialProcessView, id, unitId);
+  loadCommercialSaleStageDocuments(id, unitId).catch(error => {
+    console.error('[Commercial sale stage documents]', error);
+    commercialProcessView.querySelectorAll('[data-sale-stage-docs]').forEach(list => {
       list.innerHTML = '<span class="is-error">No se pudieron cargar los adjuntos</span>';
     });
   });
@@ -16118,7 +16119,18 @@ const uBody = {
     { includeEmpty: true }
   );
 }
-  function closeBatch(){ modalBatch.style.display='none'; }
+  function setBatchExpanded(expanded) {
+    modalBatch?.classList.toggle('is-expanded', expanded);
+    if (batchExpandir) {
+      batchExpandir.textContent = expanded ? 'Restaurar' : 'Ampliar';
+      batchExpandir.setAttribute('aria-pressed', String(expanded));
+    }
+  }
+
+  function closeBatch(){
+    modalBatch.style.display='none';
+    setBatchExpanded(false);
+  }
 
   function addBatchField(update, field, type = 'text') {
     const el = document.getElementById(`b-${field}`);
@@ -16494,7 +16506,8 @@ if (btnExportarExcel) {
   if (modalCrearCerrar) modalCrearCerrar.addEventListener('click', () => modalCrear.style.display='none');
   if (modalModeloCerrar) modalModeloCerrar.addEventListener('click', () => modalCrearModelo.style.display='none');
   if (btnBatch) btnBatch.addEventListener('click', openBatch);
-  if (batchCerrar) batchCerrar.addEventListener('click', () => modalBatch.style.display='none');
+  if (batchExpandir) batchExpandir.addEventListener('click', () => setBatchExpanded(!modalBatch.classList.contains('is-expanded')));
+  if (batchCerrar) batchCerrar.addEventListener('click', closeBatch);
   if (batchAplicar) batchAplicar.addEventListener('click', aplicarBatch);
   if (btnDel) btnDel.addEventListener('click', openDel);
   if (delCerrar) delCerrar.addEventListener('click', closeDel);

@@ -112,7 +112,8 @@ async function syncUnitCommercialState({
   const suggestion = deriveCommercialState(commercialData, baseState);
   const automaticResetFromManual = activateAutomaticAtBase &&
     ['disponible', 'inventario'].includes(unit.estado) &&
-    ['disponible', 'inventario'].includes(suggestion.estado);
+    ['disponible', 'inventario'].includes(suggestion.estado) &&
+    unit.estado === suggestion.estado;
   const automaticAdvanceFromManual = unit.estadoModo !== 'automatico' &&
     (STATE_RANK.get(suggestion.estado) ?? -1) > (STATE_RANK.get(unit.estado) ?? -1);
   const set = {
