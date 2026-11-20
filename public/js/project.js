@@ -7265,6 +7265,14 @@ function renderFinanceUnitAmortizations() {
               <span>CPP <b>${financeMoney(item.cppAmount)}</b></span><span>Abono inicial <b>${financeMoney(item.initialPayment)}</b></span><span>Precio venta <b>${financeMoney(item.salePrice)}</b></span>
             </div>
           </section>
+          <section class="finance-unit-section is-allocation">
+            <h5>Distribución de la CPP</h5>
+            <div class="finance-allocation-grid">
+              ${renderFinanceAllocationInputs(item)}
+              <label class="finance-allocation-field">Promotor<span class="finance-allocation-pair"><input data-field="promoterPct" type="number" min="0" step="any" value="${numOr0(item.checkAmount) > 0 && numOr0(item.promoterAmount) ? ((numOr0(item.promoterAmount) / numOr0(item.checkAmount)) * 100).toFixed(2) : ''}"><b>%</b><input data-field="promoterAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(item.promoterAmount)}"></span></label>
+              <label class="finance-field-wide">Notas<input data-field="notes" value="${escapeHtml(item.notes || '')}"></label>
+            </div>
+          </section>
           <section class="finance-unit-section is-payments">
             <h5>Abonos del cliente</h5>
             <div class="finance-customer-payment-summary" data-customer-payment-summary-unit="${escapeHtml(item.unitId || '')}">
@@ -7272,14 +7280,6 @@ function renderFinanceUnitAmortizations() {
               <span>Pagado <b data-customer-paid>${financeMoney(item.customerPaymentTotals?.paid)}</b></span>
               <span>Pendiente <b data-customer-balance>${financeMoney(item.customerPaymentTotals?.balance)}</b></span>
               <button class="btn btn-ghost btn-xs" type="button" data-open-customer-payments="${escapeHtml(item.unitId || '')}">Ver pagos</button>
-            </div>
-          </section>
-          <section class="finance-unit-section is-allocation">
-            <h5>Distribución de la CPP</h5>
-            <div class="finance-allocation-grid">
-              ${renderFinanceAllocationInputs(item)}
-              <label class="finance-allocation-field">Promotor<span class="finance-allocation-pair"><input data-field="promoterPct" type="number" min="0" step="any" value="${numOr0(item.checkAmount) > 0 && numOr0(item.promoterAmount) ? ((numOr0(item.promoterAmount) / numOr0(item.checkAmount)) * 100).toFixed(2) : ''}"><b>%</b><input data-field="promoterAmount" type="text" inputmode="decimal" value="${formatPanamaNumber(item.promoterAmount)}"></span></label>
-              <label class="finance-field-wide">Notas<input data-field="notes" value="${escapeHtml(item.notes || '')}"></label>
             </div>
           </section>
         </div>
