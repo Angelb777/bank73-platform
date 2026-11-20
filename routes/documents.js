@@ -111,7 +111,7 @@ async function loadDocAndAttachProject(req, res, next) {
     const docId = req.params.id;
 
     let doc = await Document.findOne({ _id: docId, tenantKey }).lean();
-    if (!doc && norm(req.user?.role) === 'bank' && ['GET', 'HEAD'].includes(req.method)) {
+    if (!doc && ['bank', 'avaluador'].includes(norm(req.user?.role)) && ['GET', 'HEAD'].includes(req.method)) {
       doc = await Document.findById(docId).lean();
     }
     if (!doc) return res.status(404).json({ error: 'Documento no encontrado' });
@@ -289,7 +289,7 @@ async function getProjectFolderPermissions({ tenantKey, project }) {
 }
 
 async function getAllowedProjectFolders(req, project) {
-  if (isProjectFolderManager(req) || norm(req.user?.role) === 'bank') return PROJECT_DOC_FOLDERS.slice();
+  if (isProjectFolderManager(req) || ['bank', 'avaluador'].includes(norm(req.user?.role))) return PROJECT_DOC_FOLDERS.slice();
 
   const userId = getUserId(req);
   if (!userId) return [];

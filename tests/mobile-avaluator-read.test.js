@@ -339,10 +339,16 @@ test('assignment lookup cannot cross evaluator or bank boundaries', async (t) =>
   assert.equal(filter.status, 'active');
 });
 
-test('existing backoffice guard remains unchanged for avaluador', () => {
-  const capture = responseCapture();
-  let nextCalled = false;
-  denyAvaluatorBackoffice(evaluatorReq(), capture.res, () => { nextCalled = true; });
-  assert.equal(capture.statusCode, 403);
-  assert.equal(nextCalled, false);
+test('avaluador backoffice access is read-only', () => {
+  const readCapture = responseCapture();
+  let readNextCalled = false;
+  denyAvaluatorBackoffice({ ...evaluatorReq(), method: 'GET' }, readCapture.res, () => { readNextCalled = true; });
+  assert.equal(readCapture.statusCode, 200);
+  assert.equal(readNextCalled, true);
+
+  const writeCapture = responseCapture();
+  let writeNextCalled = false;
+  denyAvaluatorBackoffice({ ...evaluatorReq(), method: 'PATCH' }, writeCapture.res, () => { writeNextCalled = true; });
+  assert.equal(writeCapture.statusCode, 403);
+  assert.equal(writeNextCalled, false);
 });

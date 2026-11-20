@@ -6,6 +6,22 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
+test('Técnico integra cuentas, informes externos, desembolsos y cobertura de ocupación', () => {
+  const html = read('public/project.html');
+  const js = read('public/js/project.js');
+  const finance = read('routes/finance.js');
+  const inspection = read('models/Inspection.js');
+
+  assert.match(html, /id="technicalInspectionsSection"/);
+  assert.match(html, /id="technicalAddExternalInspection"/);
+  assert.match(js, /function renderTechnicalInspections/);
+  assert.match(js, /function technicalUnitCoverage/);
+  assert.match(js, /prepare-disbursement/);
+  assert.match(finance, /external-inspections/);
+  assert.match(finance, /inspection\.external_created/);
+  assert.match(inspection, /enum: \['app', 'external'\]/);
+});
+
 test('Técnico comparte los flujos canónicos de creación y protege el borrado con PIN', () => {
   const html = read('public/project.html');
   const js = read('public/js/project.js');

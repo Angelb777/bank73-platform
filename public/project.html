@@ -2957,6 +2957,7 @@ body.light-theme .provider-exclusive {
           <nav class="technical-jump-nav" aria-label="Secciones técnicas">
             <button type="button" data-technical-jump="technicalPermitsSection">Permisos</button>
             <button type="button" data-technical-jump="technicalUnitsSection">Unidades</button>
+            <button type="button" data-technical-jump="technicalInspectionsSection">Cuentas e inspecciones</button>
             <button type="button" data-technical-jump="technicalDocumentsSection">Planos y pólizas</button>
           </nav>
         </section>
@@ -3022,6 +3023,22 @@ body.light-theme .provider-exclusive {
           </div>
           <div id="technicalUnitKpis" class="technical-unit-kpis"></div>
           <div id="technicalUnitsGrid" class="grid technical-units-grid"></div>
+        </section>
+
+        <section id="technicalInspectionsSection" class="technical-section technical-inspections-section">
+          <header class="technical-section-head">
+            <div>
+              <span class="technical-section-kicker">Avalúos y desembolsos</span>
+              <h3>Cuentas e inspecciones</h3>
+              <p>Historial único de informes realizados desde la app o entregados por el método externo, conectado con Finanzas.</p>
+            </div>
+            <div class="technical-section-actions">
+              <button id="technicalAddExternalInspection" class="btn" type="button">Registrar informe externo</button>
+              <button id="technicalRefreshInspections" class="btn btn-ghost" type="button">Actualizar</button>
+            </div>
+          </header>
+          <div id="technicalInspectionKpis" class="technical-unit-kpis"></div>
+          <div id="technicalInspectionsList" class="technical-inspection-list" aria-live="polite"></div>
         </section>
 
         <section id="technicalDocumentsSection" class="technical-section technical-documents-section">

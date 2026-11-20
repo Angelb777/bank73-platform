@@ -358,7 +358,9 @@ router.get('/projects/:projectId/inspection-reports', requireRole('bank'), async
           name: String(item.avaluadorId.name || ''),
           email: String(item.avaluadorId.email || '')
         } : null,
-        reportPath: `/api/bank/projects/${project._id}/inspection-reports/${item._id}/report.pdf`
+        reportPath: item.origin === 'external' && item.externalReportDocumentId
+          ? `/api/documents/${item.externalReportDocumentId}/download`
+          : `/api/bank/projects/${project._id}/inspection-reports/${item._id}/report.pdf`
       }))
     });
   } catch (e) {
@@ -381,6 +383,9 @@ router.get('/projects/:projectId/inspection-reports/:inspectionId/report.pdf', r
       status: 'finalized'
     }).lean();
     if (!inspection) return res.status(404).json({ error: 'Informe no encontrado.' });
+    if (inspection.origin === 'external' && inspection.externalReportDocumentId) {
+      return res.redirect(307, `/api/documents/${inspection.externalReportDocumentId}/download`);
+    }
     const context = await inspectionReportContext.buildInspectionReportContext({
       scope: { bankTenantKey, projectTenantKey: project.tenantKey, projectId: project._id },
       inspection,

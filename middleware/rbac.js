@@ -2,6 +2,7 @@
 // Control de acceso por rol + acceso a proyectos asignados
 const Project = require('../models/Project');
 const User = require('../models/User');
+const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment');
 const {
   FULL_ACCESS_ROLES,
   LIMITED_AREA_ROLES,
@@ -184,6 +185,11 @@ function detectArea(req) {
 
   const isProjectRead = method === 'GET' && /\/projects\/[^/]+\/?$/i.test(url);
   const isInsurancePolicies = /\/projects\/[^/]+\/insurance-policies\/?$/i.test(url);
+  const isTechnicalInspectionWorkflow = (
+    method === 'GET' && /\/projects\/[^/]+\/finance\/avaluation-context\/?$/i.test(url)
+  ) || (
+    method === 'POST' && /\/projects\/[^/]+\/finance\/(external-inspections|inspection-reports\/[^/]+\/prepare-disbursement)\/?$/i.test(url)
+  );
 
   return {
     url,
@@ -192,7 +198,8 @@ function detectArea(req) {
     isChecklists,
     isDocs,
     isProjectRead,
-    isInsurancePolicies
+    isInsurancePolicies,
+    isTechnicalInspectionWorkflow
   };
 }
 
@@ -288,6 +295,25 @@ function requireProjectAccess(options = {}) {
           }
           return next();
         }
+      }
+
+      if (role === 'avaluador') {
+        const assignment = await ProjectAvaluatorAssignment.findOne({
+          projectId: project._id,
+          projectTenantKey: project.tenantKey,
+          avaluadorId: getUserId(req),
+          status: 'active'
+        }).select('_id bankTenantKey').lean();
+        if (!assignment) {
+          return res.status(403).json({ error: 'Proyecto no asignado al avaluador' });
+        }
+        // El tenant activo del avaluador es el banco; los datos del proyecto
+        // viven en el tenant del promotor. Tras validar la asignacion usamos el
+        // tenant real del proyecto para todas las consultas de solo lectura.
+        req.tenantKey = String(project.tenantKey);
+        req.tenant = { key: String(project.tenantKey), tenantKey: String(project.tenantKey) };
+        req.user.tenantKey = String(project.tenantKey);
+        return next();
       }
 
       // Tenant must match
@@ -420,7 +446,7 @@ function requireProjectAccess(options = {}) {
           const canDeleteTechnicalUnits = area.method === 'DELETE' && /\/units\/(batch|[^/]+)\/?$/i.test(area.url);
           const canManageTechnicalModels = area.method === 'PUT' && /\/projects\/[^/]+\/housing-models\/?$/i.test(area.url);
 
-          if (area.isChecklists || area.isDocs || canReadProject || canEditPolicies || canReadTechnicalSales || canPatchTechnicalSales || canUpsertTechnicalUnit || canCreateTechnicalUnits || canDeleteTechnicalUnits || canManageTechnicalModels) {
+          if (area.isChecklists || area.isDocs || area.isTechnicalInspectionWorkflow || canReadProject || canEditPolicies || canReadTechnicalSales || canPatchTechnicalSales || canUpsertTechnicalUnit || canCreateTechnicalUnits || canDeleteTechnicalUnits || canManageTechnicalModels) {
             return next();
           }
         } else if (area.isChecklists || area.isDocs) {

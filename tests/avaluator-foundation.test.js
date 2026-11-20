@@ -55,7 +55,7 @@ test('existing role permissions remain unchanged', () => {
   assert.deepEqual(LIMITED_AREA_ROLES, ['commercial', 'legal', 'tecnico']);
 });
 
-test('avaluador is explicitly denied access to protected backoffice routes', () => {
+test('avaluador receives read-only access to protected backoffice routes', () => {
   let statusCode;
   let payload;
   let nextCalled = false;
@@ -64,10 +64,14 @@ test('avaluador is explicitly denied access to protected backoffice routes', () 
     json(value) { payload = value; return value; }
   };
 
-  denyAvaluatorBackoffice({ user: { role: 'avaluador' } }, res, () => { nextCalled = true; });
+  denyAvaluatorBackoffice({ user: { role: 'avaluador' }, method: 'GET' }, res, () => { nextCalled = true; });
+  assert.equal(nextCalled, true);
+
+  nextCalled = false;
+  denyAvaluatorBackoffice({ user: { role: 'avaluador' }, method: 'PUT' }, res, () => { nextCalled = true; });
   assert.equal(statusCode, 403);
   assert.equal(nextCalled, false);
-  assert.match(payload.error, /no tiene acceso al backoffice/i);
+  assert.match(payload.error, /exclusivamente de lectura/i);
 
   nextCalled = false;
   denyAvaluatorBackoffice({ user: { role: 'commercial' } }, res, () => { nextCalled = true; });

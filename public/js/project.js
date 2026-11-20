@@ -1828,7 +1828,7 @@ function setDocsCount(clId, n) {
 
 // ====== Rol del usuario (para visibilidad/validación) ======  // ROLE-SEP
 // TECH DEBT: este espejo frontend debe mantenerse alineado con utils/roles.js hasta modularizar project.js.
-const FULL_ACCESS_ROLES = ['admin','bank','promoter','gerencia','socios','financiero','contable'];
+const FULL_ACCESS_ROLES = ['admin','bank','promoter','gerencia','socios','financiero','contable','avaluador'];
 let myRole = (currentUser.role || 'promoter').toLowerCase().trim();
 
 try {
@@ -1916,6 +1916,7 @@ function applyRoleVisibility() {                                // ROLE-SEP
     ['resumen','proyecto','finanzas','comercial','tecnico','proveedores','docs','chat'].forEach(show);
     if (myRole === 'bank') show('avaluadores'); else hide('avaluadores');
     activateTab('resumen');
+    document.body.classList.toggle('role-avaluador-readonly', myRole === 'avaluador');
     togglePartialUI(false);
     if (typeof renderProyecto === 'function') renderProyecto();
     if (document.getElementById('tab-docs')?.classList.contains('active') && typeof loadDocs === 'function') loadDocs();
@@ -16591,6 +16592,7 @@ const technicalWorkspace = {
   permits: null,
   templates: [],
   plans: [],
+  inspectionContext: { reports: [], assignments: [], loanLines: [], canCreateExternal: false },
   selected: new Set(),
   permitFilter: 'all'
 };
@@ -16643,6 +16645,25 @@ function technicalPoliciesForUnit(unit = {}) {
   });
 }
 
+function technicalUnitCoverage(unit = {}, venta = {}) {
+  const policies = technicalPoliciesForUnit(unit);
+  const today = new Date(); today.setHours(0,0,0,0);
+  const active = policies.filter(policy => {
+    const start = policy.startDate ? new Date(policy.startDate) : null;
+    const end = policy.expiryDate ? new Date(policy.expiryDate) : null;
+    return (!start || start <= today) && (!end || end >= today);
+  });
+  const hasCar = active.some(policy => String(policy.type || '').toUpperCase() === 'CAR');
+  const hasFire = active.some(policy => String(policy.type || '').toUpperCase() === 'INCENDIO');
+  const completed = technicalConstructionPhase(venta.estatusConstruccion, venta.avanceConstruccionPct) === 'Terminada';
+  if (venta.permisoOcupacion && !hasFire) return { tone:'is-danger', label:'Incendio por verificar', detail:'Permiso de ocupación sin póliza de incendio vigente' };
+  if (completed && !venta.permisoOcupacion) return { tone:'is-warning', label:'Transición por verificar', detail:'Unidad terminada sin permiso de ocupación' };
+  if ((venta.enConstruccion || !completed) && !hasCar) return { tone:'is-warning', label:'CAR por verificar', detail:'No consta póliza CAR vigente' };
+  if (venta.permisoOcupacion && hasFire) return { tone:'is-ok', label:'Incendio vigente', detail:'Permiso y póliza vinculados' };
+  if (hasCar) return { tone:'is-ok', label:'CAR vigente', detail:'Cobertura de obra registrada' };
+  return { tone:'is-warning', label:'Cobertura por verificar', detail:'Sin póliza vigente aplicable' };
+}
+
 function technicalDaysUntil(value) {
   if (!value) return null;
   const target = new Date(value);
@@ -16673,12 +16694,17 @@ function renderTechnicalKpis() {
     const days = technicalDaysUntil(policy.expiryDate);
     return days !== null && days <= 60;
   }).length;
+  const coverageAlerts = technicalWorkspace.units.filter(unit => {
+    const result = technicalUnitCoverage(unit, ventas.get(String(unit._id)) || {});
+    return result.tone !== 'is-ok';
+  }).length;
   host.innerHTML = [
     technicalKpi('Permisos aprobados', `${progress}%`, `${approved} de ${activePermits.length || 0}`, progress === 100 ? 'is-success' : 'is-cyan'),
     technicalKpi('Unidades en obra', inConstruction, 'Construcción activa', 'is-cyan'),
     technicalKpi('Unidades terminadas', completed, 'Estado técnico', 'is-success'),
     technicalKpi('Sin permiso de ocupación', missingOccupation, 'Requieren seguimiento', missingOccupation ? 'is-warning' : 'is-success'),
-    technicalKpi('Pólizas con alerta', expiringPolicies, 'Vencidas o a 60 días', expiringPolicies ? 'is-danger' : 'is-success')
+    technicalKpi('Pólizas con alerta', expiringPolicies, 'Vencidas o a 60 días', expiringPolicies ? 'is-danger' : 'is-success'),
+    technicalKpi('Cobertura por verificar', coverageAlerts, 'Cruce póliza / ocupación', coverageAlerts ? 'is-warning' : 'is-success')
   ].join('');
 }
 
@@ -16983,6 +17009,7 @@ function technicalUnitCard(unit) {
     ? 'En construcción'
     : technicalConstructionPhase(venta.estatusConstruccion, venta.avanceConstruccionPct);
   const constructionTone = technicalConstructionTone(construction, venta.enConstruccion);
+  const coverage = technicalUnitCoverage(unit, venta);
   return `<article class="unit-card construction-${escapeHtml(constructionTone)} ${technicalWorkspace.selected.has(idValue) ? 'selected' : ''}" data-technical-unit="${escapeHtml(idValue)}" draggable="true">
     <div class="head"><div class="title"><b>${escapeHtml(unitDisplayName(unit))}</b><span class="status">${escapeHtml(technicalUnitStateLabel(unit.estado || 'disponible'))}</span></div><label class="sel-wrap" title="Seleccionar"><input class="sel" type="checkbox" ${technicalWorkspace.selected.has(idValue) ? 'checked' : ''}><span class="sel-box"></span></label></div>
     <div class="meta">${escapeHtml(unit.modelo || 'Sin modelo')} · ${escapeHtml(unit.m2 || 0)} m²</div>
@@ -16991,6 +17018,7 @@ function technicalUnitCard(unit) {
       <span class="chip technical-signal ${venta.permisoConstruccionMunicipal ? 'is-ok' : 'is-warning'}"><i>${venta.permisoConstruccionMunicipal ? '✓' : '!'}</i><span><small>Permiso</small>Construcción</span></span>
       <span class="chip technical-signal ${venta.permisoOcupacion ? 'is-ok' : 'is-warning'}"><i>${venta.permisoOcupacion ? '✓' : '!'}</i><span><small>Permiso</small>Ocupación</span></span>
       ${policies.length ? policies.map(policy => `<span class="chip technical-signal ${technicalDaysUntil(policy.expiryDate) < 0 ? 'is-danger' : 'is-ok'}"><i>${technicalDaysUntil(policy.expiryDate) < 0 ? '!' : '✓'}</i><span><small>Póliza</small>${escapeHtml(policy.type || 'Cobertura')} · ${escapeHtml(policy.policyNumber || 'sin número')}</span></span>`).join('') : '<span class="chip technical-signal is-warning"><i>!</i><span><small>Póliza</small>Sin cobertura</span></span>'}
+      <span class="chip technical-signal ${coverage.tone}" title="${escapeHtml(coverage.detail)}"><i>${coverage.tone === 'is-ok' ? '✓' : '!'}</i><span><small>Cruce ocupación</small>${escapeHtml(coverage.label)}</span></span>
     </div>
   </article>`;
 }
@@ -17120,6 +17148,120 @@ function renderTechnicalDocuments() {
   }).join('') : '<div class="technical-empty">No hay pólizas CAR o incendio registradas.</div>';
 }
 
+const TECHNICAL_INSPECTION_STATUS = {
+  prepared: 'Preparado', requested: 'Solicitado', returned: 'Devuelto', disbursed: 'Desembolsado'
+};
+
+function renderTechnicalInspections() {
+  const host = document.getElementById('technicalInspectionsList');
+  const kpis = document.getElementById('technicalInspectionKpis');
+  if (!host || !kpis) return;
+  const context = technicalWorkspace.inspectionContext || {};
+  const reports = Array.isArray(context.reports) ? context.reports : [];
+  const linked = reports.filter(report => report.disbursement).length;
+  const disbursed = reports.filter(report => report.disbursement?.status === 'disbursed').length;
+  const external = reports.filter(report => report.origin === 'external').length;
+  kpis.innerHTML = [
+    technicalKpi('Cuentas registradas', reports.length, 'Historial técnico', 'is-cyan'),
+    technicalKpi('Desde la app', reports.length - external, 'Informes firmados', 'is-success'),
+    technicalKpi('Informes externos', external, 'Método tradicional', external ? 'is-warning' : 'is-success'),
+    technicalKpi('Con desembolso', linked, `${disbursed} desembolsados`, linked ? 'is-cyan' : '')
+  ].join('');
+  const addButton = document.getElementById('technicalAddExternalInspection');
+  if (addButton) addButton.hidden = !context.canCreateExternal;
+  host.innerHTML = reports.length ? reports.map(report => {
+    const disbursement = report.disbursement;
+    const verdict = ({ favorable:'Favorable', conditional:'Con condiciones', unfavorable:'Desfavorable', not_assessed:'Sin pronunciamiento' })[report.verdict] || 'Sin pronunciamiento';
+    const status = disbursement ? (TECHNICAL_INSPECTION_STATUS[disbursement.status] || disbursement.status) : 'Sin partida';
+    const statusTone = disbursement?.status === 'disbursed' ? 'is-success' : disbursement?.status === 'returned' ? 'is-danger' : disbursement ? 'is-cyan' : 'is-muted';
+    return `<article class="technical-inspection-row">
+      <div class="technical-inspection-account"><span>Cuenta ${escapeHtml(String(report.sequence || '—'))}</span><strong>${escapeHtml(report.accountName || report.reportNumber || 'Informe de avalúo')}</strong><small>${report.origin === 'external' ? 'Informe externo' : 'Generado desde la app'} · Rev. ${Number(report.revision || 1)}</small></div>
+      <div><span>Inspección</span><strong>${escapeHtml(financeDateInput(report.inspectionDate) || 'Sin fecha')}</strong><small>${escapeHtml(report.avaluadorName || 'Avaluador no informado')}</small></div>
+      <div><span>Avance certificado</span><strong>${Number(report.projectProgressPercent || 0).toFixed(1)}%</strong><small>${escapeHtml(verdict)}</small></div>
+      <div><span>Desembolso</span><strong class="technical-status ${statusTone}">${escapeHtml(status)}</strong><small>${disbursement ? `${escapeHtml(disbursement.lineName)} · ${formatMoney(disbursement.amount || 0)}` : 'Disponible para vincular en Finanzas'}</small></div>
+      <div class="technical-inspection-actions"><button class="btn btn-ghost btn-xs" type="button" data-technical-open-report="${escapeHtml(report.id)}">Ver PDF</button>${!disbursement && context.canCreateExternal ? `<button class="btn btn-xs" type="button" data-technical-prepare-disbursement="${escapeHtml(report.id)}">Preparar desembolso</button>` : ''}</div>
+    </article>`;
+  }).join('') : '<div class="technical-empty">Todavía no hay cuentas ni inspecciones finalizadas para este proyecto.</div>';
+}
+
+async function openTechnicalExternalInspection() {
+  const context = technicalWorkspace.inspectionContext || {};
+  if (!context.canCreateExternal) return;
+  const reports = context.reports || [];
+  const nextSequence = reports.reduce((max, report) => Math.max(max, Number(report.sequence || 0)), 0) + 1;
+  const evaluators = (context.assignments || []).map(item => `<option value="${escapeHtml(item.avaluadorId)}">${escapeHtml(item.name || item.email || 'Avaluador')}</option>`).join('');
+  const lines = (context.loanLines || []).map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml([item.phaseName, item.name].filter(Boolean).join(' · '))}</option>`).join('');
+  openModal('Registrar informe externo', `<div class="technical-external-form">
+    <label>Número de cuenta<input id="technicalExternalSequence" type="number" min="1" step="1" value="${nextSequence}" required></label>
+    <label>Nombre de la cuenta<input id="technicalExternalAccountName" value="Cuenta n.º ${nextSequence}" required></label>
+    <label>Fecha de inspección<input id="technicalExternalDate" type="date" value="${new Date().toISOString().slice(0,10)}" required></label>
+    <label>Avaluador<select id="technicalExternalAvaluator" required>${evaluators}</select></label>
+    <label>Avance certificado (%)<input id="technicalExternalProgress" type="number" min="0" max="100" step="0.01" value="0" required></label>
+    <label>Recomendación<select id="technicalExternalVerdict"><option value="not_assessed">Sin pronunciamiento</option><option value="favorable">Favorable</option><option value="conditional">Favorable con condiciones</option><option value="unfavorable">Desfavorable</option></select></label>
+    <label class="technical-external-wide">Condiciones<textarea id="technicalExternalConditions" rows="2" placeholder="Condiciones técnicas para el desembolso"></textarea></label>
+    <label class="technical-external-wide">Observaciones<textarea id="technicalExternalNotes" rows="3"></textarea></label>
+    <label class="technical-external-wide">Informe PDF<input id="technicalExternalReport" type="file" accept="application/pdf,.pdf" required></label>
+    <div class="technical-external-disbursement technical-external-wide"><strong>Partida de desembolso opcional</strong><span>Si indicas línea e importe, quedará creada en Finanzas con estado Preparado.</span></div>
+    <label>Línea bancaria<select id="technicalExternalLoanLine"><option value="">No crear partida ahora</option>${lines}</select></label>
+    <label>Importe del desembolso<input id="technicalExternalAmount" type="number" min="0" step="0.01" value="0"></label>
+  </div>`, 'Registrar informe', async () => {
+    const file = document.getElementById('technicalExternalReport')?.files?.[0];
+    if (!file) return alert('Adjunta el informe en PDF.');
+    const formData = new FormData();
+    const fields = {
+      sequence: document.getElementById('technicalExternalSequence')?.value,
+      accountName: document.getElementById('technicalExternalAccountName')?.value,
+      inspectionDate: document.getElementById('technicalExternalDate')?.value,
+      avaluadorId: document.getElementById('technicalExternalAvaluator')?.value,
+      projectProgressPercent: document.getElementById('technicalExternalProgress')?.value,
+      verdict: document.getElementById('technicalExternalVerdict')?.value,
+      conditions: document.getElementById('technicalExternalConditions')?.value,
+      notes: document.getElementById('technicalExternalNotes')?.value,
+      loanLineId: document.getElementById('technicalExternalLoanLine')?.value,
+      disbursementAmount: document.getElementById('technicalExternalAmount')?.value
+    };
+    Object.entries(fields).forEach(([key, value]) => formData.append(key, value || ''));
+    formData.append('report', file);
+    modalPrimary.disabled = true; modalPrimary.textContent = 'Registrando…';
+    try {
+      await API.upload(`/api/projects/${id}/finance/external-inspections`, formData);
+      modalBackdrop.style.display = 'none';
+      await loadTechnicalWorkspace({ force:true, preserveSelection:true });
+    } catch (error) {
+      alert(error.message || 'No se pudo registrar el informe.');
+    } finally {
+      modalPrimary.disabled = false; modalPrimary.textContent = 'Registrar informe';
+    }
+  });
+}
+
+function openTechnicalPrepareDisbursement(reportId) {
+  const context = technicalWorkspace.inspectionContext || {};
+  const report = (context.reports || []).find(item => String(item.id) === String(reportId));
+  const lines = (context.loanLines || []).map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml([item.phaseName, item.name].filter(Boolean).join(' · '))}</option>`).join('');
+  if (!report || !lines) return alert('Primero debe existir una línea bancaria en Finanzas.');
+  openModal(`Preparar desembolso · ${report.accountName || report.reportNumber}`, `<div class="technical-external-form">
+    <label class="technical-external-wide">Línea bancaria<select id="technicalPrepareLine">${lines}</select></label>
+    <label>Importe<input id="technicalPrepareAmount" type="number" min="0.01" step="0.01" required></label>
+    <label>Estado<input value="Preparado" disabled></label>
+    <label class="technical-external-wide">Notas<textarea id="technicalPrepareNotes" rows="3">Cuenta ${Number(report.sequence || 1)} · ${report.reportNumber || 'Informe de avalúo'}</textarea></label>
+  </div>`, 'Crear partida', async () => {
+    const amount = Number(document.getElementById('technicalPrepareAmount')?.value || 0);
+    if (!(amount > 0)) return alert('Indica un importe mayor que cero.');
+    modalPrimary.disabled = true; modalPrimary.textContent = 'Creando…';
+    try {
+      await API.post(`/api/projects/${id}/finance/inspection-reports/${report.id}/prepare-disbursement`, {
+        loanLineId: document.getElementById('technicalPrepareLine')?.value,
+        amount,
+        notes: document.getElementById('technicalPrepareNotes')?.value || ''
+      });
+      modalBackdrop.style.display = 'none';
+      await loadTechnicalWorkspace({ force:true, preserveSelection:true });
+    } catch (error) { alert(error.message || 'No se pudo preparar el desembolso.'); }
+    finally { modalPrimary.disabled = false; modalPrimary.textContent = 'Crear partida'; }
+  });
+}
+
 async function loadTechnicalWorkspace({ force = false, preserveSelection = false } = {}) {
   if (!document.getElementById('tab-tecnico')) return;
   if (technicalWorkspace.loading) {
@@ -17128,13 +17270,14 @@ async function loadTechnicalWorkspace({ force = false, preserveSelection = false
   }
   const previousSelection = preserveSelection ? new Set(technicalWorkspace.selected) : new Set();
   technicalWorkspace.loading = (async () => {
-    const [units, ventas, folderData, permits, templates, plans] = await Promise.all([
+    const [units, ventas, folderData, permits, templates, plans, inspectionContext] = await Promise.all([
       API.get(`/api/units?projectId=${encodeURIComponent(id)}&estado=&q=`),
       API.get(`/api/ventas?projectId=${encodeURIComponent(id)}`).catch(() => []),
       API.get(`/api/commercial-folders?projectId=${encodeURIComponent(id)}`).catch(() => ({ folders:[], unassigned:{ name:'Sin carpeta', color:'#0f172a' } })),
       apiPermitsGetProject(true).catch(() => null),
       apiPermitsGetTemplates().catch(() => []),
-      API.get(`/api/documents?projectId=${encodeURIComponent(id)}&category=architecturalPlans&ts=${Date.now()}`).catch(() => [])
+      API.get(`/api/documents?projectId=${encodeURIComponent(id)}&category=architecturalPlans&ts=${Date.now()}`).catch(() => []),
+      API.get(`/api/projects/${encodeURIComponent(id)}/finance/avaluation-context?ts=${Date.now()}`).catch(() => ({ reports:[], assignments:[], loanLines:[], canCreateExternal:false }))
     ]);
     technicalWorkspace.units = units || [];
     technicalWorkspace.ventas = new Map((ventas || []).map(venta => [String(venta.unitId), venta]));
@@ -17143,12 +17286,14 @@ async function loadTechnicalWorkspace({ force = false, preserveSelection = false
     technicalWorkspace.permits = permits;
     technicalWorkspace.templates = templates || [];
     technicalWorkspace.plans = plans || [];
+    technicalWorkspace.inspectionContext = inspectionContext || { reports:[], assignments:[], loanLines:[], canCreateExternal:false };
     technicalWorkspace.selected = new Set([...previousSelection].filter(unitId => technicalWorkspace.units.some(unit => String(unit._id) === unitId)));
     INSURANCE_UNITS_CACHE = technicalWorkspace.units;
     renderTechnicalTemplatePicker();
     renderTechnicalKpis();
     renderTechnicalPermits();
     renderTechnicalUnits();
+    renderTechnicalInspections();
     renderTechnicalDocuments();
     if (permits) __permits = permits;
     technicalWorkspace.loaded = true;
@@ -17329,6 +17474,20 @@ document.getElementById('technicalSelectAll')?.addEventListener('click', () => {
   renderTechnicalUnits();
 });
 document.getElementById('technicalBatchEdit')?.addEventListener('click', openTechnicalBatchEditor);
+document.getElementById('technicalAddExternalInspection')?.addEventListener('click', openTechnicalExternalInspection);
+document.getElementById('technicalRefreshInspections')?.addEventListener('click', () => loadTechnicalWorkspace({ force:true, preserveSelection:true }));
+document.getElementById('technicalInspectionsList')?.addEventListener('click', async event => {
+  const reportButton = event.target.closest('[data-technical-open-report]');
+  if (reportButton) {
+    const report = (technicalWorkspace.inspectionContext?.reports || []).find(item => String(item.id) === String(reportButton.dataset.technicalOpenReport));
+    if (!report?.reportPath) return;
+    try { await openSecureFile(report.reportPath, `${report.reportNumber || 'informe-avaluo'}.pdf`, 'view'); }
+    catch (error) { alert(error.message || 'No se pudo abrir el informe.'); }
+    return;
+  }
+  const prepareButton = event.target.closest('[data-technical-prepare-disbursement]');
+  if (prepareButton) openTechnicalPrepareDisbursement(prepareButton.dataset.technicalPrepareDisbursement);
+});
 document.getElementById('technicalCreateUnits')?.addEventListener('click', () => window.openSharedCreateUnits?.('technical'));
 document.getElementById('technicalCreateModel')?.addEventListener('click', () => window.openSharedModelsManager?.('technical'));
 document.getElementById('technicalDeleteUnits')?.addEventListener('click', openTechnicalDeleteUnits);

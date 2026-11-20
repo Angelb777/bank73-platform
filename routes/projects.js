@@ -1219,6 +1219,18 @@ async function buildBankPortfolioQuery(req) {
   return { publishStatus: 'approved', $or: scope };
 }
 
+async function buildAvaluatorPortfolioQuery(req) {
+  const uid = req.user?._id || req.user?.userId || req.user?.id;
+  const assignments = await ProjectAvaluatorAssignment.find({
+    avaluadorId: uid,
+    status: 'active'
+  }).select('projectId').lean();
+  return {
+    publishStatus: 'approved',
+    _id: { $in: assignments.map(item => item.projectId) }
+  };
+}
+
 
 function buildProjectVisibilityQuery(req) {
   const base = { tenantKey: req.tenantKey };
@@ -1427,7 +1439,9 @@ function parseComparisonReportPeriod(source = {}, reportPeriod) {
 // GET /api/projects
 router.get('/', async (req, res) => {
   try {
-    const q = buildProjectVisibilityQuery(req);
+    const q = String(req.user?.role || '').toLowerCase() === 'avaluador'
+      ? await buildAvaluatorPortfolioQuery(req)
+      : buildProjectVisibilityQuery(req);
     const publish = (req.query.publishStatus || '').toLowerCase();
     if (publish && (req.user?.role === 'admin' || req.user?.role === 'bank')) q.publishStatus = publish;
     const list = await Project.find(q).sort({ createdAt: -1 }).lean();
@@ -1443,7 +1457,9 @@ router.get('/portfolio', async (req, res) => {
     const role = String(req.user?.role || '').toLowerCase();
     const q = role === 'bank'
       ? await buildBankPortfolioQuery(req)
-      : buildPortfolioQuery(req);
+      : role === 'avaluador'
+        ? await buildAvaluatorPortfolioQuery(req)
+        : buildPortfolioQuery(req);
 
     const search = String(req.query.q || '').trim();
     const promoterId = String(req.query.promoterId || '').trim();

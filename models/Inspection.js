@@ -97,6 +97,24 @@ const reportDetailsSchema = new mongoose.Schema({
 }, { _id: false });
 
 const inspectionSchema = new mongoose.Schema({
+  origin: {
+    type: String,
+    enum: ['app', 'external'],
+    default: 'app',
+    required: true,
+    index: true
+  },
+  externalReportDocumentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Document',
+    default: null
+  },
+  createdOnBehalfBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  createdOnBehalfByRole: { type: String, trim: true, default: '' },
   bankTenantKey: {
     type: String,
     required: true,

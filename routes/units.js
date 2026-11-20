@@ -448,8 +448,13 @@ router.patch(
       if (!ids.length) return res.status(400).json({ error: 'ids requerido' });
 
       let set = stripManagedStateFields(sanitizeUnitUpdateForRole({ ...update }, req.user?.role));
+      const hasExplicitM2 = Object.hasOwn(update, 'm2');
       if (set.modelId || set.modelo) {
         Object.assign(set, unitModelFieldsFromBody(req.project, set));
+        // El modelo define las superficies de construccion, pero no la
+        // superficie del terreno de una unidad existente. En batch solo se
+        // modifica m2 cuando el usuario completa expresamente ese campo.
+        if (!hasExplicitM2) delete set.m2;
         set = stripManagedStateFields(sanitizeUnitUpdateForRole(set, req.user?.role));
       }
       if (update.costoUnidad !== undefined) {

@@ -23,6 +23,18 @@ test('el editor comercial en lote mantiene contraste, ancho adaptable y modo amp
   assert.match(css, /grid-template-columns: minmax\(0, \.85fr\) minmax\(0, 1\.55fr\) minmax\(0, \.9fr\)/);
 });
 
+test('cambiar el modelo en lote no reemplaza el area de terreno por el area construida', () => {
+  const js = read('public/js/project.js');
+  const units = read('routes/units.js');
+  const batchEditor = js.slice(js.indexOf('async function aplicarBatch()'), js.indexOf('function openDel()', js.indexOf('async function aplicarBatch()')));
+  const batchRouteStart = units.indexOf('PATCH /api/units/batch');
+  const batchRoute = units.slice(batchRouteStart, units.indexOf('DELETE /api/units/batch', batchRouteStart));
+
+  assert.match(batchEditor, /const m2 = document\.getElementById\('b-m2'\)\.value; if \(m2\) updUnit\.m2/);
+  assert.match(batchRoute, /const hasExplicitM2 = Object\.hasOwn\(update, 'm2'\)/);
+  assert.match(batchRoute, /if \(!hasExplicitM2\) delete set\.m2/);
+});
+
 test('la ficha comercial sigue el proceso de venta propuesto y mantiene sus campos editables', () => {
   const js = read('public/js/project.js');
   const css = read('public/css/theme.css');

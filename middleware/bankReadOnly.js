@@ -10,8 +10,10 @@ function bankReadOnly(req, res, next) {
   const isFinanceRequirementUpdate = ['POST', 'PATCH', 'DELETE'].includes(method) && /^\/api\/projects\/[^/]+\/finance\/phases\/[^/]+\/requirements(?:\/[^/]+(?:\/status)?)?$/.test(path);
   const isDisbursementStatusUpdate = method === 'PATCH' && /^\/api\/projects\/[^/]+\/finance\/loan-lines\/[^/]+\/entries\/[^/]+\/status$/.test(path);
   const isDisbursementDelete = method === 'DELETE' && /^\/api\/projects\/[^/]+\/finance\/loan-lines\/[^/]+\/entries\/[^/]+$/.test(path);
+  const isExternalInspectionCreate = method === 'POST' && /^\/api\/projects\/[^/]+\/finance\/external-inspections$/.test(path);
+  const isInspectionDisbursementPrepare = method === 'POST' && /^\/api\/projects\/[^/]+\/finance\/inspection-reports\/[^/]+\/prepare-disbursement$/.test(path);
 
-  if (role === 'bank' && !isProjectCreate && !isFundingInterest && !isFinanceRequirementUpload && !isFinanceRequirementSourceUpdate && !isFinanceRequirementUpdate && !isDisbursementStatusUpdate && !isDisbursementDelete && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+  if (role === 'bank' && !isProjectCreate && !isFundingInterest && !isFinanceRequirementUpload && !isFinanceRequirementSourceUpdate && !isFinanceRequirementUpdate && !isDisbursementStatusUpdate && !isDisbursementDelete && !isExternalInspectionCreate && !isInspectionDisbursementPrepare && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
     return res.status(403).json({
       error: 'Rol bank en modo observador: esta operacion es solo de lectura.'
     });

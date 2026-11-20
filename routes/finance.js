@@ -45,6 +45,7 @@ const { formatProjectMoney } = require('../utils/currency');
 const multer = require('multer');
 const {
   MAX_EXCEL_IMPORT_FILE_SIZE,
+  MAX_DOCUMENT_FILE_SIZE,
   fileFilterFor,
   handleMulterUpload
 } = require('../utils/uploadSecurity');
@@ -54,6 +55,17 @@ const financeExcelUpload = handleMulterUpload(multer({
   limits: { fileSize: MAX_EXCEL_IMPORT_FILE_SIZE },
   fileFilter: fileFilterFor(new Set(['.xlsx']))
 }).single('file'));
+
+const externalInspectionUploadDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(externalInspectionUploadDir)) fs.mkdirSync(externalInspectionUploadDir, { recursive: true });
+const externalInspectionUpload = handleMulterUpload(multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, externalInspectionUploadDir),
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname || '').toLowerCase()}`)
+  }),
+  limits: { fileSize: MAX_DOCUMENT_FILE_SIZE },
+  fileFilter: fileFilterFor(new Set(['.pdf']))
+}).single('report'));
 
 /* =========================================================================
    Helpers base
@@ -509,7 +521,11 @@ function syncLoanLinesFromPhaseUses(doc, phase, { createAll = false, createForUs
 
 function activeAvaluatorAssignmentFilter(req, project) {
   const filter = { projectId: project._id, projectTenantKey: project.tenantKey, status: 'active' };
-  if (req.user?.role === 'bank') filter.bankTenantKey = getTenantKey(req);
+  if (req.user?.role === 'bank') {
+    const bankKeys = Array.from(new Set([...(req.user?.tenantKeys || []), getTenantKey(req)].map(String).filter(Boolean)));
+    if (bankKeys.length) filter.bankTenantKey = { $in: bankKeys };
+  }
+  if (req.user?.role === 'avaluador') filter.avaluadorId = req.user?._id || req.user?.userId || req.user?.id;
   return filter;
 }
 
@@ -1993,7 +2009,7 @@ router.get('/projects/:projectId/finance/disbursement-requests', async (req, res
     }
     const inspectionIds = rows.map(row => row.entry.inspectionId).filter(Boolean);
     const inspections = await Inspection.find({ _id: { $in: inspectionIds }, projectId: project._id, status: 'finalized' })
-      .select('_id reportNumber inspectionDate finalizedAt projectProgressPercent technicalRecommendation sequence accountName revision')
+      .select('_id reportNumber inspectionDate finalizedAt projectProgressPercent technicalRecommendation sequence accountName revision origin externalReportDocumentId')
       .lean();
     const inspectionById = new Map(inspections.map(item => [String(item._id), item]));
     res.json({
@@ -2032,7 +2048,9 @@ router.get('/projects/:projectId/finance/disbursement-requests', async (req, res
             sequence: Number(report.sequence || entry.advanceAccountNumber || 0) || null,
             accountName: String(report.accountName || `Cuenta n.º ${Number(report.sequence || entry.advanceAccountNumber || 0)}`),
             revision: Number(report.revision || 1),
-            url: `/api/projects/${project._id}/finance/inspection-reports/${report._id}/report.pdf`
+            url: report.origin === 'external' && report.externalReportDocumentId
+              ? `/api/documents/${report.externalReportDocumentId}/download`
+              : `/api/projects/${project._id}/finance/inspection-reports/${report._id}/report.pdf`
           } : null,
           requirements: requirements.map(item => ({
             ...(item?.toObject ? item.toObject() : item),
@@ -2061,8 +2079,12 @@ router.get('/projects/:projectId/finance/avaluation-context', async (req, res) =
   try {
     const project = await loadTenantProject(req, res);
     if (!project) return;
-    const assignments = await ProjectAvaluatorAssignment.find(activeAvaluatorAssignmentFilter(req, project)).select('_id bankTenantKey avaluadorId').lean();
-    if (!assignments.length) return res.json({ hasAssignedAvaluator: false, reports: [] });
+    const assignments = await ProjectAvaluatorAssignment.find(activeAvaluatorAssignmentFilter(req, project))
+      .populate('avaluadorId', 'name email')
+      .select('_id bankTenantKey avaluadorId')
+      .lean();
+    const finance = await ProjectFinance.findOne({ project: project._id, tenantKey: project.tenantKey }).lean() || { loanLines: [] };
+    if (!assignments.length) return res.json({ hasAssignedAvaluator: false, reports: [], assignments: [], loanLines: [] });
     const reports = await Inspection.find({
       projectId: project._id,
       projectTenantKey: project.tenantKey,
@@ -2070,10 +2092,39 @@ router.get('/projects/:projectId/finance/avaluation-context', async (req, res) =
       status: 'finalized',
       supersededByInspectionId: null
     }).populate('avaluadorId', 'name email').sort({ finalizedAt: -1 }).lean();
+    const linkedEntries = new Map();
+    for (const line of (finance.loanLines || [])) {
+      for (const entry of (line.entries || [])) {
+        if (!entry.inspectionId) continue;
+        linkedEntries.set(String(entry.inspectionId), {
+          lineId: String(line._id),
+          lineName: String(line.name || 'Linea bancaria'),
+          entryId: String(entry._id),
+          amount: Number(entry.disbursementAmount || 0),
+          status: String(entry.workflowStatus || (entry.paymentStatus === 'paid' ? 'disbursed' : 'prepared'))
+        });
+      }
+    }
+    const actorRole = String(req.user?.role || '').toLowerCase();
     res.json({
       hasAssignedAvaluator: true,
+      canCreateExternal: ['admin', 'bank', 'tecnico', 'financiero', 'contable'].includes(actorRole),
+      assignments: assignments.map(item => ({
+        id: String(item._id),
+        bankTenantKey: String(item.bankTenantKey || ''),
+        avaluadorId: String(item.avaluadorId?._id || item.avaluadorId || ''),
+        name: String(item.avaluadorId?.name || ''),
+        email: String(item.avaluadorId?.email || '')
+      })),
+      loanLines: (finance.loanLines || []).map(line => ({
+        id: String(line._id),
+        name: String(line.name || 'Linea bancaria'),
+        phaseName: String(line.phaseName || ''),
+        approvedAmount: Number(line.approvedAmount || 0)
+      })),
       reports: reports.map(item => ({
         id: String(item._id),
+        origin: String(item.origin || 'app'),
         reportNumber: String(item.reportNumber || ''),
         sequence: Number(item.sequence || 1),
         accountName: String(item.accountName || `Cuenta n.º ${Number(item.sequence || 1)}`),
@@ -2084,11 +2135,192 @@ router.get('/projects/:projectId/finance/avaluation-context', async (req, res) =
         verdict: String(item.technicalRecommendation?.verdict || 'not_assessed'),
         conditions: String(item.technicalRecommendation?.conditions || item.technicalRecommendation?.notes || ''),
         avaluadorName: String(item.avaluadorId?.name || ''),
-        reportPath: `/api/projects/${project._id}/finance/inspection-reports/${item._id}/report.pdf`
+        reportPath: item.origin === 'external' && item.externalReportDocumentId
+          ? `/api/documents/${item.externalReportDocumentId}/download`
+          : `/api/projects/${project._id}/finance/inspection-reports/${item._id}/report.pdf`,
+        disbursement: linkedEntries.get(String(item._id)) || null
       }))
     });
   } catch (err) {
     res.status(500).json({ error: 'No se pudieron cargar los informes de avalúo.' });
+  }
+});
+
+router.post('/projects/:projectId/finance/external-inspections', externalInspectionUpload, async (req, res) => {
+  const uploadedPath = req.file?.path;
+  let documentCreated = false;
+  const rejectUpload = (status, error) => {
+    if (uploadedPath && fs.existsSync(uploadedPath)) fs.unlink(uploadedPath, () => {});
+    return res.status(status).json({ error });
+  };
+  try {
+    const role = String(req.user?.role || '').toLowerCase();
+    if (!['admin', 'bank', 'tecnico', 'financiero', 'contable'].includes(role)) {
+      return rejectUpload(403, 'No tienes permiso para registrar informes externos.');
+    }
+    const project = await loadTenantProject(req, res);
+    if (!project) {
+      if (uploadedPath && fs.existsSync(uploadedPath)) fs.unlink(uploadedPath, () => {});
+      return;
+    }
+    if (!req.file) return res.status(400).json({ error: 'Adjunta el informe externo en formato PDF.' });
+
+    const assignments = await ProjectAvaluatorAssignment.find(activeAvaluatorAssignmentFilter(req, project)).lean();
+    const assignment = assignments.find(item => String(item.avaluadorId) === String(req.body?.avaluadorId || '')) || assignments[0];
+    if (!assignment) return rejectUpload(400, 'El proyecto no tiene un avaluador activo asignado.');
+
+    const requestedSequence = Number(req.body?.sequence || 0);
+    const latest = await Inspection.findOne({
+      bankTenantKey: assignment.bankTenantKey,
+      projectTenantKey: project.tenantKey,
+      projectId: project._id,
+      deletedAt: null
+    }).sort({ sequence: -1 }).select('sequence').lean();
+    const sequence = Number.isInteger(requestedSequence) && requestedSequence > 0
+      ? requestedSequence
+      : Number(latest?.sequence || 0) + 1;
+    const duplicate = await Inspection.exists({
+      bankTenantKey: assignment.bankTenantKey,
+      projectTenantKey: project.tenantKey,
+      projectId: project._id,
+      sequence,
+      revision: 1,
+      deletedAt: null
+    });
+    if (duplicate) return rejectUpload(409, `Ya existe la cuenta n.º ${sequence}.`);
+
+    const progress = Math.max(0, Math.min(100, Number(req.body?.projectProgressPercent || 0)));
+    const verdict = ['favorable', 'conditional', 'unfavorable', 'not_assessed'].includes(req.body?.verdict)
+      ? req.body.verdict
+      : 'not_assessed';
+    const inspectionDate = cleanDate(req.body?.inspectionDate) || new Date();
+    const actorId = req.user?._id || req.user?.userId || req.user?.id;
+    const amount = Math.max(0, Number(req.body?.disbursementAmount || 0));
+    let financeForDisbursement = null;
+    let lineForDisbursement = null;
+    if (req.body?.loanLineId && amount > 0) {
+      financeForDisbursement = await getOrCreate(project._id, project.tenantKey);
+      lineForDisbursement = financeForDisbursement.loanLines.id(req.body.loanLineId);
+      if (!lineForDisbursement) throw Object.assign(new Error('La línea bancaria seleccionada ya no existe.'), { status: 400 });
+    }
+    const relativePath = path.relative(path.join(__dirname, '..'), req.file.path).replace(/\\/g, '/');
+    const document = await Document.create({
+      tenantKey: project.tenantKey,
+      projectId: project._id,
+      folder: 'tecnico',
+      subfolder: 'Informes de avaluo',
+      originalname: req.file.originalname,
+      filename: req.file.filename,
+      path: relativePath,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      title: `Cuenta n.º ${sequence} - informe externo`,
+      category: 'externalInspection',
+      uploadedBy: actorId,
+      uploaderRole: role,
+      visibleToRoles: ['admin', 'bank', 'avaluador', 'tecnico', 'financiero', 'contable']
+    });
+    documentCreated = true;
+
+    const finalizedAt = new Date();
+    const inspection = await Inspection.create({
+      origin: 'external',
+      externalReportDocumentId: document._id,
+      createdOnBehalfBy: actorId,
+      createdOnBehalfByRole: role,
+      bankTenantKey: assignment.bankTenantKey,
+      projectTenantKey: project.tenantKey,
+      projectId: project._id,
+      avaluadorId: assignment.avaluadorId,
+      assignmentId: assignment._id,
+      sequence,
+      accountName: String(req.body?.accountName || `Cuenta n.º ${sequence}`).trim().slice(0, 160),
+      status: 'finalized',
+      inspectionDate,
+      startedAt: inspectionDate,
+      projectProgressPercent: progress,
+      generalObservations: String(req.body?.notes || '').trim().slice(0, 10000),
+      technicalRecommendation: {
+        verdict,
+        notes: String(req.body?.notes || '').trim().slice(0, 5000),
+        conditions: String(req.body?.conditions || '').trim().slice(0, 5000)
+      },
+      technicalConclusion: String(req.body?.notes || '').trim().slice(0, 10000),
+      finalizedAt,
+      reportNumber: `EXT-${finalizedAt.getUTCFullYear()}-${String(project._id).slice(-4).toUpperCase()}-${sequence}`,
+      version: 0
+    });
+
+    let disbursement = null;
+    if (lineForDisbursement && financeForDisbursement) {
+      lineForDisbursement.entries.push({
+        entryType: 'disbursement',
+        paymentStatus: 'pending',
+        workflowStatus: 'prepared',
+        advanceAccountNumber: sequence,
+        fundingParty: 'bank',
+        disbursementAmount: amount,
+        inspectionId: inspection._id,
+        notes: `Preparado desde Tecnico · ${inspection.accountName}`
+      });
+      await financeForDisbursement.save();
+      const entry = lineForDisbursement.entries[lineForDisbursement.entries.length - 1];
+      disbursement = { lineId: String(lineForDisbursement._id), entryId: String(entry._id), amount, status: 'prepared' };
+    }
+
+    await audit(req, 'inspection.external_created', {
+      targetType: 'inspection', targetId: inspection._id, projectId: project._id,
+      message: 'Informe externo de avaluo registrado',
+      metadata: { sequence, documentId: String(document._id), disbursement }
+    });
+    res.status(201).json({ ok: true, inspection, documentId: document._id, disbursement });
+  } catch (err) {
+    if (!documentCreated && uploadedPath && fs.existsSync(uploadedPath)) fs.unlink(uploadedPath, () => {});
+    res.status(err.status || (err?.code === 11000 ? 409 : 500)).json({ error: err.message || 'No se pudo registrar el informe externo.' });
+  }
+});
+
+router.post('/projects/:projectId/finance/inspection-reports/:inspectionId/prepare-disbursement', async (req, res) => {
+  try {
+    const role = String(req.user?.role || '').toLowerCase();
+    if (!['admin', 'bank', 'tecnico', 'financiero', 'contable'].includes(role)) {
+      return res.status(403).json({ error: 'No tienes permiso para preparar desembolsos desde Técnico.' });
+    }
+    const project = await loadTenantProject(req, res);
+    if (!project) return;
+    const assignments = await ProjectAvaluatorAssignment.find(activeAvaluatorAssignmentFilter(req, project)).select('bankTenantKey').lean();
+    const inspection = await Inspection.findOne({
+      _id: req.params.inspectionId,
+      projectId: project._id,
+      projectTenantKey: project.tenantKey,
+      bankTenantKey: { $in: assignments.map(item => item.bankTenantKey) },
+      status: 'finalized',
+      supersededByInspectionId: null
+    }).lean();
+    if (!inspection) return res.status(404).json({ error: 'Informe no encontrado.' });
+    const amount = Math.max(0, Number(req.body?.amount || 0));
+    if (!amount) return res.status(400).json({ error: 'Indica un importe mayor que cero.' });
+    const finance = await getOrCreate(project._id, project.tenantKey);
+    const alreadyLinked = (finance.loanLines || []).some(line => (line.entries || []).some(entry => String(entry.inspectionId || '') === String(inspection._id)));
+    if (alreadyLinked) return res.status(409).json({ error: 'Este informe ya está vinculado a un desembolso.' });
+    const line = finance.loanLines.id(req.body?.loanLineId);
+    if (!line) return res.status(400).json({ error: 'Selecciona una línea bancaria válida.' });
+    line.entries.push({
+      entryType: 'disbursement', paymentStatus: 'pending', workflowStatus: 'prepared',
+      advanceAccountNumber: inspection.sequence, fundingParty: 'bank',
+      disbursementAmount: amount, inspectionId: inspection._id,
+      notes: String(req.body?.notes || `Preparado desde Técnico · ${inspection.accountName || inspection.reportNumber}`).trim().slice(0, 1000)
+    });
+    await finance.save();
+    const entry = line.entries[line.entries.length - 1];
+    await audit(req, 'finance.disbursement_prepared_from_inspection', {
+      targetType: 'loanLineEntry', targetId: entry._id, projectId: project._id,
+      message: 'Partida de desembolso preparada desde Técnico',
+      metadata: { inspectionId: String(inspection._id), lineId: String(line._id), amount }
+    });
+    res.status(201).json({ ok: true, lineId: line._id, entry });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || 'No se pudo preparar el desembolso.' });
   }
 });
 
@@ -2106,6 +2338,9 @@ router.get('/projects/:projectId/finance/inspection-reports/:inspectionId/report
       status: 'finalized'
     }).lean();
     if (!inspection) return res.status(404).json({ error: 'Informe no encontrado.' });
+    if (inspection.origin === 'external' && inspection.externalReportDocumentId) {
+      return res.redirect(307, `/api/documents/${inspection.externalReportDocumentId}/download`);
+    }
     const context = await inspectionReportContext.buildInspectionReportContext({
       scope: { bankTenantKey: inspection.bankTenantKey, projectTenantKey: project.tenantKey, projectId: project._id },
       inspection,

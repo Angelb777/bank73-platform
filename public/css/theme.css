@@ -9732,6 +9732,28 @@ body.light-theme .project-experience.viewer-active #tab-resumen #summaryHeader .
 .technical-batch-form input,.technical-batch-form select{min-height:42px;border:1px solid var(--stroke,#cbd5e1);border-radius:10px;padding:8px 10px;color:var(--text,var(--technical-ink));background:var(--input-bg,#fff)}
 .technical-batch-form .technical-batch-wide{grid-column:1/-1}
 
+/* ===== Cuentas e inspecciones ===== */
+.technical-inspection-list{display:grid;gap:9px}
+.technical-inspection-row{display:grid;grid-template-columns:minmax(190px,1.35fr) minmax(150px,1fr) minmax(135px,.8fr) minmax(190px,1.2fr) auto;align-items:center;gap:14px;padding:15px 16px;border:1px solid var(--technical-line);border-radius:14px;background:var(--card-bg,#fff)}
+.technical-inspection-row>div>span,.technical-inspection-row>div>strong,.technical-inspection-row>div>small{display:block}
+.technical-inspection-row>div>span{color:var(--muted,var(--technical-muted));font-size:.64rem;font-weight:850;letter-spacing:.05em;text-transform:uppercase}
+.technical-inspection-row>div>strong{margin-top:4px;color:var(--text,var(--technical-ink));font-size:.82rem}
+.technical-inspection-row>div>small{margin-top:3px;color:var(--muted,var(--technical-muted));font-size:.7rem}
+.technical-inspection-account{padding-left:11px;border-left:4px solid var(--technical-cyan)}
+.technical-inspection-actions{display:flex!important;gap:7px;justify-content:flex-end;flex-wrap:wrap}
+.technical-status{display:inline-block!important;width:max-content;padding:5px 8px;border-radius:999px;background:#e2e8f0}
+.technical-status.is-success{color:#166534;background:#dcfce7}.technical-status.is-danger{color:#991b1b;background:#fee2e2}.technical-status.is-cyan{color:#075985;background:#e0f2fe}.technical-status.is-muted{color:#475569;background:#e2e8f0}
+.technical-external-form{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.technical-external-form label{display:grid;gap:5px;color:#172033;font-size:.8rem;font-weight:800}
+.technical-external-form input,.technical-external-form select,.technical-external-form textarea{width:100%;min-height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:8px 10px;color:#172033;background:#fff;font:inherit}
+.technical-external-wide{grid-column:1/-1}
+.technical-external-disbursement{display:grid;gap:3px;margin-top:4px;padding:11px 13px;border-left:4px solid #0284c7;border-radius:9px;background:#e0f2fe;color:#075985}
+.technical-external-disbursement span{font-size:.75rem}
+body.role-avaluador-readonly .technical-hero::before{content:"Modo observador · Avaluador";position:absolute;z-index:2;top:14px;right:18px;padding:6px 10px;border:1px solid rgba(255,255,255,.2);border-radius:999px;color:#cffafe;background:rgba(8,47,73,.72);font-size:.68rem;font-weight:900;letter-spacing:.06em;text-transform:uppercase}
+body.role-avaluador-readonly #technicalApplyPermitTemplate,body.role-avaluador-readonly #technicalCreateUnits,body.role-avaluador-readonly #technicalCreateModel,body.role-avaluador-readonly #technicalSelectAll,body.role-avaluador-readonly #technicalBatchEdit,body.role-avaluador-readonly #technicalDeleteUnits,body.role-avaluador-readonly #technicalUploadPlans,body.role-avaluador-readonly #technicalAddExternalInspection{display:none!important}
+body.role-avaluador-readonly .technical-permit-state{pointer-events:none;opacity:.7}
+@media (max-width:980px){.technical-inspection-row{grid-template-columns:1fr 1fr}.technical-inspection-actions{justify-content:flex-start}.technical-external-form{grid-template-columns:1fr}.technical-external-wide{grid-column:auto}}
+
 /* Editor comercial en lote, alineado con la ficha comercial por proceso. */
 #modalBatch .modal{width:min(1480px,97vw)!important;max-height:94vh;display:flex;flex-direction:column;overflow:hidden}
 #modalBatch .modal-body{overflow:auto;padding:16px 18px 24px}

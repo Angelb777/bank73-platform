@@ -40,7 +40,7 @@ function isLimitedAreaRole(value) {
 function visibleDocDepartments(roleRaw) {
   const role = normRole(roleRaw);
 
-  if ([...FULL_ACCESS_ROLES, 'legal'].includes(role)) {
+  if ([...FULL_ACCESS_ROLES, 'legal', 'avaluador'].includes(role)) {
     return ['commercial', 'tecnico', 'legal'];
   }
   if (role === 'commercial') return ['commercial'];
