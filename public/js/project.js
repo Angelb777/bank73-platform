@@ -2457,25 +2457,6 @@ function isSummarySoldUnit(u) {
   ].includes(estado);
 }
 
-function isSummaryActiveCpp(v) {
-  if (String(v?.modalidadFinanciamiento || '').trim() === 'Al contado') return false;
-  const hasCpp =
-    String(v?.estatusCPP || '').toLowerCase().includes('cpp') ||
-    String(v?.statusBanco || '').toLowerCase().includes('cpp') ||
-    String(v?.numCPP || '').trim();
-
-  if (!hasCpp) return false;
-
-  const exp = v?.fechaVencimientoCPP || v?.vencimientoCPPBnMivi;
-  if (!exp) return true;
-
-  const d = new Date(exp);
-  if (isNaN(d.getTime())) return false;
-
-  d.setHours(23, 59, 59, 999);
-  return d.getTime() >= Date.now();
-}
-
 function calcTotal(arr, key = 'count') {
   return (arr || []).reduce((acc, x) => acc + Number(x?.[key] || 0), 0);
 }
@@ -2750,11 +2731,9 @@ async function renderSummaryUI(payload) {
   const progressByPhase      = payload.progressByPhase      || [];
   const permitsByInstitution = payload.permitsByInstitution || [];
   const cppByBank            = payload.cppByBank            || [];
-  const proformasByBank      = payload.proformasByBank      || [];
   const unitsByStatus        = payload.unitsByStatus        || [];
   const salesMonthly         = payload.salesMonthly         || [];
   const disbursements        = payload.disbursements        || { planCum: [], realCum: [] };
-  const mortgagesByBank      = payload.mortgagesByBank      || [];
   const alerts               = payload.alerts               || { expiries: [], notes: [], bySeverity: [] };
   const beforeAfter          = payload.beforeAfter          || [];
   const financePhases        = payload?.finance?.phases     || [];
@@ -3079,10 +3058,9 @@ async function renderSummaryUI(payload) {
     delaysByStage: []
   };
 
-    // ✅ FIX SUMMARY: recalcula ventas y CPP activos desde datos reales
+    // Sincroniza las unidades vendidas desde los datos actuales del proyecto.
   if (!isPeriodView) try {
     const unitsFix = await getProjectUnitsAll();
-    const ventasFix = await getProjectVentas();
 
     total = Array.isArray(unitsFix) ? unitsFix.length : total;
     sold = (unitsFix || []).filter(isSummarySoldUnit).length;
@@ -3093,13 +3071,8 @@ async function renderSummaryUI(payload) {
     kpis.units.sold = sold;
     kpis.units.available = Math.max(0, total - sold);
 
-    const cppActive = (ventasFix || []).filter(isSummaryActiveCpp).length;
-
-    kpis.cpp = kpis.cpp || {};
-    kpis.cpp.active = cppActive;
-
   } catch (e) {
-    console.warn('[Summary FIX] No se pudo recalcular ventas/CPP', e);
+    console.warn('[Summary FIX] No se pudieron recalcular las unidades vendidas', e);
   }
 
   // ✅ Si no viene absorción, la calculamos desde ventas mensuales
@@ -3168,57 +3141,13 @@ if (!isPeriodView) try {
   console.warn('[Summary] No se pudo sincronizar ventas con portfolio', e);
 }
 
-// ✅ FIX: CPP activos = tienen numCPP y NO están vencidos
-if (!isPeriodView) try {
-  const ventas = await getProjectVentas();
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const diffDays = (dateValue) => {
-    if (!dateValue) return null;
-    const d = new Date(dateValue);
-    if (isNaN(d.getTime())) return null;
-    d.setHours(0, 0, 0, 0);
-    return Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  };
-
-  const cppVigentes = (ventas || []).filter(v => {
-    if (String(v?.modalidadFinanciamiento || '').trim() === 'Al contado') return false;
-    const hasCpp = String(v?.numCPP || '').trim();
-    const days = diffDays(v?.fechaVencimientoCPP);
-    return hasCpp && days !== null && days >= 0;
-  });
-
-  cpp = {
-    ...cpp,
-    active: cppVigentes.length,
-    due30: cppVigentes.filter(v => {
-      const d = diffDays(v.fechaVencimientoCPP);
-      return d >= 0 && d <= 30;
-    }).length,
-    due60: cppVigentes.filter(v => {
-      const d = diffDays(v.fechaVencimientoCPP);
-      return d > 30 && d <= 60;
-    }).length,
-    due90: cppVigentes.filter(v => {
-      const d = diffDays(v.fechaVencimientoCPP);
-      return d > 60 && d <= 90;
-    }).length,
-  };
-
-  kpis.cpp = cpp;
-} catch (e) {
-  console.warn('[Summary] No se pudo recalcular CPP activos', e);
-}
-
   const cards = [
     kpiCard('Progreso global', (kpis.progressPct || 0) + '%'),
     kpiCard('Unidades', `${u.total || 0} totales`, `${u.available || 0} disp · ${u.sold || 0} vend · ${u.escrituradas || 0} escr.`),
     kpiCard('Absorción 3m', (kpis.absorption3m || 0) + ' u/mes'),
     kpiCard('Ticket promedio', formatMoney(kpis.avgTicket || 0)),
     (kpis.inventoryValue ? kpiCard('Inventario a valor', formatMoney(kpis.inventoryValue || 0)) : ''),
-    kpiCard('CPP', `${cpp.active || 0} activos`, `30d:${cpp.due30 || 0} · 60d:${cpp.due60 || 0} · 90d:${cpp.due90 || 0}`),
+    kpiCard('CPP activas', cpp.active || 0, `Pendientes de ejecución · 30d:${cpp.due30 || 0} · 60d:${cpp.due60 || 0} · 90d:${cpp.due90 || 0}`),
     kpiCard('Permisos', `${kpis.permits?.approved || 0} A / ${kpis.permits?.inProcess || 0} T / ${kpis.permits?.pending || 0} P`, (kpis.permits?.pct || 0) + '%'),
     ((app.avg || app.min || app.max) ? kpiCard('Avalúo promedio', formatMoney(app.avg || 0), `min ${formatMoney(app.min || 0)} · max ${formatMoney(app.max || 0)}`) : ''),
     kpiCard('Hipotecas 30d', kpis.clientMortgages30d || 0)
@@ -3268,19 +3197,9 @@ if (!isPeriodView) try {
       sub: `${pct}% vendido`
     },
     {
-      title: 'CPP activos',
+      title: 'CPP activas',
       value: String(cpp.active || 0),
-      sub: `30d:${cpp.due30 || 0} · 60d:${cpp.due60 || 0} · 90d:${cpp.due90 || 0}`
-    },
-    {
-      title: 'Hipotecas',
-      value: String(calcTotal(mortgagesByBank, 'count')),
-      sub: `${mortgagesByBank.length} bancos`
-    },
-    {
-      title: 'Proformas',
-      value: String(calcTotal(proformasByBank, 'count')),
-      sub: `${proformasByBank.length} bancos`
+      sub: `Pendientes de ejecución · 30d:${cpp.due30 || 0} · 60d:${cpp.due60 || 0} · 90d:${cpp.due90 || 0}`
     }
   ]);
 
@@ -3315,11 +3234,6 @@ if (!isPeriodView) try {
       title: 'Estado del proyecto',
       value: project.status || project.estado || 'No definido',
       sub: `Tipo: ${projectTypeLabel} · Actualizado: ${project?.updatedAt ? new Date(project.updatedAt).toLocaleDateString() : '—'}`
-    },
-    {
-      title: 'Datos del promotor',
-      value: promoterLabel,
-      sub: `Sociedad: ${promoterCompanyLabel} · Tipo: ${promoterTypeLabel} · Perfil: ${promoterCategoryLabel}`
     }
   ]);
 
@@ -3440,67 +3354,62 @@ if (!isPeriodView) try {
   sumDestroy('p3');
   if (ctx('sumCppPie')) {
     __sumCharts.p3 = new Chart(ctx('sumCppPie'), {
-      type: 'pie',
-      data: {
-        labels: cppByBank.map(x => x.bank),
-        datasets: [{ data: cppByBank.map(x => toNum(x.count)) }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: summaryLegend()
-        }
-      }
-    });
-  }
-  renderChartSummary('sumCppPieSummary',
-    cppByBank.map(x => ({ label: x.bank, value: toNum(x.count) })),
-    { totalLabel: 'Total CPP' }
-  );
-
-  // ---------- Proformas por banco ----------
-  sumDestroy('p4');
-  const pfLabels = proformasByBank.map(x => x.bank);
-  const pfData = proformasByBank.map(x => toNum(x.count));
-
-  const pfTotal = pfData.reduce((a, v) => a + (Number(v) || 0), 0);
-  const elTot = document.getElementById('sumProformasTotal');
-  if (elTot) elTot.textContent = pfTotal;
-
-  if (ctx('sumProformasBar')) {
-    __sumCharts.p4 = new Chart(ctx('sumProformasBar'), {
       type: 'bar',
       data: {
-        labels: pfLabels,
-        datasets: [{
-          label: 'Proformas',
-          data: pfData
-        }]
+        labels: cppByBank.map(x => x.bank),
+        datasets: [
+          {
+            label: 'Cantidad de CPP',
+            data: cppByBank.map(x => toNum(x.count)),
+            yAxisID: 'y'
+          },
+          {
+            label: 'Monto de CPP',
+            data: cppByBank.map(x => toNum(x.amount)),
+            yAxisID: 'yAmount'
+          }
+        ]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { display: false },
+          legend: summaryLegend(),
           tooltip: {
             callbacks: {
-              label: (c) => ` ${c.label}: ${c.parsed.y}`
+              label: (context) => context.dataset.yAxisID === 'yAmount'
+                ? ` Monto: ${formatMoneyCompact(context.parsed.y)}`
+                : ` Cantidad: ${toNum(context.parsed.y)}`
             }
           }
         },
         scales: {
           y: {
             beginAtZero: true,
+            position: 'left',
             ticks: { precision: 0 }
+          },
+          yAmount: {
+            beginAtZero: true,
+            position: 'right',
+            grid: { drawOnChartArea: false },
+            ticks: { callback: value => formatMoneyCompact(value) }
           }
         }
       }
     });
   }
-  renderChartSummary('sumProformasBarSummary',
-    proformasByBank.map(x => ({ label: x.bank, value: toNum(x.count) })),
-    { totalLabel: 'Total proformas' }
+  renderChartSummary('sumCppPieSummary',
+    cppByBank.map(x => ({ label: x.bank, value: toNum(x.count), amount: toNum(x.amount) })),
+    {
+      totalLabel: 'Total CPP',
+      formatter: (value, item) => {
+        const amount = item
+          ? toNum(item.amount)
+          : calcTotal(cppByBank, 'amount');
+        return `${toNum(value)} · ${formatMoneyCompact(amount)}`;
+      }
+    }
   );
 
   // ---------- Estado de unidades ----------
@@ -3594,60 +3503,6 @@ if (!isPeriodView) try {
     });
   }
 
-  // ---------- Hipotecas por banco ----------
-sumDestroy('p8');
-if (ctx('sumMortgagesByBank')) {
-  __sumCharts.p8 = new Chart(ctx('sumMortgagesByBank'), {
-    type: 'bar',
-    data: {
-      labels: mortgagesByBank.map(x => x.bank),
-      datasets: [{
-        label: 'Hipotecas',
-        data: mortgagesByBank.map(x => toNum(x.count))
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        tooltip: {
-          callbacks: {
-            label: (context) => {
-              const item = mortgagesByBank[context.dataIndex] || {};
-              const count = toNum(item.count);
-              const amount = toNum(item.amount);
-              return ` ${count} hipotecas · ${formatMoneyCompact(amount)}`;
-            }
-          }
-        }
-      },
-      scales: {
-        y: {
-          beginAtZero: true,
-          ticks: { precision: 0 }
-        }
-      }
-    }
-  });
-}
-renderChartSummary(
-  'sumMortgagesByBankSummary',
-  mortgagesByBank.map(x => ({
-    label: x.bank,
-    value: toNum(x.count),
-    amount: toNum(x.amount)
-  })),
-  {
-    totalLabel: 'Total hipotecas',
-    formatter: (v, item) => {
-      const amount = item
-        ? toNum(item.amount)
-        : calcTotal(mortgagesByBank, 'amount');
-      return `${toNum(v)} · ${formatMoneyCompact(amount)}`;
-    }
-  }
-);
-
   // =========================================================
   // NUEVO RESUMEN COMERCIAL / LEGAL / TÉCNICO / FINANCIERO
   // =========================================================
@@ -3669,9 +3524,9 @@ renderChartSummary(
     { title: 'Ticket promedio', value: formatMoney(kpis.avgTicket || 0) },
     { title: 'Ventas caídas', value: commercialFallenSales },
     {
-      title: 'CPP activos',
+      title: 'CPP activas',
       value: cpp.active || 0,
-      sub: formatMoney(commercialCppAmount)
+      sub: `Pendientes de ejecución · ${formatMoney(commercialCppAmount)}`
     }
   ]);
 
@@ -3708,19 +3563,24 @@ renderChartSummary(
   renderPieLike('p12', 'sumSalesByModel', commercial.salesByModel || [], 'model', 'count', 'sumSalesByModelSummary', 'Total ventas por modelo', 'pie');
   renderPieLike('p13', 'sumClientProfile', commercial.clientProfile || [], 'profile', 'count', 'sumClientProfileSummary', 'Total perfiles', 'doughnut');
   renderPieLike('p14', 'sumCompanyType', commercial.companyType || [], 'type', 'count', 'sumCompanyTypeSummary', 'Total empresas', 'doughnut');
-  renderPieLike('p15', 'sumBankStatus', commercial.bankStatus || [], 'status', 'count', 'sumBankStatusSummary', 'Total estados banco', 'doughnut');
+  renderPieLike('p15', 'sumBankStatus', commercial.bankStatus || [], 'status', 'count', 'sumBankStatusSummary', 'Total operaciones financiadas', 'doughnut');
 
   // ---------- Comercial: informe del cliente ----------
   const customerReport = commercial.customerReport || {};
   const customerTotals = customerReport.totals || {};
   const jointPurchases = (customerReport.purchaseMode || [])
     .find(item => item.label === 'Compra conjunta')?.count || 0;
+  const individualPurchases = (customerReport.purchaseMode || [])
+    .find(item => item.label === 'Compra individual')?.count || 0;
   renderTargetKpis('summaryCustomerReportKpis', [
-    { title: 'Personas compradoras', value: customerTotals.people || 0, sub: `${customerTotals.sales || 0} operaciones analizadas` },
-    { title: 'Compras conjuntas', value: jointPurchases, sub: 'Operaciones con co-comprador' },
-    { title: 'Ingresos registrados', value: customerTotals.incomesRecorded || 0, sub: `de ${customerTotals.people || 0} compradores` },
-    { title: 'Ingreso promedio', value: formatMoney(customerTotals.incomeAverage || 0), sub: 'Solo ingresos declarados' },
-    { title: 'Ingreso mediano', value: formatMoney(customerTotals.incomeMedian || 0), sub: 'Solo ingresos declarados' }
+    { title: 'Operaciones analizadas', value: customerTotals.sales || 0, sub: 'Unidades vendidas con cliente registrado' },
+    { title: 'Compras individuales', value: individualPurchases, sub: 'Operaciones con un solo comprador' },
+    { title: 'Compras conjuntas', value: jointPurchases, sub: 'Operaciones con titular y co-comprador' },
+    {
+      title: 'Operaciones con ingreso declarado',
+      value: customerTotals.salesWithIncomeRecorded || 0,
+      sub: `de ${customerTotals.sales || 0} operaciones analizadas`
+    }
   ]);
   renderPieLike('customerCompanyType', 'sumCustomerCompanyType', customerReport.companyType || [], 'label', 'count', 'sumCustomerCompanyTypeSummary', 'Total compradores', 'doughnut');
   renderPieLike('customerEmployment', 'sumCustomerEmployment', customerReport.employmentProfile || [], 'label', 'count', 'sumCustomerEmploymentSummary', 'Total compradores', 'doughnut');
@@ -3728,15 +3588,6 @@ renderChartSummary(
   renderPieLike('customerPurchaseMode', 'sumCustomerPurchaseMode', customerReport.purchaseMode || [], 'label', 'count', 'sumCustomerPurchaseModeSummary', 'Total operaciones', 'doughnut');
   renderBarSimple('customerIncome', 'sumCustomerIncome', customerReport.incomeBands || [], 'label', 'count', 'sumCustomerIncomeSummary', 'Clientes con ingreso registrado');
   renderPieLike('customerCapture', 'sumCustomerCapture', customerReport.captureChannel || [], 'label', 'count', 'sumCustomerCaptureSummary', 'Total operaciones', 'doughnut');
-
-  const customerIncomeSummary = document.getElementById('sumCustomerIncomeSummary');
-  if (customerIncomeSummary && (customerReport.incomeBands || []).length) {
-    customerIncomeSummary.insertAdjacentHTML('beforeend', `
-      <div class="summary-customer-income-stats">
-        <span>Promedio <strong>${formatMoney(customerTotals.incomeAverage || 0)}</strong></span>
-        <span>Mediana <strong>${formatMoney(customerTotals.incomeMedian || 0)}</strong></span>
-      </div>`);
-  }
 
   // ---------- Comercial: modalidad de compra ----------
   renderBarSimple(
@@ -4337,11 +4188,9 @@ if (btn) {
         'Ventas mensuales': captureCanvas('sumSalesMonthly'),
         'Ventas vs ventas caídas': captureCanvas('sumSalesVsFallen'),
         'Ventas por modelo de vivienda': captureCanvas('sumSalesByModel'),
-        'Estatus en banco': captureCanvas('sumBankStatus'),
+        'Estatus bancario de operaciones financiadas': captureCanvas('sumBankStatus'),
         'CPP por banco': captureCanvas('sumCppPie'),
         'Modalidad de compra': captureCanvas('sumPurchaseModality'),
-        'Proformas por banco': captureCanvas('sumProformasBar'),
-        'Hipotecas por banco': captureCanvas('sumMortgagesByBank'),
         'Tipo de empresa de compradores': captureCanvas('sumCustomerCompanyType'),
         'Perfil laboral de compradores': captureCanvas('sumCustomerEmployment'),
         'Sexo de compradores': captureCanvas('sumCustomerSex'),
@@ -4385,10 +4234,8 @@ Object.keys(charts).forEach(k => { if (!charts[k]) delete charts[k]; });
 const datasets = {
   permitsByInstitution: payload.permitsByInstitution || [],
   cppByBank: payload.cppByBank || [],
-  proformasByBank: payload.proformasByBank || [],
   unitsByStatus: payload.unitsByStatus || [],
   salesMonthly: payload.salesMonthly || [],
-  mortgagesByBank: payload.mortgagesByBank || [],
   progressByPhase: payload.progressByPhase || [],
   alerts: payload.alerts || {},
   kpis: payload.kpis || {},
@@ -4687,17 +4534,15 @@ function addInfoBadges(){
   const tips = {
     sumProgressByPhase: 'Promedio de avance por fase según checklists (level 1..6).',
     sumPermitsByInstitution: 'Permisos por institución: pendiente / trámite / aprobado.',
-    sumCppPie: 'CPP/aprobaciones por banco: statusBanco contiene CPP/APROB o fechas CPP.',
-    sumProformasBar: 'Proformas entregadas por banco (statusBanco contiene PROFORMA).',
+    sumCppPie: 'Cantidad y monto acumulado de las CPP agrupadas por banco.',
     sumUnitsDonut: 'Unidades: disponibles, reservadas, vendidas, escrituradas, canceladas.',
     sumSalesMonthly: 'Contratos firmados por mes (fechaContratoCliente).',
     sumDisbPlanReal: 'Desembolsos plan vs. real (acumulado).',
-    sumMortgagesByBank: 'Ventas con señal de CPP agrupadas por banco.',
     sumSalesVsFallen: 'Compara ventas reales contra ventas caídas/canceladas por año.',
     sumSalesByModel: 'Distribución de ventas por modelo de vivienda.',
     sumClientProfile: 'Perfil del cliente comprador: independiente, asalariado o mixto.',
     sumCompanyType: 'Tipo de empresa del cliente: pública, privada o mixta.',
-    sumBankStatus: 'Estado del expediente dentro del banco.',
+    sumBankStatus: 'Situación actual de las operaciones financiadas. Excluye las compras al contado.',
     sumPurchaseModality: 'Operaciones por modalidad de compra: interés preferencial, tasa libre o al contado.',
     sumLegalLiberacion: 'Minutas de liberación completadas frente a pendientes.',
     sumLegalSegregacion: 'Minutas de segregación completadas frente a pendientes.',
@@ -6822,7 +6667,7 @@ function financeInspectionOptions(selectedId = '', usedIds = new Set()) {
     String(report.id) === selected || !usedIds.has(String(report.id))
   );
   const emptyLabel = FINANCE_AVALUATION_CONTEXT.hasAssignedAvaluator
-    ? (available.length ? 'Selecciona un informe' : 'No hay informes disponibles')
+    ? (available.length ? 'Sin informe (opcional)' : 'Sin informe disponible (opcional)')
     : 'No requerido';
   return `<option value="">${emptyLabel}</option>${available.map(report => {
     const date = financeDateInput(report.inspectionDate || report.finalizedAt);
@@ -6875,7 +6720,7 @@ function openFinanceRequestDialog({ entry = {}, phase = {} } = {}) {
     overlay.innerHTML = `
       <form class="finance-disbursement-dialog finance-request-dialog">
         <h3>Solicitar desembolso · Cuenta de avance ${escapeHtml(String(entry.advanceAccountNumber || '—'))}</h3>
-        <p>El banco recibirá la carta firmada, el informe del avaluador y esta fotografía de los requisitos de la fase.</p>
+        <p>El banco recibirá la carta firmada, el informe del avaluador si se ha vinculado y esta fotografía de los requisitos de la fase.</p>
         <div class="finance-request-summary"><span>Importe solicitado</span><strong>${financeMoney(entry.disbursementAmount)}</strong></div>
         <label><span>Carta de solicitud firmada · PDF</span><input class="input" name="requestPdf" type="file" accept="application/pdf,.pdf" required></label>
         <div class="finance-request-requirements"><b>Requisitos de ${escapeHtml(phase?.name || 'la fase')}</b>${requirements.length ? requirements.map(item => `<div><span class="finance-status ${String(item.status).toUpperCase() === 'CUMPLIDO' ? 'is-ok' : 'is-warn'}">${String(item.status).toUpperCase() === 'CUMPLIDO' ? 'Cumplido' : 'Pendiente'}</span><span>${escapeHtml(item.title || 'Requisito')}</span></div>`).join('') : '<p class="small muted">No hay requisitos configurados en esta fase.</p>'}</div>
@@ -8161,7 +8006,7 @@ async function importFinancePhaseExcel(file) {
   const button = document.getElementById('financeImportPhaseXlsx');
   if (!FINANCE_SELECTED_PHASE_ID) return alert('Selecciona una fase antes de importar.');
   if (!/\.xlsx$/i.test(file?.name || '')) return alert('Selecciona un archivo Excel .xlsx exportado por Bank73.');
-  if (!confirm(`La importación sustituirá todas las líneas y movimientos actuales de “${FINANCE_SELECTED_PHASE_NAME || 'esta fase'}” por los datos del Excel. ¿Continuar?`)) return;
+  if (!confirm(`La importación sustituirá todas las líneas y movimientos actuales de “${FINANCE_SELECTED_PHASE_NAME || 'esta fase'}” por los datos del Excel. Los abonos de clientes se añadirán sin duplicar los ya existentes. ¿Continuar?`)) return;
 
   const originalLabel = button?.textContent || 'Importar Excel';
   try {
@@ -8198,7 +8043,7 @@ async function importFinancePhaseExcel(file) {
     }
     await markProjectDataChanged({ refreshHeader: false });
     const resolvedUnits = Number(result.resolvedAmbiguousUnits || 0);
-    alert(`Importación completada.\nResumen global: ${result.importedPhaseSummary ? 'actualizado' : 'sin hoja Usos y fuentes'}\nLíneas nuevas: ${result.createdLines || 0}\nLíneas sustituidas: ${result.updatedLines || 0}\nMovimientos importados: ${result.importedMovements || 0}\nAmortizaciones por venta vinculadas: ${result.importedSaleAmortizations || 0}\nMovimientos anteriores sustituidos: ${result.replacedMovements || 0}${resolvedUnits ? `\nUnidades duplicadas resueltas: ${resolvedUnits}` : ''}`);
+    alert(`Importación completada.\nResumen global: ${result.importedPhaseSummary ? 'actualizado' : 'sin hoja Usos y fuentes'}\nLíneas nuevas: ${result.createdLines || 0}\nLíneas sustituidas: ${result.updatedLines || 0}\nMovimientos importados: ${result.importedMovements || 0}\nAmortizaciones por venta vinculadas: ${result.importedSaleAmortizations || 0}\nAbonos de clientes importados: ${result.importedCustomerPayments || 0}\nAbonos ya existentes omitidos: ${result.skippedCustomerPayments || 0}\nAbonos omitidos por fecha no válida: ${result.skippedInvalidCustomerPayments || 0}\nMovimientos anteriores sustituidos: ${result.replacedMovements || 0}${resolvedUnits ? `\nUnidades duplicadas resueltas: ${resolvedUnits}` : ''}${Array.isArray(result.warnings) && result.warnings.length ? `\n\nAvisos:\n${result.warnings.slice(0, 8).join('\n')}` : ''}`);
   } catch (error) {
     console.error('[Finance] error importando Excel', error);
     alert(error.message || 'No se pudo importar el Excel.');
@@ -11201,6 +11046,12 @@ function normalizeCommercialFolderColor(value = '') {
   const fichaExpandir = document.getElementById('fichaExpandir');
   const fichaGuardar = document.getElementById('fichaGuardar');
   const fichaDesistirCliente = document.getElementById('fichaDesistirCliente');
+  const fallenSalesModal = document.getElementById('fallenSalesModal');
+  const fallenSalesClose = document.getElementById('fallenSalesClose');
+  const fallenSalesSearch = document.getElementById('fallenSalesSearch');
+  const fallenSalesAddToggle = document.getElementById('fallenSalesAddToggle');
+  const fallenSalesForm = document.getElementById('fallenSalesForm');
+  const fallenSalesCancel = document.getElementById('fallenSalesCancel');
 
   const modalBatch = document.getElementById('modalBatch');
   const batchCerrar = document.getElementById('batchCerrar');
@@ -11213,7 +11064,7 @@ function normalizeCommercialFolderColor(value = '') {
 
   // Las fichas y gestores son compartidos por Comercial y Técnico. Sacarlos del
   // panel evita que el tab inactivo oculte el modal cuando se abre desde Técnico.
-  [modalCrear, modalCrearModelo, modalFicha, modalBatch, modalDel].forEach(modal => {
+  [modalCrear, modalCrearModelo, modalFicha, fallenSalesModal, modalBatch, modalDel].forEach(modal => {
     if (modal && modal.parentElement !== document.body) document.body.appendChild(modal);
   });
 
@@ -12698,6 +12549,7 @@ function applyOpenFichaStateVisual(unitState = {}) {
   let unitDocInsideDepartment = false;
   let latestFinanceExpiryAlerts = [];
   let resolvedExpiryAlertKeys = new Set();
+  let fallenSalesCache = [];
 
   function pill(txt){ return `<span class="tag">${txt||'-'}</span>`; }
 
@@ -13083,6 +12935,152 @@ function applyOpenFichaStateVisual(unitState = {}) {
   async function loadVentasMap() {
     const ventas = await apiGet(`/api/ventas?projectId=${id}`);
     ventasMap = new Map((ventas||[]).map(v => [String(v.unitId), v]));
+  }
+
+  function fallenSaleDateLabel(value) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('es-ES');
+  }
+
+  function canManageFallenSales() {
+    return !['bank', 'tecnico', 'legal'].includes(myRole) &&
+      !(myRole === 'commercial' && !!window.__COMMERCIAL_LOCKED);
+  }
+
+  function renderFallenSalesRows() {
+    const rows = document.getElementById('fallenSalesRows');
+    if (!rows) return;
+    const query = String(fallenSalesSearch?.value || '').trim().toLowerCase();
+    const list = fallenSalesCache.filter(item => !query || [
+      item.clienteNombre, item.cedula, item.unidadLabel, item.motivoCaida, item.banco,
+      item.cliente2Nombre, item.cliente2Cedula
+    ].some(value => String(value || '').toLowerCase().includes(query)));
+
+    rows.innerHTML = list.length ? list.map(item => `
+      <tr>
+        <td>${escapeHtml(fallenSaleDateLabel(item.fechaCaida))}</td>
+        <td><div class="fallen-sales-client"><strong>${escapeHtml(item.clienteNombre || 'Cliente no disponible')}</strong>${item.cedula ? `<small>${escapeHtml(item.cedula)}</small>` : ''}${item.cliente2Nombre ? `<span class="fallen-sales-secondary">Con: ${escapeHtml(item.cliente2Nombre)}${item.cliente2Cedula ? ` · ${escapeHtml(item.cliente2Cedula)}` : ''}</span>` : ''}${item.celular ? `<small>${escapeHtml(item.celular)}</small>` : ''}${item.correo ? `<small>${escapeHtml(item.correo)}</small>` : ''}</div></td>
+        <td>${escapeHtml(item.unidadLabel || [item.manzana, item.lote].filter(Boolean).join('-') || 'Sin unidad')}</td>
+        <td>${escapeHtml(item.motivoCaida || 'Desistimiento')}${item.banco ? `<div class="fallen-sales-secondary">Banco: ${escapeHtml(item.banco)}</div>` : ''}${item.observaciones ? `<div class="fallen-sales-secondary">${escapeHtml(item.observaciones)}</div>` : ''}</td>
+        <td>${item.precioVenta ? escapeHtml(formatProjectMoney(item.precioVenta)) : '—'}</td>
+        <td><span class="fallen-sales-origin ${item.origen === 'manual' ? 'is-manual' : ''}">${item.origen === 'manual' ? 'Manual' : 'Automático'}${item.legacy ? ' · anterior' : ''}</span></td>
+        <td>${canManageFallenSales() ? `<div class="fallen-sales-actions"><button class="btn mini fallen-sale-edit" type="button" data-id="${escapeHtml(String(item._id))}">Editar</button><button class="btn mini danger fallen-sale-delete" type="button" data-id="${escapeHtml(String(item._id))}">Eliminar</button></div>` : '—'}</td>
+      </tr>
+    `).join('') : `<tr><td colspan="7" class="muted">${query ? 'No hay resultados para esta búsqueda.' : 'Todavía no hay ventas caídas registradas.'}</td></tr>`;
+  }
+
+  async function editFallenSale(idValue) {
+    const item = fallenSalesCache.find(entry => String(entry._id) === String(idValue));
+    if (!item) return;
+    const motivoCaida = prompt('Editar motivo de la venta caída', item.motivoCaida || 'Desistimiento del cliente');
+    if (motivoCaida === null) return;
+    if (!motivoCaida.trim()) return alert('El motivo no puede estar vacío.');
+    const status = document.getElementById('fallenSalesStatus');
+    if (status) status.textContent = 'Actualizando motivo…';
+    try {
+      const updated = await apiPatch(`/api/ventas/fallen/${encodeURIComponent(idValue)}`, { projectId: id, motivoCaida });
+      const index = fallenSalesCache.indexOf(item);
+      if (index >= 0) fallenSalesCache[index] = updated;
+      renderFallenSalesRows();
+      if (status) status.textContent = 'Motivo actualizado correctamente.';
+      await markProjectDataChanged();
+    } catch (error) {
+      if (status) status.textContent = error.message || 'No se pudo actualizar el motivo.';
+    }
+  }
+
+  async function deleteFallenSale(idValue) {
+    const item = fallenSalesCache.find(entry => String(entry._id) === String(idValue));
+    if (!item) return;
+    const client = item.clienteNombre || item.unidadLabel || 'este registro';
+    if (!confirm(`¿Eliminar de Ventas caídas el registro de ${client}?`)) return;
+    const status = document.getElementById('fallenSalesStatus');
+    if (status) status.textContent = 'Eliminando registro…';
+    try {
+      await apiDelete(`/api/ventas/fallen/${encodeURIComponent(idValue)}`, { projectId: id });
+      fallenSalesCache = fallenSalesCache.filter(entry => String(entry._id) !== String(idValue));
+      renderFallenSalesRows();
+      if (status) status.textContent = 'Registro eliminado de Ventas caídas.';
+      await markProjectDataChanged();
+    } catch (error) {
+      if (status) status.textContent = error.message || 'No se pudo eliminar el registro.';
+    }
+  }
+
+  function populateFallenSalesUnits(units = []) {
+    const select = document.getElementById('fallenSaleUnit');
+    if (!select) return;
+    select.innerHTML = `<option value="">Sin unidad asociada</option>${units.map(unit =>
+      `<option value="${escapeHtml(String(unit._id))}">${escapeHtml(unitDisplayName(unit))}</option>`
+    ).join('')}`;
+  }
+
+  async function openFallenSales() {
+    if (!fallenSalesModal) return;
+    fallenSalesModal.style.display = 'flex';
+    fallenSalesForm.hidden = true;
+    if (fallenSalesAddToggle) fallenSalesAddToggle.hidden = !canManageFallenSales();
+    const date = document.getElementById('fallenSaleDate');
+    if (date && !date.value) date.value = new Date().toISOString().slice(0, 10);
+    const status = document.getElementById('fallenSalesStatus');
+    if (status) status.textContent = 'Cargando histórico…';
+    try {
+      const [items, allUnits] = await Promise.all([
+        apiGet(`/api/ventas/fallen?projectId=${encodeURIComponent(id)}`),
+        apiGet(`/api/units?projectId=${encodeURIComponent(id)}`)
+      ]);
+      fallenSalesCache = Array.isArray(items) ? items : [];
+      populateFallenSalesUnits(Array.isArray(allUnits) ? allUnits : []);
+      renderFallenSalesRows();
+      if (status) status.textContent = `${fallenSalesCache.length} desistimiento${fallenSalesCache.length === 1 ? '' : 's'} registrado${fallenSalesCache.length === 1 ? '' : 's'}.`;
+    } catch (error) {
+      if (status) status.textContent = error.message || 'No se pudo cargar el histórico.';
+    }
+  }
+
+  function closeFallenSalesForm() {
+    if (fallenSalesForm) {
+      fallenSalesForm.reset();
+      fallenSalesForm.hidden = true;
+    }
+    const date = document.getElementById('fallenSaleDate');
+    if (date) date.value = new Date().toISOString().slice(0, 10);
+  }
+
+  async function saveManualFallenSale(event) {
+    event.preventDefault();
+    const saveButton = document.getElementById('fallenSalesSave');
+    const status = document.getElementById('fallenSalesStatus');
+    const body = {
+      projectId: id,
+      fechaCaida: document.getElementById('fallenSaleDate')?.value,
+      clienteNombre: document.getElementById('fallenSaleClient')?.value,
+      cedula: document.getElementById('fallenSaleIdNumber')?.value,
+      cliente2Nombre: document.getElementById('fallenSaleClient2')?.value,
+      cliente2Cedula: document.getElementById('fallenSaleClient2Id')?.value,
+      unitId: document.getElementById('fallenSaleUnit')?.value || null,
+      unidadLabel: document.getElementById('fallenSaleUnitLabel')?.value,
+      celular: document.getElementById('fallenSalePhone')?.value,
+      correo: document.getElementById('fallenSaleEmail')?.value,
+      precioVenta: parsePanamaNumber(document.getElementById('fallenSalePrice')?.value || 0),
+      banco: document.getElementById('fallenSaleBank')?.value,
+      motivoCaida: document.getElementById('fallenSaleReason')?.value,
+      observaciones: document.getElementById('fallenSaleNotes')?.value
+    };
+    saveButton.disabled = true;
+    if (status) status.textContent = 'Guardando desistimiento…';
+    try {
+      const created = await apiPost('/api/ventas/fallen', body);
+      fallenSalesCache.unshift(created);
+      closeFallenSalesForm();
+      renderFallenSalesRows();
+      if (status) status.textContent = 'Desistimiento guardado correctamente.';
+      await markProjectDataChanged();
+    } catch (error) {
+      if (status) status.textContent = error.message || 'No se pudo guardar el desistimiento.';
+    } finally {
+      saveButton.disabled = false;
+    }
   }
 
   function updateSelectAllLabel() {
@@ -13762,6 +13760,9 @@ units.forEach(u => {
 
 grid.innerHTML = `
   <div class="commercial-folders-toolbar">
+    <button type="button" class="btn" id="btnVentasCaidasComercial">
+      Ventas caídas
+    </button>
     <button type="button" class="btn primary" id="btnCrearCarpetaComercial">
       + Crear carpeta
     </button>
@@ -14212,6 +14213,7 @@ function wireUnitCards() {
 
 function wireCommercialFolders() {
   document.getElementById('btnCrearCarpetaComercial')?.addEventListener('click', crearCarpetaComercial);
+  document.getElementById('btnVentasCaidasComercial')?.addEventListener('click', openFallenSales);
 
   grid.querySelectorAll('.commercial-folder').forEach(folderEl => {
     folderEl.addEventListener('dragover', ev => {
@@ -16399,7 +16401,9 @@ const uBody = {
 
   async function desistirClienteActual() {
     if (!fichaUnitId || fichaMode !== 'commercial' || fichaSaving) return;
-    if (!confirm('¿Estás seguro de que quieres borrar todos los datos del cliente?')) return;
+    if (!confirm('¿Registrar al cliente en Ventas caídas y limpiar sus datos de la ficha de la unidad?')) return;
+    const motivoCaida = prompt('Motivo del desistimiento', 'Decisión del cliente');
+    if (motivoCaida === null) return;
 
     clearTimeout(fichaAutosaveTimer);
     fichaAutosaveReady = false;
@@ -16410,10 +16414,10 @@ const uBody = {
     setFichaSaveStatus('Procesando desistimiento…', 'saving');
 
     try {
-      await apiPost(`/api/ventas/by-unit/${encodeURIComponent(fichaUnitId)}/desist-client`, {});
+      await apiPost(`/api/ventas/by-unit/${encodeURIComponent(fichaUnitId)}/desist-client`, { motivoCaida });
       await loadUnits();
       await abrirFichaUnidad(fichaUnitId, { mode: 'commercial' });
-      setFichaSaveStatus('Datos del cliente eliminados', 'saved');
+      setFichaSaveStatus('Desistimiento registrado y ficha limpiada', 'saved');
     } catch (error) {
       fichaAutosaveReady = true;
       fichaDesistirCliente.disabled = false;
@@ -16441,6 +16445,17 @@ const uBody = {
   if (fichaDesistirCliente) fichaDesistirCliente.addEventListener('click', desistirClienteActual);
   if (fichaCerrarX) fichaCerrarX.addEventListener('click', cerrarFichaUnidadModal);
   if (fichaExpandir) fichaExpandir.addEventListener('click', toggleFichaFullscreen);
+  if (fallenSalesClose) fallenSalesClose.addEventListener('click', () => { fallenSalesModal.style.display = 'none'; });
+  if (fallenSalesSearch) fallenSalesSearch.addEventListener('input', renderFallenSalesRows);
+  if (fallenSalesAddToggle) fallenSalesAddToggle.addEventListener('click', () => { fallenSalesForm.hidden = !fallenSalesForm.hidden; });
+  if (fallenSalesCancel) fallenSalesCancel.addEventListener('click', closeFallenSalesForm);
+  if (fallenSalesForm) fallenSalesForm.addEventListener('submit', saveManualFallenSale);
+  document.getElementById('fallenSalesRows')?.addEventListener('click', event => {
+    const editButton = event.target.closest('.fallen-sale-edit');
+    const deleteButton = event.target.closest('.fallen-sale-delete');
+    if (editButton) editFallenSale(editButton.dataset.id);
+    if (deleteButton) deleteFallenSale(deleteButton.dataset.id);
+  });
   if (modalFicha) {
     const handleFichaEdit = event => {
       const control = event.target;

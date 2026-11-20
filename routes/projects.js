@@ -9,6 +9,7 @@ const Project           = require('../models/Project');
 const ProjectChecklist  = require('../models/ProjectChecklist');
 const Document          = require('../models/Document');
 const Venta             = require('../models/Venta');
+const FallenSale        = require('../models/FallenSale');
 const Unit              = require('../models/Unit');
 const User              = require('../models/User');
 const Tenant            = require('../models/Tenant');
@@ -2828,7 +2829,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     const financeDoc = await ProjectFinance.findOne({ project: id, tenantKey }).lean();
     let financePhases = Array.isArray(financeDoc?.phases) ? financeDoc.phases : [];
 
-    let [checklists, documents, ventasRaw, units, permits] = await Promise.all([
+    let [checklists, documents, ventasRaw, units, permits, fallenSales] = await Promise.all([
       ProjectChecklist.find({
         projectId: new mongoose.Types.ObjectId(id),
         $or: [{ tenantKey }, { tenantKey: { $exists: false } }]
@@ -2842,7 +2843,8 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
         } catch {
           return null;
         }
-      })()
+      })(),
+      FallenSale.find({ tenantKey, projectId: id }).lean()
     ]);
 
     const periodActivity = buildPeriodActivity({
@@ -3107,6 +3109,25 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       );
     };
 
+    const isCashSale = (v) => clean(v?.modalidadFinanciamiento) === 'Al contado';
+
+    const hasIssuedCpp = (v) => {
+      const sb = norm(v?.statusBanco);
+      const cppStatus = norm(v?.estatusCPP);
+      if (!!clean(v?.numCPP) || !!v?.recibidoCPP || !!v?.fechaValorCPP) return true;
+
+      const combinedStatus = `${sb} ${cppStatus}`;
+      if (/NO CPP|SIN CPP|PENDIENTE(?: DE(?: LA)?)? CPP/.test(combinedStatus)) return false;
+
+      return (
+        /CPP|DESEMBOLS/.test(combinedStatus)
+      );
+    };
+
+    const isActiveCpp = (v) =>
+      !isCashSale(v) &&
+      v?.__unitStatus === 'con_cpp';
+
     const isCommitteeSignal = (v) => {
       const sb = norm(v?.statusBanco);
       return sb.includes('COMITE') || sb.includes('COMITÉ');
@@ -3142,6 +3163,12 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       if (financed > 0) return financed;
 
       return getEffectivePrice(venta, unit);
+    };
+
+    const getCppAmount = (venta) => {
+      const financed = toNum(venta?.montoFinanciamientoCPP);
+      if (financed > 0) return financed;
+      return toNum(venta?.valor);
     };
 
     const getModel = (v) =>
@@ -3287,6 +3314,16 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     const salesMap = new Map();
     const salesYearMap = new Map();
     const fallenSalesYearMap = new Map();
+    const storedFallenSourceIds = new Set(
+      (fallenSales || []).map(item => String(item.sourceVentaId || '')).filter(Boolean)
+    );
+
+    for (const item of (fallenSales || []).filter(entry => !entry.deletedAt)) {
+      const date = new Date(item.fechaCaida || item.createdAt || 0);
+      if (Number.isNaN(date.getTime())) continue;
+      const year = String(date.getFullYear());
+      fallenSalesYearMap.set(year, (fallenSalesYearMap.get(year) || 0) + 1);
+    }
 
     for (const v of (ventas || [])) {
       const d = v?.fechaContratoCliente ? new Date(v.fechaContratoCliente) : null;
@@ -3311,7 +3348,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
         st.includes('CANCEL') ||
         st.includes('ANUL');
 
-      if (isFallen) {
+      if (isFallen && !storedFallenSourceIds.has(String(v._id))) {
         const fechaCaida = v?.fechaCaida || v?.updatedAt || v?.createdAt || Date.now();
         const y = String(new Date(fechaCaida).getFullYear());
         fallenSalesYearMap.set(y, (fallenSalesYearMap.get(y) || 0) + 1);
@@ -3361,18 +3398,26 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     const bankStatusMap = new Map();
     const bankStatusLabel = (v) => {
       const sb = norm(v.statusBanco);
+      const unitStatus = v?.__unitStatus;
+      const cppExecuted =
+        ['tramite_legal_activado', 'escriturado_traspasado', 'vivienda_entregada'].includes(unitStatus) ||
+        /DESEMBOLS|HIPOTECA|FORMALIZ|ESCRITUR/.test(sb);
 
-      if (hasCppSignal(v)) return 'Con CPP';
-      if (sb.includes('APROB')) return 'Aprobado';
+      if (cppExecuted && hasIssuedCpp(v)) return 'Hipoteca ejecutada';
+      if (unitStatus === 'con_cpp') return 'CPP activa';
+      if (sb.includes('APROB')) return 'Aprobado · pendiente de CPP';
       if (sb.includes('COMITE') || sb.includes('COMITÉ')) return 'Comité';
       if (sb.includes('EVALU')) return 'Evaluación';
-      if (sb.includes('PEND')) return 'Pendiente doc';
-      if (!clean(v.banco)) return 'Sin banco';
+      if (sb.includes('PEND')) return 'Documentación pendiente';
+      if (!clean(v.banco)) return 'Sin banco asignado';
+      if (hasIssuedCpp(v)) return 'CPP emitida';
+      if (!sb) return 'Sin estatus bancario';
 
       return clean(v.statusBanco) || 'Otros';
     };
 
     for (const v of soldVentas) {
+      if (isCashSale(v)) continue;
       const label = bankStatusLabel(v);
       bankStatusMap.set(label, (bankStatusMap.get(label) || 0) + 1);
     }
@@ -3395,20 +3440,22 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
 
       const bank = clean(v.banco) || 'Sin banco';
 
-      if (hasCppSignal(v)) {
-        cppActive++;
+      if (!isCashSale(v) && hasIssuedCpp(v)) {
         cppByBankMap.set(bank, (cppByBankMap.get(bank) || 0) + 1);
 
         const prev = cppAmountByBankMap.get(bank) || { bank, count: 0, amount: 0 };
         prev.count += 1;
-        prev.amount += getMortgageAmount(v, v.__unit);
+        prev.amount += getCppAmount(v);
         cppAmountByBankMap.set(bank, prev);
 
-        const venc = getCppDueDate(v);
-        const vt = toTime(venc);
+      }
 
-        if (vt) {
-          const diff = vt - now;
+      if (isActiveCpp(v)) {
+        cppActive++;
+
+        const vt = toTime(getCppDueDate(v));
+        const diff = vt ? vt - now : null;
+        if (diff !== null && diff >= 0) {
           if (diff <= d30) cppDue30++;
           else if (diff <= d60) cppDue60++;
           else if (diff <= d90) cppDue90++;
@@ -3421,7 +3468,11 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     }
 
     const cppByBank = Array.from(cppByBankMap.entries())
-      .map(([bank, count]) => ({ bank, count }))
+      .map(([bank, count]) => ({
+        bank,
+        count,
+        amount: cppAmountByBankMap.get(bank)?.amount || 0
+      }))
       .sort((a, b) => b.count - a.count);
 
     const cppAmountByBank = Array.from(cppAmountByBankMap.values())
@@ -3539,22 +3590,16 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       const band = incomeBands.find(item => value > item.min && value <= item.max);
       if (band) band.count++;
     });
-    const incomeAverage = recordedIncomes.length
-      ? recordedIncomes.reduce((sum, value) => sum + value, 0) / recordedIncomes.length
-      : 0;
-    const incomeMiddle = Math.floor(recordedIncomes.length / 2);
-    const incomeMedian = !recordedIncomes.length ? 0
-      : recordedIncomes.length % 2
-        ? recordedIncomes[incomeMiddle]
-        : (recordedIncomes[incomeMiddle - 1] + recordedIncomes[incomeMiddle]) / 2;
+    const salesWithIncomeRecorded = customerSales.filter(v =>
+      toNum(v.ingresoMensual) > 0 || toNum(v.cliente2IngresoMensual) > 0
+    ).length;
 
     const customerReport = {
       totals: {
         sales: customerSales.length,
         people: customerPeople.length,
         incomesRecorded: recordedIncomes.length,
-        incomeAverage,
-        incomeMedian
+        salesWithIncomeRecorded
       },
       companyType: countCustomerValues(customerPeople, person => normalizeCompanyType(person.companyType)),
       employmentProfile: countCustomerValues(customerPeople, person => normalizeEmploymentProfile(person.employmentProfile)),
@@ -4072,8 +4117,8 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     });
 
     const cppVigenteAmount = soldVentas
-      .filter(v => hasCppSignal(v))
-      .reduce((a, v) => a + getMortgageAmount(v, v.__unit), 0);
+      .filter(v => !isCashSale(v) && hasIssuedCpp(v))
+      .reduce((a, v) => a + getCppAmount(v), 0);
 
     const cppTramiteAmount = soldVentas
       .filter(v => {
@@ -5213,9 +5258,10 @@ if (isSoldLikeStatus(st)) U.sold++;
         if (title === 'CPP por banco') {
           const list = datasets.cppByBank || [];
           const total = list.reduce((a, x) => a + Number(x.count || 0), 0);
+          const totalAmount = list.reduce((a, x) => a + Number(x.amount || 0), 0);
           const top = [...list].sort((a, b) => Number(b.count || 0) - Number(a.count || 0))[0];
-          out.push(`Total CPP/APROB: ${total}.`);
-          if (top) out.push(`Mayor concentración: ${top.bank} (${top.count}).`);
+          out.push(`Total CPP: ${total} · ${fmtMoneyShort(totalAmount)}.`);
+          if (top) out.push(`Mayor concentración: ${top.bank} (${top.count} · ${fmtMoneyShort(top.amount)}).`);
         }
 
         if (title === 'Permisos por institución') {
@@ -5223,14 +5269,6 @@ if (isSoldLikeStatus(st)) U.sold++;
           const sum = (k) => inst.reduce((a, x) => a + Number(x[k] || 0), 0);
           out.push(`Aprobados: ${sum('approved')} · Trámite: ${sum('inProcess')} · Pendientes: ${sum('pending')}.`);
           out.push(`Instituciones: ${inst.length}.`);
-        }
-
-        if (title === 'Hipotecas por banco') {
-          const list = datasets.mortgagesByBank || [];
-          const total = list.reduce((a, x) => a + Number(x.count || 0), 0);
-          const top = [...list].sort((a, b) => Number(b.count || 0) - Number(a.count || 0))[0];
-          out.push(`Total hipotecas: ${total}.`);
-          if (top) out.push(`Principal banco: ${top.bank} (${top.count}).`);
         }
 
         if (title === 'Estado de unidades') {
@@ -5272,12 +5310,24 @@ if (isSoldLikeStatus(st)) U.sold++;
 
       if (title === 'Estatus lotes / unidades') return simple(datasets.unitsByStatus, 'status', 'count', 'Total unidades');
       if (title === 'Ventas mensuales') return simple(datasets.salesMonthly, 'month', 'units', 'Total ventas');
-      if (title === 'CPP por banco') return simple(datasets.cppByBank, 'bank', 'count', 'Total CPP');
-      if (title === 'Proformas por banco') return simple(datasets.proformasByBank, 'bank', 'count', 'Total proformas');
+      if (title === 'CPP por banco') {
+        const list = datasets.cppByBank || [];
+        return {
+          columns: ['Banco', 'CPP / monto'],
+          rows: list.map(x => ({
+            label: x.bank || 'N/D',
+            value: `${fmtNum(x.count)} · ${fmtMoneyShort(x.amount)}`
+          })),
+          total: {
+            label: 'Total CPP',
+            value: `${fmtNum(list.reduce((a, x) => a + toNumber(x.count), 0))} · ${fmtMoneyShort(list.reduce((a, x) => a + toNumber(x.amount), 0))}`
+          }
+        };
+      }
       if (title === 'Ventas por modelo de vivienda') return simple(commercialData.salesByModel, 'model', 'count', 'Total ventas por modelo');
       if (title === 'Perfil cliente') return simple(commercialData.clientProfile, 'profile', 'count', 'Total perfiles');
       if (title === 'Tipo de empresa') return simple(commercialData.companyType, 'type', 'count', 'Total empresas');
-      if (title === 'Estatus en banco') return simple(commercialData.bankStatus, 'status', 'count', 'Total estados banco');
+      if (title === 'Estatus bancario de operaciones financiadas') return simple(commercialData.bankStatus, 'status', 'count', 'Total operaciones financiadas');
       if (title === 'Tipo de empresa de compradores') return simple(commercialData.customerReport?.companyType, 'label', 'count', 'Total compradores');
       if (title === 'Perfil laboral de compradores') return simple(commercialData.customerReport?.employmentProfile, 'label', 'count', 'Total compradores');
       if (title === 'Sexo de compradores') return simple(commercialData.customerReport?.sex, 'label', 'count', 'Total compradores');
@@ -5346,17 +5396,6 @@ if (isSoldLikeStatus(st)) U.sold++;
           columns: ['Detalle', 'Valor'],
           rows: rows.length ? rows : [{ label: 'Sin datos de actividad', value: '-' }],
           total: null
-        };
-      }
-
-      if (title === 'Hipotecas por banco') {
-        return {
-          columns: ['Banco', 'Hipotecas / monto'],
-          rows: (datasets.mortgagesByBank || []).map(x => ({ label: x.bank || 'N/D', value: `${fmtNum(x.count)} · ${fmtMoneyShort(x.amount)}` })),
-          total: {
-            label: 'Total hipotecas',
-            value: `${fmtNum((datasets.mortgagesByBank || []).reduce((a, x) => a + toNumber(x.count), 0))} · ${fmtMoneyShort((datasets.mortgagesByBank || []).reduce((a, x) => a + toNumber(x.amount), 0))}`
-          }
         };
       }
 
@@ -5695,8 +5734,6 @@ if (isSoldLikeStatus(st)) U.sold++;
       const loan = kpis.loan || {};
       const cpp = kpis.cpp || {};
       const permits = kpis.permits || {};
-      const mortgagesByBank = datasets?.mortgagesByBank || [];
-      const proformasByBank = datasets?.proformasByBank || [];
 
       const top = summary.periodLabel ? [
         { label: 'Periodo', value: summary.periodLabel },
@@ -5733,9 +5770,9 @@ if (isSoldLikeStatus(st)) U.sold++;
         { label: 'Ticket promedio', value: fmtMoneyShort(kpis.avgTicket) },
         { label: 'Inventario a valor', value: fmtMoneyShort(kpis.inventoryValue) },
         {
-          label: 'CPP',
-          value: `${fmtNum(cpp.active)} activos`,
-          sub: `30d:${fmtNum(cpp.due30)} · 60d:${fmtNum(cpp.due60)} · 90d:${fmtNum(cpp.due90)}`
+          label: 'CPP activas',
+          value: fmtNum(cpp.active),
+          sub: `Pendientes de ejecución · 30d:${fmtNum(cpp.due30)} · 60d:${fmtNum(cpp.due60)} · 90d:${fmtNum(cpp.due90)}`
         },
         {
           label: 'Permisos',
@@ -5752,19 +5789,9 @@ if (isSoldLikeStatus(st)) U.sold++;
           sub: `${summary.units?.total ? Math.round((summary.units.sold || 0) * 100 / summary.units.total) : 0}% vendido`
         },
         {
-          label: 'CPP activos',
+          label: 'CPP activas',
           value: fmtNum(cpp.active),
-          sub: `30d:${fmtNum(cpp.due30)} · 60d:${fmtNum(cpp.due60)} · 90d:${fmtNum(cpp.due90)}`
-        },
-        {
-          label: 'Hipotecas',
-          value: fmtNum(mortgagesByBank.reduce((a, x) => a + toNumber(x.count), 0)),
-          sub: `${fmtNum(mortgagesByBank.length)} bancos`
-        },
-        {
-          label: 'Proformas',
-          value: fmtNum(proformasByBank.reduce((a, x) => a + toNumber(x.count), 0)),
-          sub: `${fmtNum(proformasByBank.length)} bancos`
+          sub: `Pendientes de ejecución · 30d:${fmtNum(cpp.due30)} · 60d:${fmtNum(cpp.due60)} · 90d:${fmtNum(cpp.due90)}`
         },
       ];
 
@@ -6301,11 +6328,9 @@ if (isSoldLikeStatus(st)) U.sold++;
           'Ventas mensuales',
           'Ventas vs ventas caídas',
           'Ventas por modelo de vivienda',
-          'Estatus en banco',
+          'Estatus bancario de operaciones financiadas',
           'CPP por banco',
           'Modalidad de compra',
-          'Proformas por banco',
-          'Hipotecas por banco',
           'Tipo de empresa de compradores',
           'Perfil laboral de compradores',
           'Sexo de compradores',

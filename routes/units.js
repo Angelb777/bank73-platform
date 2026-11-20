@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 
 const Unit = require('../models/Unit');
 const Venta = require('../models/Venta');
+const { recordAutomaticFallenSale } = require('../services/fallenSales');
 const Cliente = require('../models/Cliente');
 const Project = require('../models/Project'); // ROLE-SEP
 const requirePin = require('../utils/requirePin');
@@ -218,7 +219,28 @@ function esCambioAVentaCaida(estadoAnterior, estadoNuevo) {
   );
 }
 
-async function marcarVentaCaida({ tenantKey, projectId, unitId, motivo }) {
+async function marcarVentaCaida({ tenantKey, projectId, unitId, motivo, createdBy }) {
+  const venta = await Venta.findOne({
+    tenantKey,
+    projectId,
+    unitId,
+    deletedAt: null,
+    estadoVenta: { $ne: 'caida' }
+  }).lean();
+  if (!venta) return;
+
+  const unit = await Unit.findOne({ _id: unitId, tenantKey, projectId }).lean();
+  const fechaCaida = new Date();
+  await recordAutomaticFallenSale({
+    tenantKey,
+    projectId,
+    venta,
+    unit: unit || {},
+    fechaCaida,
+    motivoCaida: motivo || 'Unidad liberada para una nueva venta',
+    createdBy
+  });
+
   await Venta.findOneAndUpdate(
     {
       tenantKey,
@@ -230,7 +252,7 @@ async function marcarVentaCaida({ tenantKey, projectId, unitId, motivo }) {
     {
       $set: {
         estadoVenta: 'caida',
-        fechaCaida: new Date(),
+        fechaCaida,
         motivoCaida: motivo || 'Unidad liberada para una nueva venta'
       }
     },
@@ -474,7 +496,8 @@ router.patch(
               tenantKey: req.tenantKey,
               projectId: req.project._id,
               unitId: oldUnit._id,
-              motivo: `Cambio batch a ${set.estado}`
+              motivo: `Cambio batch a ${set.estado}`,
+              createdBy: req.user?._id
             });
           }
         }
@@ -648,7 +671,8 @@ router.patch(
           tenantKey: req.tenantKey,
           projectId: u.projectId,
           unitId: u._id,
-          motivo: update.motivoCaida || `Unidad liberada como ${update.estado}`
+          motivo: update.motivoCaida || `Unidad liberada como ${update.estado}`,
+          createdBy: req.user?._id
         });
       }
       

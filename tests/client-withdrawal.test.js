@@ -13,7 +13,7 @@ test('el desistimiento exige confirmación y se ofrece solo desde la ficha comer
   const js = read('public/js/project.js');
 
   assert.match(html, /id="fichaDesistirCliente"[^>]*>Desistir cliente</);
-  assert.match(js, /confirm\('¿Estás seguro de que quieres borrar todos los datos del cliente\?'\)/);
+  assert.match(js, /confirm\('¿Registrar al cliente en Ventas caídas y limpiar sus datos de la ficha de la unidad\?'\)/);
   assert.match(js, /fichaMode !== 'commercial'/);
   assert.match(js, /\/api\/ventas\/by-unit\/\$\{encodeURIComponent\(fichaUnitId\)\}\/desist-client/);
 });

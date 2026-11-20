@@ -810,6 +810,7 @@ body.light-theme .provider-exclusive {
   grid-column: 1 / -1;
   display: flex;
   justify-content: flex-end;
+  gap: 10px;
   margin-bottom: 14px;
 }
 
@@ -1992,7 +1993,7 @@ body.light-theme .provider-exclusive {
       </div>
 
       <div class="card summary-chart-card chart-card-sm">
-        <h3>Estatus en banco</h3>
+        <h3>Estatus bancario de operaciones financiadas</h3>
         <div class="summary-chart-box">
           <canvas id="sumBankStatus"></canvas>
         </div>
@@ -2000,7 +2001,7 @@ body.light-theme .provider-exclusive {
       </div>
 
       <div class="card summary-chart-card chart-card-sm">
-        <h3>CPP por banco</h3>
+        <h3>CPP por banco · cantidad y monto</h3>
         <div class="summary-chart-box">
           <canvas id="sumCppPie"></canvas>
         </div>
@@ -2015,30 +2016,12 @@ body.light-theme .provider-exclusive {
         <div id="sumPurchaseModalitySummary" class="summary-chart-summary"></div>
       </div>
 
-      <div class="card summary-chart-card">
-        <div class="row" style="justify-content:space-between;align-items:center;">
-          <h3 style="margin:0;">Proformas por banco</h3>
-          <div class="small muted">Total: <b id="sumProformasTotal">0</b></div>
-        </div>
-        <div class="summary-chart-box">
-          <canvas id="sumProformasBar"></canvas>
-        </div>
-        <div id="sumProformasBarSummary" class="summary-chart-summary"></div>
-      </div>
-
-      <div class="card summary-chart-card">
-        <h3>Hipotecas por banco</h3>
-        <div class="summary-chart-box">
-          <canvas id="sumMortgagesByBank"></canvas>
-        </div>
-        <div id="sumMortgagesByBankSummary" class="summary-chart-summary"></div>
-      </div>
     </section>
 
     <section class="summary-customer-report" style="margin-top:18px;">
       <div class="summary-customer-report-heading">
         <h3>Informe del cliente</h3>
-        <p class="small muted">Perfil de las personas que están comprando en el proyecto. Incluye al co-comprador cuando está registrado.</p>
+        <p class="small muted">Los KPI cuentan operaciones de compra. Las gráficas describen a las personas e incluyen al co-comprador cuando está registrado.</p>
       </div>
       <section id="summaryCustomerReportKpis" class="kpis-grid" style="margin-top:12px;"></section>
       <div class="grid-2" style="margin-top:12px;">
@@ -2658,6 +2641,53 @@ body.light-theme .provider-exclusive {
         <span id="fichaSaveStatus" class="unit-save-status" role="status" aria-live="polite">Autoguardado activo</span>
         <button class="btn unit-desist-client" id="fichaDesistirCliente" type="button" hidden>Desistir cliente</button>
         <button class="btn unit-save-primary" id="fichaGuardar" type="button">Guardar cambios</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="fallenSalesModal" class="modal-backdrop" style="display:none;">
+    <div class="modal fallen-sales-modal">
+      <div class="modal-head">
+        <div>
+          <b>Ventas caídas</b>
+          <div class="small muted">Histórico de clientes que desistieron de una operación.</div>
+        </div>
+        <button class="btn btn-ghost btn-xs" id="fallenSalesClose" type="button">Cerrar</button>
+      </div>
+      <div class="modal-body fallen-sales-body">
+        <div class="fallen-sales-toolbar">
+          <input id="fallenSalesSearch" type="search" placeholder="Buscar cliente, documento, unidad o motivo" />
+          <button class="btn primary" id="fallenSalesAddToggle" type="button">+ Añadir desistimiento</button>
+        </div>
+        <form id="fallenSalesForm" class="fallen-sales-form" hidden>
+          <div class="fallen-sales-form-head"><div><strong>Registrar desistimiento histórico</strong><span>La unidad es opcional.</span></div></div>
+          <div class="fallen-sales-form-grid">
+            <label>Fecha de desistimiento<input id="fallenSaleDate" type="date" required /></label>
+            <label>Cliente<input id="fallenSaleClient" maxlength="200" required /></label>
+            <label>Documento / cédula<input id="fallenSaleIdNumber" maxlength="80" /></label>
+            <label>Segundo cliente<input id="fallenSaleClient2" maxlength="200" /></label>
+            <label>Documento segundo cliente<input id="fallenSaleClient2Id" maxlength="80" /></label>
+            <label>Unidad<select id="fallenSaleUnit"><option value="">Sin unidad asociada</option></select></label>
+            <label>Unidad escrita<input id="fallenSaleUnitLabel" maxlength="120" placeholder="Ej. Torre A · 2-04" /></label>
+            <label>Teléfono<input id="fallenSalePhone" maxlength="80" /></label>
+            <label>Correo<input id="fallenSaleEmail" type="email" maxlength="200" /></label>
+            <label>Precio de venta<input id="fallenSalePrice" type="text" inputmode="decimal" /></label>
+            <label>Banco<input id="fallenSaleBank" maxlength="160" /></label>
+            <label>Motivo<select id="fallenSaleReason"><option value="Decisión del cliente">Decisión del cliente</option><option value="Financiación rechazada">Financiación rechazada</option><option value="Falta de abonos">Falta de abonos</option><option value="Cambio de proyecto">Cambio de proyecto</option><option value="Otros">Otros</option></select></label>
+            <label class="fallen-sales-notes">Observaciones<textarea id="fallenSaleNotes" rows="3" maxlength="2000"></textarea></label>
+          </div>
+          <div class="fallen-sales-form-actions">
+            <button class="btn" id="fallenSalesCancel" type="button">Cancelar</button>
+            <button class="btn primary" id="fallenSalesSave" type="submit">Guardar desistimiento</button>
+          </div>
+        </form>
+        <div id="fallenSalesStatus" class="small muted" role="status" aria-live="polite"></div>
+        <div class="fallen-sales-table-wrap">
+          <table class="fallen-sales-table">
+            <thead><tr><th>Fecha</th><th>Cliente</th><th>Unidad</th><th>Motivo</th><th>Precio</th><th>Origen</th><th>Acciones</th></tr></thead>
+            <tbody id="fallenSalesRows"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>

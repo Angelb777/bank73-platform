@@ -533,7 +533,7 @@ function validateLoanLineLimits(doc, rawLines = []) {
   }
 }
 
-async function validateLoanLineReports({ req, project, rawLines, currentDoc, allowHistoricalWithoutReport = false }) {
+async function validateLoanLineReports({ req, project, rawLines, currentDoc }) {
   const assignments = await ProjectAvaluatorAssignment.find(activeAvaluatorAssignmentFilter(req, project)).select('_id bankTenantKey').lean();
   for (const line of rawLines) {
     for (const entry of (Array.isArray(line?.entries) ? line.entries : [])) {
@@ -555,13 +555,11 @@ async function validateLoanLineReports({ req, project, rawLines, currentDoc, all
       const type = String(entry?.entryType || 'legacy');
       if (type !== 'disbursement') continue;
       const previous = mongoose.isValidObjectId(entry?._id) ? previousEntries.get(String(entry._id)) : null;
-      const isHistorical = previous && String(previous.entryType || 'legacy') === 'legacy' && !previous.inspectionId;
       if (previous?.inspectionId && String(previous.inspectionId) !== String(entry.inspectionId || '')) {
         throw Object.assign(new Error('El informe vinculado a un desembolso guardado no se puede sustituir.'), { status: 409 });
       }
-      if (!entry.inspectionId && !isHistorical && !allowHistoricalWithoutReport) {
-        throw Object.assign(new Error('Selecciona un informe finalizado del avaluador para cada desembolso.'), { status: 400 });
-      }
+      // El informe es opcional: muchos desembolsos históricos no disponen de
+      // uno. Si existe, mantenemos todas las validaciones y su trazabilidad.
       if (entry.inspectionId) reportIds.push(String(entry.inspectionId));
     }
   }
@@ -595,9 +593,7 @@ async function validateWorkflowReport({ project, entry }) {
     status: 'active'
   }).select('_id bankTenantKey').lean();
   if (!assignments.length) return;
-  if (!entry?.inspectionId) {
-    throw Object.assign(new Error('Este desembolso necesita un informe finalizado del avaluador.'), { status: 400 });
-  }
+  if (!entry?.inspectionId) return null;
   const report = await Inspection.findOne({
     _id: entry.inspectionId,
     projectId: project._id,
@@ -705,6 +701,12 @@ const FINANCE_USE_SOURCE_IMPORT_HEADERS = [
   'Fase', 'Grupo', 'Partida', 'Plan', 'Real', 'Desviación', '% ejecución'
 ];
 
+const FINANCE_CUSTOMER_PAYMENT_IMPORT_HEADERS = [
+  'Unidad', 'Cliente', 'Concepto', 'Beneficiario', 'Fecha del abono',
+  'Nº recibo', 'Importe pago', 'Total acordado', 'Pagado acumulado',
+  'Saldo pendiente', 'Estado'
+];
+
 function normalizeFinanceExcelLabel(value = '') {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toLowerCase().replace(/n[º°]/g, 'n').replace(/[^a-z0-9%]+/g, ' ').trim().replace(/\s+/g, ' ');
@@ -793,6 +795,24 @@ function financeImportedMovementFingerprint(entry = {}) {
     toNum(entry.promoterContributionAmount).toFixed(2), toNum(entry.amortizedAmount).toFixed(2),
     toNum(entry.interestAmount).toFixed(2), dateKey(entry.maturityDate),
     String(entry.transferReference || '').trim().toLowerCase(), String(entry.notes || '').trim().toLowerCase()
+  ].join('|');
+}
+
+function financeCustomerPaymentRecipient(value = '') {
+  const recipient = normalizeFinanceExcelLabel(value);
+  if (recipient === 'banco') return 'bank';
+  if (recipient === 'otro' || recipient === 'otra') return 'other';
+  return 'promoter';
+}
+
+function financeImportedCustomerPaymentFingerprint(payment = {}) {
+  const date = payment.paymentDate ? new Date(payment.paymentDate) : null;
+  const dateKey = date && !Number.isNaN(date.getTime()) ? date.toISOString().slice(0, 10) : '';
+  return [
+    dateKey,
+    String(payment.recipient || 'promoter').trim().toLowerCase(),
+    String(payment.receiptNumber || '').trim().toLowerCase(),
+    toNum(payment.amount).toFixed(2)
   ].join('|');
 }
 
@@ -892,7 +912,10 @@ function parseFinancePhaseWorkbook(workbook, phase) {
   validateFinanceExcelHeaders(movementsSheet, FINANCE_MOVEMENT_IMPORT_HEADERS, errors);
   const useSourcesSheet = workbook.getWorksheet('Usos y fuentes')
     || workbook.worksheets.find(ws => normalizeFinanceExcelLabel(ws.name) === 'usos y fuentes');
+  const customerPaymentsSheet = workbook.getWorksheet('Abonos clientes')
+    || workbook.worksheets.find(ws => normalizeFinanceExcelLabel(ws.name) === 'abonos clientes');
   if (useSourcesSheet) validateFinanceExcelHeaders(useSourcesSheet, FINANCE_USE_SOURCE_IMPORT_HEADERS, errors);
+  if (customerPaymentsSheet) validateFinanceExcelHeaders(customerPaymentsSheet, FINANCE_CUSTOMER_PAYMENT_IMPORT_HEADERS, errors);
   if (errors.length) return { errors, lines: [], movements: [] };
 
   const phaseKey = normalizedFinanceName(phase?.name || '');
@@ -1029,7 +1052,60 @@ function parseFinancePhaseWorkbook(workbook, phase) {
     };
   }
 
-  return { errors, lines, movements, phaseSummary };
+  const customerPayments = [];
+  const customerPaymentWarnings = [];
+  if (customerPaymentsSheet) {
+    const fileFingerprints = new Set();
+    for (let rowNumber = 6; rowNumber <= customerPaymentsSheet.rowCount; rowNumber += 1) {
+      const row = customerPaymentsSheet.getRow(rowNumber);
+      const unitLabel = financeExcelText(row.getCell(1));
+      const rawDate = financeExcelCellValue(row.getCell(5));
+      const rawReceipt = financeExcelText(row.getCell(6));
+      const rawAmount = financeExcelCellValue(row.getCell(7));
+      const hasPaymentData = (
+        (rawDate !== '' && rawDate !== null && rawDate !== undefined)
+        || rawReceipt
+        || (rawAmount !== '' && rawAmount !== null && rawAmount !== undefined && Number(rawAmount) !== 0)
+      );
+      // El exportador incluye una fila resumen cuando una cuenta todavía no
+      // tiene pagos. No es un abono importable y se ignora intencionadamente.
+      if (!hasPaymentData) continue;
+      if (!unitLabel) {
+        errors.push(`Abonos clientes, fila ${rowNumber}: falta la unidad.`);
+        continue;
+      }
+      const dateErrors = [];
+      const paymentDate = financeExcelDate(row.getCell(5), { sheet: 'Abonos clientes', row: rowNumber, column: 'Fecha del abono', errors: dateErrors });
+      const amount = financeExcelNumber(row.getCell(7), { sheet: 'Abonos clientes', row: rowNumber, column: 'Importe pago', errors, required: true });
+      if (!paymentDate) {
+        customerPaymentWarnings.push(`Abonos clientes, fila ${rowNumber}: se omitió porque “Fecha del abono” no contiene una fecha válida.`);
+        continue;
+      }
+      if (amount <= 0) continue;
+      const payment = {
+        rowNumber,
+        unitLabel,
+        clientName: financeExcelText(row.getCell(2)),
+        concept: financeExcelText(row.getCell(3)) || 'Abono del cliente',
+        recipient: financeCustomerPaymentRecipient(financeExcelText(row.getCell(4))),
+        paymentDate,
+        // Venta exige recibo. La referencia generada es determinista para que
+        // reimportar el mismo archivo no duplique las filas sin recibo.
+        receiptNumber: rawReceipt || `IMPORTADO-FILA-${rowNumber}`,
+        amount,
+        agreedAmount: financeExcelNumber(row.getCell(8), { sheet: 'Abonos clientes', row: rowNumber, column: 'Total acordado', errors })
+      };
+      const fingerprint = `${normalizeFinanceUnitAlias(unitLabel)}|${financeImportedCustomerPaymentFingerprint(payment)}`;
+      if (fileFingerprints.has(fingerprint)) {
+        errors.push(`Abonos clientes, fila ${rowNumber}: el abono está duplicado dentro del archivo.`);
+        continue;
+      }
+      fileFingerprints.add(fingerprint);
+      customerPayments.push(payment);
+    }
+  }
+
+  return { errors, lines, movements, phaseSummary, customerPayments, customerPaymentWarnings };
 }
 
 function commercialClientName(v = {}) {
@@ -1076,6 +1152,7 @@ async function getFinanceCommercialUnits(projectId, tenantKey) {
       unitId: String(u._id),
       lot: displayName,
       unitLabel: displayName,
+      rawLot: String(u.lote || '').trim(),
       legacyLot,
       modelName: u.modelo || '',
       bedrooms: toNum(u.recamaras),
@@ -1403,6 +1480,9 @@ router.post('/projects/:projectId/finance/import', financeExcelUpload, async (re
     let updatedLines = 0;
     let importedMovements = 0;
     let importedSaleAmortizations = 0;
+    let importedCustomerPayments = 0;
+    let skippedCustomerPayments = 0;
+    const skippedInvalidCustomerPayments = (parsed.customerPaymentWarnings || []).length;
     const replacedMovements = currentPhaseLines.reduce((sum, line) => sum + (line?.entries?.length || 0), 0);
     const importedByKey = new Map();
     const previousEntriesByLine = new Map();
@@ -1449,6 +1529,92 @@ router.post('/projects/:projectId/finance/import', financeExcelUpload, async (re
     }
 
     const commercialUnits = await getFinanceCommercialUnits(req.params.projectId, project.tenantKey);
+    const customerPaymentUpdates = new Map();
+    if ((parsed.customerPayments || []).length) {
+      const paymentUnitCandidates = new Map();
+      const addPaymentUnitAlias = (alias, item) => {
+        const key = normalizeFinanceUnitAlias(alias);
+        if (!key) return;
+        if (!paymentUnitCandidates.has(key)) paymentUnitCandidates.set(key, []);
+        if (!paymentUnitCandidates.get(key).includes(item)) paymentUnitCandidates.get(key).push(item);
+      };
+      commercialUnits.forEach(unit => {
+        addPaymentUnitAlias(unit.lot, unit);
+        addPaymentUnitAlias(unit.unitLabel, unit);
+        addPaymentUnitAlias(unit.rawLot, unit);
+        addPaymentUnitAlias(unit.legacyLot, unit);
+      });
+      const sales = await Venta.find({
+        projectId: project._id,
+        tenantKey: project.tenantKey,
+        deletedAt: null
+      }).select('_id unitId customerPaymentAccounts customerPaymentsVersion').lean();
+      const salesByUnit = new Map(sales.map(sale => [String(sale.unitId || ''), sale]));
+      const paymentImportErrors = [];
+
+      for (const importedPayment of parsed.customerPayments) {
+        const matches = uniqueFinanceUnitCandidates(
+          paymentUnitCandidates.get(normalizeFinanceUnitAlias(importedPayment.unitLabel)) || [],
+          importedPayment.unitLabel
+        );
+        if (!matches.length) {
+          paymentImportErrors.push(`Abonos clientes, fila ${importedPayment.rowNumber}: no existe la unidad “${importedPayment.unitLabel}” en el proyecto.`);
+          continue;
+        }
+        if (matches.length > 1) {
+          paymentImportErrors.push(`Abonos clientes, fila ${importedPayment.rowNumber}: la unidad “${importedPayment.unitLabel}” es ambigua en el proyecto.`);
+          continue;
+        }
+        const sale = salesByUnit.get(String(matches[0].unitId || ''));
+        if (!sale) {
+          paymentImportErrors.push(`Abonos clientes, fila ${importedPayment.rowNumber}: la unidad “${importedPayment.unitLabel}” no tiene expediente comercial.`);
+          continue;
+        }
+        let update = customerPaymentUpdates.get(String(sale._id));
+        if (!update) {
+          const accounts = (sale.customerPaymentAccounts || []).map(account => ({
+            ...(account?.toObject ? account.toObject() : account),
+            payments: (account?.payments || []).map(payment => payment?.toObject ? payment.toObject() : { ...payment })
+          }));
+          let account = accounts.find(item => item.source === 'sale_gap');
+          if (!account) {
+            account = {
+              source: 'sale_gap',
+              concept: 'Abono del cliente',
+              agreedAmount: 0,
+              recipient: 'promoter',
+              requiredForClearance: true,
+              payments: []
+            };
+            accounts.unshift(account);
+          }
+          update = { sale, accounts, account };
+          customerPaymentUpdates.set(String(sale._id), update);
+        }
+        const fingerprint = financeImportedCustomerPaymentFingerprint(importedPayment);
+        const alreadyExists = (update.account.payments || []).some(payment =>
+          financeImportedCustomerPaymentFingerprint(payment) === fingerprint
+        );
+        if (alreadyExists) {
+          skippedCustomerPayments += 1;
+          continue;
+        }
+        update.account.payments = update.account.payments || [];
+        update.account.payments.push({
+          paymentDate: importedPayment.paymentDate,
+          recipient: importedPayment.recipient,
+          receiptNumber: importedPayment.receiptNumber,
+          amount: importedPayment.amount
+        });
+        importedCustomerPayments += 1;
+      }
+      if (paymentImportErrors.length) {
+        return res.status(400).json({
+          error: 'No se pudieron relacionar algunos abonos de clientes y no se ha modificado ningún dato.',
+          errors: paymentImportErrors
+        });
+      }
+    }
     const unitAmortizations = (doc.unitAmortizations || []).map(item => item?.toObject ? item.toObject() : { ...item });
     const commercialById = new Map(commercialUnits.map(unit => [String(unit.unitId || ''), unit]));
     const unitCandidates = new Map();
@@ -1463,12 +1629,13 @@ router.post('/projects/:projectId/finance/import', financeExcelUpload, async (re
       addUnitAlias(item.lot, item);
       addUnitAlias(commercial.lot, item);
       addUnitAlias(commercial.unitLabel, item);
+      addUnitAlias(commercial.rawLot, item);
       addUnitAlias(commercial.legacyLot, item);
     }
     for (const commercial of commercialUnits) {
       let item = unitAmortizations.find(current => String(current.unitId || '') === String(commercial.unitId || ''));
       if (!item) {
-        const aliases = new Set([commercial.lot, commercial.unitLabel, commercial.legacyLot].map(normalizeFinanceUnitAlias).filter(Boolean));
+        const aliases = new Set([commercial.lot, commercial.unitLabel, commercial.rawLot, commercial.legacyLot].map(normalizeFinanceUnitAlias).filter(Boolean));
         item = unitAmortizations.find(current => aliases.has(normalizeFinanceUnitAlias(current.lot || '')));
       }
       if (!item) {
@@ -1478,6 +1645,7 @@ router.post('/projects/:projectId/finance/import', financeExcelUpload, async (re
       }
       addUnitAlias(commercial.lot, item);
       addUnitAlias(commercial.unitLabel, item);
+      addUnitAlias(commercial.rawLot, item);
       addUnitAlias(commercial.legacyLot, item);
     }
 
@@ -1546,18 +1714,26 @@ router.post('/projects/:projectId/finance/import', financeExcelUpload, async (re
     const lines = assignAdvanceAccountNumbers(mergeProtectedLoanWorkflow(rawLines, doc), doc);
     validateLoanLineLimits(doc, lines);
     validateLoanFunding(lines);
-    await validateLoanLineReports({ req, project, rawLines: lines, currentDoc: doc, allowHistoricalWithoutReport: true });
+    await validateLoanLineReports({ req, project, rawLines: lines, currentDoc: doc });
     doc.loanLines = lines.map(normalizeLoanLine);
     doc.unitAmortizations = unitAmortizations.map(normalizeUnitAmortization);
+    if (customerPaymentUpdates.size) {
+      await Venta.bulkWrite([...customerPaymentUpdates.values()].map(({ sale, accounts }) => ({
+        updateOne: {
+          filter: { _id: sale._id, projectId: project._id, tenantKey: project.tenantKey, deletedAt: null },
+          update: { $set: { customerPaymentAccounts: accounts }, $inc: { customerPaymentsVersion: 1 } }
+        }
+      })), { ordered: true });
+    }
     await doc.save();
 
     await audit(req, 'finance.loan_lines_imported', {
       targetType: 'project', targetId: project._id, projectId: project._id,
       message: `Excel financiero importado en ${phase.name || 'fase'}`,
-      metadata: { phaseId, createdLines, updatedLines, importedMovements, importedSaleAmortizations, replacedMovements, resolvedAmbiguousUnits: resolvedAmbiguousUnits.size, importedPhaseSummary: !!parsed.phaseSummary }
+      metadata: { phaseId, createdLines, updatedLines, importedMovements, importedSaleAmortizations, importedCustomerPayments, skippedCustomerPayments, skippedInvalidCustomerPayments, replacedMovements, resolvedAmbiguousUnits: resolvedAmbiguousUnits.size, importedPhaseSummary: !!parsed.phaseSummary }
     });
     const control = sharedBuildFinanceControlSummary(doc, project || {});
-    res.json({ ok: true, createdLines, updatedLines, importedMovements, importedSaleAmortizations, replacedMovements, resolvedAmbiguousUnits: resolvedAmbiguousUnits.size, importedPhaseSummary: !!parsed.phaseSummary, financeControl: control });
+    res.json({ ok: true, createdLines, updatedLines, importedMovements, importedSaleAmortizations, importedCustomerPayments, skippedCustomerPayments, skippedInvalidCustomerPayments, warnings: parsed.customerPaymentWarnings || [], replacedMovements, resolvedAmbiguousUnits: resolvedAmbiguousUnits.size, importedPhaseSummary: !!parsed.phaseSummary, financeControl: control });
   } catch (err) {
     console.error('POST finance import error', err);
     res.status(err.status || 500).json({ error: err.status ? err.message : 'No se pudo importar el Excel financiero.' });

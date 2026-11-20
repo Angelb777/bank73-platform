@@ -2207,6 +2207,49 @@ body.ba-viewer-open {
 #fichaUnidadModal .unit-desist-client { min-height:40px; padding:8px 14px; border:1px solid rgba(239,68,68,.5); background:rgba(239,68,68,.1); color:#ef4444; font-weight:850; }
 #fichaUnidadModal .unit-desist-client:hover { background:rgba(239,68,68,.18); }
 #fichaUnidadModal .unit-desist-client:disabled { opacity:.6; cursor:wait; }
+.fallen-sales-modal { width:min(1600px,calc(100vw - 28px)); height:min(920px,calc(100vh - 28px)); max-width:none; max-height:none; display:flex; flex-direction:column; }
+.fallen-sales-modal > .modal-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; flex:0 0 auto; }
+.fallen-sales-modal > .modal-head > div:first-child { min-width:0; }
+.fallen-sales-modal > .modal-head #fallenSalesClose { margin-left:auto; flex:0 0 auto; }
+.fallen-sales-body { display:flex; flex:1 1 auto; min-height:0; flex-direction:column; gap:16px; overflow:hidden; }
+.fallen-sales-toolbar { display:flex; gap:10px; align-items:center; }
+.fallen-sales-toolbar input { flex:1; min-width:220px; }
+.fallen-sales-form { padding:18px; border:1px solid rgba(148,163,184,.28); border-radius:16px; background:rgba(148,163,184,.07); }
+.fallen-sales-form-head div { display:flex; flex-direction:column; gap:3px; margin-bottom:14px; }
+.fallen-sales-form-head span { color:#64748b; font-size:13px; }
+.fallen-sales-form-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px 14px; }
+.fallen-sales-form-grid label { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:700; }
+.fallen-sales-form-grid input,.fallen-sales-form-grid select,.fallen-sales-form-grid textarea { width:100%; }
+.fallen-sales-form-grid .fallen-sales-notes { grid-column:1 / -1; }
+.fallen-sales-form-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:14px; }
+.fallen-sales-table-wrap { flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden; border:1px solid rgba(148,163,184,.25); border-radius:14px; }
+.fallen-sales-table { width:100%; border-collapse:collapse; table-layout:fixed; }
+.fallen-sales-table th,.fallen-sales-table td { padding:12px 14px; text-align:left; border-bottom:1px solid rgba(148,163,184,.18); vertical-align:top; }
+.fallen-sales-table th { position:sticky; top:0; background:#0f172a; color:#fff; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+.fallen-sales-table td { font-size:13px; overflow-wrap:anywhere; }
+.fallen-sales-table th:nth-child(1) { width:9%; }
+.fallen-sales-table th:nth-child(2) { width:20%; }
+.fallen-sales-table th:nth-child(3) { width:11%; }
+.fallen-sales-table th:nth-child(4) { width:25%; }
+.fallen-sales-table th:nth-child(5) { width:11%; }
+.fallen-sales-table th:nth-child(6) { width:10%; }
+.fallen-sales-table th:nth-child(7) { width:14%; }
+.fallen-sales-table tbody tr:last-child td { border-bottom:0; }
+.fallen-sales-client { display:flex; flex-direction:column; gap:3px; }
+.fallen-sales-client small,.fallen-sales-secondary { color:#64748b; }
+.fallen-sales-origin { display:inline-flex; padding:4px 8px; border-radius:999px; background:rgba(59,130,246,.12); color:#2563eb; font-weight:750; font-size:11px; }
+.fallen-sales-origin.is-manual { background:rgba(245,158,11,.14); color:#b45309; }
+.fallen-sales-actions { display:flex; flex-wrap:wrap; gap:6px; }
+.fallen-sales-actions .btn { white-space:nowrap; }
+@media (max-width:800px) {
+  .fallen-sales-modal { width:calc(100vw - 12px); height:calc(100vh - 12px); }
+  .fallen-sales-body { overflow:auto; }
+  .fallen-sales-toolbar { align-items:stretch; flex-direction:column; }
+  .fallen-sales-form-grid { grid-template-columns:1fr; }
+  .fallen-sales-form-grid .fallen-sales-notes { grid-column:auto; }
+  .fallen-sales-table-wrap { overflow:auto; }
+  .fallen-sales-table { min-width:920px; table-layout:auto; }
+}
 #fichaUnidadModal .unit-save-status.is-error { color:#fb7185; }
 body.light-theme #fichaUnidadModal .unit-save-status.is-saved { color:#15803d; }
 body.light-theme #fichaUnidadModal .unit-save-status.is-error { color:#b42335; }
@@ -4095,29 +4138,6 @@ body.light-theme #cards .portfolio-card-summary-label {
 
 #tab-resumen .summary-customer-income-card .summary-chart-box {
   height: 360px;
-}
-
-#tab-resumen .summary-customer-income-stats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 10px;
-}
-
-#tab-resumen .summary-customer-income-stats span {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 9px 10px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  color: var(--text-muted);
-  font-size: .8rem;
-}
-
-#tab-resumen .summary-customer-income-stats strong {
-  color: var(--text);
 }
 
 #tab-finanzas .finance-charts-grid {
@@ -6919,10 +6939,6 @@ body.light-theme #tab-resumen .summary-legal-progress-table .summary-legal-total
     grid-template-columns: 1fr;
   }
 
-  #tab-resumen .summary-customer-income-stats {
-    grid-template-columns: 1fr;
-  }
-
   #tab-resumen .summary-legal-progress-controls {
     grid-template-columns: 1fr;
   }
@@ -7634,6 +7650,7 @@ body.light-theme #tab-resumen .summary-legal-progress-table .summary-legal-total
 
   .commercial-folders-toolbar {
     justify-content: stretch;
+    flex-direction: column;
   }
 
   .commercial-folders-toolbar .btn {
@@ -7913,6 +7930,7 @@ body.light-theme #tab-resumen #summaryHeader .summary-action-label {
 
 #tab-resumen #summaryFinancialKpis.kpis-grid,
 #tab-resumen #summaryCommercialKpis.kpis-grid,
+#tab-resumen #summaryCustomerReportKpis.kpis-grid,
 #tab-resumen #summaryLegalKpis.kpis-grid,
 #tab-resumen #summaryTechnicalKpis.kpis-grid,
 #tab-resumen #summaryPeriodKpis.kpis-grid {
@@ -7925,6 +7943,7 @@ body.light-theme #tab-resumen #summaryHeader .summary-action-label {
 
 #tab-resumen #summaryFinancialKpis .kpi,
 #tab-resumen #summaryCommercialKpis .kpi,
+#tab-resumen #summaryCustomerReportKpis .kpi,
 #tab-resumen #summaryLegalKpis .kpi,
 #tab-resumen #summaryTechnicalKpis .kpi,
 #tab-resumen #summaryPeriodKpis .kpi {
@@ -7938,6 +7957,7 @@ body.light-theme #tab-resumen #summaryHeader .summary-action-label {
 
 #tab-resumen #summaryFinancialKpis .kpi .label,
 #tab-resumen #summaryCommercialKpis .kpi .label,
+#tab-resumen #summaryCustomerReportKpis .kpi .label,
 #tab-resumen #summaryLegalKpis .kpi .label,
 #tab-resumen #summaryTechnicalKpis .kpi .label,
 #tab-resumen #summaryPeriodKpis .kpi .label {
@@ -7947,6 +7967,7 @@ body.light-theme #tab-resumen #summaryHeader .summary-action-label {
 
 #tab-resumen #summaryFinancialKpis .kpi .value,
 #tab-resumen #summaryCommercialKpis .kpi .value,
+#tab-resumen #summaryCustomerReportKpis .kpi .value,
 #tab-resumen #summaryLegalKpis .kpi .value,
 #tab-resumen #summaryTechnicalKpis .kpi .value,
 #tab-resumen #summaryPeriodKpis .kpi .value {
@@ -7957,6 +7978,7 @@ body.light-theme #tab-resumen #summaryHeader .summary-action-label {
 
 #tab-resumen #summaryFinancialKpis .kpi .small,
 #tab-resumen #summaryCommercialKpis .kpi .small,
+#tab-resumen #summaryCustomerReportKpis .kpi .small,
 #tab-resumen #summaryLegalKpis .kpi .small,
 #tab-resumen #summaryTechnicalKpis .kpi .small,
 #tab-resumen #summaryPeriodKpis .kpi .small {

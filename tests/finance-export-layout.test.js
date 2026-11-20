@@ -160,6 +160,12 @@ test('Excel export contains the redesigned financial views and totals', async ()
     'disbursement', 'manual_amortization', 'interest_payment', 'sale_amortization'
   ]);
   assert.equal(parsed.movements.at(-1).saleUnitLabel, '1-A1 · Cliente prueba');
+  assert.deepEqual(parsed.customerPaymentWarnings, []);
+  assert.equal(parsed.customerPayments.length, 1);
+  assert.equal(parsed.customerPayments[0].unitLabel, '1-A1');
+  assert.equal(parsed.customerPayments[0].recipient, 'bank');
+  assert.equal(parsed.customerPayments[0].receiptNumber, 'REC-9');
+  assert.equal(parsed.customerPayments[0].amount, 1000);
 });
 
 test('PDF export produces a non-empty landscape report', async () => {

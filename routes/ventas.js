@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 
 const Venta = require('../models/Venta');
+const FallenSale = require('../models/FallenSale');
 const Project = require('../models/Project'); // ROLE-SEP
 const Unit = require('../models/Unit'); // ROLE-SEP
 const Document = require('../models/Document');
@@ -10,6 +11,7 @@ const { requireProjectAccess } = require('../middleware/rbac'); // ROLE-SEP
 const { recomputeCommercialKpis } = require('../services/comercial_kpis');
 const { customerPaymentSummary } = require('../services/customerPayments');
 const audit = require('../utils/audit');
+const { recordAutomaticFallenSale, primaryClientName, secondaryClientName } = require('../services/fallenSales');
 const {
   syncUnitCommercialState,
   syncManyUnitCommercialStates
@@ -237,6 +239,25 @@ function ventaForRole(venta = {}, role = '') {
   };
 }
 
+function fallenSaleForRole(item = {}, role = '') {
+  if (String(role || '').toLowerCase() !== 'tecnico') return item;
+  return {
+    _id: item._id,
+    projectId: item.projectId,
+    unitId: item.unitId,
+    unidadLabel: item.unidadLabel,
+    manzana: item.manzana,
+    lote: item.lote,
+    modelo: item.modelo,
+    fechaCaida: item.fechaCaida,
+    motivoCaida: item.motivoCaida,
+    origen: item.origen,
+    legacy: item.legacy === true,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt
+  };
+}
+
 // ROLE-SEP: marcar este router como "ventas" para el guard de comerciales
 router.use((req, _res, next) => { req.isSalesRoute = true; next(); }); // ROLE-SEP
 
@@ -290,6 +311,7 @@ async function attachProjectByUnitIdFromVenta(req, res, next) {
     if (!proj) return res.status(404).json({ error: 'Proyecto no encontrado' });
 
     req.project = proj;
+    req._unit = unit;
     req._venta = await Venta.findOne({
       tenantKey: req.tenantKey,
       unitId: unit._id,
@@ -309,6 +331,42 @@ async function syncProjectKpisSafe(req, projectId) {
   } catch (e) {
     console.warn('[ventas] recomputeCommercialKpis failed:', e?.message || e);
   }
+}
+
+async function resolveFallenSaleRecord(req, rawId) {
+  const id = String(rawId || '');
+  if (!id.startsWith('legacy:')) {
+    return FallenSale.findOne({
+      _id: id,
+      tenantKey: req.tenantKey,
+      projectId: req.project._id,
+      deletedAt: null
+    });
+  }
+
+  const ventaId = id.slice('legacy:'.length);
+  const venta = await Venta.findOne({
+    _id: ventaId,
+    tenantKey: req.tenantKey,
+    projectId: req.project._id,
+    deletedAt: null,
+    estadoVenta: 'caida'
+  }).lean();
+  if (!venta) return null;
+  const unit = await Unit.findOne({
+    _id: venta.unitId,
+    tenantKey: req.tenantKey,
+    projectId: req.project._id
+  }).lean();
+  return recordAutomaticFallenSale({
+    tenantKey: req.tenantKey,
+    projectId: req.project._id,
+    venta,
+    unit: unit || {},
+    fechaCaida: venta.fechaCaida || venta.updatedAt || venta.createdAt || new Date(),
+    motivoCaida: venta.motivoCaida || 'Venta caída registrada anteriormente',
+    createdBy: req.user?._id
+  }, { reuseExisting: true });
 }
 
 /* =========================================================================
@@ -331,6 +389,168 @@ router.get(
       res.json(list.map(item => ventaForRole(item, req.user?.role)));
     } catch (e) {
       res.status(500).json({ error: e.message });
+    }
+  }
+);
+
+/* =========================================================================
+   HISTORIAL DE VENTAS CAIDAS
+   ========================================================================= */
+router.get(
+  '/fallen',
+  attachProjectByProjectId,
+  requireProjectAccess(),
+  async (req, res) => {
+    try {
+      const projectId = req.project._id;
+      const [storedAll, legacy] = await Promise.all([
+        FallenSale.find({ tenantKey: req.tenantKey, projectId }).sort({ fechaCaida: -1, createdAt: -1 }).lean(),
+        Venta.find({ tenantKey: req.tenantKey, projectId, deletedAt: null, estadoVenta: 'caida' }).lean()
+      ]);
+
+      const stored = storedAll.filter(item => !item.deletedAt);
+      const storedSources = new Set(storedAll.map(item => String(item.sourceVentaId || '')).filter(Boolean));
+      const legacyRows = legacy
+        .filter(venta => !storedSources.has(String(venta._id)))
+        .map(venta => ({
+          _id: `legacy:${venta._id}`,
+          projectId,
+          unitId: venta.unitId,
+          sourceVentaId: venta._id,
+          unidadLabel: [venta.manzana, venta.lote].filter(Boolean).join('-'),
+          manzana: venta.manzana || '',
+          lote: venta.lote || '',
+          clienteNombre: primaryClientName(venta),
+          cedula: venta.cedula || '',
+          celular: venta.celular || '',
+          correo: venta.correo || '',
+          cliente2Nombre: secondaryClientName(venta),
+          cliente2Cedula: venta.cliente2Cedula || '',
+          fechaCaida: venta.fechaCaida || venta.updatedAt || venta.createdAt,
+          motivoCaida: venta.motivoCaida || 'Venta caida registrada anteriormente',
+          observaciones: '',
+          precioVenta: Number(venta.precioVenta || venta.valor || 0),
+          banco: venta.banco || '',
+          origen: 'automatico',
+          legacy: true,
+          createdAt: venta.createdAt,
+          updatedAt: venta.updatedAt
+        }));
+
+      const rows = [...stored, ...legacyRows]
+        .sort((a, b) => new Date(b.fechaCaida || 0) - new Date(a.fechaCaida || 0))
+        .map(item => fallenSaleForRole(item, req.user?.role));
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+router.post(
+  '/fallen',
+  attachProjectByProjectId,
+  requireProjectAccess({ promoterCanEditAssigned: true }),
+  async (req, res) => {
+    try {
+      const data = req.body || {};
+      const fechaCaida = new Date(data.fechaCaida);
+      if (Number.isNaN(fechaCaida.getTime())) return res.status(400).json({ error: 'Fecha de desistimiento invalida' });
+
+      const clienteNombre = String(data.clienteNombre || '').trim();
+      if (!clienteNombre) return res.status(400).json({ error: 'El nombre del cliente es obligatorio' });
+
+      let unit = null;
+      if (data.unitId) {
+        unit = await Unit.findOne({
+          _id: data.unitId,
+          tenantKey: req.tenantKey,
+          projectId: req.project._id,
+          deletedAt: null
+        }).lean();
+        if (!unit) return res.status(400).json({ error: 'La unidad seleccionada no pertenece al proyecto' });
+      }
+
+      const cleanText = (value, max = 500) => String(value || '').trim().slice(0, max);
+      const item = await FallenSale.create({
+        tenantKey: req.tenantKey,
+        projectId: req.project._id,
+        unitId: unit?._id || null,
+        unidadLabel: unit
+          ? ([unit.manzana, unit.lote].filter(Boolean).join('-') || unit.code || '')
+          : cleanText(data.unidadLabel, 120),
+        manzana: cleanText(unit?.manzana || data.manzana, 80),
+        lote: cleanText(unit?.lote || data.lote, 80),
+        modelo: cleanText(unit?.modelo || data.modelo, 120),
+        clienteNombre: cleanText(clienteNombre, 200),
+        cedula: cleanText(data.cedula, 80),
+        celular: cleanText(data.celular, 80),
+        correo: cleanText(data.correo, 200),
+        cliente2Nombre: cleanText(data.cliente2Nombre, 200),
+        cliente2Cedula: cleanText(data.cliente2Cedula, 80),
+        fechaCaida,
+        motivoCaida: cleanText(data.motivoCaida || 'Desistimiento del cliente', 300),
+        observaciones: cleanText(data.observaciones, 2000),
+        precioVenta: Math.max(0, Number(data.precioVenta || 0)),
+        banco: cleanText(data.banco, 160),
+        origen: 'manual',
+        createdBy: req.user?._id || null
+      });
+
+      await audit(req, 'sale.fallen_manual_created', {
+        targetType: 'fallen_sale', targetId: item._id, projectId: req.project._id,
+        status: 'warning', message: 'Venta caida historica registrada manualmente',
+        metadata: { unitId: item.unitId, fechaCaida: item.fechaCaida }
+      });
+      res.status(201).json(item.toObject());
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+);
+
+router.patch(
+  '/fallen/:id',
+  attachProjectByProjectId,
+  requireProjectAccess({ promoterCanEditAssigned: true }),
+  async (req, res) => {
+    try {
+      const motivoCaida = String(req.body?.motivoCaida || '').trim().slice(0, 300);
+      if (!motivoCaida) return res.status(400).json({ error: 'El motivo es obligatorio' });
+      const record = await resolveFallenSaleRecord(req, req.params.id);
+      if (!record || record.deletedAt) return res.status(404).json({ error: 'Venta caída no encontrada' });
+      record.motivoCaida = motivoCaida;
+      await record.save();
+      await audit(req, 'sale.fallen_reason_updated', {
+        targetType: 'fallen_sale', targetId: record._id, projectId: req.project._id,
+        message: 'Motivo de venta caída actualizado', metadata: { motivoCaida }
+      });
+      res.json(record.toObject());
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+);
+
+router.delete(
+  '/fallen/:id',
+  attachProjectByProjectId,
+  requireProjectAccess({ promoterCanEditAssigned: true }),
+  async (req, res) => {
+    try {
+      const record = await resolveFallenSaleRecord(req, req.params.id);
+      if (!record || record.deletedAt) return res.status(404).json({ error: 'Venta caída no encontrada' });
+      record.deletedAt = new Date();
+      record.deletedBy = req.user?._id || null;
+      await record.save();
+      await audit(req, 'sale.fallen_deleted', {
+        targetType: 'fallen_sale', targetId: record._id, projectId: req.project._id,
+        status: 'warning', message: 'Venta caída eliminada del histórico visible',
+        metadata: { sourceVentaId: record.sourceVentaId, unitId: record.unitId }
+      });
+      res.json({ ok: true, id: String(record._id) });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
     }
   }
 );
@@ -383,11 +603,22 @@ router.post(
       const venta = req._venta;
       if (!venta) return res.status(404).json({ error: 'No existe expediente comercial para esta unidad' });
 
+      const now = new Date();
+      const motivoCaida = String(req.body?.motivoCaida || 'Cliente desistió desde la ficha comercial').trim().slice(0, 300);
+      await recordAutomaticFallenSale({
+        tenantKey: req.tenantKey,
+        projectId: req.project._id,
+        venta,
+        unit: req._unit || {},
+        fechaCaida: now,
+        motivoCaida,
+        createdBy: req.user?._id
+      });
+
       const unset = {};
       Object.keys(Venta.schema.paths).forEach(field => {
         if (!field.includes('.') && !DESIST_PRESERVED_FIELDS.has(field)) unset[field] = 1;
       });
-      const now = new Date();
       const set = {
         customerPaymentAccounts: [],
         customerPaymentsVersion: 0,
@@ -395,7 +626,7 @@ router.post(
         checklist: [],
         estadoVenta: 'caida',
         fechaCaida: now,
-        motivoCaida: 'Cliente desistió; expediente comercial limpiado'
+        motivoCaida
       };
       Object.keys(set).forEach(field => delete unset[field]);
 
