@@ -715,6 +715,7 @@
   let createDatoUnicoPreviewRequest = 0;
   let createDatoUnicoTemplateState = null;
   let createManualTotalUnitsSnapshot = '';
+  const createFinanceImportFiles = new Map();
   let isCreatingProject = false;
   const BANK_REQUIREMENT_TITLES = [
     'Presupuesto del proyecto',
@@ -2319,10 +2320,20 @@
 
   function createPhaseFinancingLinesBlock(index, item = {}) {
     const financingRows = (Array.isArray(item.financingLines) ? item.financingLines : []).map(line => createPhaseFinancingLineCard(line)).join('');
+    const importFile = createFinanceImportFiles.get(index);
     return `<section class="create-real-financing-lines" data-create-phase-financing-row="${index}">
       <div class="finance-phase-section-head">
-        <div><h4>Líneas de financiación</h4><p>Se gestionan en la realidad de la fase. Los desembolsos, amortizaciones e intereses se completarán después en Finanzas.</p></div>
+        <div><h4>Líneas y movimientos</h4><p>Puedes importar ahora el Excel de esta fase o hacerlo más adelante desde Finanzas.</p></div>
         <button class="btn ghost btn-xs" type="button" data-generate-create-financing-lines>Generar desde usos previstos</button>
+      </div>
+      <div class="summary-import-actions create-dato-import-actions" style="margin:10px 0;">
+        <label class="summary-file-picker">
+          <span class="summary-file-picker-label">Seleccionar Excel para importar</span>
+          <span class="summary-file-picker-name" data-create-finance-import-name>${escapeHtml(importFile?.name || 'Ningún archivo seleccionado')}</span>
+          <input class="summary-file-input" type="file" accept=".xlsx" data-create-finance-import-file="${index}" data-completion-optional>
+        </label>
+        <button class="btn ghost" type="button" data-clear-create-finance-import="${index}"${importFile ? '' : ' hidden'}>Quitar Excel</button>
+        <span class="small muted">Opcional. Si no lo subes ahora, podrás importarlo después desde el apartado Finanzas de la fase.</span>
       </div>
       <div class="create-line-summary-grid">
         <article><span>Financiación bancaria aprobada</span><strong data-line-bank-amount>0</strong></article>
@@ -2648,6 +2659,9 @@
   function syncCreateFinancePhases() {
     if (!createFinancePhases) return;
     const count = Math.max(0, Math.round(numberFromCreate(document.getElementById('td-phasesCount')?.value)));
+    for (const phaseIndex of createFinanceImportFiles.keys()) {
+      if (phaseIndex >= count) createFinanceImportFiles.delete(phaseIndex);
+    }
     const current = collectFinancePhases();
     createFinancePhases.innerHTML = Array.from({ length: count }, (_, idx) => createPhaseFinanceBlock(idx, current[idx] || {})).join('');
     bindBankNumberFormatting(createFinancePhases);
@@ -3430,6 +3444,19 @@
     createHousingModels?.querySelectorAll('[data-create-model-row]').forEach(row => syncCreateUnitsPreview(row));
   });
   createFinancePhases?.addEventListener('click', event => {
+    const clearFinanceImport = event.target.closest('[data-clear-create-finance-import]');
+    if (clearFinanceImport) {
+      const phaseIndex = Number(clearFinanceImport.dataset.clearCreateFinanceImport);
+      createFinanceImportFiles.delete(phaseIndex);
+      const section = clearFinanceImport.closest('[data-create-phase-financing-row]');
+      const input = section?.querySelector('[data-create-finance-import-file]');
+      const name = section?.querySelector('[data-create-finance-import-name]');
+      if (input) input.value = '';
+      if (name) name.textContent = 'Ningún archivo seleccionado';
+      clearFinanceImport.hidden = true;
+      updateCreateStepStatuses();
+      return;
+    }
     const phaseRow = event.target.closest('[data-create-phase-row]');
     const viewBtn = event.target.closest('[data-create-phase-view]');
     if (phaseRow && viewBtn) {
@@ -3557,6 +3584,26 @@
     syncCreatePhaseSources();
   });
   createFinancePhases?.addEventListener('change', syncCreatePhaseSources);
+  createFinancePhases?.addEventListener('change', event => {
+    const input = event.target.closest('[data-create-finance-import-file]');
+    if (!input) return;
+    const phaseIndex = Number(input.dataset.createFinanceImportFile);
+    const file = input.files?.[0] || null;
+    if (file && !/\.xlsx$/i.test(file.name || '')) {
+      input.value = '';
+      createFinanceImportFiles.delete(phaseIndex);
+      alert('Selecciona un archivo Excel .xlsx exportado desde Finanzas.');
+      return;
+    }
+    if (file) createFinanceImportFiles.set(phaseIndex, file);
+    else createFinanceImportFiles.delete(phaseIndex);
+    const section = input.closest('[data-create-phase-financing-row]');
+    const name = section?.querySelector('[data-create-finance-import-name]');
+    const clear = section?.querySelector('[data-clear-create-finance-import]');
+    if (name) name.textContent = file?.name || 'Ningún archivo seleccionado';
+    if (clear) clear.hidden = !file;
+    updateCreateStepStatuses();
+  });
   createFinancePhases?.addEventListener('keyup', syncCreatePhaseSources);
   createDatoUnicoFileInput?.addEventListener('change', async event => {
     const file = event.target.files?.[0] || null;
@@ -4118,6 +4165,36 @@
               creationWarning = 'El proyecto se creó, pero no se pudo importar el Excel Dato Único. Puedes reintentar la importación desde Comercial.';
             }
           }
+          if (createdProject?._id && createFinanceImportFiles.size) {
+            const phaseIds = createdProject.initialFinancePhaseIds || {};
+            const financeImportWarnings = [];
+            const financeImportFailures = [];
+            for (const [phaseIndex, file] of createFinanceImportFiles.entries()) {
+              const phaseId = phaseIds[String(phaseIndex)];
+              if (!phaseId) {
+                financeImportFailures.push(file.name);
+                continue;
+              }
+              const fd = new FormData();
+              fd.append('file', file);
+              fd.append('phaseId', phaseId);
+              fd.append('importMode', 'create');
+              try {
+                const result = await API.upload(`/api/projects/${createdProject._id}/finance/import`, fd);
+                if (Array.isArray(result?.warnings) && result.warnings.length) {
+                  financeImportWarnings.push(`${file.name}: ${result.warnings.length} fila(s) omitida(s) o ajustada(s)`);
+                }
+              } catch (financeImportErr) {
+                console.error(financeImportErr);
+                financeImportFailures.push(file.name);
+              }
+            }
+            if (financeImportFailures.length) {
+              creationWarning = `El proyecto se creó, pero no se pudo importar ${financeImportFailures.join(', ')}. Puedes importarlo más adelante desde Finanzas.`;
+            } else if (financeImportWarnings.length && !creationWarning) {
+              creationWarning = `Proyecto creado e importación financiera completada con avisos: ${financeImportWarnings.join('; ')}. Puedes revisar los detalles en Finanzas.`;
+            }
+          }
 
           closeModal();
 
@@ -4136,6 +4213,7 @@
           const createInsurancePolicies = document.getElementById('createInsurancePolicies');
           if (createInsurancePolicies) createInsurancePolicies.innerHTML = '';
           if (createFinancePhases) createFinancePhases.innerHTML = '';
+          createFinanceImportFiles.clear();
           createPhaseRequirementsState.clear();
           createRequirementFilesState.clear();
           setCreateArchitecturalPlanFiles([]);

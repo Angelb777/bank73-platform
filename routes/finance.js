@@ -778,13 +778,14 @@ function financeExcelDate(cell, { sheet, row, column, errors } = {}) {
   return date;
 }
 
-function validateFinanceExcelHeaders(worksheet, expected, errors) {
+function validateFinanceExcelHeaders(worksheet, expected, errors, warnings = [], requiredIndexes = []) {
   if (!worksheet) return;
   const actual = expected.map((_, index) => normalizeFinanceExcelLabel(financeExcelText(worksheet.getRow(5).getCell(index + 1))));
   const wanted = expected.map(normalizeFinanceExcelLabel);
   wanted.forEach((header, index) => {
     if (actual[index] !== header) {
-      errors.push(`${worksheet.name}, columna ${index + 1}: se esperaba “${expected[index]}” y se encontró “${financeExcelText(worksheet.getRow(5).getCell(index + 1)) || 'vacío'}”.`);
+      const message = `${worksheet.name}, columna ${index + 1}: se esperaba “${expected[index]}” y se encontró “${financeExcelText(worksheet.getRow(5).getCell(index + 1)) || 'vacío'}”.`;
+      (requiredIndexes.includes(index) ? errors : warnings).push(message);
     }
   });
 }
@@ -847,6 +848,22 @@ function uniqueFinanceUnitCandidates(rawMatches = [], rawUnitLabel = '') {
     if (identifiedMatches.length === 1) matches = identifiedMatches;
   }
   return matches;
+}
+
+function financeUnitCandidatesByAlias(aliasMap, rawUnitLabel = '') {
+  const key = normalizeFinanceUnitAlias(String(rawUnitLabel || '').split('·')[0].trim());
+  if (!key) return [];
+  const exact = uniqueFinanceUnitCandidates(aliasMap.get(key) || [], rawUnitLabel);
+  if (exact.length) return exact;
+  // Admitimos prefijos habituales (fase, torre, manzana) cuando el resultado
+  // sigue identificando de forma inequívoca una sola unidad.
+  if (key.length < 3) return [];
+  const approximate = [];
+  for (const [candidateKey, candidates] of aliasMap.entries()) {
+    if (candidateKey.length < 3 || (!candidateKey.endsWith(key) && !key.endsWith(candidateKey))) continue;
+    approximate.push(...candidates);
+  }
+  return uniqueFinanceUnitCandidates(approximate, rawUnitLabel);
 }
 
 function selectFinanceUnitCandidate(matches = []) {
@@ -918,21 +935,22 @@ function financeImportedUsesWithFunding(uses = [], sources = [], lines = []) {
 
 function parseFinancePhaseWorkbook(workbook, phase) {
   const errors = [];
+  const warnings = [];
   const linesSheet = workbook.getWorksheet('Líneas bancarias') || workbook.worksheets.find(ws => normalizeFinanceExcelLabel(ws.name) === 'lineas bancarias');
   const movementsSheet = workbook.getWorksheet('Movimientos') || workbook.worksheets.find(ws => normalizeFinanceExcelLabel(ws.name) === 'movimientos');
   if (!linesSheet) errors.push('Falta la hoja “Líneas bancarias”.');
   if (!movementsSheet) errors.push('Falta la hoja “Movimientos”.');
-  if (errors.length) return { errors, lines: [], movements: [] };
+  if (errors.length) return { errors, warnings, lines: [], movements: [] };
 
-  validateFinanceExcelHeaders(linesSheet, FINANCE_LINE_IMPORT_HEADERS, errors);
-  validateFinanceExcelHeaders(movementsSheet, FINANCE_MOVEMENT_IMPORT_HEADERS, errors);
+  validateFinanceExcelHeaders(linesSheet, FINANCE_LINE_IMPORT_HEADERS, errors, warnings, [1]);
+  validateFinanceExcelHeaders(movementsSheet, FINANCE_MOVEMENT_IMPORT_HEADERS, errors, warnings, [1, 3]);
   const useSourcesSheet = workbook.getWorksheet('Usos y fuentes')
     || workbook.worksheets.find(ws => normalizeFinanceExcelLabel(ws.name) === 'usos y fuentes');
   const customerPaymentsSheet = workbook.getWorksheet('Abonos clientes')
     || workbook.worksheets.find(ws => normalizeFinanceExcelLabel(ws.name) === 'abonos clientes');
-  if (useSourcesSheet) validateFinanceExcelHeaders(useSourcesSheet, FINANCE_USE_SOURCE_IMPORT_HEADERS, errors);
-  if (customerPaymentsSheet) validateFinanceExcelHeaders(customerPaymentsSheet, FINANCE_CUSTOMER_PAYMENT_IMPORT_HEADERS, errors);
-  if (errors.length) return { errors, lines: [], movements: [] };
+  if (useSourcesSheet) validateFinanceExcelHeaders(useSourcesSheet, FINANCE_USE_SOURCE_IMPORT_HEADERS, errors, warnings);
+  if (customerPaymentsSheet) validateFinanceExcelHeaders(customerPaymentsSheet, FINANCE_CUSTOMER_PAYMENT_IMPORT_HEADERS, errors, warnings);
+  if (errors.length) return { errors, warnings, lines: [], movements: [] };
 
   const phaseKey = normalizedFinanceName(phase?.name || '');
   const lines = [];
@@ -943,20 +961,20 @@ function parseFinancePhaseWorkbook(workbook, phase) {
     const lineName = financeExcelText(row.getCell(2));
     if (!phaseName && !lineName) continue;
     if (normalizeFinanceExcelLabel(phaseName) === 'total') continue;
-    if (!lineName) { errors.push(`Líneas bancarias, fila ${rowNumber}: falta el nombre de la línea.`); continue; }
-    if (normalizedFinanceName(phaseName) !== phaseKey) {
-      errors.push(`Líneas bancarias, fila ${rowNumber}: la fase “${phaseName}” no corresponde a “${phase.name}”.`);
-    }
+    if (!lineName) { warnings.push(`Líneas bancarias, fila ${rowNumber}: se omitió porque falta el nombre de la línea.`); continue; }
+    if (phaseName && normalizedFinanceName(phaseName) !== phaseKey) warnings.push(`Líneas bancarias, fila ${rowNumber}: se importó en “${phase.name}” aunque el archivo indica “${phaseName}”.`);
     const lineKey = normalizedFinanceName(lineName);
-    if (lineKeys.has(lineKey)) errors.push(`Líneas bancarias, fila ${rowNumber}: la línea “${lineName}” está duplicada en el archivo.`);
+    if (lineKeys.has(lineKey)) { warnings.push(`Líneas bancarias, fila ${rowNumber}: se omitió la línea duplicada “${lineName}”.`); continue; }
     lineKeys.add(lineKey);
+    const lineWarnings = [];
     lines.push({
       rowNumber,
       key: lineKey,
       name: lineName,
-      approvedAmount: financeExcelNumber(row.getCell(3), { sheet: 'Líneas bancarias', row: rowNumber, column: 'Aprobado', errors }),
+      approvedAmount: financeExcelNumber(row.getCell(3), { sheet: 'Líneas bancarias', row: rowNumber, column: 'Aprobado', errors: lineWarnings }),
       notes: financeExcelText(row.getCell(14))
     });
+    if (lineWarnings.length) warnings.push(...lineWarnings.map(message => `${message} Se usó 0.`));
   }
   if (!lines.length) errors.push('La hoja “Líneas bancarias” no contiene ninguna línea para importar.');
 
@@ -968,24 +986,38 @@ function parseFinancePhaseWorkbook(workbook, phase) {
     const lineName = financeExcelText(row.getCell(2));
     if (!phaseName && !lineName && !financeExcelText(row.getCell(4))) continue;
     if (normalizeFinanceExcelLabel(phaseName) === 'total') continue;
-    if (normalizedFinanceName(phaseName) !== phaseKey) errors.push(`Movimientos, fila ${rowNumber}: la fase “${phaseName}” no corresponde a “${phase.name}”.`);
+    if (phaseName && normalizedFinanceName(phaseName) !== phaseKey) warnings.push(`Movimientos, fila ${rowNumber}: se importó en “${phase.name}” aunque el archivo indica “${phaseName}”.`);
     const lineKey = normalizedFinanceName(lineName);
-    if (!lineKeys.has(lineKey)) errors.push(`Movimientos, fila ${rowNumber}: la línea “${lineName || 'vacía'}” no existe en la hoja “Líneas bancarias”.`);
+    if (!lineKeys.has(lineKey)) { warnings.push(`Movimientos, fila ${rowNumber}: se omitió porque la línea “${lineName || 'vacía'}” no existe en “Líneas bancarias”.`); continue; }
     const entryType = financeMovementImportType(financeExcelText(row.getCell(4)));
-    if (!entryType) { errors.push(`Movimientos, fila ${rowNumber}: tipo de movimiento no reconocido.`); continue; }
+    if (!entryType) { warnings.push(`Movimientos, fila ${rowNumber}: se omitió porque el tipo de movimiento no se reconoce.`); continue; }
 
-    const bankAmount = financeExcelNumber(row.getCell(8), { sheet: 'Movimientos', row: rowNumber, column: 'Desembolso banco', errors });
-    const promoterAmount = financeExcelNumber(row.getCell(9), { sheet: 'Movimientos', row: rowNumber, column: 'Aporte promotor', errors });
-    const pendingAmount = financeExcelNumber(row.getCell(10), { sheet: 'Movimientos', row: rowNumber, column: 'Importe pendiente', errors });
-    const amortizedAmount = financeExcelNumber(row.getCell(11), { sheet: 'Movimientos', row: rowNumber, column: 'Amortización', errors });
-    const interestAmount = financeExcelNumber(row.getCell(12), { sheet: 'Movimientos', row: rowNumber, column: 'Interés pagado', errors });
+    const movementWarnings = [];
+    const bankAmount = financeExcelNumber(row.getCell(8), { sheet: 'Movimientos', row: rowNumber, column: 'Desembolso banco', errors: movementWarnings });
+    const promoterAmount = financeExcelNumber(row.getCell(9), { sheet: 'Movimientos', row: rowNumber, column: 'Aporte promotor', errors: movementWarnings });
+    const pendingAmount = financeExcelNumber(row.getCell(10), { sheet: 'Movimientos', row: rowNumber, column: 'Importe pendiente', errors: movementWarnings });
+    const amortizedAmount = financeExcelNumber(row.getCell(11), { sheet: 'Movimientos', row: rowNumber, column: 'Amortización', errors: movementWarnings });
+    const interestAmount = financeExcelNumber(row.getCell(12), { sheet: 'Movimientos', row: rowNumber, column: 'Interés pagado', errors: movementWarnings });
     const fundingLabel = normalizeFinanceExcelLabel(financeExcelText(row.getCell(5)));
-    const fundingParty = fundingLabel === 'promotor' ? 'promoter' : fundingLabel === 'mixto' ? 'mixed' : 'bank';
+    let fundingParty = fundingLabel === 'promotor' ? 'promoter' : fundingLabel === 'mixto' ? 'mixed' : 'bank';
+    if (entryType === 'disbursement') {
+      if (fundingParty === 'mixed' && (!bankAmount || !promoterAmount)) {
+        fundingParty = promoterAmount > 0 ? 'promoter' : 'bank';
+        movementWarnings.push(`Movimientos, fila ${rowNumber}: el aportante se ajustó porque el desembolso mixto estaba incompleto.`);
+      } else if (fundingParty === 'promoter' && !promoterAmount && bankAmount > 0) {
+        fundingParty = 'bank';
+        movementWarnings.push(`Movimientos, fila ${rowNumber}: el aportante se ajustó a Banco según el importe disponible.`);
+      } else if (fundingParty === 'bank' && !bankAmount && promoterAmount > 0) {
+        fundingParty = 'promoter';
+        movementWarnings.push(`Movimientos, fila ${rowNumber}: el aportante se ajustó a Promotor según el importe disponible.`);
+      }
+    }
     const status = normalizeFinanceExcelLabel(financeExcelText(row.getCell(15)));
     const isPending = pendingAmount > 0 || ['pendiente', 'preparado', 'solicitado', 'devuelto'].includes(status);
     const workflowStatus = status === 'solicitado' ? 'requested' : status === 'devuelto' ? 'returned' : isPending ? 'prepared' : 'disbursed';
     const inspectionId = financeExcelText(row.getCell(19));
-    if (inspectionId && !mongoose.isValidObjectId(inspectionId)) errors.push(`Movimientos, fila ${rowNumber}: “Informe avalúo” no contiene un identificador válido.`);
+    const validInspectionId = inspectionId && mongoose.isValidObjectId(inspectionId) ? inspectionId : null;
+    if (inspectionId && !validInspectionId) movementWarnings.push(`Movimientos, fila ${rowNumber}: se ignoró el identificador no válido de “Informe avalúo”.`);
 
     let disbursementAmount = 0;
     let promoterContributionAmount = 0;
@@ -995,38 +1027,39 @@ function parseFinancePhaseWorkbook(workbook, phase) {
         disbursementAmount = bankAmount || pendingAmount;
         promoterContributionAmount = fundingParty === 'mixed' ? promoterAmount : 0;
       }
-      if (!disbursementAmount && !promoterContributionAmount) errors.push(`Movimientos, fila ${rowNumber}: el desembolso no tiene importe.`);
+      if (!disbursementAmount && !promoterContributionAmount) { warnings.push(`Movimientos, fila ${rowNumber}: se omitió porque el desembolso no tiene importe.`); continue; }
     } else if (entryType === 'manual_amortization' && !amortizedAmount) {
-      errors.push(`Movimientos, fila ${rowNumber}: la amortización manual no tiene importe.`);
+      warnings.push(`Movimientos, fila ${rowNumber}: se omitió porque la amortización manual no tiene importe.`); continue;
     } else if (entryType === 'interest_payment' && !interestAmount) {
-      errors.push(`Movimientos, fila ${rowNumber}: el interés pagado no tiene importe.`);
+      warnings.push(`Movimientos, fila ${rowNumber}: se omitió porque el interés pagado no tiene importe.`); continue;
     }
 
-    const movementDate = financeExcelDate(row.getCell(6), { sheet: 'Movimientos', row: rowNumber, column: 'Fecha', errors });
+    const movementDate = financeExcelDate(row.getCell(6), { sheet: 'Movimientos', row: rowNumber, column: 'Fecha', errors: movementWarnings });
     const entry = {
       entryType,
       paymentStatus: entryType === 'disbursement' ? (isPending ? 'pending' : 'paid') : 'legacy',
       workflowStatus: entryType === 'disbursement' ? workflowStatus : 'prepared',
-      advanceAccountNumber: Math.max(0, Math.trunc(financeExcelNumber(row.getCell(3), { sheet: 'Movimientos', row: rowNumber, column: 'Cuenta avance', errors }))) || null,
+      advanceAccountNumber: Math.max(0, Math.trunc(financeExcelNumber(row.getCell(3), { sheet: 'Movimientos', row: rowNumber, column: 'Cuenta avance', errors: movementWarnings }))) || null,
       fundingParty,
       promoterContributionAmount,
       promoterContributionStatus: promoterContributionAmount > 0 && !isPending ? 'contributed' : 'pending',
-      requestedAt: financeExcelDate(row.getCell(16), { sheet: 'Movimientos', row: rowNumber, column: 'Solicitud', errors }),
+      requestedAt: financeExcelDate(row.getCell(16), { sheet: 'Movimientos', row: rowNumber, column: 'Solicitud', errors: movementWarnings }),
       disbursedByRole: financeExcelText(row.getCell(17)),
       transferReference: financeExcelText(row.getCell(18)),
       movementDate: entryType === 'disbursement' ? null : movementDate,
       disbursementDate: entryType === 'disbursement' ? movementDate : null,
       loanNumber: financeExcelText(row.getCell(7)),
       disbursementAmount,
-      maturityDate: financeExcelDate(row.getCell(14), { sheet: 'Movimientos', row: rowNumber, column: 'Vencimiento', errors }),
+      maturityDate: financeExcelDate(row.getCell(14), { sheet: 'Movimientos', row: rowNumber, column: 'Vencimiento', errors: movementWarnings }),
       amortizedAmount,
       interestAmount,
-      inspectionId: inspectionId || null,
+      inspectionId: validInspectionId,
       notes: financeExcelText(row.getCell(21)) || financeExcelText(row.getCell(20))
     };
     const fingerprint = `${lineKey}|${financeImportedMovementFingerprint(entry)}`;
-    if (fileFingerprints.has(fingerprint)) errors.push(`Movimientos, fila ${rowNumber}: movimiento duplicado dentro del archivo.`);
+    if (fileFingerprints.has(fingerprint)) { warnings.push(`Movimientos, fila ${rowNumber}: se omitió un movimiento duplicado.`); continue; }
     fileFingerprints.add(fingerprint);
+    warnings.push(...movementWarnings);
     movements.push({
       rowNumber,
       lineKey,
@@ -1046,21 +1079,21 @@ function parseFinancePhaseWorkbook(workbook, phase) {
       const name = financeExcelText(row.getCell(3));
       if (!phaseName && !groupLabel && !name) continue;
       if (/^total\b/.test(normalizeFinanceExcelLabel(name))) continue;
-      if (normalizedFinanceName(phaseName) !== phaseKey) errors.push(`Usos y fuentes, fila ${rowNumber}: la fase “${phaseName}” no corresponde a “${phase.name}”.`);
+      if (phaseName && normalizedFinanceName(phaseName) !== phaseKey) warnings.push(`Usos y fuentes, fila ${rowNumber}: se importó en “${phase.name}” aunque el archivo indica “${phaseName}”.`);
       const group = groupLabel === 'usos' ? 'uses' : groupLabel === 'fuentes' ? 'sources' : '';
-      if (!group) { errors.push(`Usos y fuentes, fila ${rowNumber}: el grupo debe ser “Usos” o “Fuentes”.`); continue; }
-      if (!name) { errors.push(`Usos y fuentes, fila ${rowNumber}: falta el nombre de la partida.`); continue; }
+      if (!group) { warnings.push(`Usos y fuentes, fila ${rowNumber}: se omitió porque el grupo no es “Usos” ni “Fuentes”.`); continue; }
+      if (!name) { warnings.push(`Usos y fuentes, fila ${rowNumber}: se omitió porque falta el nombre de la partida.`); continue; }
       const key = `${group}:${normalizedFinanceName(name)}`;
-      if (seen.has(key)) errors.push(`Usos y fuentes, fila ${rowNumber}: la partida “${name}” está duplicada.`);
+      if (seen.has(key)) { warnings.push(`Usos y fuentes, fila ${rowNumber}: se omitió la partida duplicada “${name}”.`); continue; }
       seen.add(key);
       groups[group].push({
         name,
-        plan: financeExcelNumber(row.getCell(4), { sheet: 'Usos y fuentes', row: rowNumber, column: 'Plan', errors }),
-        real: financeExcelNumber(row.getCell(5), { sheet: 'Usos y fuentes', row: rowNumber, column: 'Real', errors })
+        plan: financeExcelNumber(row.getCell(4), { sheet: 'Usos y fuentes', row: rowNumber, column: 'Plan', errors: warnings }),
+        real: financeExcelNumber(row.getCell(5), { sheet: 'Usos y fuentes', row: rowNumber, column: 'Real', errors: warnings })
       });
     }
-    if (!groups.uses.length || !groups.sources.length) errors.push('La hoja “Usos y fuentes” debe contener al menos un uso y una fuente.');
-    phaseSummary = {
+    if (!groups.uses.length || !groups.sources.length) warnings.push('No se importaron “Usos y fuentes” porque falta al menos un uso o una fuente.');
+    else phaseSummary = {
       planUses: groups.uses.map(item => ({ name: item.name, amount: item.plan })),
       uses: groups.uses.map(item => ({ name: item.name, amount: item.real })),
       planSources: groups.sources.map(item => ({ name: item.name, amount: item.plan })),
@@ -1087,17 +1120,18 @@ function parseFinancePhaseWorkbook(workbook, phase) {
       // tiene pagos. No es un abono importable y se ignora intencionadamente.
       if (!hasPaymentData) continue;
       if (!unitLabel) {
-        errors.push(`Abonos clientes, fila ${rowNumber}: falta la unidad.`);
+        customerPaymentWarnings.push(`Abonos clientes, fila ${rowNumber}: se omitió porque falta la unidad.`);
         continue;
       }
       const dateErrors = [];
       const paymentDate = financeExcelDate(row.getCell(5), { sheet: 'Abonos clientes', row: rowNumber, column: 'Fecha del abono', errors: dateErrors });
-      const amount = financeExcelNumber(row.getCell(7), { sheet: 'Abonos clientes', row: rowNumber, column: 'Importe pago', errors, required: true });
+      const amountErrors = [];
+      const amount = financeExcelNumber(row.getCell(7), { sheet: 'Abonos clientes', row: rowNumber, column: 'Importe pago', errors: amountErrors, required: true });
       if (!paymentDate) {
         customerPaymentWarnings.push(`Abonos clientes, fila ${rowNumber}: se omitió porque “Fecha del abono” no contiene una fecha válida.`);
         continue;
       }
-      if (amount <= 0) continue;
+      if (amount <= 0) { customerPaymentWarnings.push(...amountErrors.map(message => `${message} Se omitió la fila.`)); continue; }
       const payment = {
         rowNumber,
         unitLabel,
@@ -1109,11 +1143,11 @@ function parseFinancePhaseWorkbook(workbook, phase) {
         // reimportar el mismo archivo no duplique las filas sin recibo.
         receiptNumber: rawReceipt || `IMPORTADO-FILA-${rowNumber}`,
         amount,
-        agreedAmount: financeExcelNumber(row.getCell(8), { sheet: 'Abonos clientes', row: rowNumber, column: 'Total acordado', errors })
+        agreedAmount: financeExcelNumber(row.getCell(8), { sheet: 'Abonos clientes', row: rowNumber, column: 'Total acordado', errors: customerPaymentWarnings })
       };
       const fingerprint = `${normalizeFinanceUnitAlias(unitLabel)}|${financeImportedCustomerPaymentFingerprint(payment)}`;
       if (fileFingerprints.has(fingerprint)) {
-        errors.push(`Abonos clientes, fila ${rowNumber}: el abono está duplicado dentro del archivo.`);
+        customerPaymentWarnings.push(`Abonos clientes, fila ${rowNumber}: se omitió un abono duplicado dentro del archivo.`);
         continue;
       }
       fileFingerprints.add(fingerprint);
@@ -1121,7 +1155,7 @@ function parseFinancePhaseWorkbook(workbook, phase) {
     }
   }
 
-  return { errors, lines, movements, phaseSummary, customerPayments, customerPaymentWarnings };
+  return { errors, warnings: [...warnings, ...customerPaymentWarnings], lines, movements, phaseSummary, customerPayments, customerPaymentWarnings };
 }
 
 function commercialClientName(v = {}) {
@@ -1453,15 +1487,19 @@ router.put('/projects/:projectId/finance/loan-lines', async (req, res) => {
 router.post('/projects/:projectId/finance/import', financeExcelUpload, async (req, res) => {
   try {
     const role = String(req.user?.role || '').toLowerCase().trim();
-    if (!['admin', 'financiero', 'gerencia', 'socios'].includes(role)) {
-      return res.status(403).json({ error: 'No tienes permiso para importar líneas y movimientos financieros.' });
-    }
     if (!req.file?.buffer) return res.status(400).json({ error: 'Selecciona un archivo Excel .xlsx.' });
     const phaseId = String(req.body?.phaseId || '');
     if (!mongoose.isValidObjectId(phaseId)) return res.status(400).json({ error: 'La fase seleccionada no es válida.' });
 
     const project = await loadTenantProject(req, res);
     if (!project) return;
+    const regularImportRole = ['admin', 'financiero', 'gerencia', 'socios'].includes(role);
+    const isInitialCreatorImport = ['bank', 'promoter'].includes(role)
+      && String(project.createdBy || '') === String(req.user?.userId || req.user?._id || req.user?.id || '')
+      && String(project.publishStatus || '') === 'pending';
+    if (!regularImportRole && !isInitialCreatorImport) {
+      return res.status(403).json({ error: 'No tienes permiso para importar líneas y movimientos financieros.' });
+    }
     const doc = await getOrCreate(req.params.projectId, project.tenantKey);
     const phase = doc.phases.id(phaseId);
     if (!phase) return res.status(404).json({ error: 'La fase seleccionada no existe.' });
@@ -1476,6 +1514,7 @@ router.post('/projects/:projectId/finance/import', financeExcelUpload, async (re
     if (parsed.errors.length) {
       return res.status(400).json({ error: 'El Excel contiene errores y no se ha importado ningún dato.', errors: parsed.errors });
     }
+    const importWarnings = [...(parsed.warnings || [])];
 
     const currentPhaseLines = (doc.loanLines || []).filter(line => String(line?.phaseId || '') === phaseId);
     const existingGroups = new Map();
@@ -1526,7 +1565,6 @@ router.post('/projects/:projectId/finance/import', financeExcelUpload, async (re
       else createdLines += 1;
     }
 
-    const importErrors = [];
     const saleMovements = [];
     const resolvedAmbiguousUnits = new Set();
     for (const movement of parsed.movements) {
@@ -1566,24 +1604,19 @@ router.post('/projects/:projectId/finance/import', financeExcelUpload, async (re
         deletedAt: null
       }).select('_id unitId customerPaymentAccounts customerPaymentsVersion').lean();
       const salesByUnit = new Map(sales.map(sale => [String(sale.unitId || ''), sale]));
-      const paymentImportErrors = [];
-
       for (const importedPayment of parsed.customerPayments) {
-        const matches = uniqueFinanceUnitCandidates(
-          paymentUnitCandidates.get(normalizeFinanceUnitAlias(importedPayment.unitLabel)) || [],
-          importedPayment.unitLabel
-        );
+        const matches = financeUnitCandidatesByAlias(paymentUnitCandidates, importedPayment.unitLabel);
         if (!matches.length) {
-          paymentImportErrors.push(`Abonos clientes, fila ${importedPayment.rowNumber}: no existe la unidad “${importedPayment.unitLabel}” en el proyecto.`);
+          importWarnings.push(`Abonos clientes, fila ${importedPayment.rowNumber}: se omitió porque no se encontró la unidad “${importedPayment.unitLabel}”.`);
           continue;
         }
         if (matches.length > 1) {
-          paymentImportErrors.push(`Abonos clientes, fila ${importedPayment.rowNumber}: la unidad “${importedPayment.unitLabel}” es ambigua en el proyecto.`);
+          importWarnings.push(`Abonos clientes, fila ${importedPayment.rowNumber}: se omitió porque la unidad “${importedPayment.unitLabel}” coincide con varias unidades.`);
           continue;
         }
         const sale = salesByUnit.get(String(matches[0].unitId || ''));
         if (!sale) {
-          paymentImportErrors.push(`Abonos clientes, fila ${importedPayment.rowNumber}: la unidad “${importedPayment.unitLabel}” no tiene expediente comercial.`);
+          importWarnings.push(`Abonos clientes, fila ${importedPayment.rowNumber}: se omitió porque la unidad “${importedPayment.unitLabel}” no tiene expediente comercial.`);
           continue;
         }
         let update = customerPaymentUpdates.get(String(sale._id));
@@ -1623,12 +1656,6 @@ router.post('/projects/:projectId/finance/import', financeExcelUpload, async (re
           amount: importedPayment.amount
         });
         importedCustomerPayments += 1;
-      }
-      if (paymentImportErrors.length) {
-        return res.status(400).json({
-          error: 'No se pudieron relacionar algunos abonos de clientes y no se ha modificado ningún dato.',
-          errors: paymentImportErrors
-        });
       }
     }
     const unitAmortizations = (doc.unitAmortizations || []).map(item => item?.toObject ? item.toObject() : { ...item });
@@ -1677,17 +1704,17 @@ router.post('/projects/:projectId/finance/import', financeExcelUpload, async (re
 
     for (const movement of saleMovements) {
       const rawUnitLabel = String(movement.saleUnitLabel || '').split('·')[0].trim();
-      const rawMatches = unitCandidates.get(normalizeFinanceUnitAlias(rawUnitLabel)) || [];
+      const rawMatches = financeUnitCandidatesByAlias(unitCandidates, rawUnitLabel);
       // Una unidad puede aparecer dos veces en memoria: como ficha comercial y
       // como control financiero histórico. Las agrupamos por unitId para que
       // ambas representaciones cuenten como un único candidato real.
       const matches = uniqueFinanceUnitCandidates(rawMatches, rawUnitLabel);
       if (!rawUnitLabel) {
-        importErrors.push(`Movimientos, fila ${movement.rowNumber}: falta “Detalle / unidad” para vincular la amortización por venta.`);
+        importWarnings.push(`Movimientos, fila ${movement.rowNumber}: se omitió la amortización por venta porque falta “Detalle / unidad”.`);
         continue;
       }
       if (!matches.length) {
-        importErrors.push(`Movimientos, fila ${movement.rowNumber}: no existe la unidad “${rawUnitLabel}” en el proyecto.`);
+        importWarnings.push(`Movimientos, fila ${movement.rowNumber}: se omitió la amortización por venta porque no se encontró la unidad “${rawUnitLabel}”.`);
         continue;
       }
       const targetLine = importedByKey.get(movement.lineKey);
@@ -1712,10 +1739,6 @@ router.post('/projects/:projectId/finance/import', financeExcelUpload, async (re
       }
       importedSaleAmortizations += 1;
     }
-    if (importErrors.length) {
-      return res.status(400).json({ error: 'No se pudieron relacionar algunas amortizaciones por venta y no se ha modificado ningún dato.', errors: importErrors });
-    }
-
     const preservedLines = (doc.loanLines || [])
       .filter(line => String(line?.phaseId || '') !== phaseId)
       .map(line => line?.toObject ? line.toObject() : line);
@@ -1746,10 +1769,10 @@ router.post('/projects/:projectId/finance/import', financeExcelUpload, async (re
     await audit(req, 'finance.loan_lines_imported', {
       targetType: 'project', targetId: project._id, projectId: project._id,
       message: `Excel financiero importado en ${phase.name || 'fase'}`,
-      metadata: { phaseId, createdLines, updatedLines, importedMovements, importedSaleAmortizations, importedCustomerPayments, skippedCustomerPayments, skippedInvalidCustomerPayments, replacedMovements, resolvedAmbiguousUnits: resolvedAmbiguousUnits.size, importedPhaseSummary: !!parsed.phaseSummary }
+      metadata: { phaseId, createdLines, updatedLines, importedMovements, importedSaleAmortizations, importedCustomerPayments, skippedCustomerPayments, skippedInvalidCustomerPayments, warnings: importWarnings.length, replacedMovements, resolvedAmbiguousUnits: resolvedAmbiguousUnits.size, importedPhaseSummary: !!parsed.phaseSummary }
     });
     const control = sharedBuildFinanceControlSummary(doc, project || {});
-    res.json({ ok: true, createdLines, updatedLines, importedMovements, importedSaleAmortizations, importedCustomerPayments, skippedCustomerPayments, skippedInvalidCustomerPayments, warnings: parsed.customerPaymentWarnings || [], replacedMovements, resolvedAmbiguousUnits: resolvedAmbiguousUnits.size, importedPhaseSummary: !!parsed.phaseSummary, financeControl: control });
+    res.json({ ok: true, createdLines, updatedLines, importedMovements, importedSaleAmortizations, importedCustomerPayments, skippedCustomerPayments, skippedInvalidCustomerPayments, warnings: importWarnings, replacedMovements, resolvedAmbiguousUnits: resolvedAmbiguousUnits.size, importedPhaseSummary: !!parsed.phaseSummary, financeControl: control });
   } catch (err) {
     console.error('POST finance import error', err);
     res.status(err.status || 500).json({ error: err.status ? err.message : 'No se pudo importar el Excel financiero.' });

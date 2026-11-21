@@ -201,6 +201,31 @@ test('finance import treats commercial and financial representations as one unit
   assert.equal(selectFinanceUnitCandidate([duplicateUnit, linked]), linked);
 });
 
+test('finance import keeps valid rows and reports incomplete rows as warnings', () => {
+  const workbook = new ExcelJS.Workbook();
+  const lines = workbook.addWorksheet('Líneas bancarias');
+  lines.getRow(5).values = ['Fase', 'Línea', 'Aprobado', 'Desembolsado banco', 'Disponible', 'Amortización manual', 'Amortización por ventas', 'Otras amortizaciones', 'Amortización total', 'Intereses pagados', 'Total pagado banco', 'Capital pendiente', '% amortizado', 'Notas'];
+  lines.getRow(6).values = ['Nombre antiguo', 'Construcción', 100000];
+  lines.getRow(7).values = ['Nombre antiguo', '', 25000];
+  lines.getRow(8).values = ['Nombre antiguo', 'Construcción', 50000];
+
+  const movements = workbook.addWorksheet('Movimientos');
+  movements.getRow(5).values = ['Fase', 'Línea', 'Cuenta avance', 'Tipo', 'Aportante', 'Fecha', 'Nº préstamo', 'Desembolso banco', 'Aporte promotor', 'Importe pendiente', 'Amortización', 'Interés pagado', 'Pago al banco', 'Vencimiento', 'Estado', 'Solicitud', 'Confirmado por', 'Referencia', 'Informe avalúo', 'Detalle / unidad', 'Notas'];
+  movements.getRow(6).values = ['Nombre antiguo', 'Construcción', '', 'Desembolso', 'Mixto', 'fecha no válida', '', 10000];
+  movements.getRow(7).values = ['Nombre antiguo', 'Línea inexistente', '', 'Desembolso', 'Banco', '', '', 5000];
+  movements.getRow(8).values = ['Nombre antiguo', 'Construcción', '', 'Interés pagado', 'Banco'];
+
+  const parsed = parseFinancePhaseWorkbook(workbook, { name: 'Fase nueva' });
+  assert.deepEqual(parsed.errors, []);
+  assert.equal(parsed.lines.length, 1);
+  assert.equal(parsed.movements.length, 1);
+  assert.equal(parsed.movements[0].entry.fundingParty, 'bank');
+  assert.ok(parsed.warnings.some(message => message.includes('falta el nombre de la línea')));
+  assert.ok(parsed.warnings.some(message => message.includes('línea duplicada')));
+  assert.ok(parsed.warnings.some(message => message.includes('Línea inexistente')));
+  assert.ok(parsed.warnings.some(message => message.includes('interés pagado no tiene importe')));
+});
+
 test('finance uses the same imported unit name shown in Commercial', () => {
   assert.equal(financeUnitDisplayName({ etapa: 'Fase 1', manzana: '1', lote: '106' }), '106');
   assert.equal(financeUnitDisplayName({ manzana: '1', lote: '106' }), '1-106');

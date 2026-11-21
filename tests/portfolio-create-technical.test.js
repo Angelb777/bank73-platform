@@ -83,11 +83,13 @@ test('el alta financiera comparte el flujo Estimación y Realidad de Finanzas', 
   assert.doesNotMatch(script, /El proyecto ya ha comenzado/);
 });
 
-test('las líneas viven en Realidad y pueden generarse desde la parte Banco de los usos', () => {
+test('las líneas y movimientos viven en Realidad y admiten generación o importación', () => {
   assert.match(script, /data-generate-create-financing-lines/);
   assert.match(script, /financingLinesFromPlannedUses/);
   assert.match(script, /Generar desde usos previstos/);
-  assert.match(script, /Los desembolsos, amortizaciones e intereses se completarán después en Finanzas/);
+  assert.match(script, /Puedes importar ahora el Excel de esta fase o hacerlo más adelante desde Finanzas/);
+  assert.match(script, /data-create-finance-import-file/);
+  assert.match(script, /podrás importarlo después desde el apartado Finanzas de la fase/);
   assert.doesNotMatch(html, /id="createFinanceLines"/);
   assert.doesNotMatch(script, /data-create-phase-financing="interestRate"/);
   assert.doesNotMatch(script, /data-create-phase-financing="paymentMethod"/);

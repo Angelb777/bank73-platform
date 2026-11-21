@@ -9239,8 +9239,14 @@ async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = '
   modal.querySelectorAll('[data-finance-phase-tab="lines"], [data-finance-phase-tab="charts"]').forEach(button => {
     button.hidden = !isRealContext;
   });
+  const authUserId = String(API.getAuth()?.userId || '');
+  const canImportPhase = ['admin', 'financiero', 'gerencia', 'socios'].includes(myRole)
+    || (['bank', 'promoter'].includes(myRole)
+      && authUserId
+      && String(FINANCE_PROJECT?.createdBy || '') === authUserId
+      && String(FINANCE_PROJECT?.publishStatus || '') === 'pending');
   const importExcelButton = document.getElementById('financeImportPhaseXlsx');
-  if (importExcelButton) importExcelButton.hidden = !isRealContext;
+  if (importExcelButton) importExcelButton.hidden = !isRealContext || !canImportPhase;
   const guide = modal.querySelector('.finance-phase-guide');
   if (guide) {
     guide.innerHTML = isRealContext
@@ -9272,7 +9278,10 @@ async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = '
   const canEditPhase = ['admin', 'financiero', 'gerencia', 'socios'].includes(myRole);
   if (!canEditPhase) {
     modal.querySelectorAll('input, select, textarea').forEach(control => { control.disabled = true; });
-    modal.querySelectorAll('[data-save-phase-overview], [data-copy-plan-to-real], #financeAddLoanLineBtn, #financeImportPhaseXlsx, [data-finance-add-entry], [data-finance-save-line], [data-finance-remove-line], [data-finance-manual-line], [data-remove-budget-row], [data-add-budget-row]').forEach(control => { control.hidden = true; });
+    modal.querySelectorAll('[data-save-phase-overview], [data-copy-plan-to-real], #financeAddLoanLineBtn, [data-finance-add-entry], [data-finance-save-line], [data-finance-remove-line], [data-finance-manual-line], [data-remove-budget-row], [data-add-budget-row]').forEach(control => { control.hidden = true; });
+    const importExcelInput = document.getElementById('financeImportPhaseXlsxFile');
+    if (importExcelInput) importExcelInput.disabled = !canImportPhase;
+    if (importExcelButton) importExcelButton.hidden = !isRealContext || !canImportPhase;
     if (!['admin', 'promoter', 'bank'].includes(myRole)) {
       modal.querySelectorAll('[data-finance-remove-entry]').forEach(control => { control.hidden = true; });
     }
