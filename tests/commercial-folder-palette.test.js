@@ -29,3 +29,20 @@ test('el servidor rechaza la paleta libre y normaliza colores anteriores', () =>
   assert.match(route, /commercialUnassignedColor = normalizeCommercialFolderColor/);
   assert.match(route, /update\.color = normalizeCommercialFolderColor/);
 });
+
+test('el borrado de carpeta elimina la etapa canonica y sus relaciones en cascada', () => {
+  const route = read('routes/commercialFolders.js');
+  const project = read('public/js/project.js');
+  const deleteRoute = route.slice(route.indexOf("router.delete('/:id'"), route.indexOf("router.patch('/unassigned/units'"));
+  assert.match(deleteRoute, /removeStageFinancialData\(finance, folderId\)/);
+  assert.match(deleteRoute, /requirePin\(req, res\)/);
+  assert.match(deleteRoute, /Document\.deleteMany/);
+  assert.match(deleteRoute, /FundingInterest\.find/);
+  assert.match(deleteRoute, /Unit\.updateMany/);
+  assert.match(deleteRoute, /project\.stage_deleted/);
+  assert.doesNotMatch(deleteRoute, /status\(409\)/);
+  assert.match(project, /¿Eliminar definitivamente la etapa/);
+  assert.match(project, /Introduce el PIN de eliminación para confirmar/);
+  assert.match(project, /\{ pin: pin\.trim\(\) \}/);
+  assert.match(project, /No se pudo eliminar la etapa/);
+});

@@ -35,6 +35,11 @@ const projectSchema = new Schema({
     originalname: { type: String, trim: true, default: '' },
     mimetype: { type: String, trim: true, default: '' }
   },
+  logoImage: {
+    path: { type: String, trim: true, default: '' },
+    originalname: { type: String, trim: true, default: '' },
+    mimetype: { type: String, trim: true, default: '' }
+  },
   expiryAlertResolutions: {
     type: [{
       key: { type: String, required: true, trim: true },
@@ -188,6 +193,33 @@ const projectSchema = new Schema({
       contractorDefined: { type: Boolean, default: null },
       technicalOpinionAttached: { type: Boolean, default: null }
     }
+  },
+
+  // Seguimiento operativo del equipo técnico. Es independiente de los
+  // informes certificados que genera el avaluador desde la app móvil.
+  technicalCommonAreas: {
+    areas: {
+      type: [{
+        key: { type: String, required: true, trim: true },
+        name: { type: String, required: true, trim: true },
+        progressPercent: { type: Number, min: 0, max: 100, default: 0 },
+        observations: { type: String, trim: true, default: '', maxlength: 3000 },
+        activities: {
+          type: [{
+            key: { type: String, required: true, trim: true },
+            name: { type: String, required: true, trim: true },
+            order: { type: Number, min: 0, default: 0 },
+            progressPercent: { type: Number, min: 0, max: 100, default: 0 },
+            applicable: { type: Boolean, default: true }
+          }],
+          default: []
+        }
+      }],
+      default: []
+    },
+    updatedAt: { type: Date, default: null },
+    updatedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    updatedByLabel: { type: String, trim: true, default: '' }
   },
 
   // Visor inmobiliario integrado. La configuración vive en el proyecto para

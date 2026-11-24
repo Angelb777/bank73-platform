@@ -55,16 +55,16 @@ test('la cobertura incluye toda unidad con saldo y excluye las totalmente cobrad
   assert.equal(result.fullyCollectedUnits, 1);
 });
 
-test('el Resumen responde expresamente si los cobros pendientes cubren la deuda', () => {
+test('el Resumen compara expresamente los CPP vigentes no traspasados con la deuda', () => {
   const root = path.resolve(__dirname, '..');
   const html = fs.readFileSync(path.join(root, 'public/project.html'), 'utf8');
   const frontend = fs.readFileSync(path.join(root, 'public/js/project.js'), 'utf8');
   const projects = fs.readFileSync(path.join(root, 'routes/projects.js'), 'utf8');
 
-  assert.match(html, /¿Lo pendiente de cobro cubre la deuda actual\?/);
-  assert.match(frontend, /collectionCoverage\.canCoverDebt/);
-  assert.match(frontend, /Saldo pendiente de cobro/);
+  assert.match(html, /Cobertura CPPs vigentes vs\. Deuda bancaria pendiente/);
+  assert.match(frontend, /const coverageReceivable = toNum\(fc\.cppVigenteAmount\)/);
+  assert.match(frontend, /CPP vigentes · unidades no traspasadas/);
   assert.match(projects, /buildProjectCollectionCoverage/);
-  assert.match(projects, /Cobertura de deuda con cobros pendientes/);
-  assert.doesNotMatch(frontend, /'CPP vigentes', amount|'CPP en trámite', amount/);
+  assert.match(projects, /\['reservado', 'con_cpp', 'tramite_legal_activado'\]\.includes\(v\.__unitStatus\)/);
+  assert.doesNotMatch(frontend, /collectionCoverage\.canCoverDebt/);
 });

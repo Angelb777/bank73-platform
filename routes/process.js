@@ -5,6 +5,8 @@ const mongoose = require('mongoose');
 
 const ProjectChecklist = require('../models/ProjectChecklist');
 const Project = require('../models/Project');
+const Unit = require('../models/Unit');
+const UnitChecklistProgress = require('../models/UnitChecklistProgress');
 const { requireRole, requireProjectAccess } = require('../middleware/rbac');
 const bankReadOnly = require('../middleware/bankReadOnly');
 const { isFullAccessRole, isLimitedAreaRole } = require('../utils/roles');
@@ -290,6 +292,69 @@ router.get('/projects/:projectId/checklists', requireProjectAccess({ commercialO
   res.json({ checklists: list });
 });
 
+// Progreso por unidad de los checklists repetitivos. La definición de la
+// actividad sigue viviendo en ProjectChecklist; aquí sólo se guarda su estado
+// para cada unidad, evitando copiar títulos o crear una segunda agenda.
+router.get('/projects/:projectId/unit-checklist-progress', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
+  const project = await loadTenantProject(req, res, req.params.projectId);
+  if (!project) return;
+  const visible = await ProjectChecklist.find(buildChecklistVisibilityQuery(req, {
+    projectId: project._id,
+    ...legacyTenantQuery(project.tenantKey),
+    phase: { $in: ['CONTRATISTAS', 'OBRA'] }
+  })).select('_id').lean();
+  const checklistIds = visible.map(item => item._id);
+  const rows = checklistIds.length
+    ? await UnitChecklistProgress.find({ tenantKey: project.tenantKey, projectId: project._id, checklistId: { $in: checklistIds } }).lean()
+    : [];
+  res.json({ progress: rows });
+});
+
+router.put('/checklists/:id/unit-progress', attachProjectFromChecklist, requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
+  const checklist = await loadTenantChecklist(req, res, req.params.id);
+  if (!checklist) return;
+  if (!['CONTRATISTAS', 'OBRA'].includes(String(checklist.phase || '').toUpperCase())) {
+    return res.status(400).json({ error: 'Este checklist no se gestiona por unidad.' });
+  }
+  const unitIds = [...new Set((Array.isArray(req.body?.unitIds) ? req.body.unitIds : []).map(String))]
+    .filter(value => mongoose.Types.ObjectId.isValid(value));
+  const subtaskId = String(req.body?.subtaskId || '__checklist__').trim();
+  if (!unitIds.length) return res.status(400).json({ error: 'Selecciona al menos una unidad.' });
+  if (!subtaskId) return res.status(400).json({ error: 'subtaskId requerido.' });
+  if (typeof req.body?.completed !== 'boolean') return res.status(400).json({ error: 'completed debe ser booleano.' });
+  const validSubtaskIds = checklist.subtasks?.length
+    ? checklist.subtasks.map(item => String(item._id))
+    : ['__checklist__'];
+  if (!validSubtaskIds.includes(subtaskId)) {
+    return res.status(400).json({ error: 'La actividad no pertenece a este checklist.' });
+  }
+
+  const validUnits = await Unit.find({
+    _id: { $in: unitIds }, projectId: checklist.projectId, tenantKey: checklist.tenantKey, deletedAt: null
+  }).select('_id').lean();
+  const now = new Date();
+  const actor = userName(req);
+  await Promise.all(validUnits.map(async unit => {
+    const row = await UnitChecklistProgress.findOneAndUpdate(
+      { tenantKey: checklist.tenantKey, projectId: checklist.projectId, checklistId: checklist._id, unitId: unit._id },
+      { $setOnInsert: { tenantKey: checklist.tenantKey, projectId: checklist.projectId, checklistId: checklist._id, unitId: unit._id } },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+    const current = row.states.find(item => item.subtaskId === subtaskId);
+    const value = {
+      subtaskId,
+      completed: req.body.completed,
+      completedAt: req.body.completed ? now : null,
+      completedBy: req.body.completed ? actor : ''
+    };
+    if (current) Object.assign(current, value);
+    else row.states.push(value);
+    row.updatedBy = actor;
+    await row.save();
+  }));
+  res.json({ ok: true, modified: validUnits.length });
+});
+
 // POST /api/projects/:projectId/checklists (ad-hoc)
 // acepta roleOwner y visibleToRoles; mantiene "role" legacy para compat
 router.post('/projects/:projectId/checklists', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
@@ -362,6 +427,7 @@ router.delete('/checklists/:id', attachProjectFromChecklist, requireProjectAcces
   const cl = await loadTenantChecklist(req, res, id);
   if (!cl) return;
   await ProjectChecklist.deleteOne({ _id: cl._id, tenantKey: cl.tenantKey });
+  await UnitChecklistProgress.deleteMany({ tenantKey: cl.tenantKey, checklistId: cl._id });
   res.json({ ok: true });
 });
 

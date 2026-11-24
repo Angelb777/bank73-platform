@@ -5,6 +5,7 @@ const bankReadOnly = require('../middleware/bankReadOnly');
 const mongoose = require('mongoose');
 
 const ProjectFinance = require('../models/ProjectFinance');
+const CommercialFolder = require('../models/CommercialFolder');
 const Project = require('../models/Project');
 const Unit = require('../models/Unit');
 const Venta = require('../models/Venta');
@@ -31,6 +32,7 @@ const audit = require('../utils/audit');
 const { renderInspectionReport } = require('../services/inspectionReport');
 const inspectionReportContext = require('../services/inspectionReportContext');
 const { customerPaymentRecipientTotals, customerPaymentSummary } = require('../services/customerPayments');
+const { reconcileProjectStages, syncStageName } = require('../services/projectStages');
 
 router.use(bankReadOnly);
 router.use('/projects/:projectId/finance', requireProjectAccess({ commercialOnlySales: false }));
@@ -1340,7 +1342,9 @@ router.get('/projects/:projectId/finance', async (req, res) => {
     const projectRaw = await loadTenantProject(req, res);
     if (!projectRaw) return;
 
-    const doc = await getOrCreate(projectId, projectRaw.tenantKey);
+    await getOrCreate(projectId, projectRaw.tenantKey);
+    const reconciliation = await reconcileProjectStages({ projectId, tenantKey: projectRaw.tenantKey });
+    const doc = reconciliation.finance;
     const commercialUnits = await getFinanceCommercialUnits(projectId, projectRaw.tenantKey);
     await ensureFinanceRequirements(doc, projectRaw, commercialUnits);
 
@@ -2451,7 +2455,16 @@ router.post('/projects/:projectId/finance/phases', async (req, res) => {
     const commercialUnits = await getFinanceCommercialUnits(projectId, project.tenantKey);
 
     const doc = await getOrCreate(projectId, project.tenantKey);
+    const count = await CommercialFolder.countDocuments({ projectId, tenantKey: project.tenantKey });
+    const stage = await CommercialFolder.create({
+      tenantKey: project.tenantKey,
+      projectId,
+      name: String(name).trim(),
+      color: '#111827',
+      order: count
+    });
     const phaseSeed = {
+      stageId: stage._id,
       name, startDate, endDate,
       actualStartDate, actualEndDate, isCompleted, completedAt,
       uses, sources,
@@ -2500,7 +2513,7 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
       : null;
 
     const fields = [
-      'name','startDate','endDate',
+      'startDate','endDate',
       'actualStartDate','actualEndDate','isCompleted','completedAt',
       'uses','sources',
       'planUses','planSources',
@@ -2526,6 +2539,17 @@ router.put('/projects/:projectId/finance/phases/:phaseId', async (req, res) => {
         });
       }
       else ph[f] = req.body[f];
+    }
+    if ('name' in req.body && String(req.body.name || '').trim()) {
+      const cleanName = String(req.body.name).trim();
+      ph.name = cleanName;
+      if (ph.stageId) {
+        await CommercialFolder.updateOne(
+          { _id: ph.stageId, projectId, tenantKey: project.tenantKey },
+          { $set: { name: cleanName } }
+        );
+        await syncStageName({ stageId: ph.stageId, tenantKey: project.tenantKey, name: cleanName });
+      }
     }
     if (!hadActualDisbursement && toNum(ph.disbActual) > 0 && !ph.disbActualAt) {
       ph.disbActualAt = new Date();

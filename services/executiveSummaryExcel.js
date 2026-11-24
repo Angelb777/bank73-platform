@@ -367,6 +367,22 @@ async function buildExecutiveSummaryWorkbook({ summary, datoRows, movementRows, 
   const nativeCharts = writeChartSheet(wsCharts, chartGroups, subtitle);
   writeSummarySheet(wsSummary, summary, movementRows, subtitle);
 
+  const logoMatch = String(summary.logoImage?.path || '')
+    .match(/^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/i);
+  if (logoMatch) {
+    try {
+      const logoId = wb.addImage({
+        base64: String(summary.logoImage.path).split(',')[1],
+        extension: logoMatch[1].toLowerCase() === 'jpeg' ? 'jpeg' : 'png'
+      });
+      wsSummary.addImage(logoId, {
+        tl: { col: 5.15, row: 1.3 },
+        ext: { width: 220, height: 74 },
+        editAs: 'oneCell'
+      });
+    } catch (_) {}
+  }
+
   const buffer = Buffer.from(await wb.xlsx.writeBuffer());
   return addNativeCharts(buffer, { sheetNumber: 4, sheetName: 'Gráficas', charts: nativeCharts });
 }

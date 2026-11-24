@@ -185,6 +185,8 @@ function detectArea(req) {
 
   const isProjectRead = method === 'GET' && /\/projects\/[^/]+\/?$/i.test(url);
   const isInsurancePolicies = /\/projects\/[^/]+\/insurance-policies\/?$/i.test(url);
+  const isTechnicalCommonAreas = /\/projects\/[^/]+\/technical-common-areas\/?$/i.test(url);
+  const isTechnicalUnitProgress = /\/projects\/[^/]+\/technical-unit-progress\/[^/]+\/?$/i.test(url);
   const isTechnicalInspectionWorkflow = (
     method === 'GET' && /\/projects\/[^/]+\/finance\/avaluation-context\/?$/i.test(url)
   ) || (
@@ -199,6 +201,8 @@ function detectArea(req) {
     isDocs,
     isProjectRead,
     isInsurancePolicies,
+    isTechnicalCommonAreas,
+    isTechnicalUnitProgress,
     isTechnicalInspectionWorkflow
   };
 }
@@ -446,7 +450,7 @@ function requireProjectAccess(options = {}) {
           const canDeleteTechnicalUnits = area.method === 'DELETE' && /\/units\/(batch|[^/]+)\/?$/i.test(area.url);
           const canManageTechnicalModels = area.method === 'PUT' && /\/projects\/[^/]+\/housing-models\/?$/i.test(area.url);
 
-          if (area.isChecklists || area.isDocs || area.isTechnicalInspectionWorkflow || canReadProject || canEditPolicies || canReadTechnicalSales || canPatchTechnicalSales || canUpsertTechnicalUnit || canCreateTechnicalUnits || canDeleteTechnicalUnits || canManageTechnicalModels) {
+          if (area.isChecklists || area.isDocs || area.isTechnicalInspectionWorkflow || area.isTechnicalCommonAreas || area.isTechnicalUnitProgress || canReadProject || canEditPolicies || canReadTechnicalSales || canPatchTechnicalSales || canUpsertTechnicalUnit || canCreateTechnicalUnits || canDeleteTechnicalUnits || canManageTechnicalModels) {
             return next();
           }
         } else if (area.isChecklists || area.isDocs) {

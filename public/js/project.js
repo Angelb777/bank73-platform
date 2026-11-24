@@ -192,6 +192,54 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
     );
   }
 
+  function getProjectChecklists({ force = false } = {}) {
+    return cachedProjectGet(
+      'checklists',
+      () => `/api/projects/${id}/checklists${force ? `?ts=${Date.now()}` : ''}`,
+      { force }
+    );
+  }
+
+  function getProjectUnitChecklistProgress({ force = false } = {}) {
+    return cachedProjectGet(
+      'unitChecklistProgress',
+      () => `/api/projects/${id}/unit-checklist-progress${force ? `?ts=${Date.now()}` : ''}`,
+      { force }
+    );
+  }
+
+  function getProjectDocuments({ force = false } = {}) {
+    return cachedProjectGet(
+      'documents',
+      () => `/api/documents?projectId=${encodeURIComponent(id)}${force ? `&ts=${Date.now()}` : ''}`,
+      { force }
+    );
+  }
+
+  function getProjectCommercialFolders({ force = false } = {}) {
+    return cachedProjectGet(
+      'commercialFolders',
+      () => `/api/commercial-folders?projectId=${encodeURIComponent(id)}${force ? `&ts=${Date.now()}` : ''}`,
+      { force }
+    );
+  }
+
+  function getProjectExpiryAlertResolutions({ force = false } = {}) {
+    return cachedProjectGet(
+      'expiryAlertResolutions',
+      () => `/api/projects/${id}/expiry-alerts/resolutions${force ? `?ts=${Date.now()}` : ''}`,
+      { force }
+    );
+  }
+
+  function getProjectAvaluationContext({ force = false } = {}) {
+    return cachedProjectGet(
+      'avaluationContext',
+      () => `/api/projects/${encodeURIComponent(id)}/finance/avaluation-context${force ? `?ts=${Date.now()}` : ''}`,
+      { force }
+    );
+  }
+
   function getProjectPortfolio({ force = false } = {}) {
     return cachedProjectGet(
       'portfolio',
@@ -225,7 +273,7 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
 
   async function markProjectDataChanged({ refreshSummary = false, refreshHeader = true } = {}) {
     __summaryDirty = true;
-    invalidateProjectDataCache(['unitsAll', 'ventas', 'portfolio', 'finance']);
+    invalidateProjectDataCache(['unitsAll', 'ventas', 'portfolio', 'finance', 'expiryAlertResolutions', 'avaluationContext']);
 
     try {
       if (refreshHeader && typeof refreshTopHeaderKpis === 'function') {
@@ -237,6 +285,10 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
         await refreshSummaryFromServer();
       }
       window.__PROJECT_3D?.refresh?.();
+      window.__BANK73_UNIFIED_REFRESH?.();
+      window.refreshProjectTimelineData?.().catch(error => {
+        console.warn('[Proyecto] No se pudo sincronizar el dato único con el cronograma', error);
+      });
     } catch (e) {
       console.warn('[Project] No se pudo refrescar el resumen tras guardar cambios', e);
     }
@@ -446,7 +498,6 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
       loadTechnicalWorkspace().catch(e => console.error('[Técnico] No se pudo cargar el workspace', e));
     }
     if (key === 'docs' && window.__docsModuleReady && typeof loadDocs === 'function') {
-      invalidateProjectDocsCache();
       loadDocs({ q: (document.getElementById('docsSearch')?.value || '') }).catch(e => {
         console.warn('[Docs] No se pudo refrescar al abrir la pestana', e);
       });
@@ -454,6 +505,11 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
     if (key === 'resumen' && __summaryDirty) {
       refreshSummaryFromServer().catch(e => {
         console.warn('[Summary] No se pudo refrescar al abrir la pestana resumen', e);
+      });
+    }
+    if (key === 'proyecto' && window.refreshProjectTimelineOperational) {
+      window.refreshProjectTimelineOperational().catch(e => {
+        console.warn('[Proyecto] No se pudo refrescar el seguimiento operativo', e);
       });
     }
     window.__PROJECT_3D?.setModeFromTab?.(key);
@@ -705,12 +761,14 @@ async function openSecureFile(url, filename, action = 'view') {
   setTimeout(() => URL.revokeObjectURL(objectUrl), 60 * 1000);
 }
 
+const failedSecureImageUrls = new Set();
+
 async function hydrateSecureImages(root = document) {
   const imgs = Array.from(root.querySelectorAll('img[data-secure-src]'));
 
   await Promise.all(imgs.map(async (img) => {
     const url = img.dataset.secureSrc;
-    if (!url || img.dataset.secureLoaded === '1') return;
+    if (!url || img.dataset.secureLoaded || failedSecureImageUrls.has(url)) return;
 
     try {
       const blob = await fetchSecureBlob(url);
@@ -719,8 +777,10 @@ async function hydrateSecureImages(root = document) {
       img.dataset.secureLoaded = '1';
       img.dataset.objectUrl = objectUrl;
     } catch (err) {
-      console.error('[secure image]', err);
+      failedSecureImageUrls.add(url);
+      img.dataset.secureLoaded = 'error';
       img.alt = 'No se pudo cargar la imagen';
+      img.title = 'El archivo original ya no está disponible';
     }
   }));
 }
@@ -816,6 +876,7 @@ async function openChecklistDocs(clId) {
 }
 
 let __permits = null;
+let __permitsPromise = null;
 
 async function apiPermitsGetProject(noCache=false) {
   // ✅ Nueva ruta correcta según backend
@@ -831,6 +892,22 @@ async function apiPermitsGetProject(noCache=false) {
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
+}
+
+async function getProjectPermits({ force = false } = {}) {
+  if (!force && __permits) return __permits;
+  if (!force && __permitsPromise) return __permitsPromise;
+  __permitsPromise = apiPermitsGetProject(force)
+    .then(result => {
+      __permits = result;
+      __permitsPromise = null;
+      return result;
+    })
+    .catch(error => {
+      __permitsPromise = null;
+      throw error;
+    });
+  return __permitsPromise;
 }
 
 async function apiPermitsGetTemplates() {
@@ -2020,14 +2097,70 @@ function kpiCard(label, value, sub=''){
 }
 
 const TOP_HEADER_KPI_LABELS = {
-  commercialValue: 'Valor total ventas',
-  budgetApproved: 'Presupuesto Total',
-  loanApproved: 'Cuantía Bancaria Aprobada',
+  commercialValue: 'Estimación total de ventas',
+  budgetApproved: 'Estimación total de costes',
+  loanApproved: 'Monto de financiamiento aprobado',
   loanDisbursed: 'Desembolsado',
   budgetSpent: 'Gasto',
   unitsTotal: 'Unidades totales',
   unitsSold: 'Unidades vendidas'
 };
+
+function summaryMediaDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('No se pudo leer la imagen'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function bindSummaryProjectMedia(project = {}) {
+  const canEdit = myRole === 'admin';
+  const bind = ({ field, buttonId, inputId, imageId, placeholderId }) => {
+    const button = document.getElementById(buttonId);
+    const input = document.getElementById(inputId);
+    const image = document.getElementById(imageId);
+    const placeholder = document.getElementById(placeholderId);
+    if (!button || !input || !image || !placeholder) return;
+    const path = String(project?.[field]?.path || '');
+    image.src = path;
+    image.hidden = !path;
+    placeholder.hidden = !!path;
+    button.disabled = !canEdit;
+    button.classList.toggle('is-readonly', !canEdit);
+    if (button.dataset.bound !== '1') {
+      button.dataset.bound = '1';
+      button.addEventListener('click', () => input.click());
+    }
+    if (input.dataset.bound === '1') return;
+    input.dataset.bound = '1';
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+        input.value = '';
+        return alert('La imagen debe ser JPG, PNG o WebP y no superar 5 MB.');
+      }
+      button.disabled = true;
+      try {
+        const path = await summaryMediaDataUrl(file);
+        await API.put(`/api/projects/${id}`, { [field]: { path, originalname: file.name, mimetype: file.type } });
+        if (state.project) state.project[field] = { path, originalname: file.name, mimetype: file.type };
+        image.src = path;
+        image.hidden = false;
+        placeholder.hidden = true;
+      } catch (error) {
+        alert(error.message || 'No se pudo guardar la imagen.');
+      } finally {
+        input.value = '';
+        button.disabled = !canEdit;
+      }
+    });
+  };
+  bind({ field: 'logoImage', buttonId: 'summaryProjectLogoBtn', inputId: 'summaryProjectLogoInput', imageId: 'summaryProjectLogo', placeholderId: 'summaryProjectLogoPlaceholder' });
+  bind({ field: 'coverImage', buttonId: 'summaryProjectCoverBtn', inputId: 'summaryProjectCoverInput', imageId: 'summaryProjectCover', placeholderId: 'summaryProjectCoverPlaceholder' });
+}
 
 function buildTopHeaderKpiTiles(project = {}, hs = {}, kpis = {}) {
   const financeKpis = window.FINANCE_KPIS || {};
@@ -2815,7 +2948,6 @@ async function renderSummaryUI(payload) {
       '#38a3e0', '#8b5cf6', '#22c55e', '#f59e0b', '#ef476f',
       '#06b6d4', '#f97316', '#84cc16', '#ec4899', '#64748b'
     ];
-    const chartBorderColor = getComputedStyle(document.body).getPropertyValue('--card-bg').trim() || '#111827';
     if (ctx(canvasId)) {
       __sumCharts[chartKey] = new Chart(ctx(canvasId), {
         type,
@@ -2824,8 +2956,7 @@ async function renderSummaryUI(payload) {
           datasets: [{
             data: list.map(x => toNum(x[valueKey])),
             backgroundColor: list.map((_, index) => piePalette[index % piePalette.length]),
-            borderColor: chartBorderColor,
-            borderWidth: 2,
+            borderWidth: 0,
             hoverOffset: 7
           }]
         },
@@ -3117,7 +3248,9 @@ async function renderSummaryUI(payload) {
       : 'Actualizado: ' + (new Date(project?.updatedAt || Date.now())).toLocaleString();
   }
 
-  // Tarjetas KPI
+  bindSummaryProjectMedia(project);
+
+  // Lectura ejecutiva: ventas, costes y financiamiento comparten las fuentes del Dato Único.
   const u = kpis.units || {};
 const loan = kpis.loan || {};
 let cpp = kpis.cpp || {};
@@ -3142,20 +3275,31 @@ if (!isPeriodView) try {
   console.warn('[Summary] No se pudo sincronizar ventas con portfolio', e);
 }
 
-  const cards = [
-    kpiCard('Progreso global', (kpis.progressPct || 0) + '%'),
-    kpiCard('Unidades', `${u.total || 0} totales`, `${u.available || 0} disp · ${u.sold || 0} vend · ${u.escrituradas || 0} escr.`),
-    kpiCard('Absorción 3m', (kpis.absorption3m || 0) + ' u/mes'),
-    kpiCard('Ticket promedio', formatMoney(kpis.avgTicket || 0)),
-    (kpis.inventoryValue ? kpiCard('Inventario a valor', formatMoney(kpis.inventoryValue || 0)) : ''),
-    kpiCard('CPP activas', cpp.active || 0, `Pendientes de ejecución · 30d:${cpp.due30 || 0} · 60d:${cpp.due60 || 0} · 90d:${cpp.due90 || 0}`),
-    kpiCard('Permisos', `${kpis.permits?.approved || 0} A / ${kpis.permits?.inProcess || 0} T / ${kpis.permits?.pending || 0} P`, (kpis.permits?.pct || 0) + '%'),
-    ((app.avg || app.min || app.max) ? kpiCard('Avalúo promedio', formatMoney(app.avg || 0), `min ${formatMoney(app.min || 0)} · max ${formatMoney(app.max || 0)}`) : ''),
-    kpiCard('Hipotecas 30d', kpis.clientMortgages30d || 0)
-  ].filter(Boolean);
-
   const summaryKpisEl = document.getElementById('summaryKpis');
-  if (summaryKpisEl) summaryKpisEl.innerHTML = cards.join('');
+  if (summaryKpisEl) {
+    const financeTotals = financial.totals || {};
+    const estimateSales = Number(kpis.inventoryValue || 0);
+    const soldValue = Number(kpis.soldValue || 0);
+    const soldPct = estimateSales > 0 ? Number(kpis.soldValuePct || soldValue / estimateSales * 100) : 0;
+    const estimateCosts = Number(financeTotals.budgetApproved ?? project.budgetApproved ?? 0);
+    const spent = Number(project.budgetSpent || 0);
+    const spentPct = estimateCosts > 0 ? spent / estimateCosts * 100 : 0;
+    const approvedFinance = Number(financeTotals.loanApproved ?? project.loanApproved ?? loan.approved ?? 0);
+    const disbursed = Number(financeTotals.disbursed ?? project.loanDisbursed ?? loan.disbursed ?? 0);
+    const disbursedPct = approvedFinance > 0 ? disbursed / approvedFinance * 100 : 0;
+    const band = (kind, title, primaryLabel, primaryValue, secondaryLabel, secondaryValue, progress) => `
+      <article class="summary-overview-band is-${kind}">
+        <strong class="summary-overview-band-name">${title}</strong>
+        <div><span>${primaryLabel}</span><b>${formatMoney(primaryValue)}</b></div>
+        <div><span>${secondaryLabel}</span><b>${formatMoney(secondaryValue)}</b></div>
+        <div class="summary-overview-progress" aria-label="${progress.toFixed(1)}%"><i><b style="width:${Math.min(100, Math.max(0, progress))}%"></b></i><strong>${progress.toFixed(1)}%</strong></div>
+      </article>`;
+    summaryKpisEl.innerHTML = [
+      band('sales', 'Ventas', 'Estimación total de ventas', estimateSales, 'Vendido', soldValue, soldPct),
+      band('costs', 'Costes', 'Estimación total de costes', estimateCosts, 'Gasto', spent, spentPct),
+      band('finance', 'Financiamiento', 'Monto de financiamiento aprobado', approvedFinance, 'Desembolsado', disbursed, disbursedPct)
+    ].join('');
+  }
 
   const projectTypeLabel = project.projectType || project.tipoProyecto || 'No definido';
   const promoterNames = Array.isArray(project.promoters)
@@ -3184,26 +3328,6 @@ if (!isPeriodView) try {
       : '') ||
     'No definido';
 
-  // Resumen general extra
-  renderMiniKpiBox('summaryResumeBox', [
-    {
-      title: 'Perfil del proyecto',
-      value: `Tipo de proyecto: ${projectTypeLabel}`,
-      sub: `Sociedad: ${promoterCompanyLabel} · Promotor: ${promoterLabel} · Tipo promotor: ${promoterTypeLabel} · Perfil del promotor: ${promoterCategoryLabel}`,
-      className: 'project-profile-kpi'
-    },
-    {
-      title: 'Ventas',
-      value: `${sold}/${total}`,
-      sub: `${pct}% vendido`
-    },
-    {
-      title: 'CPP activas',
-      value: String(cpp.active || 0),
-      sub: `Pendientes de ejecución · 30d:${cpp.due30 || 0} · 60d:${cpp.due60 || 0} · 90d:${cpp.due90 || 0}`
-    }
-  ]);
-
   const legalData = project.legalData || {};
   document.getElementById('summaryLegalDataBox')?.remove();
   const legalRows = [
@@ -3230,14 +3354,6 @@ if (!isPeriodView) try {
       <div class="card summary-chart-card"><h3>Accionistas</h3><div class="small muted">${shareholderRows.map(escapeHtml).join('<br>') || 'Sin accionistas registrados.'}</div></div>
     </div>
   `;
-  renderMiniKpiBox('summaryFinancialProfile', [
-    {
-      title: 'Estado del proyecto',
-      value: project.status || project.estado || 'No definido',
-      sub: `Tipo: ${projectTypeLabel} · Actualizado: ${project?.updatedAt ? new Date(project.updatedAt).toLocaleDateString() : '—'}`
-    }
-  ]);
-
   // Finanzas
   if (!isPeriodView) try {
     const fin = await getProjectFinanceSnapshot();
@@ -3282,13 +3398,6 @@ if (!isPeriodView) try {
   } catch (e) {
     console.error('[Resumen] Error cargando fases de finanzas', e);
   }
-
-  // Barra progreso global
-  const progressPct = Number(kpis?.progressPct || 0);
-  const spT = document.getElementById('summaryProgressText');
-  const spB = document.getElementById('summaryProgressBar');
-  if (spT) spT.textContent = `${progressPct}% completado`;
-  if (spB) spB.style.width = `${progressPct}%`;
 
   // ---------- Progreso por fase ----------
   sumDestroy('p1');
@@ -3420,7 +3529,7 @@ if (!isPeriodView) try {
       type: 'doughnut',
       data: {
         labels: unitsByStatus.map(x => x.status),
-        datasets: [{ data: unitsByStatus.map(x => toNum(x.count)) }]
+        datasets: [{ data: unitsByStatus.map(x => toNum(x.count)), borderWidth: 0 }]
       },
       options: {
         responsive: true,
@@ -3441,30 +3550,75 @@ if (!isPeriodView) try {
   if (ctx('sumSalesMonthly')) {
     const sm = sortByMonth(salesMonthly).map(x => ({
       month: monthKey(x.month),
-      units: toNum(x.units)
+      units: toNum(x.units),
+      year: String(monthKey(x.month)).slice(0, 4)
     }));
 
+    const yearlyTotals = new Map();
+    sm.forEach(item => yearlyTotals.set(item.year, (yearlyTotals.get(item.year) || 0) + item.units));
+    const fallenByYear = new Map((commercial.salesVsFallenByYear || [])
+      .map(item => [String(item.year), toNum(item.fallen)]));
+    const yearlyTotalsEl = document.getElementById('sumSalesYearTotals');
+    if (yearlyTotalsEl) {
+      yearlyTotalsEl.innerHTML = [
+        ...Array.from(yearlyTotals.entries()).map(([year, total]) =>
+          `<span class="summary-year-pill">${year} · <strong>${total}</strong></span>`
+        ),
+        ...Array.from(fallenByYear.entries())
+          .filter(([, total]) => total > 0)
+          .map(([year, total]) =>
+            `<span class="summary-year-pill is-fallen">${total} ${total === 1 ? 'caída' : 'caídas'} en ${year}</span>`
+          )
+      ].join('');
+    }
+
+    const chartRows = [];
+    if (sm.length) {
+      const valueByMonth = new Map(sm.map(item => [item.month, item.units]));
+      const [startYear, startMonth] = sm[0].month.split('-').map(Number);
+      const [endYear, endMonth] = sm[sm.length - 1].month.split('-').map(Number);
+      let year = startYear;
+      let month = startMonth;
+      while (year < endYear || (year === endYear && month <= endMonth)) {
+        const key = `${year}-${String(month).padStart(2, '0')}`;
+        chartRows.push({
+          label: month === 1 || (year === startYear && month === startMonth) ? String(year) : '',
+          units: valueByMonth.get(key) || 0
+        });
+        month += 1;
+        if (month > 12) {
+          year += 1;
+          month = 1;
+        }
+      }
+    }
+
     __sumCharts.p6 = new Chart(ctx('sumSalesMonthly'), {
-      type: 'line',
+      type: 'bar',
       data: {
-        labels: sm.map(x => x.month),
+        labels: chartRows.map(x => x.label),
         datasets: [{
-          label: 'Unidades',
-          data: sm.map(x => x.units),
-          tension: .3
+          label: 'Reservas',
+          data: chartRows.map(x => x.units),
+          borderWidth: 0,
+          borderRadius: 3,
+          maxBarThickness: 34,
+          categoryPercentage: .82,
+          barPercentage: .9
         }]
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: { y: { beginAtZero: true } }
-      }
+      options: summaryChartOpts({
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { display: false },
+            ticks: { autoSkip: false, maxRotation: 0 }
+          },
+          y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: 'rgba(148,163,184,.14)' } }
+        }
+      })
     });
-
-    renderChartSummary('sumSalesMonthlySummary',
-      sm.map(x => ({ label: x.month, value: x.units })),
-      { totalLabel: 'Total ventas' }
-    );
   }
 
   // ---------- Desembolsos plan vs real ----------
@@ -3521,14 +3675,13 @@ if (!isPeriodView) try {
       sub: `${pct}% del inventario`
     },
     { title: 'Unidades disponibles', value: u.available || 0 },
-    { title: 'Absorción 3m', value: `${kpis.absorption3m || 0} u/mes` },
-    { title: 'Ticket promedio', value: formatMoney(kpis.avgTicket || 0) },
     { title: 'Ventas caídas', value: commercialFallenSales },
     {
       title: 'CPP activas',
       value: cpp.active || 0,
       sub: `Pendientes de ejecución · ${formatMoney(commercialCppAmount)}`
-    }
+    },
+    { title: 'Escrituradas', value: u.escrituradas || 0 }
   ]);
 
   sumDestroy('p11');
@@ -3573,20 +3726,20 @@ if (!isPeriodView) try {
     .find(item => item.label === 'Compra conjunta')?.count || 0;
   const individualPurchases = (customerReport.purchaseMode || [])
     .find(item => item.label === 'Compra individual')?.count || 0;
-  renderTargetKpis('summaryCustomerReportKpis', [
-    { title: 'Operaciones analizadas', value: customerTotals.sales || 0, sub: 'Unidades vendidas con cliente registrado' },
-    { title: 'Compras individuales', value: individualPurchases, sub: 'Operaciones con un solo comprador' },
-    { title: 'Compras conjuntas', value: jointPurchases, sub: 'Operaciones con titular y co-comprador' },
-    {
-      title: 'Operaciones con ingreso declarado',
-      value: customerTotals.salesWithIncomeRecorded || 0,
-      sub: `de ${customerTotals.sales || 0} operaciones analizadas`
-    }
-  ]);
+  const customerOverview = document.getElementById('summaryCustomerReportOverview');
+  if (customerOverview) {
+    customerOverview.textContent = `${customerTotals.sales || 0} operaciones analizadas · ${individualPurchases} compras individuales · ${jointPurchases} conjuntas · ${customerTotals.salesWithIncomeRecorded || 0} con ingreso declarado`;
+  }
   renderPieLike('customerCompanyType', 'sumCustomerCompanyType', customerReport.companyType || [], 'label', 'count', 'sumCustomerCompanyTypeSummary', 'Total compradores', 'doughnut');
   renderPieLike('customerEmployment', 'sumCustomerEmployment', customerReport.employmentProfile || [], 'label', 'count', 'sumCustomerEmploymentSummary', 'Total compradores', 'doughnut');
   renderPieLike('customerSex', 'sumCustomerSex', customerReport.sex || [], 'label', 'count', 'sumCustomerSexSummary', 'Total compradores', 'doughnut');
   renderPieLike('customerPurchaseMode', 'sumCustomerPurchaseMode', customerReport.purchaseMode || [], 'label', 'count', 'sumCustomerPurchaseModeSummary', 'Total operaciones', 'doughnut');
+  const incomeMeta = document.getElementById('sumCustomerIncomeMeta');
+  if (incomeMeta) incomeMeta.textContent = `· B/. · ${customerTotals.incomesRecorded || 0} clientes`;
+  const incomeAverage = document.getElementById('sumCustomerIncomeAverage');
+  if (incomeAverage) {
+    incomeAverage.innerHTML = `<span>Ingreso promedio</span><strong>${formatMoney(customerTotals.averageIncome || 0)}</strong>`;
+  }
   renderBarSimple('customerIncome', 'sumCustomerIncome', customerReport.incomeBands || [], 'label', 'count', 'sumCustomerIncomeSummary', 'Clientes con ingreso registrado');
   renderPieLike('customerCapture', 'sumCustomerCapture', customerReport.captureChannel || [], 'label', 'count', 'sumCustomerCaptureSummary', 'Total operaciones', 'doughnut');
 
@@ -3608,61 +3761,95 @@ if (!isPeriodView) try {
   const lt = legal.totals || {};
   renderTargetKpis('summaryLegalKpis', [
     { title: 'Contratos firmados', value: lt.contratosFirmados || 0 },
-    { title: 'Minutas liberación', value: lt.minutasLiberacion || 0 },
-    { title: 'Minutas segregación', value: lt.minutasSegregacion || 0 },
-    { title: 'Minutas préstamo', value: lt.minutasPrestamo || 0 },
-    { title: 'Protocolos cliente', value: lt.protocolosCliente || 0 },
-    { title: 'Protocolos banco cliente', value: lt.protocolosBancoCliente || 0 },
-    { title: 'Protocolos banco', value: lt.protocolosBanco || 0 },
     { title: 'Escrituras inscritas', value: lt.escriturasInscritas || 0 },
     { title: 'Fincas segregadas', value: lt.fincasSegregadas || 0 }
   ]);
   renderLegalProgressMatrix(legal);
 
-  renderPieLike('p17', 'sumLegalLiberacion', legal.minutasLiberacion || [], 'status', 'count', 'sumLegalLiberacionSummary', 'Total minutas', 'pie');
-  renderPieLike('p18', 'sumLegalSegregacion', legal.minutasSegregacion || [], 'status', 'count', 'sumLegalSegregacionSummary', 'Total minutas', 'pie');
-  renderPieLike('p19', 'sumLegalPrestamo', legal.minutasPrestamo || [], 'status', 'count', 'sumLegalPrestamoSummary', 'Total minutas', 'pie');
-
-  // ---------- Legal: firma protocolo por banco ----------
-  sumDestroy('p20');
-  const protocolByBank = legal.protocolByBank || [];
-  if (ctx('sumProtocolByBank')) {
-    __sumCharts.p20 = new Chart(ctx('sumProtocolByBank'), {
+  const legalProgressRows = legal.progressByUnit || [];
+  const legalStages = (legal.milestones || []).map(stage => {
+    const steps = legalProgressRows.map(row => row?.milestones?.[stage.key]).filter(Boolean);
+    const applicable = steps.filter(step => step.status !== 'not_applicable');
+    return {
+      label: stage.shortLabel || stage.label,
+      completed: applicable.filter(step => step.status === 'completed').length,
+      total: applicable.length
+    };
+  });
+  sumDestroy('legalStage');
+  if (ctx('sumLegalProgressByStage')) {
+    __sumCharts.legalStage = new Chart(ctx('sumLegalProgressByStage'), {
       type: 'bar',
       data: {
-        labels: protocolByBank.map(x => x.bank),
+        labels: legalStages.map(item => item.label),
         datasets: [
-          { label: 'Cliente', data: protocolByBank.map(x => toNum(x.cliente)) },
-          { label: 'Banco cliente', data: protocolByBank.map(x => toNum(x.bancoCliente)) },
-          { label: 'Banco interino', data: protocolByBank.map(x => toNum(x.bancoInterino)) }
+          { label: 'Completado', data: legalStages.map(item => item.completed), backgroundColor: '#2f6fe0', borderWidth: 0, borderRadius: 3 },
+          { label: 'Pendiente', data: legalStages.map(item => Math.max(0, item.total - item.completed)), backgroundColor: 'rgba(148,163,184,.34)', borderWidth: 0, borderRadius: 3 }
         ]
       },
       options: summaryChartOpts({
+        plugins: { legend: summaryLegend() },
         scales: {
-          y: { beginAtZero: true, ticks: { precision: 0 } }
+          x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 45, minRotation: 0 } },
+          y: { stacked: true, beginAtZero: true, ticks: { precision: 0 }, grid: { color: 'rgba(148,163,184,.14)' } }
         }
       })
     });
   }
   renderChartSummary(
-    'sumProtocolByBankSummary',
-    protocolByBank.map(x => ({
-      label: x.bank,
-      value: toNum(x.cliente) + toNum(x.bancoCliente) + toNum(x.bancoInterino)
-    })),
-    { totalLabel: 'Total firmas protocolo' }
+    'sumLegalProgressByStageSummary',
+    legalStages.map(item => ({ label: item.label, value: item.completed, total: item.total })),
+    {
+      totalLabel: 'Etapas completadas',
+      formatter: (value, item) => item ? `${value} de ${item.total}` : `${value}`
+    }
   );
 
-  // ---------- Técnico: KPIs ----------
-  const tt = technical.permitsTotals || {};
-  renderTargetKpis('summaryTechnicalKpis', [
-    { title: 'Permisos construcción', value: tt.construction || 0 },
-    { title: 'Permisos ocupación', value: tt.occupation || 0 },
-    { title: 'Fases construcción', value: (technical.constructionPhase || []).length },
-    { title: 'Modelos en construcción', value: (technical.modelsInConstruction || []).length }
-  ]);
+  // ---------- Legal: todas las minutas en una sola lectura ----------
+  ['p17', 'p18', 'p19', 'p20'].forEach(sumDestroy);
+  const minuteSeries = [
+    { label: 'Liberación', rows: legal.minutasLiberacion || [] },
+    { label: 'Segregación', rows: legal.minutasSegregacion || [] },
+    { label: 'Préstamo', rows: legal.minutasPrestamo || [] }
+  ];
+  const minuteCompleted = rows => (rows || []).reduce((sum, item) => {
+    const status = String(item.status || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    return sum + (/^(SI|COMPLETAD|FIRMAD|EMITID|APROBAD)/.test(status) ? toNum(item.count) : 0);
+  }, 0);
+  const minuteTotal = rows => (rows || []).reduce((sum, item) => sum + toNum(item.count), 0);
+  if (ctx('sumLegalMinutes')) {
+    __sumCharts.p17 = new Chart(ctx('sumLegalMinutes'), {
+      type: 'bar',
+      data: {
+        labels: minuteSeries.map(item => item.label),
+        datasets: [
+          { label: 'Sí', data: minuteSeries.map(item => minuteCompleted(item.rows)), backgroundColor: '#2f6fe0', borderWidth: 0, borderRadius: 3 },
+          { label: 'No', data: minuteSeries.map(item => Math.max(0, minuteTotal(item.rows) - minuteCompleted(item.rows))), backgroundColor: '#94a3b8', borderWidth: 0, borderRadius: 3 }
+        ]
+      },
+      options: summaryChartOpts({
+        plugins: { legend: summaryLegend() },
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: 'rgba(148,163,184,.14)' } }
+        }
+      })
+    });
+  }
+  renderChartSummary(
+    'sumLegalMinutesSummary',
+    minuteSeries.map(item => ({
+      label: item.label,
+      value: minuteCompleted(item.rows),
+      total: minuteTotal(item.rows)
+    })),
+    {
+      totalLabel: 'Total minutas completadas',
+      formatter: (value, item) => item ? `${value} sí · ${Math.max(0, item.total - value)} no` : `${value}`
+    }
+  );
 
-  renderPieLike('p21', 'sumConstructionStatus', technical.constructionStatus || [], 'status', 'count', 'sumConstructionStatusSummary', 'Total unidades', 'doughnut');
+  sumDestroy('p21');
   renderBarSimple('p22', 'sumConstructionPhase', technical.constructionPhase || [], 'phase', 'count', 'sumConstructionPhaseSummary', 'Total unidades');
   renderPieLike('p23', 'sumModelsInConstruction', technical.modelsInConstruction || [], 'model', 'count', 'sumModelsInConstructionSummary', 'Total modelos', 'pie');
   renderBarSimple('p24', 'sumConstructionProgressRanges', technical.constructionProgressRanges || [], 'range', 'count', 'sumConstructionProgressRangesSummary', 'Total unidades');
@@ -3708,7 +3895,7 @@ if (!isPeriodView) try {
     }
   ] : [
     {
-      title: 'Loan aprobado',
+      title: 'Monto de financiamiento aprobado',
       value: formatMoney(loanApprovedSummary)
     },
     {
@@ -3734,16 +3921,8 @@ if (!isPeriodView) try {
       value: formatMoney(financeTotals.debt || 0)
     },
     {
-      title: 'Budget aprobado',
+      title: 'Estimación total de costes',
       value: formatMoney(budgetApprovedSummary)
-    },
-    {
-      title: 'Valor base / cheques',
-      value: formatMoney(financeTotals.checkAmountTotal || 0)
-    },
-    {
-      title: 'Total promotor',
-      value: formatMoney(financeTotals.promoterTotal || 0)
     },
     {
       title: 'CPP vigente',
@@ -3754,30 +3933,6 @@ if (!isPeriodView) try {
       title: 'CPP en trámite',
       value: `${cpp.active || 0} activos`,
       sub: `30d:${cpp.due30 || 0} · 60d:${cpp.due60 || 0} · 90d:${cpp.due90 || 0}`
-    }
-  ]);
-
-  // ---------- Financiero: líneas crédito ----------
-  renderMiniKpiBox('summaryFinanceControlCards', [
-    {
-      title: 'Prestamo promotor',
-      value: `Desembolsado: ${formatMoney(financeTotals.disbursed || 0)}`,
-      sub: `Saldo por pagar: ${formatMoney(financeTotals.debt || 0)}`
-    },
-    {
-      title: 'Recuperacion del banco',
-      value: formatMoney(financeTotals.amortized || 0),
-      sub: `Manual: ${formatMoney(financeTotals.manualAmortized || 0)} · Ventas: ${formatMoney(financeTotals.allocatedAmortized || 0)}`
-    },
-    {
-      title: 'Intereses pagados',
-      value: formatMoney(financeTotals.interestPaid || 0),
-      sub: `Total pagado al banco: ${formatMoney(financeTotals.totalPaidToBank || 0)}`
-    },
-    {
-      title: 'Ventas / cheques',
-      value: formatMoney(financeTotals.checkAmountTotal || 0),
-      sub: `Destinado a promotor: ${formatMoney(financeTotals.promoterTotal || 0)}`
     }
   ]);
 
@@ -3817,31 +3972,25 @@ if (!isPeriodView) try {
     }
   );
 
-  // ---------- Financiero: deuda frente a saldo comercial pendiente ----------
+  // ---------- Financiero: CPP vigentes de unidades no traspasadas frente a deuda ----------
   sumDestroy('p26');
-  const collectionBuckets = Object.values(collectionCoverage.buckets || {})
-    .filter(bucket => toNum(bucket?.amount) > 0);
-  const coverageDebt = toNum(collectionCoverage.totalDebt);
-  const coverageReceivable = toNum(collectionCoverage.totalReceivable);
+  const coverageDebt = toNum(financeTotals.debt);
+  const coverageReceivable = toNum(fc.cppVigenteAmount);
 
   if (ctx('sumCppCoverage')) {
     __sumCharts.p26 = new Chart(ctx('sumCppCoverage'), {
       type: 'bar',
       data: {
-        labels: ['Deuda bancaria pendiente', 'Saldo pendiente de cobro'],
+        labels: ['Deuda bancaria pendiente', 'CPP vigentes'],
         datasets: [
-          { label: 'Deuda bancaria pendiente', data: [coverageDebt, 0], backgroundColor: '#dc2626' },
-          ...collectionBuckets.map((bucket, index) => ({
-            label: bucket.label,
-            data: [0, toNum(bucket.amount)],
-            backgroundColor: ['#2563eb', '#f59e0b', '#16a34a', '#64748b'][index % 4]
-          }))
+          { label: 'Monto', data: [coverageDebt, coverageReceivable], backgroundColor: ['#dc2626', '#2563eb'], borderWidth: 0, borderRadius: 4 }
         ]
       },
       options: summaryChartOpts({
+        plugins: { legend: { display: false } },
         scales: {
-          x: { stacked: true },
-          y: { stacked: true, beginAtZero: true }
+          x: { grid: { display: false } },
+          y: { beginAtZero: true, grid: { color: 'rgba(148,163,184,.14)' } }
         }
       })
     });
@@ -3849,24 +3998,23 @@ if (!isPeriodView) try {
   const coverageSummary = document.getElementById('sumCppCoverageSummary');
   if (coverageSummary) {
     const noDebt = coverageDebt <= 0;
-    const canCover = !!collectionCoverage.canCoverDebt;
-    const difference = toNum(collectionCoverage.difference);
+    const canCover = noDebt || coverageReceivable >= coverageDebt;
+    const difference = coverageReceivable - coverageDebt;
+    const coveragePct = coverageDebt > 0 ? coverageReceivable / coverageDebt * 100 : 0;
     const verdict = noDebt
       ? 'No hay deuda bancaria pendiente.'
       : canCover
-        ? 'Sí. Lo pendiente de cobro permitiría cubrir la deuda actual.'
-        : 'No. Lo pendiente de cobro no alcanzaría para cubrir la deuda actual.';
+        ? 'Sí. Los CPP vigentes cubren la deuda bancaria pendiente.'
+        : 'No. Los CPP vigentes no cubren la deuda bancaria pendiente.';
     coverageSummary.innerHTML = `
       <div class="summary-coverage-verdict ${noDebt || canCover ? 'is-positive' : 'is-negative'}">
         <strong>${verdict}</strong>
-        <span>${noDebt ? 'Cobertura no aplicable' : `${toNum(collectionCoverage.coveragePct).toFixed(1)}% de cobertura`}</span>
+        <span>${noDebt ? 'Cobertura no aplicable' : `${coveragePct.toFixed(1)}% de cobertura`}</span>
       </div>
       <div class="summary-mini-box">
         <div class="summary-mini-row"><span class="summary-mini-label">Deuda bancaria pendiente</span><span class="summary-mini-value">${formatMoneyCompact(coverageDebt)}</span></div>
-        ${collectionBuckets.map(bucket => `<div class="summary-mini-row"><span class="summary-mini-label">${escapeHtml(bucket.label)} · ${toNum(bucket.units)} unidades</span><span class="summary-mini-value">${formatMoneyCompact(toNum(bucket.amount))}</span></div>`).join('')}
-        <div class="summary-mini-row summary-mini-total"><span class="summary-mini-label">Total pendiente de cobro</span><span class="summary-mini-value">${formatMoneyCompact(coverageReceivable)}</span></div>
+        <div class="summary-mini-row summary-mini-total"><span class="summary-mini-label">CPP vigentes · unidades no traspasadas</span><span class="summary-mini-value">${formatMoneyCompact(coverageReceivable)}</span></div>
         <div class="summary-mini-row"><span class="summary-mini-label">${difference >= 0 ? 'Excedente potencial' : 'Déficit potencial'}</span><span class="summary-mini-value">${formatMoneyCompact(Math.abs(difference))}</span></div>
-        ${toNum(collectionCoverage.missingPriceUnits) ? `<div class="summary-mini-row"><span class="summary-mini-label">Unidades sin precio excluidas</span><span class="summary-mini-value">${toNum(collectionCoverage.missingPriceUnits)}</span></div>` : ''}
       </div>`;
   }
 
@@ -4006,7 +4154,7 @@ async function loadSummary() {
 
     // 🔥 recalcular progreso EXACTAMENTE igual que Proyecto
  if (!activePeriod) try {
-  const raw = await API.get(`/api/projects/${id}/checklists?ts=${Date.now()}`);
+  const raw = await getProjectChecklists();
   const list = (raw?.checklists || raw || []);
 
   const filtered = list.filter(c => true); // igual que globalProgress (sin onlyPending)
@@ -4187,7 +4335,6 @@ if (btn) {
       } : {
         'Estatus lotes / unidades': captureCanvas('sumUnitsDonut'),
         'Ventas mensuales': captureCanvas('sumSalesMonthly'),
-        'Ventas vs ventas caídas': captureCanvas('sumSalesVsFallen'),
         'Ventas por modelo de vivienda': captureCanvas('sumSalesByModel'),
         'Estatus bancario de operaciones financiadas': captureCanvas('sumBankStatus'),
         'CPP por banco': captureCanvas('sumCppPie'),
@@ -4199,21 +4346,17 @@ if (btn) {
         'Ingresos mensuales declarados': captureCanvas('sumCustomerIncome'),
         'Vía de captación': captureCanvas('sumCustomerCapture'),
 
-        'Minutas de liberación': captureCanvas('sumLegalLiberacion'),
-        'Minutas de segregación': captureCanvas('sumLegalSegregacion'),
-        'Minutas de préstamo': captureCanvas('sumLegalPrestamo'),
-        'Firma de protocolo por banco': captureCanvas('sumProtocolByBank'),
+        'Minutas': captureCanvas('sumLegalMinutes'),
+        'Avance legal por etapa': captureCanvas('sumLegalProgressByStage'),
 
-        'Estatus construcción': captureCanvas('sumConstructionStatus'),
-        'Fase de construcción': captureCanvas('sumConstructionPhase'),
-        'Modelos en construcción': captureCanvas('sumModelsInConstruction'),
+        'Estatus construcción': captureCanvas('sumConstructionPhase'),
+        'Modelos de vivienda': captureCanvas('sumModelsInConstruction'),
+        'Duración de la fase': captureCanvas('sumPhaseTimeDurationChart'),
         'Permisos por institución': captureCanvas('sumPermitsByInstitution'),
 
         'Comparación por fase (Usos)': captureCanvas('sumPhaseChart'),
         'Comparación por fase (Fuentes)': captureCanvas('sumPhaseSourceChart'),
-        'Desviación temporal - Duración por fase': captureCanvas('sumPhaseTimeDurationChart'),
-        'Desviación temporal - Fecha final': captureCanvas('sumPhaseTimeDelayChart'),
-        'Cobertura de deuda con cobros pendientes': captureCanvas('sumCppCoverage'),
+        'Cobertura CPPs vigentes vs. deuda bancaria pendiente': captureCanvas('sumCppCoverage'),
 
       };
 
@@ -4536,8 +4679,8 @@ function addInfoBadges(){
     sumProgressByPhase: 'Promedio de avance por fase según checklists (level 1..6).',
     sumPermitsByInstitution: 'Permisos por institución: pendiente / trámite / aprobado.',
     sumCppPie: 'Cantidad y monto acumulado de las CPP agrupadas por banco.',
-    sumUnitsDonut: 'Unidades: disponibles, reservadas, vendidas, escrituradas, canceladas.',
-    sumSalesMonthly: 'Contratos firmados por mes (fechaContratoCliente).',
+    sumUnitsDonut: 'Inventario activo por estado comercial. Las viviendas entregadas se incluyen en Traspasado.',
+    sumSalesMonthly: 'Unidades reservadas por mes según la fecha de reserva.',
     sumDisbPlanReal: 'Desembolsos plan vs. real (acumulado).',
     sumSalesVsFallen: 'Compara ventas reales contra ventas caídas/canceladas por año.',
     sumSalesByModel: 'Distribución de ventas por modelo de vivienda.',
@@ -4545,16 +4688,12 @@ function addInfoBadges(){
     sumCompanyType: 'Tipo de empresa del cliente: pública, privada o mixta.',
     sumBankStatus: 'Situación actual de las operaciones financiadas. Excluye las compras al contado.',
     sumPurchaseModality: 'Operaciones por modalidad de compra: interés preferencial, tasa libre o al contado.',
-    sumLegalLiberacion: 'Minutas de liberación completadas frente a pendientes.',
-    sumLegalSegregacion: 'Minutas de segregación completadas frente a pendientes.',
-    sumLegalPrestamo: 'Minutas de préstamo completadas frente a pendientes.',
-    sumProtocolByBank: 'Firmas de protocolo agrupadas por banco.',
-    sumConstructionStatus: 'Estado general de construcción de las unidades.',
+    sumLegalMinutes: 'Minutas de liberación, segregación y préstamo completadas frente a pendientes.',
     sumConstructionPhase: 'Fase de obra actual indicada en la ficha de cada unidad.',
     sumModelsInConstruction: 'Modelos de vivienda actualmente en construcción.',
     sumConstructionProgressRanges: 'Avance de construcción agrupado por rangos porcentuales.',
     sumCreditLines: 'Líneas de crédito: desembolsado frente a amortizado total.',
-    sumCppCoverage: 'Compara la deuda bancaria pendiente con el saldo que todavía queda por cobrar de las unidades del proyecto.',
+    sumCppCoverage: 'Compara la deuda bancaria pendiente con las CPP vigentes de unidades que todavía no han sido traspasadas.',
   };
   for (const [id, tip] of Object.entries(tips)) {
     const canvas = document.getElementById(id);
@@ -4669,8 +4808,16 @@ const state = {
   project: null,
   checklists: [],
   docsByChecklist: {},
+  operational: {
+    units: [],
+    sales: new Map(),
+    finance: null,
+    alerts: [],
+    resolved: new Set(),
+    unitProgress: new Map()
+  },
   filterRole: null,
-  collapsed: new Set(),
+  collapsed: new Set(PHASES.map(phase => phase.key)),
   onlyPending: false,
   // NEW: filtro de roles permitidos en checklists (null = sin filtro)
   allowedChecklistRoles: __ALLOWED_ROLES,
@@ -4732,33 +4879,198 @@ function isChecklistActive(cl) {
   );
 }
 
-  // Semáforo por rol
-  // Semáforo por rol: considera SOLO checklists ACTIVOS y no completados.
-// Rojo  = hay al menos 1 activo pendiente y vencido
-// Amarillo = hay al menos 1 activo pendiente (no vencido)
-// Verde = no hay activos pendientes para ese rol
-function semaphoreForRole(roleKey) {
-  const now = Date.now();
+  // Señal operativa unificada: checklists, vencimientos y procesos reales.
+  const TIMELINE_DAY_MS = 24 * 60 * 60 * 1000;
 
-  // Solo los checklist de este rol que están ACTIVOS (secundados por validación o desbloqueo manual)
-  const activeForRole = state.checklists.filter(c =>
-    c.role === roleKey &&
-    isChecklistActive(c) &&
-    c.status !== 'COMPLETADO'
-  );
-
-  if (activeForRole.length === 0) {
-    // No hay nada activo pendiente para este rol ahora mismo
-    return '🟢';
+  function timelineDaysUntil(value) {
+    if (!value) return null;
+    const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const parsed = new Date(value);
+    if (!match && Number.isNaN(parsed.getTime())) return null;
+    const today = new Date();
+    const start = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    const target = match
+      ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+      : Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+    return Math.round((target - start) / TIMELINE_DAY_MS);
   }
 
-  const anyOverdue = activeForRole.some(c =>
-    c.dueDate && new Date(c.dueDate).getTime() < now
-  );
+  function timelineAlert({ kind, phase, roles, due = null, title, detail = '', sourceId = '', warningDays = 30, critical = false }) {
+    const days = timelineDaysUntil(due);
+    if (due && days === null) return null;
+    if (due && days > warningDays) return null;
+    return {
+      kind,
+      phase,
+      roles: Array.isArray(roles) ? roles : [roles],
+      due: due ? String(due).slice(0, 10) : null,
+      days,
+      title,
+      detail,
+      sourceId: String(sourceId || ''),
+      severity: critical || (days !== null && days < 0) ? 'danger' : 'warn'
+    };
+  }
 
-  return anyOverdue ? '🔴' : '🟡';
-}
+  function operationalUnitState(value) {
+    return normalizeUnitEstadoFrontend(value || 'disponible');
+  }
 
+  function buildOperationalTimelineAlerts() {
+    const operational = state.operational || {};
+    const units = operational.units || [];
+    const sales = operational.sales instanceof Map ? operational.sales : new Map();
+    const finance = operational.finance || {};
+    const alerts = [];
+    const push = value => { if (value) alerts.push(value); };
+
+    units.forEach(unit => {
+      const sale = sales.get(String(unit._id)) || {};
+      const unitName = unitDisplayName(unit) || 'Unidad';
+      const stateKey = operationalUnitState(unit.estado);
+      const closed = ['escriturado_traspasado', 'vivienda_entregada'].includes(stateKey);
+      const cashSale = String(sale.modalidadFinanciamiento || '').trim().toLowerCase() === 'al contado';
+
+      if (!closed && !cashSale) {
+        push(timelineAlert({
+          kind: 'cpp', phase: 'FINANCIACION', roles: ['FINANCIERO', 'COMERCIAL'],
+          due: sale.fechaVencimientoCPP, warningDays: 60,
+          title: `CPP de ${unitName}`,
+          detail: [sale.numCPP ? `N. ${sale.numCPP}` : '', sale.banco || ''].filter(Boolean).join(' - '),
+          sourceId: sale._id || unit._id
+        }));
+      }
+
+      (Array.isArray(sale.pagares) ? sale.pagares : []).forEach(pagare => {
+        if (pagare?.cobrado) return;
+        push(timelineAlert({
+          kind: 'promissory_note', phase: 'FINANCIACION', roles: ['FINANCIERO', 'CONTABILIDAD'],
+          due: pagare?.fechaVencimiento, warningDays: 30,
+          title: `Pagare de ${unitName}`,
+          detail: pagare?.numero ? `N. ${pagare.numero}` : 'Pendiente de cobro',
+          sourceId: `${sale._id || unit._id}:${pagare?._id || pagare?.numero || ''}`
+        }));
+      });
+
+      push(timelineAlert({
+        kind: 'construction_permit', phase: 'PERMISOS', roles: ['TECNICO', 'LEGAL'],
+        due: sale.permisoConstruccionVencimiento, warningDays: 60,
+        title: `Permiso de construccion - ${unitName}`,
+        detail: sale.permisoConstruccionNum || 'Permiso por renovar',
+        sourceId: sale._id || unit._id
+      }));
+    });
+
+    (Array.isArray(_allDocs) ? _allDocs : []).forEach(doc => {
+      if (!doc?.expiryDate || String(doc.status || 'ACTIVE').toUpperCase() !== 'ACTIVE') return;
+      const isPermit = !!doc.permitCode || String(doc.category || '').toLowerCase() === 'permits';
+      if (isPermit) {
+        push(timelineAlert({
+          kind: 'permit_document', phase: 'PERMISOS', roles: ['TECNICO', 'LEGAL'],
+          due: doc.expiryDate, warningDays: 60,
+          title: doc.permitTitle || doc.title || doc.originalname || 'Documento de permiso',
+          detail: doc.permitCode ? `Permiso ${doc.permitCode}` : 'Documento de permisos',
+          sourceId: doc._id
+        }));
+      }
+    });
+
+    (__permits?.items || []).forEach(permit => {
+      if (String(permit.status || '').toLowerCase() !== 'rejected') return;
+      push(timelineAlert({
+        kind: 'permit_rejected', phase: 'PERMISOS', roles: ['TECNICO', 'LEGAL', 'GERENCIA'],
+        title: permit.title || permit.code || 'Permiso rechazado',
+        detail: permit.institution || 'Requiere revision', sourceId: permit.code, critical: true
+      }));
+    });
+
+    projectInsurancePolicies().forEach(policy => {
+      const type = String(policy.type || 'CAR').toUpperCase();
+      push(timelineAlert({
+        kind: 'insurance_policy', phase: type === 'INCENDIO' ? 'ESCRITURACION' : 'OBRA',
+        roles: ['TECNICO', 'FINANCIERO'], due: policy.expiryDate, warningDays: 30,
+        title: `Poliza ${type}${policy.policyNumber ? ` - ${policy.policyNumber}` : ''}`,
+        detail: policy.insurer || policy.bank || 'Poliza del proyecto', sourceId: policy._id || policy.policyNumber
+      }));
+    });
+
+    const financeControl = finance.financeControl || {};
+    (financeControl.loanLines || []).forEach(line => {
+      const balance = Number(line.balanceAfterSales ?? line.balance ?? line.disbursementAmount ?? 0);
+      if (balance <= 0) return;
+      const entries = Array.isArray(line.entries) && line.entries.length ? line.entries : [line];
+      entries.forEach(entry => push(timelineAlert({
+        kind: 'credit_line', phase: 'FINANCIACION', roles: ['FINANCIERO', 'GERENCIA'],
+        due: entry.maturityDate, warningDays: 120,
+        title: line.name || 'Linea de credito',
+        detail: entry.loanNumber ? `Prestamo ${entry.loanNumber}` : 'Saldo pendiente',
+        sourceId: entry._id || line._id
+      })));
+    });
+
+    (finance.finance?.phases || []).forEach(phase => {
+      (phase.requirements || []).forEach(requirement => {
+        const number = Number(requirement.number);
+        const data = requirement.structuredData || {};
+        if ([25, 26].includes(number)) {
+          push(timelineAlert({
+            kind: number === 25 ? 'performance_bond' : 'payment_bond',
+            phase: 'CONTRATISTAS', roles: ['FINANCIERO', 'TECNICO'],
+            due: data.expiryDate, warningDays: Math.max(0, Number(data.alertDaysBefore ?? 30)),
+            title: number === 25 ? 'Fianza de cumplimiento' : 'Fianza de pago',
+            detail: phase.name || 'Fase financiera', sourceId: `${phase._id || ''}:${requirement._id || number}`
+          }));
+        }
+        if ([7, 27].includes(number)) {
+          push(timelineAlert({
+            kind: number === 27 ? 'engineering_inspection_follow_up' : 'financial_statements_follow_up',
+            phase: number === 27 ? 'OBRA' : 'FINANCIACION',
+            roles: number === 27 ? ['TECNICO', 'GERENCIA'] : ['FINANCIERO', 'CONTABILIDAD'],
+            due: data.nextReviewDate, warningDays: 0,
+            title: number === 27 ? 'Seguimiento de inspeccion de ingenieria' : 'Actualizacion de estados financieros',
+            detail: phase.name || 'Seguimiento periodico', sourceId: `${phase._id || ''}:${requirement._id || number}`
+          }));
+        }
+      });
+    });
+
+    state.operational.alerts = alerts
+      .filter(alert => !state.operational.resolved.has(`${alert.kind}:${alert.sourceId}:${alert.due || ''}`))
+      .sort((a, b) => (a.severity === b.severity ? (a.days ?? 9999) - (b.days ?? 9999) : a.severity === 'danger' ? -1 : 1));
+  }
+
+  function roleOperationalSignal(roleKey) {
+    const now = Date.now();
+    const projectTasks = state.checklists.filter(checklist =>
+      checklist.role === roleKey && !['CONTRATISTAS', 'OBRA'].includes(checklist.phase) && isChecklistActive(checklist) && checklist.status !== 'COMPLETADO'
+    );
+    const unitById = new Map((state.operational?.units || []).map(unit => [String(unit._id), unit]));
+    const unitTasks = [];
+    state.checklists.filter(checklist => checklist.role === roleKey && ['CONTRATISTAS', 'OBRA'].includes(checklist.phase)).forEach(checklist => {
+      const taskIds = checklist.subtasks?.length
+        ? checklist.subtasks.map(item => ({ id:String(item._id || item.id || item.title), title:item.title || item.name }))
+        : [{ id:'__checklist__', title:checklist.title }];
+      [...(state.operational?.unitProgress?.entries?.() || [])].filter(([key]) => key.startsWith(`${String(checklist._id)}:`)).forEach(([, row]) => {
+        taskIds.forEach(task => {
+          const completed = row.states?.some(item => String(item.subtaskId) === task.id && item.completed);
+          if (!completed) unitTasks.push({
+            title:`${task.title} · ${unitDisplayName(unitById.get(String(row.unitId)) || {})}`,
+            dueDate:checklist.dueDate
+          });
+        });
+      });
+    });
+    const tasks = [...projectTasks, ...unitTasks];
+    const overdueTasks = tasks.filter(task => task.dueDate && new Date(task.dueDate).getTime() < now);
+    const alerts = (state.operational?.alerts || []).filter(alert => alert.roles.includes(roleKey));
+    const critical = alerts.filter(alert => alert.severity === 'danger');
+    const tone = overdueTasks.length || critical.length ? 'danger' : (tasks.length || alerts.length ? 'warn' : 'idle');
+    const taskNames = [...new Set([
+      ...tasks.map(task => task.title),
+      ...alerts.map(alert => alert.title)
+    ].filter(Boolean))];
+    return { tone, tasks, overdueTasks, alerts, critical, taskNames };
+  }
 
   function kpi(label, v) {
     const isMoney = /loan|desembols|budget|gasto/i.test(label);
@@ -4828,8 +5140,6 @@ function semaphoreForRole(roleKey) {
     if (statusSel) statusSel.value = p.status;
     if (projectTypeText) projectTypeText.textContent = `Tipo de proyecto: ${p.projectType || p.tipoProyecto || 'No definido'}`;
     renderProjectCover(p);
-    if (!['tecnico','legal'].includes(myRole)) await loadCommercialTemplateStatus();
-
     renderProjectHeaderKpis(p);
       // ROLE-SEP: control de publicación y UI para commercial
   const pub = String(
@@ -4928,38 +5238,79 @@ function semaphoreForRole(roleKey) {
   statusSel?.addEventListener('change', saveProjectSettingsAuto);
   projectCurrencySel?.addEventListener('change', saveProjectSettingsAuto);
 
-  async function loadProyectoData() {
-    try {
-      let res = await API.get(`/api/projects/${id}/checklists?ts=${Date.now()}`);
+  async function loadProyectoData({ force = false } = {}) {
+    const checklistTask = (async () => {
+      let res = await getProjectChecklists({ force });
       const listLen = Array.isArray(res) ? res.length : (res?.checklists?.length || 0);
       if (!listLen) {
         await API.post(`/api/projects/${id}/process/apply-template`, { force: true });
-        res = await API.get(`/api/projects/${id}/checklists?ts=${Date.now()}`);
+        invalidateProjectDataCache('checklists');
+        res = await getProjectChecklists({ force: true });
       }
       state.checklists = (res?.checklists || res || []).map(normalizeChecklist);
-    } catch { state.checklists = []; }
+    })().catch(() => { state.checklists = []; });
 
-    // Documentos
-    try {
-      const docs = await API.get(`/api/documents?projectId=${id}`);
-
+    const documentsTask = getProjectDocuments({ force }).then(docs => {
+      _allDocs = Array.isArray(docs) ? docs : [];
+      _allDocsLoaded = true;
       state.docsByChecklist = {};
-      (docs || []).forEach(d => {
+      _allDocs.forEach(d => {
         if (!d.checklistId) return;
         if (!state.docsByChecklist[d.checklistId]) state.docsByChecklist[d.checklistId] = [];
         state.docsByChecklist[d.checklistId].push(d);
       });
-    } catch { state.docsByChecklist = {}; }
+    }).catch(() => { state.docsByChecklist = {}; });
 
-    // Inicializa colapsado: todo cerrado salvo la primera fase con elementos
-    if (state.collapsed.size === 0) {
-      PHASES.forEach(p => state.collapsed.add(p.key));
-      const firstWithItems = PHASES.find(p => state.checklists.some(c => c.phase===p.key));
-      if (firstWithItems) state.collapsed.delete(firstWithItems.key);
-    }
-    // Precarga permisos para que la barra "Permisos" funcione a la primera
-    try { __permits = await apiPermitsGetProject(true); } catch { __permits = null; }
+    const permitsTask = getProjectPermits({ force })
+      .then(permits => { __permits = permits; })
+      .catch(() => { __permits = null; });
+
+    const operationalTask = Promise.all([
+      getProjectUnitsAll({ force }).catch(() => []),
+      getProjectVentas({ force }).catch(() => []),
+      getProjectFinanceSnapshot({ force }).catch(() => null),
+      getProjectExpiryAlertResolutions({ force }).catch(() => ({ resolutions: [] })),
+      getProjectUnitChecklistProgress({ force }).catch(() => ({ progress: [] }))
+    ]).then(([units, sales, finance, resolutions, unitProgress]) => {
+      state.operational.units = Array.isArray(units) ? units : [];
+      state.operational.sales = new Map((Array.isArray(sales) ? sales : []).map(sale => [String(sale.unitId), sale]));
+      state.operational.finance = finance;
+      const saved = Array.isArray(resolutions?.resolutions) ? resolutions.resolutions : [];
+      state.operational.resolved = new Set(saved.map(item => String(item?.key || '')).filter(Boolean));
+      state.operational.unitProgress = new Map((unitProgress?.progress || []).map(row => [
+        `${String(row.checklistId)}:${String(row.unitId)}`,
+        row
+      ]));
+    });
+
+    await Promise.all([checklistTask, documentsTask, permitsTask, operationalTask]);
+    buildOperationalTimelineAlerts();
+
+    // La vista unificada comienza compacta: el usuario elige qué fase abrir.
+    PHASES.forEach(p => state.collapsed.add(p.key));
   }
+
+  window.refreshProjectTimelineOperational = async () => {
+    const collapsed = new Set(state.collapsed);
+    await loadProyectoData({ force: true });
+    state.collapsed = collapsed;
+    renderProyecto();
+    window.__BANK73_UNIFIED_REFRESH?.();
+  };
+
+  window.refreshProjectTimelineData = async () => {
+    const [units, sales, unitProgress] = await Promise.all([
+      getProjectUnitsAll({ force:true }).catch(() => state.operational.units),
+      getProjectVentas({ force:true }).catch(() => [...state.operational.sales.values()]),
+      getProjectUnitChecklistProgress({ force:true }).catch(() => ({ progress:[...state.operational.unitProgress.values()] }))
+    ]);
+    state.operational.units = Array.isArray(units) ? units : [];
+    state.operational.sales = new Map((Array.isArray(sales) ? sales : []).map(sale => [String(sale.unitId), sale]));
+    state.operational.unitProgress = new Map((unitProgress?.progress || []).map(row => [`${String(row.checklistId)}:${String(row.unitId)}`, row]));
+    buildOperationalTimelineAlerts();
+    renderProyecto();
+    window.__BANK73_UNIFIED_REFRESH?.();
+  };
 
   function normalizeChecklist(c) {
     const phaseRaw = c.phase || c.phaseKey || c.fase || c.category || '';
@@ -5023,8 +5374,9 @@ return {
     state.onlyPending = !state.onlyPending;
     if (togglePendientesBtn) {
   togglePendientesBtn.classList.toggle('is-on', state.onlyPending);
-  const st = togglePendientesBtn.querySelector('.state');
-  if (st) st.textContent = state.onlyPending ? 'on' : 'off';
+  togglePendientesBtn.setAttribute('aria-pressed', String(state.onlyPending));
+  togglePendientesBtn.title = state.onlyPending ? 'Mostrar todas las tareas' : 'Mostrar solo pendientes';
+  togglePendientesBtn.setAttribute('aria-label', togglePendientesBtn.title);
    }
 
     renderProyecto();
@@ -5035,37 +5387,299 @@ return {
     renderProyecto();
   };
 
+  function phaseOperationalAlerts(phaseKey) {
+    return (state.operational?.alerts || []).filter(alert =>
+      alert.phase === phaseKey && (!state.filterRole || alert.roles.includes(state.filterRole))
+    );
+  }
+
+  function operationalUnitsSnapshot() {
+    const units = state.operational?.units || [];
+    const sales = state.operational?.sales instanceof Map ? state.operational.sales : new Map();
+    const counts = {
+      available: 0, reserved: 0, cpp: 0, legal: 0, deeded: 0, delivered: 0,
+      committed: 0, closed: 0, inConstruction: 0, completedConstruction: 0
+    };
+    const contractors = new Map();
+    const constructionProgress = [];
+
+    units.forEach(unit => {
+      const sale = sales.get(String(unit._id)) || {};
+      const status = operationalUnitState(unit.estado);
+      const delivered = !!sale.fechaEntregaVivienda || /^(si|sí|entregad)/i.test(String(sale.entregaCasa || '').trim());
+      if (['disponible', 'inventario'].includes(status)) counts.available++;
+      if (status === 'reservado') counts.reserved++;
+      if (status === 'con_cpp') counts.cpp++;
+      if (status === 'tramite_legal_activado') counts.legal++;
+      if (status === 'escriturado_traspasado' && !delivered) counts.deeded++;
+      if (delivered) counts.delivered++;
+      if (['reservado', 'con_cpp', 'tramite_legal_activado', 'escriturado_traspasado', 'vivienda_entregada'].includes(status)) counts.committed++;
+      if (['escriturado_traspasado', 'vivienda_entregada'].includes(status)) counts.closed++;
+
+      const progress = Math.min(100, Math.max(0, Number(sale.avanceConstruccionPct || 0)));
+      const constructionState = String(sale.estatusConstruccion || '').trim().toLowerCase();
+      if (progress > 0 || constructionState) constructionProgress.push(progress);
+      if ((progress > 0 && progress < 100) || /obra|constru|acabado/.test(constructionState)) counts.inConstruction++;
+      if (progress >= 100 || /terminad|complet|finaliz/.test(constructionState)) counts.completedConstruction++;
+
+      const contractor = String(sale.constructora || '').trim();
+      if (contractor) contractors.set(contractor, (contractors.get(contractor) || 0) + 1);
+    });
+
+    const averageConstruction = constructionProgress.length
+      ? Math.round(constructionProgress.reduce((sum, value) => sum + value, 0) / constructionProgress.length)
+      : 0;
+    return { units, sales, counts, contractors, averageConstruction };
+  }
+
+  function timelineMetric(label, value, tone = '') {
+    return `<span class="timeline-metric ${tone}"><b>${escapeHtml(String(value))}</b><small>${escapeHtml(label)}</small></span>`;
+  }
+
+  function renderOperationalPhaseSummary(phaseKey) {
+    const snapshot = operationalUnitsSnapshot();
+    const { counts } = snapshot;
+    const alerts = phaseOperationalAlerts(phaseKey);
+    const overdue = alerts.filter(alert => alert.severity === 'danger').length;
+    const alertButton = alerts.length
+      ? `<button type="button" class="timeline-alert-button ${overdue ? 'is-danger' : 'is-warning'}" data-phase-alerts="${phaseKey}"><b>${alerts.length}</b><span>${overdue ? `${overdue} vencidas o criticas` : 'alertas proximas'}</span></button>`
+      : '<span class="timeline-alert-button is-clear"><b>0</b><span>sin alertas</span></span>';
+    let title = 'Hito del proyecto';
+    let type = 'Proceso unico';
+    let metrics = '';
+
+    if (phaseKey === 'PREESTUDIOS') {
+      const phaseChecks = state.checklists.filter(c => c.phase === phaseKey);
+      metrics = timelineMetric('checks completados', `${phaseChecks.filter(c => c.status === 'COMPLETADO').length}/${phaseChecks.length}`);
+    } else if (phaseKey === 'PERMISOS') {
+      const active = (__permits?.items || []).filter(item => String(item.status || '').toLowerCase() !== 'waived');
+      const approved = active.filter(item => String(item.status || '').toLowerCase() === 'approved').length;
+      title = 'Permisos y renovaciones'; type = 'Proyecto + unidades';
+      metrics = timelineMetric('aprobados', `${approved}/${active.length}`) + timelineMetric('documentos por vencer', alerts.filter(a => a.kind === 'permit_document').length, alerts.length ? 'is-warning' : '');
+    } else if (phaseKey === 'FINANCIACION') {
+      title = 'Financiacion operativa'; type = 'Proyecto + ventas';
+      const cppActive = snapshot.units.filter(unit => {
+        const sale = snapshot.sales.get(String(unit._id)) || {};
+        return sale.fechaVencimientoCPP && !['escriturado_traspasado', 'vivienda_entregada'].includes(operationalUnitState(unit.estado));
+      }).length;
+      metrics = timelineMetric('CPP activas', cppActive) + timelineMetric('CPP con alerta', alerts.filter(a => a.kind === 'cpp').length, alerts.some(a => a.kind === 'cpp') ? 'is-warning' : '');
+    } else if (phaseKey === 'CONTRATISTAS') {
+      title = 'Contratistas y paquetes'; type = 'Proceso recurrente';
+      const assigned = [...snapshot.contractors.values()].reduce((sum, value) => sum + value, 0);
+      metrics = timelineMetric('contratistas', snapshot.contractors.size) + timelineMetric('unidades asignadas', assigned);
+      if (snapshot.contractors.size) {
+        metrics += `<span class="timeline-contractors">${[...snapshot.contractors.entries()].slice(0, 3).map(([name, total]) => `<i>${escapeHtml(name)} <b>${total}</b></i>`).join('')}</span>`;
+      }
+    } else if (phaseKey === 'OBRA') {
+      title = 'Obra por unidad'; type = 'Seguimiento recurrente';
+      metrics = timelineMetric('avance medio', `${snapshot.averageConstruction}%`) + timelineMetric('en obra', counts.inConstruction) + timelineMetric('terminadas', counts.completedConstruction);
+    } else if (phaseKey === 'ESCRITURACION') {
+      title = 'Proceso por unidad'; type = `${counts.closed}/${counts.committed || 0} unidades cerradas`;
+      metrics = timelineMetric('reservadas', counts.reserved) + timelineMetric('con CPP', counts.cpp) + timelineMetric('tramite legal', counts.legal) + timelineMetric('traspasadas', counts.deeded) + timelineMetric('entregadas', counts.delivered);
+    }
+
+    return `<div class="timeline-operational-summary" data-operational-phase="${phaseKey}">
+      <div class="timeline-operational-heading"><span><small>${escapeHtml(type)}</small><strong>${escapeHtml(title)}</strong></span>${alertButton}</div>
+      <div class="timeline-operational-metrics">${metrics}</div>
+    </div>`;
+  }
+
+  function openOperationalAlerts(phaseKey) {
+    const phase = phaseMeta(phaseKey);
+    const alerts = phaseOperationalAlerts(phaseKey);
+    const rows = alerts.map(alert => {
+      const when = alert.days === null ? 'Atencion requerida' : alert.days < 0 ? `Vencida hace ${Math.abs(alert.days)} dias` : alert.days === 0 ? 'Vence hoy' : `Vence en ${alert.days} dias`;
+      return `<article class="timeline-alert-detail ${alert.severity}"><span class="sem-dot ${alert.severity}"></span><div><strong>${escapeHtml(alert.title)}</strong><small>${escapeHtml([alert.detail, when].filter(Boolean).join(' - '))}</small><em>${alert.roles.map(role => roleMeta(role).label).join(' / ')}</em></div></article>`;
+    }).join('');
+    openModal(`Alertas - ${phase.name}`, rows || '<div class="timeline-empty-alerts">No hay alertas operativas en este bloque.</div>', 'Cerrar', () => { modalBackdrop.style.display = 'none'; });
+  }
+
+  function timelineUnitsOrdered() {
+    return [...(state.operational?.units || [])].sort((a, b) =>
+      unitDisplayName(a).localeCompare(unitDisplayName(b), 'es', { numeric:true, sensitivity:'base' })
+    );
+  }
+
+  function unitChecklistState(checklist, unitId, subtaskId = '__checklist__') {
+    const row = state.operational?.unitProgress?.get(`${String(checklist._id)}:${String(unitId)}`);
+    return !!row?.states?.find(item => String(item.subtaskId) === String(subtaskId))?.completed;
+  }
+
+  function scopedChecklistStats(checklist) {
+    const rows = [...(state.operational?.unitProgress?.entries?.() || [])]
+      .filter(([key]) => key.startsWith(`${String(checklist._id)}:`))
+      .map(([, row]) => row);
+    const taskIds = checklist.subtasks?.length
+      ? checklist.subtasks.map(item => String(item._id || item.id || item.title))
+      : ['__checklist__'];
+    const total = rows.length * taskIds.length;
+    const completed = rows.reduce((sum, row) => sum + taskIds.filter(taskId =>
+      row.states?.some(item => String(item.subtaskId) === taskId && item.completed)
+    ).length, 0);
+    return { assigned:rows.length, completed, total, pct:total ? Math.round(completed / total * 100) : 0 };
+  }
+
+  function renderUnitScopedPhase(phaseKey, checklists) {
+    const units = timelineUnitsOrdered();
+    return `<div class="timeline-unit-scope">
+      <div class="timeline-unit-scope-head"><div><small>DATO ÚNICO POR UNIDAD</small><strong>${phaseKey === 'OBRA' ? 'Actividades de obra' : 'Actividades de contratistas'}</strong><span>Aplica cada actividad a una unidad o a un rango; la ficha utiliza el mismo registro.</span></div></div>
+      <div class="timeline-scoped-checklists">${checklists.map(checklist => {
+        const stats = scopedChecklistStats(checklist);
+        const role = roleMeta(checklist.role);
+        return `<article class="timeline-scoped-checklist" data-scoped-checklist="${checklist._id}">
+          <div><span class="role-badge" style="--role-color:${role.color};--role-pale:${role.pale}">${role.label}</span><strong>${escapeHtml(checklist.title)}</strong><small>${checklist.subtasks?.length || 1} actividad${(checklist.subtasks?.length || 1) === 1 ? '' : 'es'}</small></div>
+          <div class="timeline-scoped-progress"><i><b style="width:${stats.pct}%"></b></i><span>${stats.pct}%</span><small>${stats.assigned} de ${units.length} unidades asignadas</small></div>
+          <button type="button" class="btn btn-xs js-manage-unit-checklist" data-checklist="${checklist._id}">Gestionar unidades / rango</button>
+        </article>`;
+      }).join('') || '<div class="timeline-empty-alerts">Añade un checklist para convertirlo en actividad por unidad.</div>'}</div>
+    </div>`;
+  }
+
+  function timelineCommercialProcess(sale = {}) {
+    const lifePolicy = sale.polizaVidaEntregada === undefined ? !!sale.polizas : !!sale.polizaVidaEntregada;
+    const firePolicy = sale.polizaIncendioEntregada === undefined ? !!sale.polizas : !!sale.polizaIncendioEntregada;
+    const values = [
+      [sale.fechaReserva,sale.fechaProforma,sale.fechaProbableEntrega,sale.cesionAFavorDe,sale.estatusCPP],
+      [sale.numCPP,sale.fechaValorCPP,sale.fechaVencimientoCPP,sale.aperturaCtaBanco,lifePolicy,sale.tipoPolizaVida||sale.tipoPoliza,firePolicy,sale.tipoPolizaIncendio||sale.tipoPoliza,sale.fechaContratoCliente,sale.montoContrato,sale.mLiberacion,sale.mSegregacion],
+      [sale.solicitudAvaluo,sale.fechaAvaluo,sale.empresaAvaluadora],
+      [sale.mPrestamo,sale.fechaProtocoloFirmaCliente,sale.fechaProtocoloFirmaPromotora,sale.fechaProtocoloFirmaBancoInterino,sale.fechaProtocoloFirmaBancoCliente],
+      [sale.fechaPagoImpuesto,sale.fechaCierreEscritura||sale.fechaFirma,sale.fechaIngresoRP,sale.fechaInscripcion],
+      [sale.fechaDesembolso,sale.fechaEntregaVivienda]
+    ];
+    const present = value => value !== undefined && value !== null && value !== false && String(value).trim() !== '' && Number(value) !== 0;
+    const states = values.map((stage, index) => ({
+      complete: stage.every(present) || values.slice(index + 1).some(next => next.some(present)),
+      filled: stage.filter(present).length,
+      total: stage.length
+    }));
+    const labels = ['Reserva', 'CPP y contrato', 'Avalúo', 'Protocolo / escrituras', 'Notaría / Registro Público', 'Desembolso y entrega'];
+    const complete = states.filter(item => item.complete).length;
+    const current = Math.min(states.findIndex(item => !item.complete) < 0 ? 5 : states.findIndex(item => !item.complete), 5);
+    return { complete, pct:Math.round(complete / 6 * 100), current, label:labels[current], states };
+  }
+
+  function renderDeedingUnitProcess() {
+    const snapshot = operationalUnitsSnapshot();
+    const units = snapshot.units.filter(unit =>
+      ['reservado', 'con_cpp', 'tramite_legal_activado', 'escriturado_traspasado'].includes(operationalUnitState(unit.estado))
+    );
+    return `<div class="timeline-unit-scope timeline-deeding-process">
+      <div class="timeline-unit-scope-head"><div><small>DATO ÚNICO COMERCIAL / LEGAL</small><strong>Proceso desde reserva hasta entrega</strong><span>Estos estados proceden de la ficha de la unidad. Abrir una unidad edita exactamente los mismos campos.</span></div></div>
+      <div class="timeline-deeding-grid">${units.map(unit => {
+        const process = timelineCommercialProcess(snapshot.sales.get(String(unit._id)) || {});
+        return `<article class="timeline-deeding-unit"><div><strong>${escapeHtml(unitDisplayName(unit))}</strong><small>${escapeHtml(process.label)} · ${process.complete}/6 etapas</small></div><i><b style="width:${process.pct}%"></b></i><button type="button" class="btn btn-xs js-open-timeline-unit" data-unit-id="${unit._id}">Abrir proceso</button></article>`;
+      }).join('') || '<div class="timeline-empty-alerts">Todavía no hay unidades reservadas o vendidas.</div>'}</div>
+    </div>`;
+  }
+
+  function openUnitChecklistRange(checklistId) {
+    const checklist = state.checklists.find(item => String(item._id) === String(checklistId));
+    const units = timelineUnitsOrdered();
+    if (!checklist || !units.length) return alert('No hay unidades disponibles para esta actividad.');
+    const options = units.map((unit, index) => `<option value="${index}">${escapeHtml(unitDisplayName(unit))}</option>`).join('');
+    const tasks = checklist.subtasks?.length ? checklist.subtasks : [{ _id:'__checklist__', title:checklist.title }];
+    openModal(checklist.title, `<div class="timeline-range-editor">
+      <p>Selecciona la primera y la última unidad. Se incluirán todas las unidades comprendidas entre ambas.</p>
+      <div class="timeline-range-selectors"><label>Desde<select id="timelineRangeFrom">${options}</select></label><label>Hasta<select id="timelineRangeTo">${options}</select></label></div>
+      <div class="timeline-range-tasks">${tasks.map(task => `<label><span>${escapeHtml(task.title || task.name)}</span><select data-range-task="${escapeHtml(String(task._id || task.id || task.title))}"><option value="">No cambiar</option><option value="false">Asignar como pendiente</option><option value="true">Marcar completada</option></select></label>`).join('')}</div>
+      <small id="timelineRangeCount">1 unidad seleccionada</small>
+    </div>`, 'Aplicar al rango', async () => {
+      const from = Number(document.getElementById('timelineRangeFrom')?.value || 0);
+      const to = Number(document.getElementById('timelineRangeTo')?.value || 0);
+      const start = Math.min(from, to); const end = Math.max(from, to);
+      const unitIds = units.slice(start, end + 1).map(unit => unit._id);
+      const changes = [...document.querySelectorAll('[data-range-task]')].filter(select => select.value !== '');
+      if (!changes.length) return alert('Indica al menos una actividad que quieras actualizar.');
+      modalPrimary.disabled = true;
+      try {
+        await Promise.all(changes.map(select => API.put(`/api/checklists/${checklist._id}/unit-progress`, {
+          unitIds, subtaskId:select.dataset.rangeTask, completed:select.value === 'true'
+        })));
+        invalidateProjectDataCache('unitChecklistProgress');
+        modalBackdrop.style.display = 'none';
+        await reloadProyecto();
+      } finally { modalPrimary.disabled = false; }
+    });
+    const updateCount = () => {
+      const from = Number(document.getElementById('timelineRangeFrom')?.value || 0);
+      const to = Number(document.getElementById('timelineRangeTo')?.value || 0);
+      const count = Math.abs(to - from) + 1;
+      const node = document.getElementById('timelineRangeCount');
+      if (node) node.textContent = `${count} unidad${count === 1 ? '' : 'es'} seleccionada${count === 1 ? '' : 's'}`;
+    };
+    document.getElementById('timelineRangeFrom')?.addEventListener('change', updateCount);
+    document.getElementById('timelineRangeTo')?.addEventListener('change', updateCount);
+  }
+
+  function unitScopedChecklistPanelHtml(unitId) {
+    const checklists = state.checklists.filter(item => ['CONTRATISTAS', 'OBRA'].includes(item.phase));
+    if (!checklists.length) return '';
+    return `<details class="unit-side-card unit-shared-checklists" open><summary><strong>Contratistas y obra</strong><span class="parallel-chip">Dato compartido</span><span>⌄</span></summary><div class="unit-shared-checklist-body">${checklists.map(checklist => {
+      const tasks = checklist.subtasks?.length ? checklist.subtasks : [{ _id:'__checklist__', title:checklist.title }];
+      return `<section><h4>${escapeHtml(phaseMeta(checklist.phase).name)} · ${escapeHtml(checklist.title)}</h4>${tasks.map(task => {
+        const taskId = String(task._id || task.id || task.title);
+        return `<label><input type="checkbox" data-unit-checklist-toggle data-checklist-id="${checklist._id}" data-unit-id="${unitId}" data-subtask-id="${escapeHtml(taskId)}" ${unitChecklistState(checklist, unitId, taskId) ? 'checked' : ''}><span>${escapeHtml(task.title || task.name)}</span></label>`;
+      }).join('')}</section>`;
+    }).join('')}</div></details>`;
+  }
+
+  document.addEventListener('change', async event => {
+    const checkbox = event.target.closest('[data-unit-checklist-toggle]');
+    if (!checkbox) return;
+    checkbox.disabled = true;
+    try {
+      await API.put(`/api/checklists/${checkbox.dataset.checklistId}/unit-progress`, {
+        unitIds:[checkbox.dataset.unitId],
+        subtaskId:checkbox.dataset.subtaskId,
+        completed:checkbox.checked
+      });
+      invalidateProjectDataCache('unitChecklistProgress');
+      const response = await getProjectUnitChecklistProgress({ force:true });
+      state.operational.unitProgress = new Map((response?.progress || []).map(row => [`${String(row.checklistId)}:${String(row.unitId)}`, row]));
+      renderProyecto();
+      window.__BANK73_UNIFIED_REFRESH?.();
+    } catch (error) {
+      checkbox.checked = !checkbox.checked;
+      alert(error.message || 'No se pudo actualizar la actividad.');
+    } finally { checkbox.disabled = false; }
+  });
+
   function renderProyecto() {
     const g = globalProgress();
     globalProgressText.textContent = `${g}% completado`;
     globalProgressBar.style.width = `${g}%`;
 
     // Roles panel
-   const distinctRoles = Array.from(new Set(state.checklists.map(c => c.role))).sort();
+   const alertRoles = (state.operational?.alerts || []).flatMap(alert => alert.roles || []);
+   const distinctRoles = Array.from(new Set([...state.checklists.map(c => c.role), ...alertRoles])).sort();
    const roleKeys = distinctRoles.length ? distinctRoles : Object.keys(ROLE_COLORS);
 
    rolesList.innerHTML = roleKeys.map(rk => {
    const rm = roleMeta(rk);
-   const sem = semaphoreForRole(rk);
+   const signal = roleOperationalSignal(rk);
+   const sem = signal.tone;
 
    // métricas para tooltip
-   const now = Date.now();
-   const activePend = state.checklists.filter(c =>
-    c.role === rk && isChecklistActive(c) && c.status !== 'COMPLETADO'
-   );
-   const cntActive  = activePend.length;
-   const cntOverdue = activePend.filter(c => c.dueDate && new Date(c.dueDate).getTime() < now).length;
-   const ttl = (cntActive > 0)
-    ? `Activos pendientes: ${cntActive} · Vencidos: ${cntOverdue}`
-    : 'Sin tareas activas pendientes';
+   const cntActive  = signal.tasks.length;
+   const cntOverdue = signal.overdueTasks.length;
+   const pendingTotal = signal.alerts.length + cntActive;
+   const criticalTotal = signal.critical.length + cntOverdue;
+   const ttl = `Pendientes: ${pendingTotal} · Críticas: ${criticalTotal}`;
+   const tooltipId = `roleTasks-${String(rk).replace(/[^a-z0-9_-]/gi, '')}`;
+   const visibleTaskNames = signal.taskNames.length ? signal.taskNames : ['Sin tareas activas'];
 
    const cls = (state.filterRole === rk) ? 'role-row filter-on' : 'role-row';
    const readOnlyStyle = isPartialProyectoRole() ? ';cursor:default' : '';
-   return `<div class="${cls}" data-role="${rk}" style="--role-color:${rm.color}${readOnlyStyle}" title="${ttl}">
-    <div class="row"><span class="role-badge" style="--role-color:${rm.color};--role-pale:${rm.pale}">${rm.label}</span></div>
+   return `<div class="${cls}" data-role="${rk}" style="--role-color:${rm.color}${readOnlyStyle}" tabindex="0" aria-describedby="${tooltipId}" aria-label="${escapeHtml(`${rm.label}. ${ttl}`)}">
+    <span class="role-badge" style="--role-color:${rm.color};--role-pale:${rm.pale}">${rm.label}</span>
+    <span class="role-signal-copy"><b>${pendingTotal}</b><small>${pendingTotal ? 'pendientes' : 'al día'}</small></span>
     <div class="light" title="${ttl}">
     <span class="sem-dot ${semClassFromEmoji(sem)}" aria-hidden="true"></span>
     </div>
+    <aside class="role-task-popover" id="${tooltipId}" role="tooltip">
+      <header><strong>${rm.label}</strong><span>${pendingTotal} pendientes${criticalTotal ? ` · ${criticalTotal} críticas` : ''}</span></header>
+      <ul>${visibleTaskNames.map(name => `<li>${escapeHtml(name)}</li>`).join('')}</ul>
+    </aside>
    </div>`;
    }).join('');
 
@@ -5082,13 +5696,19 @@ return {
     wireDynamicHandlers();
     syncPartialProyectoUI();
 
-    // Texto del botón global
+    // Estado accesible del control global compacto.
     if (toggleAllPhasesBtn) {
-      toggleAllPhasesBtn.textContent = state.collapsed.size ? 'Expandir todo' : 'Colapsar todo';
+      const action = state.collapsed.size ? 'Expandir todo' : 'Colapsar todo';
+      toggleAllPhasesBtn.title = action;
+      toggleAllPhasesBtn.setAttribute('aria-label', action);
+      toggleAllPhasesBtn.innerHTML = `<span aria-hidden="true">${state.collapsed.size ? '↕' : '↟'}</span>`;
     }
   }
 
   function semClassFromEmoji(sem) {
+  if (sem === 'idle') return 'idle';
+  if (sem === 'warn') return 'warn';
+  if (sem === 'danger') return 'danger';
   if (sem === '🟢') return 'ok';
   if (sem === '🟡') return 'warn';
   return 'danger'; // 🔴 o cualquier cosa
@@ -5109,6 +5729,17 @@ return {
   if (ph.key === 'PERMISOS' && __permits?.items?.length) {
     prUI = permitProgress(__permits);
   }
+  if (['CONTRATISTAS', 'OBRA'].includes(ph.key)) {
+    const totals = list.map(scopedChecklistStats);
+    const total = totals.reduce((sum, item) => sum + item.total, 0);
+    const completed = totals.reduce((sum, item) => sum + item.completed, 0);
+    prUI = total ? Math.round(completed / total * 100) : 0;
+  }
+  if (ph.key === 'ESCRITURACION') {
+    const snapshot = operationalUnitsSnapshot();
+    const relevant = snapshot.units.filter(unit => ['reservado', 'con_cpp', 'tramite_legal_activado', 'escriturado_traspasado'].includes(operationalUnitState(unit.estado)));
+    prUI = relevant.length ? Math.round(relevant.reduce((sum, unit) => sum + timelineCommercialProcess(snapshot.sales.get(String(unit._id)) || {}).pct, 0) / relevant.length) : 0;
+  }
 
   const collapsedCls = state.collapsed.has(ph.key) ? 'collapsed' : '';
   const addBtn = `
@@ -5128,9 +5759,11 @@ return {
         <div class="phase-actions">${addBtn}</div>
       </div>
       <div class="progress"><div style="width:${prUI}%; --accent:${ph.color}"></div></div> <!-- ✅ usa prUI -->
-      <div class="cl-list">
-        ${list.map(cl => renderChecklistCard(cl, ph)).join('')}
-      </div>
+      ${['CONTRATISTAS', 'OBRA'].includes(ph.key)
+        ? renderUnitScopedPhase(ph.key, list)
+        : ph.key === 'ESCRITURACION'
+          ? renderDeedingUnitProcess()
+          : `<div class="cl-list">${list.map(cl => renderChecklistCard(cl, ph)).join('')}</div>`}
     </section>
   `;
 }
@@ -5214,6 +5847,25 @@ return {
 
 
   function wireDynamicHandlers() {
+  document.querySelectorAll('[data-phase-alerts]').forEach(button => {
+    button.onclick = event => {
+      event.stopPropagation();
+      openOperationalAlerts(button.dataset.phaseAlerts);
+    };
+  });
+  document.querySelectorAll('.js-manage-unit-checklist').forEach(button => {
+    button.onclick = event => {
+      event.stopPropagation();
+      openUnitChecklistRange(button.dataset.checklist);
+    };
+  });
+  document.querySelectorAll('.js-open-timeline-unit').forEach(button => {
+    button.onclick = event => {
+      event.stopPropagation();
+      window.__BANK73_COMMERCIAL_WORKSPACE_DATA?.().openUnit?.(button.dataset.unitId, { mode:'commercial' });
+    };
+  });
+
   // Helper: ¿está activo este checklist según la secuencia?
   function isActiveById(clId) {
     const cl = state.checklists.find(c => c._id === clId);
@@ -5391,8 +6043,10 @@ return {
 }
 
   async function reloadProyecto() {
-    await loadProyectoData();
+    invalidateProjectDataCache('checklists');
+    await loadProyectoData({ force: true });
     renderProyecto();
+    window.__BANK73_UNIFIED_REFRESH?.();
   }
 
   // ====== Modales ======
@@ -5866,6 +6520,9 @@ function renderFinanceCoherence(phases = FINANCE?.phases || []) {
 
 async function closeFinancePhaseModal() {
   const flushAutosave = FINANCE_PHASE_AUTOSAVE_FLUSH;
+  const hadPendingChanges = !!flushAutosave?.hasPendingChanges?.()
+    || FINANCE_LOAN_LINES_DIRTY
+    || FINANCE_UNIT_DIRTY;
   try {
     if (flushAutosave) await flushAutosave();
     await flushFinanceLoanLinesAutosave({ showAlert: true });
@@ -5890,7 +6547,7 @@ async function closeFinancePhaseModal() {
   }
   if (page) page.id = 'tab-finanzas';
   portal?.remove();
-  if (flushAutosave) {
+  if (hadPendingChanges) {
     await loadFinance();
     await markProjectDataChanged();
   }
@@ -9114,6 +9771,7 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
     try { await saveQueue; } catch {}
     if (dirty) await persistPhaseOverview({ showAlert: true });
   };
+  FINANCE_PHASE_AUTOSAVE_FLUSH.hasPendingChanges = () => dirty;
 
   host.onclick = async event => {
     const viewButton = event.target.closest('[data-phase-view]');
@@ -9218,7 +9876,8 @@ function renderFinancePhaseOverview(phase, visibleLines = null, initialView = 'p
   setPhaseView(initialView === 'real' ? 'real' : 'plan');
 }
 
-async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = 'overview') {
+async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = 'overview', options = {}) {
+  const embedded = options?.embedded === true;
   const existingModal = document.getElementById('financePhaseLinesModal');
   if (existingModal && !existingModal.hidden) {
     if (FINANCE_PHASE_AUTOSAVE_FLUSH) await FINANCE_PHASE_AUTOSAVE_FLUSH();
@@ -9232,7 +9891,7 @@ async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = '
   FINANCE_UNIT_DIRTY = false;
   setFinanceAutosaveStatus('financeLoanLinesSaveStatus', 'Guardado', 'saved');
   setFinanceAutosaveStatus('financeUnitSaveStatus', 'Autoguardado: guardado', 'saved');
-  const modal = mountFinancePhaseModal();
+  const modal = embedded ? document.getElementById('financePhaseLinesModal') : mountFinancePhaseModal();
   if (!modal) return;
   const isRealContext = initialView === 'real';
   modal.dataset.phaseContext = isRealContext ? 'real' : 'plan';
@@ -9258,10 +9917,10 @@ async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = '
   const expand = document.getElementById('financePhaseFullscreenBtn');
   if (expand) { expand.textContent = '⛶'; expand.title = 'Pantalla completa'; }
   document.getElementById('financePhaseModalTitle').textContent = `Gestionar fase — ${FINANCE_SELECTED_PHASE_NAME}`;
-  modal.hidden = false;
-  document.body.classList.add('finance-modal-open');
+  modal.hidden = embedded;
+  document.body.classList.toggle('finance-modal-open', !embedded);
   try {
-    FINANCE_AVALUATION_CONTEXT = await API.get(`/api/projects/${id}/finance/avaluation-context`);
+    FINANCE_AVALUATION_CONTEXT = await getProjectAvaluationContext();
   } catch (error) {
     console.error('[Finance] informes de avalúo', error);
     FINANCE_AVALUATION_CONTEXT = { hasAssignedAvaluator: true, reports: [], loadError: true };
@@ -10007,21 +10666,21 @@ function financeRequirementDocsHtml(requirement) {
   return `<div style="display:flex;flex-wrap:wrap;gap:6px;">${docs.map(doc => `<a class="btn btn-ghost btn-xs js-secure-file" href="#" data-url="${secureDocUrl(doc._id)}" data-filename="${escapeHtml(doc.originalname || 'documento')}" data-action="view">${escapeHtml(doc.originalname || 'Documento')}</a>`).join('')}</div>`;
 }
 
-async function openFinanceRequirements(phase, mode = 'plan') {
+async function openFinanceRequirements(phase, mode = 'plan', options = {}) {
   const editable = mode === 'real' && ['admin', 'promoter', 'financiero', 'contable', 'gerencia', 'socios'].includes(myRole);
   const canUpdateCompletion = true;
   const canManageDefinitions = ['admin', 'bank'].includes(myRole);
   const modal = ensureFinanceRequirementsModal();
+  const embedded = options?.embedded === true || !!modal.closest('.unified-stage-content');
   setFinanceRequirementsFullscreen(modal, false);
   const requirements = Array.isArray(phase?.requirements) ? phase.requirements.filter(item => item?.isArchived !== true).map(item => ({ ...item })) : [];
   if (!INSURANCE_UNITS_CACHE.length) {
     try { INSURANCE_UNITS_CACHE = await apiGet(`/api/units?projectId=${id}`); } catch (_) { /* La cobertura global sigue disponible. */ }
   }
   try {
-    [FINANCE_REQUIREMENT_DOCS, ARCHITECTURAL_PLAN_DOCS] = await Promise.all([
-      API.get(`/api/documents?projectId=${encodeURIComponent(id)}&category=financeRequirement&ts=${Date.now()}`),
-      API.get(`/api/documents?projectId=${encodeURIComponent(id)}&category=architecturalPlans&ts=${Date.now()}`)
-    ]);
+    const projectDocuments = await getProjectDocuments();
+    FINANCE_REQUIREMENT_DOCS = projectDocuments.filter(document => document?.category === 'financeRequirement');
+    ARCHITECTURAL_PLAN_DOCS = projectDocuments.filter(document => document?.category === 'architecturalPlans');
   } catch (_) {
     FINANCE_REQUIREMENT_DOCS = [];
     ARCHITECTURAL_PLAN_DOCS = [];
@@ -10152,6 +10811,7 @@ async function openFinanceRequirements(phase, mode = 'plan') {
         </div>
         <div class="requirement-card-controls">
           <button class="btn btn-ghost btn-xs requirement-details-toggle" type="button" data-toggle-requirement-details aria-expanded="false">Ver detalle</button>
+          ${canUpdateCompletion && Number(item.number) !== 24 ? `<label class="btn btn-ghost btn-xs requirement-upload-button requirement-quick-upload"><span data-requirement-upload-label>Adjuntar archivo</span><input type="file" multiple data-requirement-files ${[4, 16].includes(Number(item.number)) ? 'accept=".pdf,.jpg,.jpeg,.png"' : ''}></label><span class="requirement-file-name requirement-quick-file-name" data-requirement-file-name aria-live="polite"></span>` : ''}
           ${canManageDefinitions ? `<div class="requirement-definition-actions"><button class="btn btn-ghost btn-xs" type="button" data-edit-finance-requirement>Editar</button><button class="btn btn-ghost btn-xs is-danger" type="button" data-delete-finance-requirement>Eliminar</button></div>` : ''}
           <label class="requirement-completion-check"><input type="checkbox" data-requirement-completed ${item.status === 'CUMPLIDO' && !bondExpired ? 'checked' : ''} ${canUpdateCompletion ? '' : 'disabled'}><span aria-hidden="true"></span><b>${escapeHtml(displayedStatus === 'CUMPLIDO' ? 'Cumplido' : displayedStatus === 'PENDIENTE' ? 'Pendiente' : displayedStatus)}</b></label>
         </div>
@@ -10166,7 +10826,6 @@ async function openFinanceRequirements(phase, mode = 'plan') {
         </label>
         ${mode === 'real' ? `<label class="requirement-field"><span>Observaciones</span><textarea class="input" rows="2" data-requirement-observations ${editable ? '' : 'readonly'}>${escapeHtml(item.observations || '')}</textarea></label>` : ''}
         ${Number(item.number) === 24 ? '' : `<div class="requirement-evidence"><strong>${documentsLabel}</strong>${financeRequirementDocsHtml(item)}</div>`}
-        ${canUpdateCompletion && Number(item.number) !== 24 ? `<div class="requirement-documents-row"><label class="btn btn-ghost btn-xs requirement-upload-button">Adjuntar archivos<input type="file" multiple data-requirement-files ${[4, 16].includes(Number(item.number)) ? 'accept=".pdf,.jpg,.jpeg,.png"' : ''}></label><span class="requirement-file-name" data-requirement-file-name>Sin nuevos archivos</span></div>` : ''}
       </div>
     </article>`;
   };
@@ -10189,10 +10848,15 @@ async function openFinanceRequirements(phase, mode = 'plan') {
 
   modal.querySelectorAll('[data-requirement-files]').forEach(input => input.addEventListener('change', async () => {
     const label = input.closest('[data-finance-requirement]').querySelector('[data-requirement-file-name]');
+    const uploadLabel = input.closest('.requirement-upload-button')?.querySelector('[data-requirement-upload-label]');
     const files = Array.from(input.files || []);
-    if (label) label.textContent = files.length ? files.map(file => file.name).join(', ') : 'Sin nuevos archivos';
+    if (label) {
+      label.textContent = files.length ? files.map(file => file.name).join(', ') : '';
+      label.title = label.textContent;
+    }
     if (!files.length) return;
     input.disabled = true;
+    if (uploadLabel) uploadLabel.textContent = files.length > 1 ? `Subiendo ${files.length}…` : 'Subiendo…';
     try {
       const row = input.closest('[data-finance-requirement]');
       for (const file of files) {
@@ -10213,7 +10877,12 @@ async function openFinanceRequirements(phase, mode = 'plan') {
       }
       input.value = '';
       if (label) label.textContent = 'Documentos adjuntados';
+      if (uploadLabel) {
+        uploadLabel.textContent = 'Adjuntado';
+        window.setTimeout(() => { uploadLabel.textContent = 'Adjuntar archivo'; }, 1400);
+      }
     } catch (error) {
+      if (uploadLabel) uploadLabel.textContent = 'Reintentar adjunto';
       alert(error.message || 'No se pudieron adjuntar los documentos.');
     } finally {
       input.disabled = false;
@@ -10534,8 +11203,11 @@ async function openFinanceRequirements(phase, mode = 'plan') {
     control.addEventListener('input', queueRequirementsAutosave);
     control.addEventListener('change', queueRequirementsAutosave);
   });
-  modal.style.display = 'flex';
-  await hydrateSecureImages(modal);
+  modal.style.display = embedded
+    ? (modal.closest('.unified-stage-content') ? 'block' : 'none')
+    : 'flex';
+  // Las miniaturas no bloquean la apertura ni la navegación del apartado.
+  void hydrateSecureImages(modal).catch(() => {});
 }
 
 function phaseFinancingLinesFormHtml(lines = [], financierBanks = []) {
@@ -11897,7 +12569,7 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
       ${field('fu-etapa','Etapa',u.etapa)}${field('fu-torre','Torre',u.torre)}${field('fu-nivel','Nivel',u.nivel)}<div class="unit-process-field"><label for="fu-modeloSelect">Modelo de vivienda</label><select id="fu-modeloSelect">${projectModelOptions(u.modelId||u.modelo||'',{includeEmpty:true})}</select><input id="fu-modelo" type="hidden" value="${safeVal(u.modelo||'')}"></div>${number('fu-m2','Área de terreno',u.m2)}${field('fv-numeroFinca','Número de finca',u.numeroFinca)}${field('fv-codigoUbicacion','Código de ubicación',u.codigoUbicacion)}${field('fv-calle','Calle',u.calle)}${number('fv-areaAbierta','Área abierta',u.areaAbierta)}${number('fv-areaCerrada','Área cerrada',u.areaCerrada)}${number('fv-areaTotalConstruccion','Área total de construcción',Number(u.areaTotalConstruccion||0)||Number(u.areaAbierta||0)+Number(u.areaCerrada||0),'readonly aria-readonly="true"')}${number('fv-recamaras','Recámaras',u.recamaras)}${number('fv-banos','Baños',u.banos)}<input id="fu-costo" type="hidden" value="${safeVal(u.costoUnidad||0)}">
     </div></details><details class="unit-side-card construction-card" open><summary><strong>Construcción de la vivienda</strong><span class="parallel-chip">En paralelo</span><span>⌄</span></summary><div class="unit-side-grid">
       ${number('fv-avanceConstruccionPct','Avance de obra (%)',v.avanceConstruccionPct||0)}${select('fv-estatusConstruccion','Fase de obra',[{v:'',l:'Pendiente de construir'},{v:'Obra gris',l:'Obra gris'},{v:'Acabados',l:'Acabados'},{v:'Terminada',l:'Terminada'}],v.estatusConstruccion)}${check('fv-permisoConstruccionMunicipal','Permiso de construcción',v.permisoConstruccionMunicipal)}${field('fv-permisoConstruccionNum','Resolución construcción',v.permisoConstruccionNum)}${date('fv-fechaPermisoConstruccion','Fecha permiso construcción',v.fechaPermisoConstruccion)}${date('fv-permisoConstruccionVencimiento','Vencimiento construcción',v.permisoConstruccionVencimiento)}${check('fv-permisoOcupacion','Permiso de ocupación',v.permisoOcupacion)}${field('fv-permisoOcupacionNum','Resolución ocupación',v.permisoOcupacionNum)}${date('fv-fechaEmisionPermisoOcupacion','Fecha permiso ocupación',v.fechaEmisionPermisoOcupacion)}${field('fv-constructora','Constructora / contratista',v.constructora)}
-    </div></details></aside>
+    </div></details>${unitScopedChecklistPanelHtml(paymentUnitId)}</aside>
     <main class="unit-process-main"><section class="unit-process-heading"><div><h2>Proceso de venta</h2><span>${complete} de 6 etapas completas</span></div>${reservationAge ? `<strong class="unit-reservation-age">${safeVal(reservationAge.label)}</strong>` : ''}<div class="unit-process-progress"><i style="width:${Math.round(complete/6*100)}%"></i></div></section><div class="unit-stages">${stages}</div><section class="unit-comments"><h3>Comentarios</h3><textarea id="fv-comentario" rows="3" placeholder="Añade información útil para el seguimiento">${safeVal(v.comentario)}</textarea></section></main>
     <aside class="unit-process-right">${client(false)}${client(true)}<details class="unit-side-card" open><summary><strong>Referencias personales</strong><span>⌄</span></summary><div class="unit-side-grid">${field('fv-referencia1Nombre','Referencia 1',v.referencia1Nombre)}${field('fv-referencia1Relacion','Relación',v.referencia1Relacion)}${field('fv-referencia1Telefono','Teléfono',v.referencia1Telefono)}${field('fv-referencia2Nombre','Referencia 2',v.referencia2Nombre)}${field('fv-referencia2Relacion','Relación',v.referencia2Relacion)}${field('fv-referencia2Telefono','Teléfono',v.referencia2Telefono)}${select('fv-canalCaptacion','Captación del cliente',captureChannelOptions(captureChannel),captureChannel)}</div></details></aside>
   </div></div>`;
@@ -11936,9 +12608,20 @@ function renderTechnicalUnitFicha(u = {}, v = {}, unitId = '') {
   return `<div class="unit-process-shell technical-process-shell unit-status-${statusKey}">
     <div class="technical-process-summary">
       <section class="unit-summary-card"><span>Modelo</span><strong>${safeVal(u.modelo || 'Sin modelo')}</strong><small>Dato único de la unidad</small></section>
-      <section class="unit-summary-card"><span>Fase de obra</span><strong>${safeVal(phase)}</strong><small>${progress}% de avance</small></section>
+      <section class="unit-summary-card"><span>Fase de obra</span><strong>${safeVal(phase)}</strong><small data-technical-unit-summary-progress>${progress}% de avance</small></section>
       <section class="unit-summary-card"><span>Pólizas aplicables</span><strong>${policies.length}</strong><small>CAR / incendio</small></section>
     </div>
+    <details class="technical-unit-progress-panel" data-technical-unit-progress data-unit-id="${safeVal(unitId)}">
+      <summary class="technical-unit-progress-toggle">
+        <span class="technical-unit-progress-title"><small>SEGUIMIENTO TÉCNICO</small><strong>Avance de construcción</strong><em data-technical-unit-progress-count>Cargando actividades…</em></span>
+        <span class="technical-unit-progress-meter" aria-hidden="true"><i id="technicalUnitProgressBar" style="width:${progress}%"></i></span>
+        <span class="technical-unit-progress-summary"><strong id="technicalUnitProgressValue">${progress}%</strong><small data-technical-unit-progress-updated>Abre para ver el detalle</small></span>
+        <span class="technical-unit-progress-chevron" aria-hidden="true">⌄</span>
+      </summary>
+      <div class="technical-unit-progress-body" id="technicalUnitProgressBody">
+        <div class="technical-unit-progress-loading">Cargando las actividades de la unidad…</div>
+      </div>
+    </details>
     <div class="technical-process-layout">
       <div class="technical-process-primary">
         <details class="unit-side-card technical-data-card">
@@ -11953,13 +12636,14 @@ function renderTechnicalUnitFicha(u = {}, v = {}, unitId = '') {
         <details class="unit-side-card construction-card" open>
           <summary><strong>Construcción de la vivienda</strong><span class="parallel-chip">Dato compartido</span><span class="technical-completion-chip">${informed(constructionValues)} de ${constructionValues.length}</span><span>⌄</span></summary>
           <div class="unit-side-grid technical-construction-fields">
-            ${number('fv-avanceConstruccionPct','Avance de obra (%)',progress,'min="0" max="100"')}
+            ${number('fv-avanceConstruccionPct','Avance de obra (%)',progress,'min="0" max="100" readonly aria-readonly="true" title="Se calcula desde las actividades de avance técnico"')}
             ${select('fv-estatusConstruccion','Fase de obra',[{v:'',l:'Pendiente de construir'},{v:'Obra gris',l:'Obra gris'},{v:'Acabados',l:'Acabados'},{v:'Terminada',l:'Terminada'}],v.estatusConstruccion)}
             ${check('fv-permisoConstruccionMunicipal','Permiso de construcción',v.permisoConstruccionMunicipal)}${field('fv-permisoConstruccionNum','Resolución construcción',v.permisoConstruccionNum)}
             ${date('fv-fechaPermisoConstruccion','Fecha permiso construcción',v.fechaPermisoConstruccion)}${date('fv-permisoConstruccionVencimiento','Vencimiento construcción',v.permisoConstruccionVencimiento)}${check('fv-permisoOcupacion','Permiso de ocupación',v.permisoOcupacion)}
             ${field('fv-permisoOcupacionNum','Resolución ocupación',v.permisoOcupacionNum)}${date('fv-fechaEmisionPermisoOcupacion','Fecha permiso ocupación',v.fechaEmisionPermisoOcupacion)}${field('fv-constructora','Constructora / contratista',v.constructora)}
           </div>
         </details>
+        ${unitScopedChecklistPanelHtml(unitId)}
       </div>
       <aside class="technical-process-secondary">
         <details class="unit-side-card technical-policy-card">
@@ -11976,6 +12660,160 @@ function renderTechnicalUnitFicha(u = {}, v = {}, unitId = '') {
       </aside>
     </div>
   </div>`;
+}
+
+function technicalUnitProgressAverage(activities = []) {
+  const applicable = activities.filter(activity => activity.applicable !== false);
+  if (!applicable.length) return 0;
+  const total = applicable.reduce((sum, activity) => sum + Math.min(100, Math.max(0, Number(activity.progressPercent) || 0)), 0);
+  return Math.round((total / applicable.length) * 100) / 100;
+}
+
+function technicalUnitProgressDate(value, author = '') {
+  if (!value) return 'Aún sin cambios guardados';
+  const date = new Date(value);
+  const formatted = Number.isNaN(date.getTime()) ? '' : date.toLocaleString('es-PA', { dateStyle:'short', timeStyle:'short' });
+  return `Actualizado ${formatted}${author ? ` · ${author}` : ''}`;
+}
+
+function refreshTechnicalUnitProgressUi(panel, progressState) {
+  const activities = progressState.activities || [];
+  const progress = technicalUnitProgressAverage(activities);
+  progressState.progressPercent = progress;
+  const completed = activities.filter(activity => activity.applicable !== false && Number(activity.progressPercent) >= 100).length;
+  const applicable = activities.filter(activity => activity.applicable !== false).length;
+  const displayProgress = Number.isInteger(progress) ? String(progress) : progress.toFixed(1);
+  const bar = panel.querySelector('#technicalUnitProgressBar');
+  const value = panel.querySelector('#technicalUnitProgressValue');
+  const count = panel.querySelector('[data-technical-unit-progress-count]');
+  if (bar) bar.style.width = `${progress}%`;
+  if (value) value.textContent = `${displayProgress}%`;
+  if (count) count.textContent = `${completed} de ${applicable} actividades completadas`;
+  panel.querySelectorAll('[data-technical-unit-activity]').forEach(row => {
+    const activity = activities[Number(row.dataset.technicalUnitActivity)];
+    if (!activity) return;
+    row.classList.toggle('is-not-applicable', activity.applicable === false);
+    const percent = row.querySelector('[data-technical-unit-activity-value]');
+    if (percent) percent.textContent = `${Math.round(Number(activity.progressPercent) || 0)}%`;
+  });
+  const progressInput = document.getElementById('fv-avanceConstruccionPct');
+  if (progressInput) progressInput.value = displayProgress;
+  const summaryProgress = document.querySelector('[data-technical-unit-summary-progress]');
+  if (summaryProgress) summaryProgress.textContent = `${displayProgress}% de avance`;
+}
+
+function renderTechnicalUnitProgress(panel, progressState) {
+  const body = panel.querySelector('#technicalUnitProgressBody');
+  if (!body) return;
+  const canEdit = ['admin', 'bank', 'promoter', 'tecnico', 'gerencia'].includes(String(myRole || '').toLowerCase());
+  const templateLabel = progressState.templateKind === 'vertical' ? 'Proyecto vertical' : 'Proyecto horizontal';
+  body.innerHTML = `
+    <div class="technical-unit-progress-intro">
+      <div><strong>Actividades de la unidad</strong><small>${templateLabel} · misma plantilla que la app del avaluador</small></div>
+      <span data-technical-unit-progress-save-status>${canEdit ? 'Guardado automático' : 'Solo lectura'}</span>
+    </div>
+    <div class="technical-unit-progress-activities">
+      ${(progressState.activities || []).map((activity, index) => `
+        <div class="technical-unit-progress-activity ${activity.applicable === false ? 'is-not-applicable' : ''}" data-technical-unit-activity="${index}">
+          <span class="technical-unit-progress-activity-name"><b>${index + 1}</b><strong>${safeVal(activity.name)}</strong></span>
+          <input type="range" min="0" max="100" step="1" value="${Math.round(Number(activity.progressPercent) || 0)}" data-technical-unit-activity-range aria-label="Avance de ${safeVal(activity.name)}" ${canEdit ? '' : 'disabled'}>
+          <output data-technical-unit-activity-value>${Math.round(Number(activity.progressPercent) || 0)}%</output>
+          <label class="technical-unit-progress-applicable"><input type="checkbox" data-technical-unit-activity-applicable ${activity.applicable === false ? '' : 'checked'} ${canEdit ? '' : 'disabled'}><span>Aplica</span></label>
+        </div>`).join('')}
+    </div>
+    <label class="technical-unit-progress-notes"><span>Observaciones técnicas</span><textarea rows="3" maxlength="3000" data-technical-unit-progress-observations placeholder="Notas sobre el avance de esta unidad…" ${canEdit ? '' : 'readonly'}>${safeVal(progressState.observations || '')}</textarea></label>`;
+  const updated = panel.querySelector('[data-technical-unit-progress-updated]');
+  if (updated) updated.textContent = technicalUnitProgressDate(progressState.updatedAt, progressState.updatedByLabel);
+  refreshTechnicalUnitProgressUi(panel, progressState);
+}
+
+async function initTechnicalUnitProgress(viewFicha, unitId) {
+  const panel = viewFicha.querySelector('[data-technical-unit-progress]');
+  if (!panel) return;
+  try {
+    const progressState = await API.get(`/api/projects/${encodeURIComponent(id)}/technical-unit-progress/${encodeURIComponent(unitId)}?ts=${Date.now()}`);
+    if (!panel.isConnected || String(fichaUnitId) !== String(unitId) || fichaMode !== 'technical') return;
+    progressState.activities = Array.isArray(progressState.activities) ? progressState.activities : [];
+    renderTechnicalUnitProgress(panel, progressState);
+
+    let changeVersion = 0;
+    let saving = false;
+    let saveTimer = null;
+    const status = () => panel.querySelector('[data-technical-unit-progress-save-status]');
+    const save = async () => {
+      if (saving || !panel.isConnected) return;
+      saving = true;
+      const version = changeVersion;
+      const statusNode = status();
+      if (statusNode) statusNode.textContent = 'Guardando…';
+      try {
+        const result = await API.put(`/api/projects/${encodeURIComponent(id)}/technical-unit-progress/${encodeURIComponent(unitId)}`, {
+          activities: progressState.activities.map(activity => ({
+            key: activity.key,
+            progressPercent: Number(activity.progressPercent) || 0,
+            applicable: activity.applicable !== false
+          })),
+          observations: progressState.observations || ''
+        });
+        if (!panel.isConnected) return;
+        progressState.updatedAt = result.updatedAt;
+        progressState.updatedByLabel = result.updatedByLabel;
+        if (version === changeVersion) {
+          progressState.progressPercent = result.progressPercent;
+          const updated = panel.querySelector('[data-technical-unit-progress-updated]');
+          if (updated) updated.textContent = technicalUnitProgressDate(result.updatedAt, result.updatedByLabel);
+          if (statusNode) statusNode.textContent = 'Guardado';
+          const cached = technicalWorkspace?.ventas?.get?.(String(unitId));
+          if (cached) {
+            cached.avanceConstruccionPct = result.progressPercent;
+            cached.enConstruccion = result.progressPercent > 0 && result.progressPercent < 100;
+          }
+        }
+      } catch (error) {
+        if (statusNode) statusNode.textContent = 'No se pudo guardar';
+        console.error('[Technical unit progress]', error);
+      } finally {
+        saving = false;
+        if (version !== changeVersion && panel.isConnected) {
+          clearTimeout(saveTimer);
+          saveTimer = setTimeout(save, 250);
+        }
+      }
+    };
+    const scheduleSave = () => {
+      changeVersion += 1;
+      const statusNode = status();
+      if (statusNode) statusNode.textContent = 'Cambios pendientes…';
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(save, 550);
+    };
+    panel.addEventListener('input', event => {
+      const row = event.target.closest('[data-technical-unit-activity]');
+      if (event.target.matches('[data-technical-unit-activity-range]') && row) {
+        const activity = progressState.activities[Number(row.dataset.technicalUnitActivity)];
+        if (!activity) return;
+        activity.progressPercent = Number(event.target.value) || 0;
+        refreshTechnicalUnitProgressUi(panel, progressState);
+        scheduleSave();
+      }
+      if (event.target.matches('[data-technical-unit-progress-observations]')) {
+        progressState.observations = event.target.value;
+        scheduleSave();
+      }
+    });
+    panel.addEventListener('change', event => {
+      const row = event.target.closest('[data-technical-unit-activity]');
+      if (!event.target.matches('[data-technical-unit-activity-applicable]') || !row) return;
+      const activity = progressState.activities[Number(row.dataset.technicalUnitActivity)];
+      if (!activity) return;
+      activity.applicable = event.target.checked;
+      refreshTechnicalUnitProgressUi(panel, progressState);
+      scheduleSave();
+    });
+  } catch (error) {
+    const body = panel.querySelector('#technicalUnitProgressBody');
+    if (body) body.innerHTML = `<div class="technical-unit-progress-error">${safeVal(error.message || 'No se pudo cargar el avance técnico de la unidad.')}</div>`;
+  }
 }
 
 const COMMERCIAL_STAGE_FIELD_IDS = [
@@ -12553,6 +13391,14 @@ function applyOpenFichaStateVisual(unitState = {}) {
   let fichaEstadoControl = '';
   let fichaEstadoModo = 'manual';
   let foldersCache = [];
+  // Puente de solo lectura para la composición unificada. Mantiene las
+  // cachés dentro de su módulo comercial y evita duplicar estado en la UI.
+  window.__BANK73_COMMERCIAL_WORKSPACE_DATA = () => ({
+    units: unitsCache,
+    folders: foldersCache,
+    sales: ventasMap,
+    openUnit: abrirFichaUnidad
+  });
   let unitDocDepartment = 'commercial';
   let unitDocFolderId = '';
   let unitDocFoldersCache = [];
@@ -12942,8 +13788,8 @@ function applyOpenFichaStateVisual(unitState = {}) {
   }
 
   // Carga ventas del proyecto y crea mapa por unidad
-  async function loadVentasMap() {
-    const ventas = await apiGet(`/api/ventas?projectId=${id}`);
+  async function loadVentasMap({ force = false } = {}) {
+    const ventas = await getProjectVentas({ force });
     ventasMap = new Map((ventas||[]).map(v => [String(v.unitId), v]));
   }
 
@@ -13104,8 +13950,8 @@ let unassignedSettings = {
   color: '#0f172a'
 };
 
-async function loadCommercialFolders() {
-  const data = await apiGet(`/api/commercial-folders?projectId=${id}`).catch(() => ({
+async function loadCommercialFolders({ force = false } = {}) {
+  const data = await getProjectCommercialFolders({ force }).catch(() => ({
     folders: [],
     unassigned: {
       name: 'Sin carpeta',
@@ -13136,7 +13982,8 @@ function commercialFolderColorOptions(value = '') {
 }
 
 function getUnassignedFolderName() {
-  return unassignedSettings?.name || 'Sin carpeta';
+  const name = String(unassignedSettings?.name || '').trim();
+  return !name || /^(sin carpeta|sin asignar|no asignado)$/i.test(name) ? 'Etapa 1' : name;
 }
 
 function getUnassignedFolderColor() {
@@ -13178,14 +14025,20 @@ function deselectAllVisible() {
 
     // Una sola fuente canónica: nunca sustituir datos comerciales por la
     // proyección legacy de /api/inventory si falla la carga principal.
-    const units = await apiGet(`/api/units?projectId=${id}&estado=${estado}&q=${qEnc}`);
+    const refreshCanonicalData = !estado && !q && unitsCache.length > 0;
+    const unitsRequest = (!estado && !q)
+      ? getProjectUnitsAll({ force: refreshCanonicalData })
+      : apiGet(`/api/units?projectId=${id}&estado=${estado}&q=${qEnc}`);
+    const [units] = await Promise.all([
+      unitsRequest,
+      loadVentasMap({ force: refreshCanonicalData }).catch(e => console.warn('ventas map err', e)),
+      loadCommercialFolders({ force: refreshCanonicalData }).catch(e => console.warn('folders err', e)),
+      getResolvedExpiryAlertKeys({ force: refreshCanonicalData })
+        .then(keys => { resolvedExpiryAlertKeys = keys; })
+        .catch(e => console.warn('resolved alerts err', e))
+    ]);
     unitsCache = units;
     INSURANCE_UNITS_CACHE = units;
-
-    // Ventas (dato único)
-    try { await loadVentasMap(); } catch(e){ console.warn('ventas map err', e); }
-try { await loadCommercialFolders(); } catch(e){ console.warn('folders err', e); }
-try { resolvedExpiryAlertKeys = await getResolvedExpiryAlertKeys(); } catch(e){ console.warn('resolved alerts err', e); }
 
     // KPIs
     const resumen = {
@@ -13213,7 +14066,7 @@ kpisDiv.innerHTML = [
   { key: 'legal', label: 'Trámite legal', value: resumen.tramite_legal_activado || 0, sub: 'En proceso' },
   { key: 'escriturado', label: 'Traspasados', value: resumen.escriturado_traspasado || 0, sub: 'Cerradas' },
   { key: 'entregada', label: 'Vivienda entregada', value: resumen.vivienda_entregada || 0, sub: 'Entregas' },
-  { key: 'valor', label: 'Valor total', value: formatProjectMoney(resumen.valor || 0), sub: 'Precio de venta acumulado' }
+  { key: 'valor', label: 'Estimación total de ventas', value: formatProjectMoney(resumen.valor || 0), sub: 'Precio de venta acumulado' }
 ].map(item => `
   <div class="commercial-kpi-card commercial-kpi-${item.key}">
     <span class="commercial-kpi-label">${item.label}</span>
@@ -13641,13 +14494,13 @@ async function getPeriodicRequirementAlerts() {
   }
 }
 
-async function getResolvedExpiryAlertKeys() {
+async function getResolvedExpiryAlertKeys({ force = false } = {}) {
   let resolutions = Array.isArray(state.project?.expiryAlertResolutions)
     ? state.project.expiryAlertResolutions
     : [];
 
   try {
-    const response = await API.get(`/api/projects/${id}/expiry-alerts/resolutions?ts=${Date.now()}`);
+    const response = await getProjectExpiryAlertResolutions({ force });
     resolutions = Array.isArray(response?.resolutions) ? response.resolutions : [];
     if (!state.project) state.project = {};
     state.project.expiryAlertResolutions = resolutions;
@@ -13769,16 +14622,7 @@ units.forEach(u => {
 });
 
 grid.innerHTML = `
-  <div class="commercial-folders-toolbar">
-    <button type="button" class="btn" id="btnVentasCaidasComercial">
-      Ventas caídas
-    </button>
-    <button type="button" class="btn primary" id="btnCrearCarpetaComercial">
-      + Crear carpeta
-    </button>
-  </div>
-
-  <div
+  ${unassigned.length || !foldersCache.length ? `<div
   class="commercial-folder unassigned ${isCommercialFolderCollapsed('unassigned') ? 'collapsed' : ''}"
   data-folder-id=""
   style="--folder-color:${getUnassignedFolderColor()};"
@@ -13806,7 +14650,7 @@ grid.innerHTML = `
     <div class="commercial-folder-body">
       ${unassigned.map(renderUnitCard).join('') || `<div class="empty">Arrastra unidades aquí.</div>`}
     </div>
-  </div>
+  </div>` : ''}
 
   ${foldersCache.map(folder => {
     const folderUnits = byFolder.get(String(folder._id)) || [];
@@ -13822,8 +14666,8 @@ grid.innerHTML = `
           <div class="folder-actions">
             <span>${folderUnits.length} unidades</span>
 
-            <button type="button" class="btn mini folder-toggle" data-id="">
-            ${isCommercialFolderCollapsed('unassigned') ? 'Mostrar' : 'Ocultar'}
+            <button type="button" class="btn mini folder-toggle" data-id="${folder._id}">
+            ${isCommercialFolderCollapsed(folder._id) ? 'Mostrar' : 'Ocultar'}
             </button>
 
             <select class="folder-color" data-id="${folder._id}" style="background:${color};" title="Color de carpeta" aria-label="Color de ${escapeHtml(folder.name)}">
@@ -14222,8 +15066,10 @@ function wireUnitCards() {
 }
 
 function wireCommercialFolders() {
-  document.getElementById('btnCrearCarpetaComercial')?.addEventListener('click', crearCarpetaComercial);
-  document.getElementById('btnVentasCaidasComercial')?.addEventListener('click', openFallenSales);
+  const createFolderButton = document.getElementById('btnCrearCarpetaComercial');
+  const fallenSalesButton = document.getElementById('btnVentasCaidasComercial');
+  if (createFolderButton) createFolderButton.onclick = crearCarpetaComercial;
+  if (fallenSalesButton) fallenSalesButton.onclick = openFallenSales;
 
   grid.querySelectorAll('.commercial-folder').forEach(folderEl => {
     folderEl.addEventListener('dragover', ev => {
@@ -14330,14 +15176,33 @@ function wireCommercialFolders() {
       const folder = foldersCache.find(f => String(f._id) === String(folderId));
 
       const ok = confirm(
-        `¿Eliminar la carpeta "${folder?.name || ''}"?\n\nLas unidades NO se eliminarán, volverán a "Sin carpeta".`
+        `¿Eliminar definitivamente la etapa "${folder?.name || ''}"?\n\n` +
+        'Se eliminarán sus datos financieros, requisitos, líneas, movimientos y documentos vinculados.\n' +
+        'Las unidades NO se eliminarán: quedarán sin etapa para poder reasignarlas.\n\n' +
+        'Esta acción no se puede deshacer.'
       );
 
       if (!ok) return;
 
-      await apiDelete(`/api/commercial-folders/${folderId}`);
+      const pin = prompt('Introduce el PIN de eliminación para confirmar:');
+      if (pin === null) return;
+      if (!pin.trim()) {
+        alert('El PIN es obligatorio para eliminar una etapa.');
+        return;
+      }
 
-      await loadUnits();
+      btn.disabled = true;
+      try {
+        await apiDelete(`/api/commercial-folders/${folderId}`, { pin: pin.trim() });
+        await loadUnits();
+      } catch (error) {
+        const message = /pin/i.test(error.message || '')
+          ? 'PIN incorrecto. No se ha eliminado la etapa.'
+          : `No se pudo eliminar la etapa: ${error.message || 'Error desconocido'}`;
+        alert(message);
+      } finally {
+        btn.disabled = false;
+      }
     });
   });
 
@@ -15264,6 +16129,10 @@ const viewExports = document.createElement('div');
   views.appendChild(viewFicha);
   views.appendChild(viewDocs);
   views.appendChild(viewExports);
+
+  if (fichaMode === 'technical') {
+    initTechnicalUnitProgress(viewFicha, unitId);
+  }
 
   initStatusBancoUI(
     'fv-statusBancoSel',
@@ -16602,8 +17471,13 @@ const technicalWorkspace = {
   templates: [],
   plans: [],
   inspectionContext: { reports: [], assignments: [], loanLines: [], canCreateExternal: false },
+  commonAreaProgress: { commonAreas: [], overallProgressPercent: 0, updatedAt: null, updatedByLabel: '' },
+  commonAreaSaveTimer: null,
+  commonAreaSaving: false,
+  commonAreaChangeVersion: 0,
   selected: new Set(),
-  permitFilter: 'all'
+  permitFilter: 'all',
+  stageFilter: ''
 };
 window.__technicalWorkspace = technicalWorkspace;
 
@@ -16685,25 +17559,157 @@ function technicalKpi(label, value, detail, tone = '') {
   return `<article class="technical-kpi ${tone}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong><small>${escapeHtml(detail)}</small></article>`;
 }
 
+function technicalCommonAreaCanEdit() {
+  return ['admin', 'bank', 'promoter', 'tecnico', 'gerencia'].includes(String(myRole || '').toLowerCase());
+}
+
+function technicalCommonAreaAverage(area = {}) {
+  const applicable = (area.activities || []).filter(activity => activity.applicable !== false);
+  if (!applicable.length) return 0;
+  return Math.round((applicable.reduce((sum, activity) => sum + Math.min(100, Math.max(0, Number(activity.progressPercent || 0))), 0) / applicable.length) * 100) / 100;
+}
+
+function recalculateTechnicalCommonAreas() {
+  const data = technicalWorkspace.commonAreaProgress || {};
+  const areas = Array.isArray(data.commonAreas) ? data.commonAreas : [];
+  areas.forEach(area => { area.progressPercent = technicalCommonAreaAverage(area); });
+  const activeAreas = areas.filter(area => (area.activities || []).some(activity => activity.applicable !== false));
+  data.overallProgressPercent = activeAreas.length
+    ? Math.round((activeAreas.reduce((sum, area) => sum + Number(area.progressPercent || 0), 0) / activeAreas.length) * 100) / 100
+    : 0;
+  return data;
+}
+
+function technicalCommonAreaUpdatedLabel(data = {}) {
+  if (!data.updatedAt) return 'Todavía sin actualizaciones';
+  const date = new Date(data.updatedAt);
+  if (Number.isNaN(date.getTime())) return 'Actualizado';
+  const stamp = date.toLocaleString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  return `Actualizado ${stamp}${data.updatedByLabel ? ` · ${data.updatedByLabel}` : ''}`;
+}
+
+function updateTechnicalCommonAreaIndicators() {
+  const data = recalculateTechnicalCommonAreas();
+  (data.commonAreas || []).forEach(area => {
+    const progress = Number(area.progressPercent || 0);
+    document.querySelectorAll(`[data-technical-common-progress="${area.key}"]`).forEach(node => { node.textContent = `${Math.round(progress)}%`; });
+    document.querySelectorAll(`[data-technical-common-bar="${area.key}"]`).forEach(node => { node.style.width = `${progress}%`; });
+    const complete = (area.activities || []).filter(activity => activity.applicable !== false && Number(activity.progressPercent || 0) >= 100).length;
+    const total = (area.activities || []).filter(activity => activity.applicable !== false).length;
+    document.querySelectorAll(`[data-technical-common-count="${area.key}"]`).forEach(node => { node.textContent = `${complete} de ${total} completadas`; });
+  });
+  const summary = document.getElementById('technicalCommonAreasSummary');
+  const overall = Math.round(Number(data.overallProgressPercent || 0));
+  const overallBar = document.getElementById('technicalCommonAreasOverallBar');
+  const overallValue = document.getElementById('technicalCommonAreasOverallValue');
+  if (overallBar) overallBar.style.width = `${overall}%`;
+  if (overallValue) overallValue.textContent = `${overall}%`;
+  if (summary) summary.innerHTML = `<span>Avance medio</span><small>${escapeHtml(technicalCommonAreaUpdatedLabel(data))}</small>`;
+}
+
+function renderTechnicalCommonAreas() {
+  const host = document.getElementById('technicalCommonAreasList');
+  if (!host) return;
+  const firstRender = host.dataset.rendered !== 'true';
+  const open = new Set([...host.querySelectorAll('details[open][data-technical-common-area]')].map(item => item.dataset.technicalCommonArea));
+  const data = recalculateTechnicalCommonAreas();
+  const editable = technicalCommonAreaCanEdit();
+  if (!Array.isArray(data.commonAreas) || !data.commonAreas.length) {
+    host.innerHTML = '<div class="technical-empty">No se pudo cargar el seguimiento de zonas comunes.</div>';
+    updateTechnicalCommonAreaIndicators();
+    return;
+  }
+  host.innerHTML = data.commonAreas.map(area => {
+    const activities = Array.isArray(area.activities) ? area.activities : [];
+    const progress = Number(area.progressPercent || 0);
+    const complete = activities.filter(activity => activity.applicable !== false && Number(activity.progressPercent || 0) >= 100).length;
+    const applicable = activities.filter(activity => activity.applicable !== false).length;
+    return `<details class="technical-common-area" data-technical-common-area="${escapeHtml(area.key)}" ${firstRender || open.has(area.key) ? 'open' : ''}>
+      <summary>
+        <div class="technical-common-area-copy"><strong>${escapeHtml(area.name)}</strong><span data-technical-common-count="${escapeHtml(area.key)}">${complete} de ${applicable} completadas</span></div>
+        <div class="technical-common-area-meter"><i><b data-technical-common-bar="${escapeHtml(area.key)}" style="width:${progress}%"></b></i><strong data-technical-common-progress="${escapeHtml(area.key)}">${Math.round(progress)}%</strong></div>
+        <span class="technical-common-area-chevron" aria-hidden="true">⌄</span>
+      </summary>
+      <div class="technical-common-area-body">
+        <div class="technical-common-activities">
+          ${activities.map(activity => `<div class="technical-common-activity ${activity.applicable === false ? 'is-disabled' : ''}" data-technical-common-activity="${escapeHtml(activity.key)}">
+            <label class="technical-common-activity-name"><span>${escapeHtml(activity.name)}</span><small>${activity.applicable === false ? 'No aplica' : `${Math.round(Number(activity.progressPercent || 0))}%`}</small></label>
+            <input type="range" min="0" max="100" step="1" value="${Number(activity.progressPercent || 0)}" data-common-area="${escapeHtml(area.key)}" data-common-activity="${escapeHtml(activity.key)}" ${!editable || activity.applicable === false ? 'disabled' : ''} aria-label="Avance de ${escapeHtml(activity.name)}">
+            <label class="technical-common-applicable"><input type="checkbox" data-common-applicable-area="${escapeHtml(area.key)}" data-common-applicable-activity="${escapeHtml(activity.key)}" ${activity.applicable !== false ? 'checked' : ''} ${!editable ? 'disabled' : ''}><span>Aplica</span></label>
+          </div>`).join('')}
+        </div>
+        <label class="technical-common-observations"><span>Observaciones de la zona</span><textarea rows="2" maxlength="3000" data-common-observations="${escapeHtml(area.key)}" ${!editable ? 'readonly' : ''} placeholder="Anota bloqueos, trabajos pendientes o decisiones relevantes">${escapeHtml(area.observations || '')}</textarea></label>
+      </div>
+    </details>`;
+  }).join('');
+  host.dataset.rendered = 'true';
+  updateTechnicalCommonAreaIndicators();
+}
+
+function scheduleTechnicalCommonAreaSave() {
+  if (!technicalCommonAreaCanEdit()) return;
+  technicalWorkspace.commonAreaChangeVersion += 1;
+  clearTimeout(technicalWorkspace.commonAreaSaveTimer);
+  document.getElementById('technicalCommonAreasSummary')?.classList.add('is-pending');
+  technicalWorkspace.commonAreaSaveTimer = setTimeout(saveTechnicalCommonAreas, 650);
+}
+
+async function saveTechnicalCommonAreas() {
+  if (!technicalCommonAreaCanEdit()) return;
+  if (technicalWorkspace.commonAreaSaving) {
+    clearTimeout(technicalWorkspace.commonAreaSaveTimer);
+    technicalWorkspace.commonAreaSaveTimer = setTimeout(saveTechnicalCommonAreas, 300);
+    return;
+  }
+  technicalWorkspace.commonAreaSaving = true;
+  const saveVersion = technicalWorkspace.commonAreaChangeVersion;
+  const payloadAreas = JSON.parse(JSON.stringify(technicalWorkspace.commonAreaProgress.commonAreas || []));
+  const summary = document.getElementById('technicalCommonAreasSummary');
+  summary?.classList.add('is-saving');
+  try {
+    const response = await API.put(`/api/projects/${encodeURIComponent(id)}/technical-common-areas`, {
+      commonAreas: payloadAreas
+    });
+    if (saveVersion === technicalWorkspace.commonAreaChangeVersion) {
+      technicalWorkspace.commonAreaProgress = response;
+      renderTechnicalCommonAreas();
+    } else {
+      technicalWorkspace.commonAreaProgress.updatedAt = response.updatedAt;
+      technicalWorkspace.commonAreaProgress.updatedByLabel = response.updatedByLabel;
+      clearTimeout(technicalWorkspace.commonAreaSaveTimer);
+      technicalWorkspace.commonAreaSaveTimer = setTimeout(saveTechnicalCommonAreas, 300);
+    }
+  } catch (error) {
+    console.error('[Técnico] zonas comunes', error);
+    alert(error.message || 'No se pudo guardar el avance de zonas comunes.');
+  } finally {
+    technicalWorkspace.commonAreaSaving = false;
+    summary?.classList.remove('is-pending', 'is-saving');
+  }
+}
+
 function renderTechnicalKpis() {
   const host = document.getElementById('technicalKpis');
   if (!host) return;
   const ventas = technicalWorkspace.ventas;
+  const scopedUnits = technicalWorkspace.stageFilter
+    ? technicalWorkspace.units.filter(unit => String(unit.folderId || '') === String(technicalWorkspace.stageFilter))
+    : technicalWorkspace.units;
   const permits = technicalWorkspace.permits?.items || [];
   const activePermits = permits.filter(item => technicalPermitEffectiveStatus(item) !== 'waived');
   const approved = activePermits.filter(item => technicalPermitEffectiveStatus(item) === 'approved').length;
   const progress = activePermits.length ? Math.round(approved / activePermits.length * 100) : 0;
-  const inConstruction = technicalWorkspace.units.filter(unit => ventas.get(String(unit._id))?.enConstruccion).length;
-  const completed = technicalWorkspace.units.filter(unit => {
+  const inConstruction = scopedUnits.filter(unit => ventas.get(String(unit._id))?.enConstruccion).length;
+  const completed = scopedUnits.filter(unit => {
     const venta = ventas.get(String(unit._id)) || {};
     return technicalConstructionPhase(venta.estatusConstruccion, venta.avanceConstruccionPct) === 'Terminada';
   }).length;
-  const missingOccupation = technicalWorkspace.units.filter(unit => !ventas.get(String(unit._id))?.permisoOcupacion).length;
+  const missingOccupation = scopedUnits.filter(unit => !ventas.get(String(unit._id))?.permisoOcupacion).length;
   const expiringPolicies = projectInsurancePolicies().filter(policy => {
     const days = technicalDaysUntil(policy.expiryDate);
     return days !== null && days <= 60;
   }).length;
-  const coverageAlerts = technicalWorkspace.units.filter(unit => {
+  const coverageAlerts = scopedUnits.filter(unit => {
     const result = technicalUnitCoverage(unit, ventas.get(String(unit._id)) || {});
     return result.tone !== 'is-ok';
   }).length;
@@ -16718,7 +17724,10 @@ function renderTechnicalKpis() {
 }
 
 function technicalAggregatedPermitSummary(kind) {
-  const rows = technicalWorkspace.units.map(unit => {
+  const scopedUnits = technicalWorkspace.stageFilter
+    ? technicalWorkspace.units.filter(unit => String(unit.folderId || '') === String(technicalWorkspace.stageFilter))
+    : technicalWorkspace.units;
+  const rows = scopedUnits.map(unit => {
     const venta = technicalWorkspace.ventas.get(String(unit._id)) || {};
     const construction = kind === 'construction';
     const number = construction ? venta.permisoConstruccionNum : venta.permisoOcupacionNum;
@@ -17040,7 +18049,9 @@ function renderTechnicalUnits() {
   const gridHost = document.getElementById('technicalUnitsGrid');
   const kpiHost = document.getElementById('technicalUnitKpis');
   if (!gridHost || !kpiHost) return;
-  const all = technicalWorkspace.units;
+  const all = technicalWorkspace.stageFilter
+    ? technicalWorkspace.units.filter(unit => String(unit.folderId || '') === String(technicalWorkspace.stageFilter))
+    : technicalWorkspace.units;
   const filtered = all.filter(unit => technicalUnitMatchesFilters(unit, technicalWorkspace.ventas.get(String(unit._id)) || {}));
   const ventas = technicalWorkspace.ventas;
   const inWork = all.filter(unit => ventas.get(String(unit._id))?.enConstruccion).length;
@@ -17050,11 +18061,20 @@ function renderTechnicalUnits() {
   }).length;
   const missingConstruction = all.filter(unit => !ventas.get(String(unit._id))?.permisoConstruccionMunicipal).length;
   const missingOccupation = all.filter(unit => !ventas.get(String(unit._id))?.permisoOcupacion).length;
+  const progressValues = all
+    .map(unit => Number(ventas.get(String(unit._id))?.avanceConstruccionPct))
+    .filter(Number.isFinite);
+  const averageProgress = progressValues.length
+    ? Math.round(progressValues.reduce((sum, value) => sum + value, 0) / progressValues.length)
+    : 0;
+  const coverageAlerts = all.filter(unit => technicalUnitCoverage(unit, ventas.get(String(unit._id)) || {}).tone !== 'is-ok').length;
   kpiHost.innerHTML = [
     technicalKpi('En construcción', inWork, `${all.length} unidades totales`, 'is-cyan'),
     technicalKpi('Terminadas', completed, 'Obra finalizada', 'is-success'),
+    technicalKpi('Avance medio', `${averageProgress}%`, 'Promedio informado', averageProgress === 100 ? 'is-success' : 'is-cyan'),
     technicalKpi('Sin permiso construcción', missingConstruction, 'Pendientes', missingConstruction ? 'is-warning' : 'is-success'),
-    technicalKpi('Sin permiso ocupación', missingOccupation, 'Pendientes', missingOccupation ? 'is-warning' : 'is-success')
+    technicalKpi('Sin permiso ocupación', missingOccupation, 'Pendientes', missingOccupation ? 'is-warning' : 'is-success'),
+    technicalKpi('Cobertura por verificar', coverageAlerts, 'Pólizas y ocupación', coverageAlerts ? 'is-warning' : 'is-success')
   ].join('');
 
   const grouped = new Map(technicalWorkspace.folders.map(folder => [String(folder._id), []]));
@@ -17067,12 +18087,20 @@ function renderTechnicalUnits() {
     const folderId = isUnassigned ? '' : String(folder._id);
     const collapseKey = isUnassigned ? 'unassigned' : folderId;
     const collapsed = technicalFolderCollapsed(collapseKey);
-    return `<section class="commercial-folder ${isUnassigned ? 'unassigned' : ''} ${collapsed ? 'collapsed' : ''}" data-technical-folder="${escapeHtml(folderId)}" style="--folder-color:${normalizeCommercialFolderColor(folder.color)}">
-      <div class="commercial-folder-head"><h3>${escapeHtml(folder.name || 'Sin carpeta')}</h3><div class="folder-actions"><span>${units.length} unidades</span><button type="button" class="btn mini" data-technical-folder-toggle="${escapeHtml(collapseKey)}">${collapsed ? 'Mostrar' : 'Ocultar'}</button></div></div>
+    return `<section class="commercial-folder ${isUnassigned ? 'unassigned' : ''} ${collapsed ? 'collapsed' : ''}" data-technical-folder="${escapeHtml(folderId)}" data-folder-id="${escapeHtml(folderId)}" style="--folder-color:${normalizeCommercialFolderColor(folder.color)}">
+      <div class="commercial-folder-head"><h3 class="${isUnassigned ? '' : 'folder-title'}">${escapeHtml(folder.name || 'Sin carpeta')}</h3><div class="folder-actions"><span>${units.length} unidades</span><button type="button" class="btn mini" data-technical-folder-toggle="${escapeHtml(collapseKey)}">${collapsed ? 'Mostrar' : 'Ocultar'}</button></div></div>
       <div class="commercial-folder-body">${units.map(technicalUnitCard).join('') || '<div class="empty">No hay unidades en esta vista.</div>'}</div>
     </section>`;
   };
-  gridHost.innerHTML = folderHtml(technicalWorkspace.unassigned, unassigned, true) + technicalWorkspace.folders.map(folder => folderHtml(folder, grouped.get(String(folder._id)) || [])).join('');
+  if (technicalWorkspace.stageFilter) {
+    const stage = technicalWorkspace.folders.find(folder => String(folder._id) === String(technicalWorkspace.stageFilter));
+    gridHost.innerHTML = stage
+      ? folderHtml(stage, grouped.get(String(stage._id)) || [])
+      : '<div class="technical-empty">No se ha encontrado esta etapa.</div>';
+  } else {
+    gridHost.innerHTML = (unassigned.length ? folderHtml(technicalWorkspace.unassigned, unassigned, true) : '')
+      + technicalWorkspace.folders.map(folder => folderHtml(folder, grouped.get(String(folder._id)) || [])).join('');
+  }
   bindTechnicalUnitCards();
   updateTechnicalSelection();
 }
@@ -17273,20 +18301,22 @@ function openTechnicalPrepareDisbursement(reportId) {
 
 async function loadTechnicalWorkspace({ force = false, preserveSelection = false } = {}) {
   if (!document.getElementById('tab-tecnico')) return;
+  if (technicalWorkspace.loaded && !force) return;
   if (technicalWorkspace.loading) {
     await technicalWorkspace.loading;
     if (!force) return;
   }
   const previousSelection = preserveSelection ? new Set(technicalWorkspace.selected) : new Set();
   technicalWorkspace.loading = (async () => {
-    const [units, ventas, folderData, permits, templates, plans, inspectionContext] = await Promise.all([
-      API.get(`/api/units?projectId=${encodeURIComponent(id)}&estado=&q=`),
-      API.get(`/api/ventas?projectId=${encodeURIComponent(id)}`).catch(() => []),
-      API.get(`/api/commercial-folders?projectId=${encodeURIComponent(id)}`).catch(() => ({ folders:[], unassigned:{ name:'Sin carpeta', color:'#0f172a' } })),
-      apiPermitsGetProject(true).catch(() => null),
+    const [units, ventas, folderData, permits, templates, plans, inspectionContext, commonAreaProgress] = await Promise.all([
+      getProjectUnitsAll({ force }),
+      getProjectVentas({ force }).catch(() => []),
+      getProjectCommercialFolders({ force }).catch(() => ({ folders:[], unassigned:{ name:'Sin carpeta', color:'#0f172a' } })),
+      getProjectPermits({ force }).catch(() => null),
       apiPermitsGetTemplates().catch(() => []),
       API.get(`/api/documents?projectId=${encodeURIComponent(id)}&category=architecturalPlans&ts=${Date.now()}`).catch(() => []),
-      API.get(`/api/projects/${encodeURIComponent(id)}/finance/avaluation-context?ts=${Date.now()}`).catch(() => ({ reports:[], assignments:[], loanLines:[], canCreateExternal:false }))
+      API.get(`/api/projects/${encodeURIComponent(id)}/finance/avaluation-context?ts=${Date.now()}`).catch(() => ({ reports:[], assignments:[], loanLines:[], canCreateExternal:false })),
+      API.get(`/api/projects/${encodeURIComponent(id)}/technical-common-areas?ts=${Date.now()}`).catch(() => ({ commonAreas:[], overallProgressPercent:0, updatedAt:null, updatedByLabel:'' }))
     ]);
     technicalWorkspace.units = units || [];
     technicalWorkspace.ventas = new Map((ventas || []).map(venta => [String(venta.unitId), venta]));
@@ -17296,10 +18326,12 @@ async function loadTechnicalWorkspace({ force = false, preserveSelection = false
     technicalWorkspace.templates = templates || [];
     technicalWorkspace.plans = plans || [];
     technicalWorkspace.inspectionContext = inspectionContext || { reports:[], assignments:[], loanLines:[], canCreateExternal:false };
+    technicalWorkspace.commonAreaProgress = commonAreaProgress || { commonAreas:[], overallProgressPercent:0, updatedAt:null, updatedByLabel:'' };
     technicalWorkspace.selected = new Set([...previousSelection].filter(unitId => technicalWorkspace.units.some(unit => String(unit._id) === unitId)));
     INSURANCE_UNITS_CACHE = technicalWorkspace.units;
     renderTechnicalTemplatePicker();
     renderTechnicalKpis();
+    renderTechnicalCommonAreas();
     renderTechnicalPermits();
     renderTechnicalUnits();
     renderTechnicalInspections();
@@ -17483,6 +18515,35 @@ document.getElementById('technicalSelectAll')?.addEventListener('click', () => {
   renderTechnicalUnits();
 });
 document.getElementById('technicalBatchEdit')?.addEventListener('click', openTechnicalBatchEditor);
+document.getElementById('technicalCommonAreasList')?.addEventListener('input', event => {
+  const range = event.target.closest('[data-common-area][data-common-activity]');
+  if (range) {
+    const area = (technicalWorkspace.commonAreaProgress.commonAreas || []).find(item => item.key === range.dataset.commonArea);
+    const activity = area?.activities?.find(item => item.key === range.dataset.commonActivity);
+    if (!activity) return;
+    activity.progressPercent = Number(range.value || 0);
+    const rowValue = range.closest('.technical-common-activity')?.querySelector('.technical-common-activity-name small');
+    if (rowValue) rowValue.textContent = `${Math.round(activity.progressPercent)}%`;
+    updateTechnicalCommonAreaIndicators();
+    scheduleTechnicalCommonAreaSave();
+    return;
+  }
+  const observations = event.target.closest('[data-common-observations]');
+  if (observations) {
+    const area = (technicalWorkspace.commonAreaProgress.commonAreas || []).find(item => item.key === observations.dataset.commonObservations);
+    if (area) { area.observations = observations.value; scheduleTechnicalCommonAreaSave(); }
+  }
+});
+document.getElementById('technicalCommonAreasList')?.addEventListener('change', event => {
+  const checkbox = event.target.closest('[data-common-applicable-area][data-common-applicable-activity]');
+  if (!checkbox) return;
+  const area = (technicalWorkspace.commonAreaProgress.commonAreas || []).find(item => item.key === checkbox.dataset.commonApplicableArea);
+  const activity = area?.activities?.find(item => item.key === checkbox.dataset.commonApplicableActivity);
+  if (!activity) return;
+  activity.applicable = checkbox.checked;
+  renderTechnicalCommonAreas();
+  scheduleTechnicalCommonAreaSave();
+});
 document.getElementById('technicalAddExternalInspection')?.addEventListener('click', openTechnicalExternalInspection);
 document.getElementById('technicalRefreshInspections')?.addEventListener('click', () => loadTechnicalWorkspace({ force:true, preserveSelection:true }));
 document.getElementById('technicalInspectionsList')?.addEventListener('click', async event => {
@@ -17529,11 +18590,14 @@ document.getElementById('technicalPlansInput')?.addEventListener('change', async
 // ====== DOCS (Bank73)
 // ======================
 
-let _allDocs = []; // cache
+let _allDocs = []; // cache canÃ³nica compartida por Proyecto, Docs y Dossier
+let _allDocsLoaded = false;
 window.__docsModuleReady = true;
 
 function invalidateProjectDocsCache() {
   _allDocs = [];
+  _allDocsLoaded = false;
+  invalidateProjectDataCache('documents');
   _docsFolderMeta = null;
   _commercialDossierDocs = [];
 }
@@ -17593,18 +18657,19 @@ function commercialDossierSize(d) {
 async function loadCommercialDossierDocs(force = false) {
   if (_commercialDossierDocs.length && !force) return _commercialDossierDocs;
 
-  const qs = new URLSearchParams({
-    projectId: id,
-    category: 'commercialDossier',
-    folder: 'comercial',
-    ts: String(Date.now())
-  });
-
-  _commercialDossierDocs = await API.get(`/api/documents?${qs.toString()}`)
-    .catch(err => {
-      console.warn('[Commercial dossier] No se pudo cargar', err);
-      return [];
-    });
+  try {
+    if (!_allDocsLoaded || force) {
+      _allDocs = await getProjectDocuments({ force });
+      _allDocs = Array.isArray(_allDocs) ? _allDocs : [];
+      _allDocsLoaded = true;
+    }
+    _commercialDossierDocs = _allDocs.filter(doc =>
+      String(doc?.category || '') === 'commercialDossier'
+    );
+  } catch (err) {
+    console.warn('[Commercial dossier] No se pudo cargar', err);
+    _commercialDossierDocs = [];
+  }
 
   _commercialDossierDocs = Array.isArray(_commercialDossierDocs) ? _commercialDossierDocs : [];
   return _commercialDossierDocs;
@@ -17898,8 +18963,14 @@ async function loadDocs({ q } = {}) {
   }
 
   // Carga una sola vez y cachea
-  if (!_allDocs.length) {
-    _allDocs = await API.get('/api/documents?projectId=' + id).catch(()=>[]);
+  if (!_allDocsLoaded) {
+    try {
+      _allDocs = await getProjectDocuments();
+      _allDocs = Array.isArray(_allDocs) ? _allDocs : [];
+      _allDocsLoaded = true;
+    } catch (_) {
+      _allDocs = [];
+    }
   }
 
   const folderCounts = {};
@@ -18447,6 +19518,10 @@ function setChatUnreadIndicator(hasUnread) {
   chatTabBtn.classList.toggle('chat-has-unread', !!hasUnread);
   chatTabBtn.setAttribute('aria-label', hasUnread ? 'Chat, hay mensajes nuevos sin leer' : 'Chat');
   chatTabBtn.title = hasUnread ? 'Hay mensajes nuevos sin leer' : '';
+  const unifiedButton = document.getElementById('unifiedChatBtn');
+  unifiedButton?.classList.toggle('chat-has-unread', !!hasUnread);
+  unifiedButton?.setAttribute('aria-label', hasUnread ? 'Chat, hay mensajes nuevos sin leer' : 'Chat del proyecto');
+  if (unifiedButton) unifiedButton.title = hasUnread ? 'Hay mensajes nuevos sin leer' : 'Chat del proyecto';
 }
 
 async function refreshChatUnreadStatus() {
@@ -18602,7 +19677,371 @@ if (chatLoadMore) {
 }
 
 
-// ====== Init ======
+function unifiedPhaseTotal(items = []) {
+  return (items || []).reduce((sum, item) => sum + Number(item?.amount || 0), 0);
+}
+
+function unifiedWorkspaceSnapshot() {
+  const role = String(myRole || '').toLowerCase();
+  const canViewFinance = FULL_ACCESS_ROLES.includes(role) && role !== 'avaluador';
+  const canViewCommercial = canViewFinance || role === 'commercial';
+  const canViewTechnical = canViewFinance || role === 'tecnico' || role === 'bank' || role === 'admin';
+  const canViewSummary = FULL_ACCESS_ROLES.includes(role) && role !== 'avaluador';
+  const financePhases = Array.isArray(FINANCE?.phases) ? FINANCE.phases : [];
+  const commercialData = window.__BANK73_COMMERCIAL_WORKSPACE_DATA?.() || {};
+  const folderList = Array.isArray(commercialData.folders) ? commercialData.folders : [];
+  const units = Array.isArray(commercialData.units) ? commercialData.units : [];
+  const salesMap = commercialData.sales instanceof Map ? commercialData.sales : new Map();
+  // El workspace unificado debe poder montarse también para perfiles parciales
+  // aunque una fuente secundaria todavía no se haya cargado.
+  const policies = (() => {
+    try { return projectInsurancePolicies() || []; }
+    catch (error) {
+      console.warn('No se pudieron calcular las pólizas del resumen unificado.', error);
+      return [];
+    }
+  })();
+  const normalizedUnitStatus = value => {
+    try { return normalizeUnitEstadoFrontend(value); }
+    catch { return String(value || '').trim().toLowerCase(); }
+  };
+  const commercialStatusLabel = value => ({
+    disponible: 'Disponible',
+    inventario: 'Inventario',
+    reservado: 'Reservado',
+    con_cpp: 'Con CPP',
+    tramite_legal_activado: 'Trámite legal',
+    escriturado_traspasado: 'Traspasado',
+    vivienda_entregada: 'Vivienda entregada'
+  })[normalizedUnitStatus(value)] || String(value || 'Sin estado').replace(/_/g, ' ');
+  const permitStatus = permit => {
+    try { return technicalPermitEffectiveStatus(permit); }
+    catch { return String(permit?.status || '').trim().toLowerCase(); }
+  };
+
+  const stages = folderList.map(folder => {
+    const stageId = String(folder._id || '');
+    const stageUnits = units.filter(unit => String(unit.folderId || '') === stageId);
+    const phase = financePhases.find(item => String(item.stageId || '') === stageId) || null;
+    const sales = stageUnits.map(unit => salesMap.get(String(unit._id)) || {});
+    const commercialStates = stageUnits.reduce((counts, unit) => {
+      const status = normalizedUnitStatus(unit.estado);
+      counts[status] = (counts[status] || 0) + 1;
+      return counts;
+    }, {});
+    const constructionValues = sales
+      .map(sale => Number(sale.avanceConstruccionPct))
+      .filter(Number.isFinite);
+    const constructionProgress = constructionValues.length
+      ? Math.round(constructionValues.reduce((sum, value) => sum + value, 0) / constructionValues.length)
+      : 0;
+    const permitConstruction = sales.filter(sale => sale.permisoConstruccionMunicipal || sale.permisoConstruccionNum).length;
+    const permitOccupation = sales.filter(sale => sale.permisoOcupacion || sale.permisoOcupacionNum).length;
+    const stagePolicies = policies.filter(policy => {
+      if (policy.appliesToAllUnits) return true;
+      const ids = new Set((policy.unitIds || []).map(String));
+      return stageUnits.some(unit => ids.has(String(unit._id)));
+    });
+    return {
+      id: stageId,
+      name: folder.name,
+      color: folder.color,
+      order: folder.order,
+      units: stageUnits.length,
+      phase,
+      finance: phase ? {
+        planUses: unifiedPhaseTotal(phase.planUses),
+        planSources: unifiedPhaseTotal(phase.planSources),
+        realUses: unifiedPhaseTotal(phase.uses),
+        realSources: unifiedPhaseTotal(phase.sources),
+        loanLines: (FINANCE_ALL_LOAN_LINES || []).filter(line => String(line.phaseId || '') === String(phase._id || '')).length,
+        requirements: (phase.requirements || []).filter(item => !item.isArchived),
+        startDate: phase.startDate,
+        endDate: phase.endDate,
+        isCompleted: !!phase.isCompleted
+      } : null,
+      commercial: {
+        available: Number(commercialStates.disponible || 0) + Number(commercialStates.inventario || 0),
+        reserved: Number(commercialStates.reservado || 0),
+        withCpp: Number(commercialStates.con_cpp || 0),
+        legal: Number(commercialStates.tramite_legal_activado || 0),
+        closed: Number(commercialStates.escriturado_traspasado || 0) + Number(commercialStates.vivienda_entregada || 0),
+        salesValue: sales.reduce((sum, sale) => sum + Number(sale.precioVenta || 0), 0),
+        cppValue: sales.reduce((sum, sale) => sum + Number(sale.montoFinanciamientoCPP || sale.valor || 0), 0),
+        units: stageUnits.map(unit => {
+          const sale = salesMap.get(String(unit._id)) || {};
+          return {
+            id: String(unit._id || ''),
+            label: unit.code || [unit.manzana, unit.lote].filter(Boolean).join(' / ') || unit.modelo || 'Unidad',
+            statusKey: normalizedUnitStatus(unit.estado),
+            status: commercialStatusLabel(unit.estado),
+            salePrice: Number(sale.precioVenta || 0),
+            cppAmount: Number(sale.montoFinanciamientoCPP || sale.valor || 0)
+          };
+        })
+      },
+      technical: {
+        constructionProgress,
+        inConstruction: sales.filter(sale => sale.enConstruccion).length,
+        constructionPermits: permitConstruction,
+        occupationPermits: permitOccupation,
+        policies: stagePolicies.length,
+        alerts: stageUnits.filter(unit => {
+          try { return technicalUnitCoverage(unit, salesMap.get(String(unit._id)) || {}).tone !== 'is-ok'; }
+          catch { return false; }
+        }).length
+      }
+    };
+  });
+
+  const soldStates = new Set(['reservado', 'con_cpp', 'tramite_legal_activado', 'escriturado_traspasado', 'vivienda_entregada']);
+  const sold = units.filter(unit => soldStates.has(normalizedUnitStatus(unit.estado))).length;
+  const allRequirements = financePhases.flatMap(phase => (phase.requirements || []).filter(item => !item.isArchived));
+  const requirementsDone = allRequirements.filter(item => item.status === 'CUMPLIDO').length;
+  const activePermits = (__permits?.items || []).filter(item => permitStatus(item) !== 'waived');
+  const approvedPermits = activePermits.filter(item => permitStatus(item) === 'approved').length;
+  const legalDone = units.filter(unit => {
+    const sale = salesMap.get(String(unit._id)) || {};
+    return sale.fechaInscripcion || sale.ingresoRP || normalizedUnitStatus(unit.estado) === 'escriturado_traspasado';
+  }).length;
+
+  return {
+    role,
+    capabilities: {
+      summary: canViewSummary,
+      commercial: canViewCommercial,
+      finance: canViewFinance,
+      technical: canViewTechnical,
+      projectSettings: role === 'admin',
+      unitsWorkspace: canViewFinance || role === 'commercial' || role === 'tecnico',
+      documents: true,
+      chat: role !== 'legal',
+      avaluators: role === 'bank',
+      providers: providersModuleEnabled && !['tecnico', 'legal'].includes(role)
+    },
+    overview: {
+      commercial: { value: sold, total: units.length, label: 'unidades comprometidas' },
+      finance: { value: requirementsDone, total: allRequirements.length, label: 'requisitos cumplidos' },
+      technical: { value: approvedPermits, total: activePermits.length, label: 'permisos aprobados' },
+      legal: { value: legalDone, total: units.length, label: 'unidades inscritas' }
+    },
+    globalProgress: globalProgress(),
+    lifecycle: PHASES.map(meta => {
+      const tasks = state.checklists.filter(item => item.phase === meta.key);
+      const operationalAlerts = (state.operational?.alerts || []).filter(item => item.phase === meta.key);
+      const delayedTasks = tasks.filter(item => item.status !== 'COMPLETADO' && item.dueDate && new Date(item.dueDate).getTime() < Date.now()).length;
+      const criticalAlerts = operationalAlerts.filter(item => item.severity === 'danger').length;
+      let progress = meta.key === 'PERMISOS' && __permits?.items?.length ? permitProgress(__permits) : phaseProgress(meta.key);
+      let taskCount = tasks.length;
+      let countLabel = 'checks';
+      if (['CONTRATISTAS', 'OBRA'].includes(meta.key)) {
+        const totals = tasks.map(scopedChecklistStats);
+        const total = totals.reduce((sum, item) => sum + item.total, 0);
+        const completed = totals.reduce((sum, item) => sum + item.completed, 0);
+        progress = total ? Math.round(completed / total * 100) : 0;
+        taskCount = totals.reduce((sum, item) => sum + item.assigned, 0);
+        countLabel = 'asignaciones';
+      }
+      if (meta.key === 'ESCRITURACION') {
+        const snapshot = operationalUnitsSnapshot();
+        const relevant = snapshot.units.filter(unit => ['reservado', 'con_cpp', 'tramite_legal_activado', 'escriturado_traspasado'].includes(operationalUnitState(unit.estado)));
+        taskCount = relevant.length;
+        countLabel = 'unidades';
+        progress = relevant.length ? Math.round(relevant.reduce((sum, unit) => sum + timelineCommercialProcess(snapshot.sales.get(String(unit._id)) || {}).pct, 0) / relevant.length) : 0;
+      }
+      return {
+        ...meta,
+        progress,
+        tasks: taskCount,
+        countLabel,
+        alerts: operationalAlerts.length,
+        checklistDelayed: delayedTasks,
+        delayed: delayedTasks + criticalAlerts,
+        active: !state.collapsed.has(meta.key)
+      };
+    }),
+    stages
+  };
+}
+
+async function prepareUnifiedPanel(key) {
+  if (key === 'resumen' && __summaryDirty) await refreshSummaryFromServer();
+  if (key === 'finanzas' && !FINANCE) await loadFinance({ force: false });
+  if (key === 'tecnico') await loadTechnicalWorkspace({ force: false, preserveSelection: true });
+  if (key === 'docs') await loadDocs();
+  if (key === 'chat') await loadChatMessages({ append: false, markRead: true });
+}
+
+async function prepareUnifiedUnitsMode(mode) {
+  if (mode === 'finance') {
+    await loadFinance({ force: false });
+    return;
+  }
+  if (mode === 'technical') {
+    await loadTechnicalWorkspace({ force: false, preserveSelection: true });
+    technicalWorkspace.stageFilter = '';
+    renderTechnicalUnits();
+  }
+}
+
+function selectUnifiedLifecyclePhase(phaseKey) {
+  const key = String(phaseKey || '').toUpperCase();
+  state.collapsed = new Set(PHASES.map(phase => phase.key).filter(item => item !== key));
+  renderProyecto();
+  window.__BANK73_UNIFIED_REFRESH?.();
+}
+
+function stageIntegrationHandle(type, node) {
+  if (!node?.parentNode) return null;
+  const marker = document.createComment(`bank73-stage-${type}`);
+  const home = node.parentNode;
+  home.insertBefore(marker, node);
+  return { type, node, marker, home };
+}
+
+function restoreStageIntegrationNode(handle) {
+  if (!handle?.node || !handle?.home) return;
+  const reference = handle.marker?.parentNode === handle.home ? handle.marker.nextSibling : null;
+  handle.home.insertBefore(handle.node, reference);
+  handle.marker?.remove();
+}
+
+async function mountUnifiedStageSection(type, stageId, host) {
+  const normalizedStageId = String(stageId || '');
+  if (['finance', 'requirements'].includes(type) && !FINANCE) {
+    await loadFinance({ force: false });
+  }
+  const phase = (FINANCE?.phases || []).find(item => String(item.stageId || '') === normalizedStageId);
+  if (type === 'finance') {
+    if (!phase) throw new Error('Esta etapa aún no tiene detalle financiero disponible.');
+    await openFinancePhaseLines(phase, 'real', 'overview', { embedded: true });
+    const modal = document.getElementById('financePhaseLinesModal');
+    const body = modal?.querySelector('.finance-phase-modal-body');
+    const handle = stageIntegrationHandle(type, body);
+    if (!handle) throw new Error('No se pudo preparar la gestión financiera.');
+    const financePage = document.getElementById('tab-finanzas');
+    if (financePage) financePage.id = 'tab-finanzas-page';
+    const surface = document.createElement('div');
+    surface.id = 'tab-finanzas';
+    surface.className = 'unified-stage-finance-surface';
+    surface.appendChild(body);
+    host.replaceChildren(surface);
+    handle.surface = surface;
+    handle.financePage = financePage;
+    modal.hidden = true;
+    document.body.classList.remove('finance-modal-open');
+    return handle;
+  }
+  if (type === 'requirements') {
+    if (!phase) throw new Error('Esta etapa aún no tiene requisitos bancarios disponibles.');
+    await openFinanceRequirements(phase, 'real', { embedded: true });
+    const modal = document.getElementById('financeRequirementsModal');
+    const panel = modal?.querySelector('.requirements-modal');
+    const handle = stageIntegrationHandle(type, panel);
+    if (!handle) throw new Error('No se pudieron preparar los requisitos bancarios.');
+    // La ficha integral ya aporta backdrop, dialogo y cierre. Incrustar tambien
+    // el backdrop del modal historico creaba dos popups superpuestos.
+    host.replaceChildren(panel);
+    modal.style.display = 'none';
+    return handle;
+  }
+  if (type === 'technical') {
+    technicalWorkspace.stageFilter = normalizedStageId;
+    await loadTechnicalWorkspace({ force: false, preserveSelection: true });
+    renderTechnicalKpis();
+    renderTechnicalPermits();
+    renderTechnicalUnits();
+    renderTechnicalInspections();
+    renderTechnicalDocuments();
+    const pane = document.getElementById('tab-tecnico');
+    const handle = stageIntegrationHandle(type, pane);
+    if (!handle) throw new Error('No se pudo preparar la gestión técnica.');
+    host.replaceChildren(pane);
+    pane.style.display = 'block';
+    return handle;
+  }
+  return null;
+}
+
+async function closeEmbeddedFinancePhase(handle) {
+  const flushAutosave = FINANCE_PHASE_AUTOSAVE_FLUSH;
+  try {
+    if (flushAutosave) await flushAutosave();
+    await flushFinanceLoanLinesAutosave({ showAlert: true });
+    await flushFinanceUnitAutosave({ showAlert: true });
+  } catch (error) {
+    console.error('[Finance] No se pudo completar el autoguardado al cerrar la ficha.', error);
+  }
+  FINANCE_PHASE_AUTOSAVE_FLUSH = null;
+  const modal = document.getElementById('financePhaseLinesModal');
+  if (modal) {
+    modal.hidden = true;
+    modal.classList.remove('is-fullscreen');
+    modal.style.zoom = '';
+  }
+  if (handle?.financePage) handle.financePage.id = 'tab-finanzas';
+  document.body.classList.remove('finance-modal-open');
+}
+
+function closeEmbeddedFinanceRequirements() {
+  const modal = document.getElementById('financeRequirementsModal');
+  if (!modal) return;
+  if (modal._requirementsAutosaveTimer) {
+    clearTimeout(modal._requirementsAutosaveTimer);
+    modal._requirementsAutosaveTimer = null;
+    const saveButton = modal.querySelector('[data-save-finance-requirements]');
+    if (saveButton && saveButton.style.display !== 'none' && !saveButton.disabled) {
+      modal.dataset.requirementsAutosave = 'true';
+      saveButton.click();
+    }
+  }
+  setFinanceRequirementsFullscreen(modal, false);
+  modal.style.display = 'none';
+}
+
+async function unmountUnifiedStageSection(handle) {
+  if (!handle) return;
+  restoreStageIntegrationNode(handle);
+  if (handle.type === 'finance') {
+    handle.surface?.remove();
+    await closeEmbeddedFinancePhase(handle);
+  }
+  if (handle.type === 'requirements') {
+    closeEmbeddedFinanceRequirements();
+  }
+  if (handle.type === 'technical') {
+    technicalWorkspace.stageFilter = '';
+    renderTechnicalKpis();
+    renderTechnicalUnits();
+    handle.node.style.display = 'none';
+  }
+}
+
+function exposeUnifiedWorkspace() {
+  window.BANK73_PROJECT_WORKSPACE = {
+    snapshot: unifiedWorkspaceSnapshot,
+    preparePanel: prepareUnifiedPanel,
+    prepareUnitsMode: prepareUnifiedUnitsMode,
+    selectLifecyclePhase: selectUnifiedLifecyclePhase,
+    mountStageSection: mountUnifiedStageSection,
+    unmountStageSection: unmountUnifiedStageSection,
+    openStageFinance(stageId) {
+      const phase = (FINANCE?.phases || []).find(item => String(item.stageId || '') === String(stageId || ''));
+      if (phase) return openFinancePhaseLines(phase, 'plan', 'overview');
+      alert('Esta etapa aun no tiene detalle financiero disponible.');
+    },
+    openStageRequirements(stageId) {
+      const phase = (FINANCE?.phases || []).find(item => String(item.stageId || '') === String(stageId || ''));
+      if (phase) return openFinanceRequirements(phase, 'real');
+      alert('Esta etapa aun no tiene requisitos bancarios disponibles.');
+    },
+    openUnit(unitId, mode = 'commercial') {
+      return window.__BANK73_COMMERCIAL_WORKSPACE_DATA?.().openUnit?.(String(unitId || ''), { mode });
+    }
+  };
+}
+
+ // ====== Init ======
 try {
 applyRoleVisibility();
 await syncProvidersModuleVisibility();
@@ -18610,48 +20049,47 @@ if (!['tecnico','legal'].includes(myRole)) await loadCommercialTemplateStatus();
 
 if (myRole === 'tecnico') {
   await loadProject();
-  await loadUnits();
-  await loadTechnicalWorkspace({ force:true });
-  await loadProyectoData();
+  await Promise.all([
+    loadUnits(),
+    loadTechnicalWorkspace({ force:false }),
+    loadProyectoData()
+  ]);
   renderProyecto();
-  await loadDocs();
-  await refreshCommercialDossier(true);
-  await loadChatMessages();
 } else if (myRole === 'legal') {
+  await loadProject();
   // Legal conserva su vista de checklists y documentos.
   await loadProyectoData();   // /api/projects/:id/checklists  ✅ permitido
   renderProyecto();
-  await loadDocs();           // /api/documents?projectId=...  ✅ permitido
-  await refreshCommercialDossier(true);
-  await loadChatMessages();
   
 } else if (myRole === 'commercial') {
+  await loadProject();
   // Comercial: unidades + (ahora) checklists propios + docs
-  await loadUnits();          // ✅
-  await loadProyectoData();   // ✅ /api/projects/:id/checklists (ya permitido por el cambio de arriba)
+  await Promise.all([
+    loadUnits(),
+    loadProyectoData()
+  ]);
   renderProyecto();           // pinta la pestaña Proyecto con solo COMERCIAL
-  await loadDocs();           // ✅
-  await refreshCommercialDossier(true);
-  await loadChatMessages();
 } else {
   // Roles full (admin, bank, promoter, gerencia, socios, financiero, contable)
   await loadProject();        // ✅
-  await loadSummary();        // ✅
   await Promise.all([
+    loadSummary(),
     loadFinance({ force: false }), // ✅ reutiliza snapshot de resumen si ya existe
-    loadUnits()               // ✅
+    loadUnits(),
+    loadProyectoData()
   ]);
-  await loadProyectoData();   // ✅
   renderProyecto();
-  await loadDocs();           // ✅
-  await refreshCommercialDossier(true);
-  await loadChatMessages();
 }
-await refreshChatUnreadStatus();
-startChatUnreadPolling();
+exposeUnifiedWorkspace();
+await window.initializeUnifiedProjectWorkspace?.(window.BANK73_PROJECT_WORKSPACE);
 } finally {
   finishInitialProjectLoad();
 }
+
+// El chat queda fuera del camino crítico. Los mensajes se descargan al abrir
+// la pestaña; tras el primer render consultamos únicamente el indicador.
+refreshChatUnreadStatus().catch(() => {});
+startChatUnreadPolling();
 
   // logout
   const logoutBtn = document.getElementById('logoutBtn');

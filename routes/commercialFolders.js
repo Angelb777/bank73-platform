@@ -1,9 +1,31 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const router = express.Router();
 const CommercialFolder = require('../models/CommercialFolder');
 const Unit = require('../models/Unit');
 const Project = require('../models/Project');
+const ProjectFinance = require('../models/ProjectFinance');
+const Document = require('../models/Document');
+const FundingInterest = require('../models/FundingInterest');
 const { requireProjectAccess } = require('../middleware/rbac');
+const audit = require('../utils/audit');
+const requirePin = require('../utils/requirePin');
+const {
+  emptyPhaseForStage,
+  removeStageFinancialData,
+  reconcileProjectStages,
+  syncStageName
+} = require('../services/projectStages');
+
+const uploadRoot = path.resolve(__dirname, '..', 'uploads');
+
+function resolveStageDocumentPath(storedPath = '') {
+  const candidate = path.resolve(__dirname, '..', String(storedPath || ''));
+  const relative = path.relative(uploadRoot, candidate);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
+  return candidate;
+}
 
 const COMMERCIAL_FOLDER_COLORS = new Set([
   '#111827', '#1e3a8a', '#172554', '#134e4a',
@@ -49,6 +71,10 @@ async function attachProjectFromFolder(req, res, next) {
 router.get('/', requireProjectAccess(), attachProjectFromRequest, async (req, res) => {
   const { projectId } = req.query;
 
+  // Migracion compatible y perezosa: desde este punto carpeta y fase comparten
+  // una unica identidad de etapa.
+  await reconcileProjectStages({ projectId, tenantKey: req.tenantKey });
+
   const filter = { projectId };
   if (req.tenantKey) filter.tenantKey = req.tenantKey;
 
@@ -91,6 +117,11 @@ router.post('/', attachProjectFromRequest, requireProjectAccess({ promoterCanEdi
     color: normalizeCommercialFolderColor(color),
     order: count
   });
+
+  let finance = await ProjectFinance.findOne({ project: projectId, tenantKey: req.tenantKey });
+  if (!finance) finance = new ProjectFinance({ project: projectId, tenantKey: req.tenantKey, phases: [] });
+  finance.phases.push(emptyPhaseForStage(folder, folder.createdAt || new Date()));
+  await finance.save();
 
   res.json(folder);
 });
@@ -151,23 +182,99 @@ router.patch('/:id', attachProjectFromFolder, requireProjectAccess({ promoterCan
 
   if (!folder) return res.status(404).json({ error: 'Carpeta no encontrada' });
 
+  if (update.name) {
+    await syncStageName({ stageId: folder._id, tenantKey: req.tenantKey, name: update.name });
+  }
+
   res.json(folder);
 });
 
 router.delete('/:id', attachProjectFromFolder, requireProjectAccess({ promoterCanEditAssigned: true }), async (req, res) => {
+  const invalidPin = requirePin(req, res);
+  if (invalidPin) return;
+
   const folderId = req.params.id;
 
   const folder = req.folder || await CommercialFolder.findOne({ _id: folderId, tenantKey: req.tenantKey }).lean();
   if (!folder) return res.status(404).json({ error: 'Carpeta no encontrada' });
 
-  await Unit.updateMany(
+  const finance = await ProjectFinance.findOne({ project: folder.projectId, tenantKey: req.tenantKey });
+  const cascade = finance
+    ? removeStageFinancialData(finance, folderId)
+    : {
+        removedPhaseIds: [], removedPhaseNames: [], removedRequirementIds: [],
+        removedRequestDocumentIds: [], removedPhases: 0, removedLoanLines: 0,
+        removedLoanEntries: 0, removedAllocations: 0
+      };
+
+  if (finance && cascade.removedPhases) {
+    await finance.save();
+  }
+
+  if (cascade.removedPhaseIds.length) {
+    const interests = await FundingInterest.find({
+      project: folder.projectId,
+      projectTenantKey: req.tenantKey,
+      phaseIds: { $in: cascade.removedPhaseIds }
+    });
+    for (const interest of interests) {
+      const ids = Array.from(interest.phaseIds || []);
+      const names = Array.from(interest.phaseNames || []);
+      const keepIndexes = ids.map((phaseId, index) => ({ phaseId, index }))
+        .filter(item => !cascade.removedPhaseIds.includes(String(item.phaseId)));
+      interest.phaseIds = keepIndexes.map(item => item.phaseId);
+      interest.phaseNames = keepIndexes.map(item => names[item.index] || '');
+      await interest.save();
+    }
+  }
+
+  const documentFilters = [];
+  if (cascade.removedPhaseIds.length) documentFilters.push({ financePhaseId: { $in: cascade.removedPhaseIds } });
+  if (cascade.removedRequirementIds.length) documentFilters.push({ requirementId: { $in: cascade.removedRequirementIds } });
+  if (cascade.removedRequestDocumentIds.length) documentFilters.push({ _id: { $in: cascade.removedRequestDocumentIds } });
+  let removedDocuments = 0;
+  if (documentFilters.length) {
+    const documents = await Document.find({
+      projectId: folder.projectId,
+      tenantKey: req.tenantKey,
+      $or: documentFilters
+    }).lean();
+    if (documents.length) {
+      await Document.deleteMany({ _id: { $in: documents.map(doc => doc._id) }, tenantKey: req.tenantKey });
+      removedDocuments = documents.length;
+      for (const doc of documents) {
+        const storedFile = resolveStageDocumentPath(doc.path);
+        if (storedFile && fs.existsSync(storedFile)) {
+          try { fs.unlinkSync(storedFile); } catch {}
+        }
+      }
+    }
+  }
+
+  const unitsResult = await Unit.updateMany(
     { tenantKey: req.tenantKey, folderId },
     { $set: { folderId: null, folderOrder: 0 } }
   );
 
   await CommercialFolder.deleteOne({ _id: folderId, tenantKey: req.tenantKey });
 
-  res.json({ ok: true });
+  const summary = {
+    phases: cascade.removedPhases,
+    loanLines: cascade.removedLoanLines,
+    loanEntries: cascade.removedLoanEntries,
+    allocations: cascade.removedAllocations,
+    documents: removedDocuments,
+    unitsUnassigned: unitsResult.modifiedCount ?? unitsResult.nModified ?? 0
+  };
+  await audit(req, 'project.stage_deleted', {
+    targetType: 'commercial_folder',
+    targetId: folder._id,
+    projectId: folder.projectId,
+    message: `Etapa eliminada: ${folder.name}`,
+    metadata: summary
+  });
+
+  res.json({ ok: true, deletedStage: { id: folderId, name: folder.name }, summary });
 });
 
 router.patch('/unassigned/units', attachProjectFromRequest, requireProjectAccess({ promoterCanEditAssigned: true }), async (req, res) => {

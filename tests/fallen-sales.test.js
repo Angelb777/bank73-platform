@@ -38,7 +38,7 @@ test('Comercial ofrece listado y alta manual de ventas caidas', () => {
 
   assert.match(html, /id="fallenSalesModal"/);
   assert.match(html, /id="fallenSalesForm"/);
-  assert.match(js, /id="btnVentasCaidasComercial"/);
+  assert.match(html, /id="btnVentasCaidasComercial"/);
   assert.match(js, /api\/ventas\/fallen/);
   assert.match(routes, /router\.get\([\s\S]*?'\/fallen'/);
   assert.match(routes, /router\.post\([\s\S]*?'\/fallen'/);

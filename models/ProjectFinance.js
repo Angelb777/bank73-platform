@@ -83,6 +83,10 @@ const PhaseRequirementSchema = new Schema({
 }, { _id: true, timestamps: true });
 
 const PhaseSchema = new Schema({
+  // Identidad canonica de la etapa. Las unidades ya apuntan a
+  // CommercialFolder mediante Unit.folderId; Finanzas reutiliza exactamente
+  // esa identidad para evitar dos arboles paralelos de etapas/fases.
+  stageId: { type: Schema.Types.ObjectId, ref: 'CommercialFolder', default: null, index: true },
   name: { type: String, required: true },                // "Fase 1"
   financierBanks: { type: [{ type: String, trim: true }], default: [] },
   startDate: { type: Date, required: true },
@@ -247,6 +251,7 @@ const ProjectFinanceSchema = new Schema({
 }, { timestamps: true });
 
 ProjectFinanceSchema.index({ tenantKey: 1, project: 1 });
+ProjectFinanceSchema.index({ tenantKey: 1, project: 1, 'phases.stageId': 1 });
 
 // -------------------- helpers --------------------
 ProjectFinanceSchema.methods.sumItems = function(items = []) {

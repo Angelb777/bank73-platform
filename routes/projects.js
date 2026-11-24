@@ -16,6 +16,7 @@ const Tenant            = require('../models/Tenant');
 const ProjectAvaluatorAssignment = require('../models/ProjectAvaluatorAssignment');
 const ProjectFinance    = require('../models/ProjectFinance');
 const ProjectFunding    = require('../models/ProjectFunding');
+const UnitTechnicalProgress = require('../models/UnitTechnicalProgress');
 const { calculateFundingScore } = require('../services/fundingScoring');
 const { buildViewer3DUnitRecord } = require('../services/viewer3d_unit_record');
 const { normalizePhaseRequirements, REQUIREMENT_TITLES } = require('../services/phaseRequirements');
@@ -29,6 +30,8 @@ const { normalizeCaptureChannel, captureChannelForVenta } = require('../services
 const { customerPaymentRecipientTotals, customerPaymentSummary } = require('../services/customerPayments');
 const { buildProjectCollectionCoverage } = require('../services/projectCollectionCoverage');
 const { buildExecutiveSummaryWorkbook, numberValue } = require('../services/executiveSummaryExcel');
+const { normalizeTechnicalCommonAreas, overallCommonAreaProgress } = require('../services/technicalCommonAreas');
+const { normalizeUnitTechnicalProgress } = require('../services/technicalUnitProgress');
 const { syncPromoterCompaniesToProjects } = require('../services/promoterCompanySync');
 const {
   buildExecutiveMovementRows,
@@ -1748,6 +1751,7 @@ router.post('/', requireRole('admin','bank','promoter'), async (req, res) => {
       return res.status(400).json({ error: 'La fecha límite para completar la financiación es obligatoria' });
     }
     body.coverImage = sanitizeCoverImage(body.coverImage || {});
+    body.logoImage = sanitizeCoverImage(body.logoImage || {});
     body.createdBy = toObjectId(req.user.userId);
     body.teamSuggestion = sanitizeTeamSuggestion(body.teamSuggestion || {});
     body.description = String(firstDefined(body.description, body.descripcion, body.desc) || '').trim();
@@ -1958,6 +1962,138 @@ router.get('/:id', requireProjectAccess(), async (req, res) => {
   } catch (e) {
     console.error('[GET /projects/:id] error:', e);
     res.status(500).json({ error: 'Error obteniendo el proyecto' });
+  }
+});
+
+router.get('/:id/technical-common-areas', requireProjectAccess(), async (req, res) => {
+  try {
+    const projectTenantKey = req.project?.tenantKey || req.tenantKey;
+    const project = await Project.findOne({ _id: req.params.id, tenantKey: projectTenantKey })
+      .select('technicalCommonAreas')
+      .lean();
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    const commonAreas = normalizeTechnicalCommonAreas(project.technicalCommonAreas?.areas);
+    return res.json({
+      commonAreas,
+      overallProgressPercent: overallCommonAreaProgress(commonAreas),
+      updatedAt: project.technicalCommonAreas?.updatedAt || null,
+      updatedByLabel: String(project.technicalCommonAreas?.updatedByLabel || '')
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo cargar el avance de zonas comunes.' });
+  }
+});
+
+router.put('/:id/technical-common-areas', requireProjectAccess(), async (req, res) => {
+  try {
+    const role = String(req.user?.role || '').toLowerCase();
+    if (!['admin', 'bank', 'promoter', 'tecnico', 'gerencia'].includes(role)) {
+      return res.status(403).json({ error: 'No tienes permiso para actualizar las zonas comunes.' });
+    }
+    if (!Array.isArray(req.body?.commonAreas)) {
+      return res.status(400).json({ error: 'commonAreas debe ser una lista.' });
+    }
+    const commonAreas = normalizeTechnicalCommonAreas(req.body.commonAreas);
+    const updatedAt = new Date();
+    const updatedBy = req.user?.userId || req.user?._id || null;
+    const updatedByLabel = String(req.user?.name || req.user?.email || '').trim().slice(0, 200);
+    const projectTenantKey = req.project?.tenantKey || req.tenantKey;
+    const project = await Project.findOneAndUpdate(
+      { _id: req.params.id, tenantKey: projectTenantKey },
+      { $set: { technicalCommonAreas: { areas: commonAreas, updatedAt, updatedBy, updatedByLabel } } },
+      { new: true, runValidators: true }
+    ).select('technicalCommonAreas').lean();
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    await audit(req, 'project.technical_common_areas.updated', {
+      targetType: 'project', targetId: req.params.id, projectId: req.params.id,
+      status: 'info', message: 'Avance de zonas comunes actualizado',
+      metadata: { overallProgressPercent: overallCommonAreaProgress(commonAreas) }
+    });
+    return res.json({
+      commonAreas,
+      overallProgressPercent: overallCommonAreaProgress(commonAreas),
+      updatedAt,
+      updatedByLabel
+    });
+  } catch (error) {
+    return res.status(error?.name === 'ValidationError' ? 400 : 500).json({ error: error.message || 'No se pudo guardar el avance de zonas comunes.' });
+  }
+});
+
+router.get('/:id/technical-unit-progress/:unitId', requireProjectAccess(), async (req, res) => {
+  try {
+    const projectTenantKey = req.project?.tenantKey || req.tenantKey;
+    const [project, unit, stored, venta] = await Promise.all([
+      Project.findOne({ _id: req.params.id, tenantKey: projectTenantKey }).select('projectType').lean(),
+      Unit.findOne({ _id: req.params.unitId, projectId: req.params.id, tenantKey: projectTenantKey, deletedAt: null }).select('_id').lean(),
+      UnitTechnicalProgress.findOne({ tenantKey: projectTenantKey, projectId: req.params.id, unitId: req.params.unitId }).lean(),
+      Venta.findOne({ tenantKey: projectTenantKey, projectId: req.params.id, unitId: req.params.unitId, deletedAt: null }).select('avanceConstruccionPct').lean()
+    ]);
+    if (!project || !unit) return res.status(404).json({ error: 'Unidad no encontrada' });
+    const progress = normalizeUnitTechnicalProgress({
+      projectType: project.projectType,
+      stored,
+      initialProgress: Number(venta?.avanceConstruccionPct || 0)
+    });
+    return res.json({
+      ...progress,
+      configured: !!stored,
+      updatedAt: stored?.updatedAt || null,
+      updatedByLabel: String(stored?.updatedByLabel || '')
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo cargar el avance técnico de la unidad.' });
+  }
+});
+
+router.put('/:id/technical-unit-progress/:unitId', requireProjectAccess(), async (req, res) => {
+  try {
+    const role = String(req.user?.role || '').toLowerCase();
+    if (!['admin', 'bank', 'promoter', 'tecnico', 'gerencia'].includes(role)) {
+      return res.status(403).json({ error: 'No tienes permiso para actualizar el avance de la unidad.' });
+    }
+    if (!Array.isArray(req.body?.activities)) return res.status(400).json({ error: 'activities debe ser una lista.' });
+    const projectTenantKey = req.project?.tenantKey || req.tenantKey;
+    const [project, unit, current] = await Promise.all([
+      Project.findOne({ _id: req.params.id, tenantKey: projectTenantKey }).select('projectType').lean(),
+      Unit.findOne({ _id: req.params.unitId, projectId: req.params.id, tenantKey: projectTenantKey, deletedAt: null }).select('_id').lean(),
+      UnitTechnicalProgress.findOne({ tenantKey: projectTenantKey, projectId: req.params.id, unitId: req.params.unitId }).lean()
+    ]);
+    if (!project || !unit) return res.status(404).json({ error: 'Unidad no encontrada' });
+    const normalized = normalizeUnitTechnicalProgress({
+      projectType: project.projectType,
+      stored: { ...(current || {}), observations: req.body?.observations },
+      submitted: req.body.activities,
+      initialProgress: Number(current?.progressPercent || 0)
+    });
+    const updatedBy = req.user?.userId || req.user?._id || null;
+    const updatedByLabel = String(req.user?.name || req.user?.email || '').trim().slice(0, 200);
+    const saved = await UnitTechnicalProgress.findOneAndUpdate(
+      { tenantKey: projectTenantKey, projectId: req.params.id, unitId: req.params.unitId },
+      { $set: { ...normalized, updatedBy, updatedByLabel } },
+      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
+    ).lean();
+    await Venta.findOneAndUpdate(
+      { tenantKey: projectTenantKey, projectId: req.params.id, unitId: req.params.unitId, deletedAt: null },
+      { $set: { avanceConstruccionPct: normalized.progressPercent, enConstruccion: normalized.progressPercent > 0 && normalized.progressPercent < 100 } },
+      { upsert: true, setDefaultsOnInsert: true, runValidators: true }
+    );
+    await audit(req, 'project.technical_unit_progress.updated', {
+      targetType: 'unit', targetId: req.params.unitId, projectId: req.params.id,
+      status: 'info', message: 'Avance técnico de unidad actualizado',
+      metadata: { progressPercent: normalized.progressPercent, templateKind: normalized.templateKind }
+    });
+    return res.json({
+      templateKind: saved.templateKind,
+      activities: saved.activities,
+      progressPercent: saved.progressPercent,
+      observations: saved.observations,
+      configured: true,
+      updatedAt: saved.updatedAt,
+      updatedByLabel: saved.updatedByLabel
+    });
+  } catch (error) {
+    return res.status(error?.name === 'ValidationError' ? 400 : 500).json({ error: error.message || 'No se pudo guardar el avance técnico de la unidad.' });
   }
 });
 
@@ -2525,6 +2661,13 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
       const coverImage = sanitizeCoverImage(req.body.coverImage);
       if (!coverImage) return res.status(400).json({ error: 'La portada debe ser JPG, PNG o WebP y no superar 5 MB' });
       payload.coverImage = coverImage;
+    }
+    if (req.body.logoImage === null) {
+      payload.logoImage = { path: '', originalname: '', mimetype: '' };
+    } else if (req.body.logoImage && typeof req.body.logoImage === 'object') {
+      const logoImage = sanitizeCoverImage(req.body.logoImage);
+      if (!logoImage) return res.status(400).json({ error: 'El logo debe ser JPG, PNG o WebP y no superar 5 MB' });
+      payload.logoImage = logoImage;
     }
     if (Array.isArray(req.body.housingModels)) {
       payload.housingModels = sanitizeHousingModels(req.body.housingModels);
@@ -3306,14 +3449,12 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     }
 
     const unitsByStatus = [
-      { status: 'Libre', count: U.available },
+      { status: 'Lote libre', count: U.available },
       { status: 'Inventario', count: U.inventory },
-      { status: 'Reserva', count: U.reserved },
+      { status: 'Reservado', count: U.reserved },
       { status: 'Con CPP', count: U.conCpp },
       { status: 'Trámite legal', count: U.tramiteLegal },
-      { status: 'Traspasado', count: U.escrituradas },
-      { status: 'Vivienda entregada', count: U.entregadas },
-      { status: 'Cancelada', count: U.canceladas }
+      { status: 'Traspasado', count: U.escrituradas + U.entregadas }
     ];
 
     const soldVentas = (ventas || []).filter(v => isSoldLikeStatus(v.__unitStatus));
@@ -3342,7 +3483,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     }
 
     for (const v of (ventas || [])) {
-      const d = v?.fechaContratoCliente ? new Date(v.fechaContratoCliente) : null;
+      const d = v?.fechaReserva ? new Date(v.fechaReserva) : null;
       const year = d && !isNaN(d.getTime()) ? String(d.getFullYear()) : null;
 
       if (isSoldLikeStatus(v.__unitStatus) && year) {
@@ -3615,7 +3756,10 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
         sales: customerSales.length,
         people: customerPeople.length,
         incomesRecorded: recordedIncomes.length,
-        salesWithIncomeRecorded
+        salesWithIncomeRecorded,
+        averageIncome: recordedIncomes.length
+          ? recordedIncomes.reduce((sum, value) => sum + value, 0) / recordedIncomes.length
+          : 0
       },
       companyType: countCustomerValues(customerPeople, person => normalizeCompanyType(person.companyType)),
       employmentProfile: countCustomerValues(customerPeople, person => normalizeEmploymentProfile(person.employmentProfile)),
@@ -4133,6 +4277,7 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
     });
 
     const cppVigenteAmount = soldVentas
+      .filter(v => ['reservado', 'con_cpp', 'tramite_legal_activado'].includes(v.__unitStatus))
       .filter(v => !isCashSale(v) && hasIssuedCpp(v))
       .reduce((a, v) => a + getCppAmount(v), 0);
 
@@ -4187,6 +4332,13 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
         return acc + toNum(venta?.precioVenta);
       }, 0);
 
+    const soldValue = soldVentas.reduce((sum, venta) => (
+      sum + toNum(getEffectivePrice(venta, venta.__unit))
+    ), 0);
+    const soldValuePct = inventoryValue > 0
+      ? Math.round((soldValue / inventoryValue) * 10000) / 100
+      : 0;
+
     const absorption3m = (() => {
       const cutoff = now - 90 * 24 * 3600 * 1000;
       const n = soldVentas.filter(v => {
@@ -4209,6 +4361,8 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       absorption3m,
       avgTicket,
       inventoryValue,
+      soldValue,
+      soldValuePct,
       loan: {
         approved: financeTotals.loanApproved,
         disbursed: financeTotals.disbursed,
@@ -4346,8 +4500,8 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       notes.push(`${kpis.cpp.due30} CPP vencen ≤30 días.`);
     }
 
-    if (financial.collectionCoverage.totalDebt && !financial.collectionCoverage.canCoverDebt) {
-      notes.push(`Lo pendiente de cobro cubre el ${financial.collectionCoverage.coveragePct}% de la deuda actual.`);
+    if (financial.cppCoverage.totalDebt && financial.cppCoverage.cppVigenteAmount < financial.cppCoverage.totalDebt) {
+      notes.push(`Los CPP vigentes cubren el ${financial.cppCoverage.coverageCppVigentePct}% de la deuda bancaria pendiente.`);
     }
 
     if (!notes.length) notes.push('Sin riesgos destacados.');
@@ -4426,6 +4580,8 @@ router.get('/:id/summary', requireProjectAccess(), async (req, res) => {
       promoterType: primaryPromoter?.promoterProfile?.promoterType || 'No definido',
       promoterProfile: primaryPromoter?.promoterProfile || null,
       legalData: project.legalData || {},
+      coverImage: project.coverImage || null,
+      logoImage: project.logoImage || null,
       updatedAt: project.updatedAt,
       loanApproved: financeTotals.loanApproved,
       loanDisbursed: financeTotals.disbursed,
@@ -4807,6 +4963,7 @@ if (isSoldLikeStatus(st)) U.sold++;
 
     const summary = {
       projectName: project.name || 'Proyecto',
+      logoImage: project.logoImage || null,
       projectType: project.projectType || '',
       promoterName: exportPrimaryPromoter?.name || exportPrimaryPromoter?.email || '',
       promoterCompanyName: project.legalData?.promoterLegalName || exportPrimaryPromoter?.promoterProfile?.companyName || '',
@@ -4940,10 +5097,22 @@ if (isSoldLikeStatus(st)) U.sold++;
       return found;
     };
 
+    const resolveProjectLogo = () => {
+      const dataUrl = String(summary?.logoImage?.path || '');
+      const match = dataUrl.match(/^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/i);
+      if (!match) return null;
+      try {
+        return Buffer.from(match[2], 'base64');
+      } catch (_) {
+        return null;
+      }
+    };
+
     function header(doc, { projectName, updatedAt }) {
       const margin = doc.page.margins.left;
       const pageW = doc.page.width;
       const logoPath = resolveLogoPath();
+      const projectLogo = resolveProjectLogo();
       const whiteLogoPath = resolveWhiteLogoPath();
 
       doc.save();
@@ -4957,7 +5126,8 @@ if (isSoldLikeStatus(st)) U.sold++;
       }
 
       try {
-        if (logoPath) doc.image(logoPath, margin, 40, { width: 96 });
+        if (projectLogo) doc.image(projectLogo, margin, 38, { fit: [96, 46], align: 'center', valign: 'center' });
+        else if (logoPath) doc.image(logoPath, margin, 40, { width: 96 });
       } catch (err) {
         console.warn('[PDF] Error dibujando logo:', err?.message || err);
       }
@@ -5119,6 +5289,7 @@ if (isSoldLikeStatus(st)) U.sold++;
       const pageH = doc.page.height;
       const contentW = pageW - margin * 2;
       const logoPath = resolveWhiteLogoPath();
+      const projectLogo = resolveProjectLogo();
 
       doc.save();
       doc.rect(0, 0, pageW, pageH).fill(BRAND_BLUE);
@@ -5126,7 +5297,14 @@ if (isSoldLikeStatus(st)) U.sold++;
       doc.rect(0, pageH - 90, pageW, 90).fill('#071D36');
       doc.restore();
 
-      if (logoPath) {
+      if (projectLogo) {
+        try {
+          doc.save();
+          roundRect(doc, (pageW - 250) / 2, 42, 250, 104, 12).fill('#FFFFFF');
+          doc.restore();
+          doc.image(projectLogo, (pageW - 220) / 2, 54, { fit: [220, 80], align: 'center', valign: 'center' });
+        } catch (_) {}
+      } else if (logoPath) {
         try {
           doc.image(logoPath, (pageW - 240) / 2, 54, { width: 240 });
         } catch (_) {}
@@ -5373,9 +5551,57 @@ if (isSoldLikeStatus(st)) U.sold++;
       if (title === 'Minutas de liberación') return simple(legalData.minutasLiberacion, 'status', 'count', 'Total minutas');
       if (title === 'Minutas de segregación') return simple(legalData.minutasSegregacion, 'status', 'count', 'Total minutas');
       if (title === 'Minutas de préstamo') return simple(legalData.minutasPrestamo, 'status', 'count', 'Total minutas');
-      if (title === 'Estatus construcción') return simple(technicalData.constructionStatus, 'status', 'count', 'Total estatus');
-      if (title === 'Fase de construcción') return simple(technicalData.constructionPhase, 'phase', 'count', 'Total unidades');
-      if (title === 'Modelos en construcción') return simple(technicalData.modelsInConstruction, 'model', 'count', 'Total modelos');
+      if (title === 'Minutas') {
+        const completed = rows => (rows || []).reduce((sum, item) => {
+          const status = String(item?.status || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+          return sum + (/^(SI|COMPLETAD|FIRMAD|EMITID|APROBAD)/.test(status) ? toNumber(item?.count) : 0);
+        }, 0);
+        const total = rows => (rows || []).reduce((sum, item) => sum + toNumber(item?.count), 0);
+        const groups = [
+          ['Liberación', legalData.minutasLiberacion || []],
+          ['Segregación', legalData.minutasSegregacion || []],
+          ['Préstamo', legalData.minutasPrestamo || []]
+        ];
+        return {
+          columns: ['Minuta', 'Sí / No'],
+          rows: groups.map(([label, rows]) => {
+            const yes = completed(rows);
+            return { label, value: `${fmtNum(yes)} sí · ${fmtNum(Math.max(0, total(rows) - yes))} no` };
+          }),
+          total: null
+        };
+      }
+      if (title === 'Avance legal por etapa') {
+        const rows = legalData.progressByUnit || [];
+        return {
+          columns: ['Etapa', 'Completadas / aplicables'],
+          rows: (legalData.milestones || []).map(stage => {
+            const steps = rows.map(row => row?.milestones?.[stage.key]).filter(Boolean);
+            const applicable = steps.filter(step => step.status !== 'not_applicable');
+            const completed = applicable.filter(step => step.status === 'completed').length;
+            return { label: stage.shortLabel || stage.label, value: `${fmtNum(completed)} / ${fmtNum(applicable.length)}` };
+          }),
+          total: null
+        };
+      }
+      if (title === 'Estatus construcción') return simple(technicalData.constructionPhase, 'phase', 'count', 'Total unidades');
+      if (title === 'Modelos de vivienda') return simple(technicalData.modelsInConstruction, 'model', 'count', 'Total modelos');
+      if (title === 'Duración de la fase') {
+        const dayMs = 86400000;
+        return {
+          columns: ['Fase', 'Estimación / Real'],
+          rows: (exportedFinancePhases || []).map((phase, index) => {
+            const start = phase?.startDate ? new Date(phase.startDate) : null;
+            const end = phase?.endDate ? new Date(phase.endDate) : null;
+            const actualStart = phase?.actualStartDate ? new Date(phase.actualStartDate) : start;
+            const actualEnd = phase?.actualEndDate || phase?.completedAt ? new Date(phase.actualEndDate || phase.completedAt) : new Date();
+            const estimated = start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) ? Math.max(0, Math.ceil((end - start) / dayMs)) : 0;
+            const actual = actualStart && !Number.isNaN(actualStart.getTime()) && !Number.isNaN(actualEnd.getTime()) ? Math.max(0, Math.ceil((actualEnd - actualStart) / dayMs)) : 0;
+            return { label: phase?.name || `Fase ${index + 1}`, value: `${estimated} días estimados · ${actual} días reales` };
+          }),
+          total: null
+        };
+      }
       if (title === 'Avance de construcción') return simple(technicalData.constructionProgressRanges, 'range', 'count', 'Total unidades');
       if (title === 'Alertas por severidad') return simple(alertsData.bySeverity, 'severity', 'count', 'Total alertas');
       if (title === 'Expedientes atrasados por etapa') return simple(kpisData.delaysByStage, 'stage', 'count', 'Total atrasados');
@@ -5767,9 +5993,9 @@ if (isSoldLikeStatus(st)) U.sold++;
         { label: 'Sociedad promotora', value: summary.promoterCompanyName || 'No definido' },
         { label: 'Tipo promotor', value: summary.promoterType || 'No definido' },
         { label: 'Perfil promotor', value: summary.promoterCategory || 'No definido' },
-        { label: 'Loan aprobado', value: fmtMoneyShort(project?.loanApproved ?? loan.approved) },
+        { label: 'Monto de financiamiento aprobado', value: fmtMoneyShort(project?.loanApproved ?? loan.approved) },
         { label: 'Desembolsado', value: fmtMoneyShort(project?.loanDisbursed ?? loan.disbursed) },
-        { label: 'Budget aprobado', value: fmtMoneyShort(project?.budgetApproved) },
+        { label: 'Estimación total de costes', value: fmtMoneyShort(project?.budgetApproved) },
         { label: 'Gasto', value: fmtMoneyShort(project?.budgetSpent ?? datasets?.financial?.totals?.disbursed) },
         { label: 'Unidades totales', value: fmtNum(summary.units?.total ?? units.total) },
         { label: 'Unidades vendidas', value: fmtNum(summary.units?.sold ?? units.sold) },
@@ -6342,7 +6568,6 @@ if (isSoldLikeStatus(st)) U.sold++;
         items: [
           'Estatus lotes / unidades',
           'Ventas mensuales',
-          'Ventas vs ventas caídas',
           'Ventas por modelo de vivienda',
           'Estatus bancario de operaciones financiadas',
           'CPP por banco',
@@ -6358,18 +6583,16 @@ if (isSoldLikeStatus(st)) U.sold++;
       {
         section: 'Resumen Legal',
         items: [
-          'Minutas de liberación',
-          'Minutas de segregación',
-          'Minutas de préstamo',
-          'Firma de protocolo por banco'
+          'Minutas',
+          'Avance legal por etapa'
         ]
       },
       {
         section: 'Resumen Técnico',
         items: [
           'Estatus construcción',
-          'Fase de construcción',
-          'Modelos en construcción',
+          'Modelos de vivienda',
+          'Duración de la fase',
           'Permisos por institución'
         ]
       },

@@ -7,6 +7,7 @@
   <script src="/js/branding.js"></script>
   <link href="/css/base.css" rel="stylesheet" />
   <link href="/css/theme.css?v=commercial-batch-modal-v1" rel="stylesheet" />
+  <link href="/css/project-unified.css?v=20" rel="stylesheet" />
   <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
 
   <style>
@@ -1854,9 +1855,16 @@ body.light-theme .provider-exclusive {
   <!-- Cabecera + export -->
   <section id="summaryHeader" class="summary-header">
     <div class="summary-title-block summary-action-group">
-      <span class="summary-action-label">Proyecto</span>
-      <h2 id="summaryProjectName">Proyecto</h2>
-      <div class="small muted" id="summaryUpdatedAt">Actualizado: —</div>
+      <button id="summaryProjectLogoBtn" class="summary-project-logo" type="button" title="Cambiar logo del proyecto">
+        <img id="summaryProjectLogo" alt="Logo del proyecto" hidden>
+        <span id="summaryProjectLogoPlaceholder">Logo</span>
+      </button>
+      <div class="summary-project-heading-copy">
+        <span class="summary-action-label">Proyecto</span>
+        <h2 id="summaryProjectName">Proyecto</h2>
+        <div class="small muted" id="summaryUpdatedAt">Actualizado: —</div>
+      </div>
+      <input id="summaryProjectLogoInput" type="file" accept="image/jpeg,image/png,image/webp" hidden>
     </div>
     <div class="summary-export-actions summary-action-group">
       <span class="summary-action-label">Exportar</span>
@@ -1932,35 +1940,25 @@ body.light-theme .provider-exclusive {
     </div>
   </section>
 
-  <!-- KPIs -->
-  <section id="summaryKpis" class="kpis-grid"></section>
-
-  <!-- Resumen general -->
-  <section id="summaryResumeBox" class="summary-resume-wrap"></section>
-
-  <!-- Progreso global (barra) -->
-  <div class="phase" style="--phase-color:#0ea5e9; margin-top:12px;">
-    <div class="phase-header">
-      <div class="phase-title">
-        <span>Progreso global del proyecto</span>
-        <span class="phase-badge" id="summaryProgressText">0% completado</span>
-      </div>
-    </div>
-    <div class="progress progress-lg">
-      <div id="summaryProgressBar" style="width:0%"></div>
-    </div>
-  </div>
+  <section id="summaryOverview" class="summary-overview">
+    <button id="summaryProjectCoverBtn" class="summary-project-cover" type="button" title="Cambiar portada del proyecto">
+      <img id="summaryProjectCover" alt="Portada del proyecto" hidden>
+      <span id="summaryProjectCoverPlaceholder">Añadir imagen de portada</span>
+    </button>
+    <input id="summaryProjectCoverInput" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+    <section id="summaryKpis" class="summary-overview-bands"></section>
+  </section>
 
         <!-- =========================
        RESUMEN COMERCIAL
        ========================= -->
-  <section class="summary-block" style="margin-top:18px;">
+  <section class="summary-block" id="summaryCommercialBlock" style="margin-top:18px;">
     <div class="summary-block-title">Resumen Comercial</div>
 
     <section id="summaryCommercialKpis" class="kpis-grid" style="margin-top:12px;"></section>
 
-    <section class="grid-2" style="margin-top:12px;">
-      <div class="card summary-chart-card chart-card-sm">
+    <section class="summary-dashboard-grid summary-commercial-dashboard" style="margin-top:12px;">
+      <div class="card summary-chart-card summary-span-4 chart-card-sm">
         <h3>Estatus lotes / unidades</h3>
         <div class="summary-chart-box">
           <canvas id="sumUnitsDonut"></canvas>
@@ -1968,23 +1966,20 @@ body.light-theme .provider-exclusive {
         <div id="sumUnitsDonutSummary" class="summary-chart-summary"></div>
       </div>
 
-      <div class="card summary-chart-card">
-        <h3>Ventas mensuales</h3>
+      <div class="card summary-chart-card summary-span-8 summary-sales-monthly-card">
+        <div class="summary-chart-heading">
+          <div class="summary-chart-title-line">
+            <h3>Ventas mensuales</h3>
+            <span>por fecha de reserva · unidades</span>
+          </div>
+          <div id="sumSalesYearTotals" class="summary-year-totals"></div>
+        </div>
         <div class="summary-chart-box">
           <canvas id="sumSalesMonthly"></canvas>
         </div>
-        <div id="sumSalesMonthlySummary" class="summary-chart-summary"></div>
       </div>
 
-      <div class="card summary-chart-card">
-        <h3>Ventas vs ventas caídas</h3>
-        <div class="summary-chart-box">
-          <canvas id="sumSalesVsFallen"></canvas>
-        </div>
-        <div id="sumSalesVsFallenSummary" class="summary-chart-summary"></div>
-      </div>
-
-      <div class="card summary-chart-card chart-card-sm">
+      <div class="card summary-chart-card summary-span-4 chart-card-sm">
         <h3>Ventas por modelo de vivienda</h3>
         <div class="summary-chart-box">
           <canvas id="sumSalesByModel"></canvas>
@@ -1992,7 +1987,7 @@ body.light-theme .provider-exclusive {
         <div id="sumSalesByModelSummary" class="summary-chart-summary"></div>
       </div>
 
-      <div class="card summary-chart-card chart-card-sm">
+      <div class="card summary-chart-card summary-span-4 chart-card-sm">
         <h3>Estatus bancario de operaciones financiadas</h3>
         <div class="summary-chart-box">
           <canvas id="sumBankStatus"></canvas>
@@ -2000,15 +1995,7 @@ body.light-theme .provider-exclusive {
         <div id="sumBankStatusSummary" class="summary-chart-summary"></div>
       </div>
 
-      <div class="card summary-chart-card chart-card-sm">
-        <h3>CPP por banco · cantidad y monto</h3>
-        <div class="summary-chart-box">
-          <canvas id="sumCppPie"></canvas>
-        </div>
-        <div id="sumCppPieSummary" class="summary-chart-summary"></div>
-      </div>
-
-      <div class="card summary-chart-card">
+      <div class="card summary-chart-card summary-span-4">
         <h3>Modalidad de compra</h3>
         <div class="summary-chart-box">
           <canvas id="sumPurchaseModality"></canvas>
@@ -2016,41 +2003,54 @@ body.light-theme .provider-exclusive {
         <div id="sumPurchaseModalitySummary" class="summary-chart-summary"></div>
       </div>
 
+      <div class="card summary-chart-card summary-span-12 summary-cpp-bank-card">
+        <h3>CPP por banco · cantidad y monto</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumCppPie"></canvas>
+        </div>
+        <div id="sumCppPieSummary" class="summary-chart-summary"></div>
+      </div>
+
     </section>
 
     <section class="summary-customer-report" style="margin-top:18px;">
       <div class="summary-customer-report-heading">
         <h3>Informe del cliente</h3>
-        <p class="small muted">Los KPI cuentan operaciones de compra. Las gráficas describen a las personas e incluyen al co-comprador cuando está registrado.</p>
+        <p id="summaryCustomerReportOverview" class="small muted"></p>
       </div>
-      <section id="summaryCustomerReportKpis" class="kpis-grid" style="margin-top:12px;"></section>
-      <div class="grid-2" style="margin-top:12px;">
-        <div class="card summary-chart-card summary-customer-chart-card">
+      <div class="summary-dashboard-grid summary-customer-chart-grid" style="margin-top:12px;">
+        <div class="card summary-chart-card summary-customer-chart-card summary-span-3">
           <h3>Tipo de empresa</h3>
           <div class="summary-chart-box"><canvas id="sumCustomerCompanyType"></canvas></div>
           <div id="sumCustomerCompanyTypeSummary" class="summary-chart-summary"></div>
         </div>
-        <div class="card summary-chart-card summary-customer-chart-card">
+        <div class="card summary-chart-card summary-customer-chart-card summary-span-3">
           <h3>Perfil laboral</h3>
           <div class="summary-chart-box"><canvas id="sumCustomerEmployment"></canvas></div>
           <div id="sumCustomerEmploymentSummary" class="summary-chart-summary"></div>
         </div>
-        <div class="card summary-chart-card summary-customer-chart-card">
+        <div class="card summary-chart-card summary-customer-chart-card summary-span-3">
           <h3>Sexo de los compradores</h3>
           <div class="summary-chart-box"><canvas id="sumCustomerSex"></canvas></div>
           <div id="sumCustomerSexSummary" class="summary-chart-summary"></div>
         </div>
-        <div class="card summary-chart-card summary-customer-chart-card">
+        <div class="card summary-chart-card summary-customer-chart-card summary-span-3">
           <h3>Composición de compradores</h3>
           <div class="summary-chart-box"><canvas id="sumCustomerPurchaseMode"></canvas></div>
           <div id="sumCustomerPurchaseModeSummary" class="summary-chart-summary"></div>
         </div>
-        <div class="card summary-chart-card summary-customer-chart-card summary-customer-income-card">
-          <h3>Ingresos mensuales declarados</h3>
+        <div class="card summary-chart-card summary-customer-chart-card summary-customer-income-card summary-span-8">
+          <div class="summary-chart-heading">
+            <div class="summary-chart-title-line">
+              <h3>Ingresos mensuales declarados</h3>
+              <span id="sumCustomerIncomeMeta"></span>
+            </div>
+            <div id="sumCustomerIncomeAverage" class="summary-income-average"></div>
+          </div>
           <div class="summary-chart-box"><canvas id="sumCustomerIncome"></canvas></div>
           <div id="sumCustomerIncomeSummary" class="summary-chart-summary"></div>
         </div>
-        <div class="card summary-chart-card summary-customer-chart-card">
+        <div class="card summary-chart-card summary-customer-chart-card summary-span-4">
           <h3>Vía de captación</h3>
           <div class="summary-chart-box"><canvas id="sumCustomerCapture"></canvas></div>
           <div id="sumCustomerCaptureSummary" class="summary-chart-summary"></div>
@@ -2065,9 +2065,27 @@ body.light-theme .provider-exclusive {
   <section class="summary-block" id="summaryLegalBlock" style="margin-top:18px;">
     <div class="summary-block-title">Resumen Legal</div>
 
-    <section id="summaryLegalProjectData" style="margin-top:12px;"></section>
-
     <section id="summaryLegalKpis" class="kpis-grid" style="margin-top:12px;"></section>
+
+    <section class="summary-dashboard-grid summary-legal-dashboard" style="margin-top:12px;">
+      <div class="card summary-chart-card summary-minutes-card summary-span-5">
+        <h3>Minutas</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumLegalMinutes"></canvas>
+        </div>
+        <div id="sumLegalMinutesSummary" class="summary-chart-summary"></div>
+      </div>
+
+      <div class="card summary-chart-card summary-span-7 summary-legal-stage-card">
+        <h3>Avance legal por etapa</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumLegalProgressByStage"></canvas>
+        </div>
+        <div id="sumLegalProgressByStageSummary" class="summary-chart-summary"></div>
+      </div>
+    </section>
+
+    <section id="summaryLegalProjectData" style="margin-top:12px;"></section>
 
     <section class="card summary-chart-card summary-legal-progress-card" style="margin-top:12px;">
       <div class="summary-legal-progress-head">
@@ -2093,76 +2111,40 @@ body.light-theme .provider-exclusive {
       </div>
       <div id="summaryLegalProgressMatrix"></div>
     </section>
-
-    <section class="grid-2" style="margin-top:12px;">
-      <div class="card summary-chart-card chart-card-sm">
-        <h3>Minutas de liberación</h3>
-        <div class="summary-chart-box">
-          <canvas id="sumLegalLiberacion"></canvas>
-        </div>
-        <div id="sumLegalLiberacionSummary" class="summary-chart-summary"></div>
-      </div>
-
-      <div class="card summary-chart-card chart-card-sm">
-        <h3>Minutas de segregación</h3>
-        <div class="summary-chart-box">
-          <canvas id="sumLegalSegregacion"></canvas>
-        </div>
-        <div id="sumLegalSegregacionSummary" class="summary-chart-summary"></div>
-      </div>
-
-      <div class="card summary-chart-card chart-card-sm">
-        <h3>Minutas de préstamo</h3>
-        <div class="summary-chart-box">
-          <canvas id="sumLegalPrestamo"></canvas>
-        </div>
-        <div id="sumLegalPrestamoSummary" class="summary-chart-summary"></div>
-      </div>
-
-      <div class="card summary-chart-card">
-        <h3>Firma de protocolo por banco</h3>
-        <div class="summary-chart-box">
-          <canvas id="sumProtocolByBank"></canvas>
-        </div>
-        <div id="sumProtocolByBankSummary" class="summary-chart-summary"></div>
-      </div>
-    </section>
   </section>
 
   <!-- =========================
        RESUMEN TÉCNICO
        ========================= -->
-  <section class="summary-block" style="margin-top:18px;">
+  <section class="summary-block" id="summaryTechnicalBlock" style="margin-top:18px;">
     <div class="summary-block-title">Resumen Técnico</div>
 
-    <section id="summaryTechnicalKpis" class="kpis-grid" style="margin-top:12px;"></section>
-
-    <section class="grid-2" style="margin-top:12px;">
-      <div class="card summary-chart-card chart-card-sm">
+    <section class="summary-dashboard-grid summary-technical-dashboard" style="margin-top:12px;">
+      <div class="card summary-chart-card summary-span-4">
         <h3>Estatus construcción</h3>
-        <div class="summary-chart-box">
-          <canvas id="sumConstructionStatus"></canvas>
-        </div>
-        <div id="sumConstructionStatusSummary" class="summary-chart-summary"></div>
-      </div>
-
-      <div class="card summary-chart-card">
-        <h3>Fase de construcción</h3>
         <div class="summary-chart-box">
           <canvas id="sumConstructionPhase"></canvas>
         </div>
         <div id="sumConstructionPhaseSummary" class="summary-chart-summary"></div>
       </div>
 
-      <div class="card summary-chart-card chart-card-sm">
-        <h3>Modelos en construcción</h3>
+      <div class="card summary-chart-card summary-span-4 chart-card-sm">
+        <h3>Modelos de vivienda</h3>
         <div class="summary-chart-box">
           <canvas id="sumModelsInConstruction"></canvas>
         </div>
         <div id="sumModelsInConstructionSummary" class="summary-chart-summary"></div>
       </div>
 
-      <div class="card summary-chart-card">
+      <div class="card summary-chart-card summary-span-4 summary-phase-duration-card">
+        <h3>Duración de la fase</h3>
+        <div class="summary-chart-box">
+          <canvas id="sumPhaseTimeDurationChart"></canvas>
+        </div>
+        <div id="sumPhaseTimeDurationSummary" class="summary-chart-summary"></div>
+      </div>
+
+      <div class="card summary-chart-card summary-span-12 summary-permits-card">
         <h3>Permisos por institución</h3>
         <div class="summary-chart-box">
           <canvas id="sumPermitsByInstitution"></canvas>
@@ -2175,25 +2157,21 @@ body.light-theme .provider-exclusive {
   <!-- =========================
        RESUMEN FINANCIERO
        ========================= -->
-  <section class="summary-block" style="margin-top:18px;">
+  <section class="summary-block" id="summaryFinancialBlock" style="margin-top:18px;">
     <div class="summary-block-title">Resumen Financiero</div>
 
-    <section id="summaryFinancialProfile" class="summary-resume-wrap" style="margin-top:12px;"></section>
     <section id="summaryFinancialKpis" class="kpis-grid" style="margin-top:12px;"></section>
-    <section id="summaryFinanceControlCards" class="summary-resume-wrap" style="margin-top:12px;"></section>
 
-    <section class="grid-2" style="margin-top:12px;">
-      <div class="card summary-chart-card">
-        <h3>¿Lo pendiente de cobro cubre la deuda actual?</h3>
+    <section class="summary-dashboard-grid summary-financial-dashboard" style="margin-top:12px;">
+      <div class="card summary-chart-card summary-span-12 summary-coverage-card">
+        <h3>Cobertura CPPs vigentes vs. Deuda bancaria pendiente</h3>
         <div class="summary-chart-box">
           <canvas id="sumCppCoverage"></canvas>
         </div>
         <div id="sumCppCoverageSummary" class="summary-chart-summary"></div>
       </div>
-    </section>
 
-    <section class="grid-2" style="margin-top:12px;">
-      <div class="card summary-chart-card chart-phase-lg">
+      <div class="card summary-chart-card summary-span-6 chart-phase-lg">
         <h3>Comparación por fase - Usos (Finanzas)</h3>
         <div class="summary-chart-box">
           <canvas id="sumPhaseChart"></canvas>
@@ -2201,69 +2179,39 @@ body.light-theme .provider-exclusive {
         <div id="sumPhaseChartSummary" class="summary-chart-summary summary-phase-summary"></div>
       </div>
 
-      <div class="card summary-chart-card chart-phase-lg">
+      <div class="card summary-chart-card summary-span-6 chart-phase-lg">
         <h3>Comparación por fase - Fuentes (Finanzas)</h3>
         <div class="summary-chart-box">
           <canvas id="sumPhaseSourceChart"></canvas>
         </div>
         <div id="sumPhaseSourceChartSummary" class="summary-chart-summary summary-phase-summary"></div>
       </div>
-    </section>
-
-    <section class="summary-phase-composition-section" style="margin-top:12px;">
+      <section class="summary-phase-composition-section summary-span-6">
       <h3 class="summary-subsection-title">Peso de los usos por fase - Estimación vs realidad</h3>
       <p class="small muted summary-subsection-help">Cada dona muestra qué porcentaje del total de la fase corresponde a terreno, infraestructura, construcción y las demás líneas registradas.</p>
       <div id="summaryPhaseCompositionCharts" class="summary-phase-composition-grid"></div>
-    </section>
+      </section>
 
-    <section class="grid-2" style="margin-top:12px;">
-      <div class="card summary-chart-card chart-phase-lg">
-        <h3>Desviación temporal - Duración por fase</h3>
-        <div class="summary-chart-box">
-          <canvas id="sumPhaseTimeDurationChart"></canvas>
-        </div>
-        <div id="sumPhaseTimeDurationSummary" class="summary-chart-summary"></div>
-      </div>
-
-      <div class="card summary-chart-card chart-phase-lg">
-        <h3>Desviación temporal - Fecha final</h3>
-        <div class="summary-chart-box">
-          <canvas id="sumPhaseTimeDelayChart"></canvas>
-        </div>
-        <div id="sumPhaseTimeDelaySummary" class="summary-chart-summary"></div>
-      </div>
-    </section>
-
-    <section class="summary-phase-lines-section" style="margin-top:12px;">
+    <section class="summary-phase-lines-section summary-span-6">
       <h3 class="summary-subsection-title">Gráficas de líneas por fase</h3>
-      <div id="summaryPhaseLineCharts" class="grid-2"></div>
+      <div id="summaryPhaseLineCharts"></div>
     </section>
-
-    <section class="grid-1 summary-legacy-cpp-coverage" style="margin-top:12px;display:none;">
-      <div class="card summary-chart-card">
-        <h3>¿Lo pendiente de cobro cubre la deuda actual?</h3>
-        <div class="summary-chart-box">
-          <canvas id="sumCppCoverageLegacy"></canvas>
-        </div>
-        <div id="sumCppCoverageSummaryLegacy" class="summary-chart-summary"></div>
-      </div>
     </section>
   </section>
 
-  <!-- Alertas + Conclusiones -->
-  <section class="grid-2 summary-global-only" style="margin-top:16px;">
-    <div class="card">
+  <!-- Alertas + Conclusiones + Antes / Después -->
+  <section class="summary-footer-grid summary-global-only" style="margin-top:16px;">
+    <div class="card summary-alerts-card">
       <h3>Vencimientos críticos (CPP / líneas de crédito / permisos)</h3>
       <div id="summaryAlerts"></div>
     </div>
-    <div class="card">
-      <h3>Conclusiones</h3>
-      <ul id="summaryNotes" class="bullets"></ul>
-    </div>
-  </section>
+    <div class="summary-footer-side">
+      <div class="card summary-conclusions-card">
+        <h3>Conclusiones</h3>
+        <ul id="summaryNotes" class="bullets"></ul>
+      </div>
 
-  <!-- Antes / Después -->
-  <section class="card summary-period-evidence" style="margin-top:16px;">
+  <section class="card summary-period-evidence">
   <div class="ba-two">
     <div class="ba-col">
       <h3>Antes</h3>
@@ -2286,6 +2234,8 @@ body.light-theme .provider-exclusive {
     </div>
   </div>
 </section>
+    </div>
+  </section>
 
 
 </div>
@@ -2298,9 +2248,9 @@ body.light-theme .provider-exclusive {
             <span class="phase-badge" id="globalProgressText">0% completado</span>
           </div>
           <div class="phase-actions">
-            <button class="btn btn-ghost btn-xs" id="configProyectoBtn">Configurar flujo</button>
+            <button class="btn btn-ghost btn-xs timeline-icon-button" id="configProyectoBtn" type="button" aria-label="Configurar flujo" title="Configurar flujo"><span aria-hidden="true">⚙</span></button>
             <!-- NUEVO: expandir/colapsar todo -->
-            <button class="btn btn-ghost btn-xs" id="toggleAllPhasesBtn">Colapsar todo</button>
+            <button class="btn btn-ghost btn-xs timeline-icon-button" id="toggleAllPhasesBtn" type="button" aria-label="Colapsar todo" title="Colapsar todo"><span aria-hidden="true">↕</span></button>
           </div>
         </div>
         <div class="progress progress-lg"><div id="globalProgressBar" style="width:0%"></div></div>
@@ -2312,13 +2262,11 @@ body.light-theme .provider-exclusive {
           <div class="roles-header">
             <b>Roles & semáforo</b>
             <div class="roles-actions row">
-  <button id="togglePendientesBtn" class="btn btn-ghost btn-xs role-toggle">
-    <span class="txt">Pendientes</span>
-    <span class="state">off</span>
-    <span class="pill" aria-hidden="true"></span>
+  <button id="togglePendientesBtn" class="btn btn-ghost btn-xs role-toggle timeline-icon-button" type="button" aria-label="Mostrar solo pendientes" title="Mostrar solo pendientes" aria-pressed="false">
+    <span aria-hidden="true">◔</span>
   </button>
 
-  <button class="btn btn-ghost btn-xs role-clear" id="limpiarFiltroRol">Limpiar</button>
+  <button class="btn btn-ghost btn-xs role-clear timeline-icon-button" id="limpiarFiltroRol" type="button" aria-label="Limpiar filtro de rol" title="Limpiar filtro de rol"><span aria-hidden="true">×</span></button>
 </div>
 
           </div>
@@ -2548,6 +2496,8 @@ body.light-theme .provider-exclusive {
   <option value="escriturado_traspasado">Traspasado</option>
 </select>
     <input id="buscarUnidad" placeholder="Buscar (manzana/lote/modelo/cliente/banco/CPP)" />
+    <button type="button" class="btn commercial-filter-action" id="btnVentasCaidasComercial">Ventas caídas</button>
+    <button type="button" class="btn primary commercial-filter-action" id="btnCrearCarpetaComercial">+ Crear carpeta</button>
     </div>
   </section>
 
@@ -2997,21 +2947,49 @@ body.light-theme .provider-exclusive {
               <p>La misma estructura y orden de Comercial, con el color priorizando el estado de obra.</p>
             </div>
             <div class="technical-section-actions technical-selection-actions">
-              <button id="technicalCreateUnits" class="btn technical-action-primary" type="button">Crear en lote</button>
-              <button id="technicalCreateModel" class="btn btn-ghost" type="button">Crear modelo</button>
-              <span id="technicalSelectionCount" class="technical-selection-count">0 seleccionadas</span>
-              <button id="technicalSelectAll" class="btn btn-ghost" type="button">Seleccionar todo</button>
-              <button id="technicalBatchEdit" class="btn" type="button">Editar selección</button>
-              <button id="technicalDeleteUnits" class="btn btn-danger" type="button" disabled>Eliminar selección</button>
+              <div class="technical-action-group">
+                <span class="technical-action-label">Gestión</span>
+                <div class="technical-action-controls">
+                  <button id="technicalCreateUnits" class="btn technical-action-primary" type="button">Crear en lote</button>
+                  <button id="technicalCreateModel" class="btn btn-ghost" type="button">Crear modelo</button>
+                </div>
+              </div>
+              <div class="technical-action-group technical-action-selection-group">
+                <span class="technical-action-label">Selección</span>
+                <div class="technical-action-controls">
+                  <span id="technicalSelectionCount" class="technical-selection-count">0 seleccionadas</span>
+                  <button id="technicalSelectAll" class="btn btn-ghost" type="button">Seleccionar todo</button>
+                  <button id="technicalBatchEdit" class="btn" type="button">Editar selección</button>
+                  <button id="technicalDeleteUnits" class="btn btn-danger" type="button" disabled>Eliminar selección</button>
+                </div>
+              </div>
             </div>
           </header>
+          <details id="technicalCommonAreasSection" class="technical-common-areas" aria-labelledby="technicalCommonAreasTitle">
+            <summary class="technical-common-areas-toggle">
+              <div class="technical-common-areas-title">
+                <span class="technical-section-kicker">Seguimiento interno</span>
+                <h3 id="technicalCommonAreasTitle">Zonas comunes</h3>
+              </div>
+              <div class="technical-common-overall-meter">
+                <i><b id="technicalCommonAreasOverallBar" style="width:0%"></b></i>
+                <strong id="technicalCommonAreasOverallValue">0%</strong>
+              </div>
+              <div id="technicalCommonAreasSummary" class="technical-common-areas-summary" aria-live="polite"></div>
+              <span class="technical-common-areas-chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <div class="technical-common-areas-content">
+              <p>El avance se calcula automáticamente desde las actividades aplicables de cada zona.</p>
+              <div id="technicalCommonAreasList" class="technical-common-areas-list"></div>
+            </div>
+          </details>
           <div class="technical-unit-filters">
             <select id="technicalConstructionFilter" aria-label="Filtrar por estado de construcción">
               <option value="">Todos los estados de obra</option>
               <option value="Pendiente">Pendiente</option>
               <option value="Obra gris">Obra gris</option>
               <option value="Acabados">Acabados</option>
-              <option value="Culminada">Culminada</option>
+              <option value="Terminada">Terminada</option>
             </select>
             <select id="technicalPermitFilter" aria-label="Filtrar por permisos de unidad">
               <option value="">Todos los permisos</option>
@@ -3183,7 +3161,8 @@ body.light-theme .provider-exclusive {
   <script src="/lib/chart.umd.min.js"></script>
   <script src="/js/theme-toggle.js"></script>
   <script src="/js/project-3d.js?v=commercial-six-states-v4"></script>
-  <script src="/js/project.js?v=commercial-batch-modal-v1"><!-- ROLE-SEP: bump --></script>
+  <script src="/js/project-unified.js?v=20"></script>
+    <script src="/js/project.js?v=unified-finance-v3"><!-- ROLE-SEP: bump --></script>
   <script src="/js/avaluadores.js?v=2"></script>
 
 </body>
