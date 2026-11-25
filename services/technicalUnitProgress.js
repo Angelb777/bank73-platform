@@ -55,6 +55,22 @@ function activityAverage(activities = []) {
   return Math.round((applicable.reduce((sum, activity) => sum + clampPercent(activity.progressPercent), 0) / applicable.length) * 100) / 100;
 }
 
+function constructionStatusFromProgress(value) {
+  const progress = clampPercent(value);
+  if (progress >= 100) return 'Terminada';
+  if (progress >= 70) return 'Acabados';
+  if (progress > 0) return 'Obra gris';
+  return '';
+}
+
+function constructionStatusTarget(status = '') {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'terminada' || normalized === 'culminada') return 100;
+  if (normalized === 'acabados') return 85;
+  if (normalized === 'obra gris') return 50;
+  return 0;
+}
+
 function normalizeUnitTechnicalProgress({ projectType = '', stored = null, submitted = null, initialProgress = 0 } = {}) {
   const template = templateForProjectType(projectType);
   const source = Array.isArray(submitted) ? submitted : (Array.isArray(stored?.activities) ? stored.activities : []);
@@ -84,5 +100,7 @@ module.exports = {
   VERTICAL_ACTIVITIES,
   templateForProjectType,
   activityAverage,
+  constructionStatusFromProgress,
+  constructionStatusTarget,
   normalizeUnitTechnicalProgress
 };

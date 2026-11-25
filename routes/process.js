@@ -7,6 +7,7 @@ const ProjectChecklist = require('../models/ProjectChecklist');
 const Project = require('../models/Project');
 const Unit = require('../models/Unit');
 const UnitChecklistProgress = require('../models/UnitChecklistProgress');
+const ProjectWorkPackage = require('../models/ProjectWorkPackage');
 const { requireRole, requireProjectAccess } = require('../middleware/rbac');
 const bankReadOnly = require('../middleware/bankReadOnly');
 const { isFullAccessRole, isLimitedAreaRole } = require('../utils/roles');
@@ -119,6 +120,23 @@ async function attachProjectFromChecklist(req, res, next) {
   } catch (e) {
     next(e);
   }
+}
+
+async function attachProjectFromWorkPackage(req, res, next) {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Paquete inválido.' });
+    }
+    const tenantKey = getTenantKey(req);
+    if (!tenantKey) return res.status(403).json({ error: 'Falta tenantKey' });
+    const workPackage = await ProjectWorkPackage.findOne({ _id: req.params.id, tenantKey });
+    if (!workPackage) return res.status(404).json({ error: 'Paquete no encontrado.' });
+    const project = await Project.findOne({ _id: workPackage.projectId, tenantKey }).lean();
+    if (!project) return res.status(404).json({ error: 'Proyecto no encontrado.' });
+    req.workPackage = workPackage;
+    req.project = project;
+    next();
+  } catch (error) { next(error); }
 }
 
 function isFullAccess(role) { return isFullAccessRole(role); }
@@ -310,6 +328,128 @@ router.get('/projects/:projectId/unit-checklist-progress', requireProjectAccess(
   res.json({ progress: rows });
 });
 
+// Paquetes compartidos entre Contratistas y Obra. El rango, el contratista y
+// el progreso se guardan una sola vez y ambas fases leen este mismo registro.
+router.get('/projects/:projectId/work-packages', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
+  const project = await loadTenantProject(req, res, req.params.projectId);
+  if (!project) return;
+  const packages = await ProjectWorkPackage.find({
+    tenantKey: project.tenantKey,
+    projectId: project._id
+  }).sort({ order: 1, createdAt: 1 }).lean();
+  res.json({ packages });
+});
+
+async function validPackageUnits(project, rawUnitIds) {
+  const ids = [...new Set((Array.isArray(rawUnitIds) ? rawUnitIds : []).map(String))]
+    .filter(value => mongoose.Types.ObjectId.isValid(value));
+  if (!ids.length) return [];
+  const units = await Unit.find({
+    _id: { $in: ids }, projectId: project._id, tenantKey: project.tenantKey, deletedAt: null
+  }).select('_id').lean();
+  return units.map(unit => unit._id);
+}
+
+async function overlappingWorkPackage(project, unitIds, excludeId = null) {
+  const query = {
+    tenantKey: project.tenantKey,
+    projectId: project._id,
+    unitIds: { $in: unitIds }
+  };
+  if (excludeId) query._id = { $ne: excludeId };
+  return ProjectWorkPackage.findOne(query).select('name').lean();
+}
+
+router.post('/projects/:projectId/work-packages', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
+  const project = await loadTenantProject(req, res, req.params.projectId);
+  if (!project) return;
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'El nombre del paquete es obligatorio.' });
+  const unitIds = await validPackageUnits(project, req.body?.unitIds);
+  if (!unitIds.length) return res.status(400).json({ error: 'Selecciona al menos una unidad.' });
+  const overlapping = await overlappingWorkPackage(project, unitIds);
+  if (overlapping) return res.status(409).json({ error: `Hay unidades que ya pertenecen al paquete ${overlapping.name}.` });
+  const count = await ProjectWorkPackage.countDocuments({ tenantKey: project.tenantKey, projectId: project._id });
+  const workPackage = await ProjectWorkPackage.create({
+    tenantKey: project.tenantKey,
+    projectId: project._id,
+    name,
+    contractorName: String(req.body?.contractorName || '').trim(),
+    unitIds,
+    startDate: req.body?.startDate || null,
+    endDate: req.body?.endDate || null,
+    notes: String(req.body?.notes || '').trim(),
+    order: Number.isFinite(Number(req.body?.order)) ? Math.max(0, Number(req.body.order)) : count,
+    createdBy: userName(req),
+    updatedBy: userName(req)
+  });
+  res.status(201).json({ package: workPackage });
+});
+
+router.put('/work-packages/:id', attachProjectFromWorkPackage, requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
+  const workPackage = req.workPackage;
+  const project = req.project;
+  const name = String(req.body?.name ?? workPackage.name).trim();
+  if (!name) return res.status(400).json({ error: 'El nombre del paquete es obligatorio.' });
+  const unitIds = req.body?.unitIds === undefined
+    ? workPackage.unitIds
+    : await validPackageUnits(project, req.body.unitIds);
+  if (!unitIds.length) return res.status(400).json({ error: 'Selecciona al menos una unidad.' });
+  const overlapping = await overlappingWorkPackage(project, unitIds, workPackage._id);
+  if (overlapping) return res.status(409).json({ error: `Hay unidades que ya pertenecen al paquete ${overlapping.name}.` });
+  workPackage.name = name;
+  workPackage.contractorName = String(req.body?.contractorName ?? workPackage.contractorName ?? '').trim();
+  workPackage.unitIds = unitIds;
+  if (req.body?.startDate !== undefined) workPackage.startDate = req.body.startDate || null;
+  if (req.body?.endDate !== undefined) workPackage.endDate = req.body.endDate || null;
+  if (req.body?.notes !== undefined) workPackage.notes = String(req.body.notes || '').trim();
+  workPackage.updatedBy = userName(req);
+  await workPackage.save();
+  res.json({ package: workPackage });
+});
+
+router.put('/work-packages/:id/checklist-progress', attachProjectFromWorkPackage, requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
+  const workPackage = req.workPackage;
+  const project = req.project;
+  const tenantKey = getTenantKey(req);
+  const checklistId = String(req.body?.checklistId || '');
+  const subtaskId = String(req.body?.subtaskId || '__checklist__').trim();
+  if (!mongoose.Types.ObjectId.isValid(checklistId)) return res.status(400).json({ error: 'Checklist inválido.' });
+  if (typeof req.body?.completed !== 'boolean') return res.status(400).json({ error: 'completed debe ser booleano.' });
+  const checklist = await ProjectChecklist.findOne({
+    _id: checklistId,
+    projectId: project._id,
+    ...legacyTenantQuery(tenantKey),
+    phase: { $in: ['CONTRATISTAS', 'OBRA'] }
+  });
+  if (!checklist) return res.status(404).json({ error: 'Checklist no encontrado.' });
+  const validSubtaskIds = checklist.subtasks?.length
+    ? checklist.subtasks.map(item => String(item._id))
+    : ['__checklist__'];
+  if (!validSubtaskIds.includes(subtaskId)) return res.status(400).json({ error: 'Actividad inválida.' });
+  const current = workPackage.checklistStates.find(item =>
+    String(item.checklistId) === checklistId && item.subtaskId === subtaskId
+  );
+  const value = {
+    checklistId: checklist._id,
+    subtaskId,
+    completed: req.body.completed,
+    completedAt: req.body.completed ? new Date() : null,
+    completedBy: req.body.completed ? userName(req) : ''
+  };
+  if (current) Object.assign(current, value);
+  else workPackage.checklistStates.push(value);
+  workPackage.updatedBy = userName(req);
+  await workPackage.save();
+  res.json({ ok: true, package: workPackage });
+});
+
+router.delete('/work-packages/:id', attachProjectFromWorkPackage, requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
+  const pinErr = requirePin(req, res); if (pinErr) return;
+  await ProjectWorkPackage.deleteOne({ _id: req.workPackage._id, tenantKey: getTenantKey(req) });
+  res.json({ ok: true });
+});
+
 router.put('/checklists/:id/unit-progress', attachProjectFromChecklist, requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   const checklist = await loadTenantChecklist(req, res, req.params.id);
   if (!checklist) return;
@@ -428,6 +568,10 @@ router.delete('/checklists/:id', attachProjectFromChecklist, requireProjectAcces
   if (!cl) return;
   await ProjectChecklist.deleteOne({ _id: cl._id, tenantKey: cl.tenantKey });
   await UnitChecklistProgress.deleteMany({ tenantKey: cl.tenantKey, checklistId: cl._id });
+  await ProjectWorkPackage.updateMany(
+    { tenantKey: cl.tenantKey, projectId: cl.projectId },
+    { $pull: { checklistStates: { checklistId: cl._id } } }
+  );
   res.json({ ok: true });
 });
 

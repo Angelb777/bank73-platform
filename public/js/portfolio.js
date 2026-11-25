@@ -1206,6 +1206,19 @@
     return String(key || 'General').replace(/_/g, ' ');
   }
 
+  function initialStatePhaseKey(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
+
+  function isInitialStatePhase(value) {
+    return new Set(['PRE_ESTUDIOS', 'PREESTUDIOS', 'PERMISOS', 'FINANCIACION']).has(initialStatePhaseKey(value));
+  }
+
   async function loadCreateProgressChecks() {
     const host = document.getElementById('createProgressChecks');
     if (!host || createProcessTemplateLoaded) return;
@@ -1213,7 +1226,7 @@
     try {
       const tpl = await API.get('/api/process/templates/active');
       const groups = new Map();
-      (tpl.steps || []).forEach(step => {
+      (tpl.steps || []).filter(step => isInitialStatePhase(step?.phase)).forEach(step => {
         if (!step?.key || !step?.title) return;
         const phase = step.phase || 'GENERAL';
         if (!groups.has(phase)) groups.set(phase, []);
@@ -1250,7 +1263,7 @@
         </details>
       `;
       }).join('');
-      host.innerHTML = groupedHtml || '<div class="small muted">No hay checks configurados.</div>';
+      host.innerHTML = groupedHtml || '<div class="small muted">No hay checks generales configurados para el estado inicial.</div>';
       host.addEventListener('change', event => {
         const input = event.target.closest('[data-create-checklist-file]');
         if (!input) return;
@@ -1262,8 +1275,8 @@
       createProcessTemplateLoaded = true;
       syncCreateFundingRequestVisibility();
     } catch (e) {
-      host.innerHTML = '<div class="small muted">No se pudieron cargar los checks de avances.</div>';
-      console.warn('No se pudieron cargar avances iniciales', e);
+      host.innerHTML = '<div class="small muted">No se pudieron cargar los checks del estado inicial.</div>';
+      console.warn('No se pudo cargar el estado inicial', e);
     }
   }
 

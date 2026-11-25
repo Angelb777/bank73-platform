@@ -31,7 +31,11 @@ const { customerPaymentRecipientTotals, customerPaymentSummary } = require('../s
 const { buildProjectCollectionCoverage } = require('../services/projectCollectionCoverage');
 const { buildExecutiveSummaryWorkbook, numberValue } = require('../services/executiveSummaryExcel');
 const { normalizeTechnicalCommonAreas, overallCommonAreaProgress } = require('../services/technicalCommonAreas');
-const { normalizeUnitTechnicalProgress } = require('../services/technicalUnitProgress');
+const {
+  normalizeUnitTechnicalProgress,
+  constructionStatusFromProgress,
+  constructionStatusTarget
+} = require('../services/technicalUnitProgress');
 const { syncPromoterCompaniesToProjects } = require('../services/promoterCompanySync');
 const {
   buildExecutiveMovementRows,
@@ -773,6 +777,19 @@ function sanitizeInitialChecklistKeys(raw = []) {
     .slice(0, 500));
 }
 
+function initialStatePhaseKey(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function isInitialStatePhase(value) {
+  return new Set(['PRE_ESTUDIOS', 'PREESTUDIOS', 'PERMISOS', 'FINANCIACION']).has(initialStatePhaseKey(value));
+}
+
 async function applyInitialChecklists({ req, projectId, completedKeys, requestedKeys = completedKeys }) {
   if (!requestedKeys?.size) return {};
   const col = mongoose.connection.db.collection('processTemplates');
@@ -792,10 +809,16 @@ async function applyInitialChecklists({ req, projectId, completedKeys, requested
   const existingKeys = new Set(existing.map(e => e.templateKey).filter(Boolean));
   const now = new Date();
   const docs = [];
+  const allowedRequestedKeys = new Set((tpl.steps || [])
+    .filter(step => isInitialStatePhase(step?.phase) && requestedKeys.has(step.key))
+    .map(step => step.key));
+  const allowedCompletedKeys = new Set((tpl.steps || [])
+    .filter(step => isInitialStatePhase(step?.phase) && completedKeys.has(step.key))
+    .map(step => step.key));
 
   for (const step of tpl.steps || []) {
     if (existingKeys.has(step.key)) continue;
-    const isDone = completedKeys.has(step.key);
+    const isDone = allowedCompletedKeys.has(step.key);
     const roleOwner = String(step.role || 'tecnico').toLowerCase();
     docs.push({
       tenantKey: req.tenantKey,
@@ -825,7 +848,7 @@ async function applyInitialChecklists({ req, projectId, completedKeys, requested
   if (docs.length) await ProjectChecklist.insertMany(docs);
   if (!docs.length) {
     await ProjectChecklist.updateMany(
-      { projectId: projectIdObj, ...checklistTenantQuery, templateKey: { $in: Array.from(completedKeys) } },
+      { projectId: projectIdObj, ...checklistTenantQuery, templateKey: { $in: Array.from(allowedCompletedKeys) } },
       {
         $set: {
           tenantKey: req.tenantKey,
@@ -841,7 +864,7 @@ async function applyInitialChecklists({ req, projectId, completedKeys, requested
     );
   }
   const requested = await ProjectChecklist.find(
-    { projectId: projectIdObj, ...checklistTenantQuery, templateKey: { $in: Array.from(requestedKeys) } },
+    { projectId: projectIdObj, ...checklistTenantQuery, templateKey: { $in: Array.from(allowedRequestedKeys) } },
     { templateKey: 1 }
   ).lean();
   return Object.fromEntries(requested.filter(item => item.templateKey).map(item => [item.templateKey, String(item._id)]));
@@ -2027,16 +2050,19 @@ router.get('/:id/technical-unit-progress/:unitId', requireProjectAccess(), async
       Project.findOne({ _id: req.params.id, tenantKey: projectTenantKey }).select('projectType').lean(),
       Unit.findOne({ _id: req.params.unitId, projectId: req.params.id, tenantKey: projectTenantKey, deletedAt: null }).select('_id').lean(),
       UnitTechnicalProgress.findOne({ tenantKey: projectTenantKey, projectId: req.params.id, unitId: req.params.unitId }).lean(),
-      Venta.findOne({ tenantKey: projectTenantKey, projectId: req.params.id, unitId: req.params.unitId, deletedAt: null }).select('avanceConstruccionPct').lean()
+      Venta.findOne({ tenantKey: projectTenantKey, projectId: req.params.id, unitId: req.params.unitId, deletedAt: null }).select('avanceConstruccionPct estatusConstruccion').lean()
     ]);
     if (!project || !unit) return res.status(404).json({ error: 'Unidad no encontrada' });
+    const legacyProgress = Number(venta?.avanceConstruccionPct || 0);
+    const initialProgress = legacyProgress || constructionStatusTarget(venta?.estatusConstruccion);
     const progress = normalizeUnitTechnicalProgress({
       projectType: project.projectType,
       stored,
-      initialProgress: Number(venta?.avanceConstruccionPct || 0)
+      initialProgress
     });
     return res.json({
       ...progress,
+      constructionStatus: constructionStatusFromProgress(progress.progressPercent),
       configured: !!stored,
       updatedAt: stored?.updatedAt || null,
       updatedByLabel: String(stored?.updatedByLabel || '')
@@ -2073,9 +2099,14 @@ router.put('/:id/technical-unit-progress/:unitId', requireProjectAccess(), async
       { $set: { ...normalized, updatedBy, updatedByLabel } },
       { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
     ).lean();
+    const constructionStatus = constructionStatusFromProgress(normalized.progressPercent);
     await Venta.findOneAndUpdate(
       { tenantKey: projectTenantKey, projectId: req.params.id, unitId: req.params.unitId, deletedAt: null },
-      { $set: { avanceConstruccionPct: normalized.progressPercent, enConstruccion: normalized.progressPercent > 0 && normalized.progressPercent < 100 } },
+      { $set: {
+        avanceConstruccionPct: normalized.progressPercent,
+        estatusConstruccion: constructionStatus,
+        enConstruccion: normalized.progressPercent > 0 && normalized.progressPercent < 100
+      } },
       { upsert: true, setDefaultsOnInsert: true, runValidators: true }
     );
     await audit(req, 'project.technical_unit_progress.updated', {
@@ -2087,6 +2118,7 @@ router.put('/:id/technical-unit-progress/:unitId', requireProjectAccess(), async
       templateKind: saved.templateKind,
       activities: saved.activities,
       progressPercent: saved.progressPercent,
+      constructionStatus,
       observations: saved.observations,
       configured: true,
       updatedAt: saved.updatedAt,

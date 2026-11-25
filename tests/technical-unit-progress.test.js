@@ -7,6 +7,8 @@ const {
   VERTICAL_ACTIVITIES,
   templateForProjectType,
   activityAverage,
+  constructionStatusFromProgress,
+  constructionStatusTarget,
   normalizeUnitTechnicalProgress
 } = require('../services/technicalUnitProgress');
 
@@ -46,4 +48,20 @@ test('la primera configuración conserva el avance existente de la unidad', () =
   assert.equal(normalized.progressPercent, 42);
   assert.equal(normalized.activities.length, 17);
   assert.ok(normalized.activities.every(activity => activity.progressPercent === 42));
+});
+
+test('deriva una sola fase de obra desde el porcentaje canonico', () => {
+  assert.equal(constructionStatusFromProgress(0), '');
+  assert.equal(constructionStatusFromProgress(1), 'Obra gris');
+  assert.equal(constructionStatusFromProgress(69.99), 'Obra gris');
+  assert.equal(constructionStatusFromProgress(70), 'Acabados');
+  assert.equal(constructionStatusFromProgress(99.99), 'Acabados');
+  assert.equal(constructionStatusFromProgress(100), 'Terminada');
+});
+
+test('cada fase ofrece un avance representativo para sincronizar actividades', () => {
+  assert.equal(constructionStatusTarget('Pendiente de construir'), 0);
+  assert.equal(constructionStatusTarget('Obra gris'), 50);
+  assert.equal(constructionStatusTarget('Acabados'), 85);
+  assert.equal(constructionStatusTarget('Terminada'), 100);
 });

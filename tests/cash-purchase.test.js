@@ -39,5 +39,6 @@ test('la ficha bloquea exactamente los campos no aplicables al contado', () => {
   assert.equal((source.match(/'fv-/g) || []).length, expected.length);
   assert.match(js, /No aplica · compra al contado/);
   assert.match(js, /control\.disabled = cashPurchase/);
-  assert.match(js, /venta\?\.modalidadFinanciamiento[^\n]+Al contado/);
+  assert.match(js, /const cashSale = String\(sale\.modalidadFinanciamiento/);
+  assert.match(js, /!cashSale && !fallenSale && !settled && !closedUnit/);
 });

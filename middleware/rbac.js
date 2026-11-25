@@ -176,7 +176,7 @@ function detectArea(req) {
     /\/commercial-folders(\/|$)/i.test(url);
 
   const isChecklists =
-    /\/(checklists?|tasks?|permits)(\/|$)/i.test(url);
+    /\/(checklists?|tasks?|permits|work-packages)(\/|$)/i.test(url);
 
   const isDocs =
     /\/docs?(\/|$)/i.test(url) ||

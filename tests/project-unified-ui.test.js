@@ -52,6 +52,10 @@ test('todas las areas abren su bloque dentro del mismo resumen global', () => {
     assert.match(unified, new RegExp(`'${id}'`));
   }
   assert.match(unified, /await openPanel\('resumen', 'Resumen global'\)/);
+  assert.match(unified, /pane\.querySelectorAll\('canvas'\)[\s\S]*?\.resize\(\)/);
+  assert.match(unified, /stableSummarySectionTop\(target, body\)/);
+  assert.match(unified, /summarySectionScrollTop\(target, body\)/);
+  assert.doesNotMatch(unified, /behavior:\s*'smooth'/);
 });
 
 test('el resumen reutiliza el avance global del cronograma y mantiene las minigraficas compactas', () => {
@@ -96,9 +100,9 @@ test('la ficha de etapa monta los gestores existentes sin duplicar formularios',
 test('un clic de etapa abre una sola ficha integral', () => {
   assert.match(unified, /openingStageId === requestedStageId/);
   assert.match(unified, /event\.stopPropagation\(\)/);
-  assert.match(html, /project-unified\.css\?v=20/);
-  assert.match(html, /project-unified\.js\?v=20/);
-  assert.match(html, /project\.js\?v=unified-finance-v3/);
+  assert.match(html, /project-unified\.css\?v=21/);
+  assert.match(html, /project-unified\.js\?v=21/);
+  assert.match(html, /project\.js\?v=technical-progress-v5/);
 });
 
 test('etapas y unidades alterna entre comercial finanzas y tecnica sin duplicar unidades', () => {
@@ -160,7 +164,11 @@ test('tecnico agrupa sus acciones y muestra zonas comunes desplegables', () => {
   assert.match(html, /class="technical-action-group"/);
   assert.match(html, /id="technicalCommonAreasSection"/);
   assert.match(html, /id="technicalCommonAreasOverallBar"/);
+  assert.match(html, /id="technicalProjectOverallBar"/);
+  assert.match(html, /id="technicalUnitsAverageBar"/);
   assert.match(project, /renderTechnicalCommonAreas/);
+  assert.match(project, /function technicalUnitsAverageProgress\(\)/);
+  assert.match(project, /const global = Math\.round\(\(common \+ units\.value\) \/ 2\)/);
   assert.match(project, /technical-common-areas/);
   assert.match(unifiedCss, /\.technical-common-area>summary/);
   assert.match(unifiedCss, /\.technical-common-activity/);
@@ -171,6 +179,9 @@ test('la ficha técnica de unidad integra el avance y las actividades de Flutter
   assert.match(project, /technical-unit-progress\/\$\{encodeURIComponent\(unitId\)\}/);
   assert.match(project, /data-technical-unit-activity-range/);
   assert.match(project, /initTechnicalUnitProgress\(viewFicha, unitId\)/);
+  assert.match(project, /technicalConstructionStatusFromProgress/);
+  assert.match(project, /technicalConstructionStatusTarget/);
+  assert.match(project, /statusSelect\?\.addEventListener\('change'/);
   assert.match(unifiedCss, /\.technical-unit-progress-toggle/);
   assert.match(unifiedCss, /\.technical-unit-progress-activity/);
 });

@@ -7,7 +7,7 @@
   <script src="/js/branding.js"></script>
   <link href="/css/base.css" rel="stylesheet" />
   <link href="/css/theme.css?v=commercial-batch-modal-v1" rel="stylesheet" />
-  <link href="/css/project-unified.css?v=20" rel="stylesheet" />
+  <link href="/css/project-unified.css?v=21" rel="stylesheet" />
   <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
 
   <style>
@@ -2969,13 +2969,28 @@ body.light-theme .provider-exclusive {
             <summary class="technical-common-areas-toggle">
               <div class="technical-common-areas-title">
                 <span class="technical-section-kicker">Seguimiento interno</span>
-                <h3 id="technicalCommonAreasTitle">Zonas comunes</h3>
+                <h3 id="technicalCommonAreasTitle">Progreso de obra</h3>
               </div>
-              <div class="technical-common-overall-meter">
-                <i><b id="technicalCommonAreasOverallBar" style="width:0%"></b></i>
-                <strong id="technicalCommonAreasOverallValue">0%</strong>
+              <div class="technical-progress-overview">
+                <div class="technical-progress-row is-global">
+                  <div class="technical-progress-copy"><strong>Avance global</strong><small>Media de zonas comunes y unidades</small></div>
+                  <i><b id="technicalProjectOverallBar" style="width:0%"></b></i>
+                  <strong id="technicalProjectOverallValue">0%</strong>
+                  <span>Automático</span>
+                </div>
+                <div class="technical-progress-row is-common">
+                  <div class="technical-progress-copy"><strong>Zonas comunes</strong><small id="technicalCommonAreasSummary" class="technical-common-areas-summary" aria-live="polite"></small></div>
+                  <i><b id="technicalCommonAreasOverallBar" style="width:0%"></b></i>
+                  <strong id="technicalCommonAreasOverallValue">0%</strong>
+                  <span>Editable</span>
+                </div>
+                <div class="technical-progress-row is-units">
+                  <div class="technical-progress-copy"><strong>Media de las unidades</strong><small id="technicalUnitsProgressSummary">Promedio de las unidades informadas</small></div>
+                  <i><b id="technicalUnitsAverageBar" style="width:0%"></b></i>
+                  <strong id="technicalUnitsAverageValue">0%</strong>
+                  <span>Automático</span>
+                </div>
               </div>
-              <div id="technicalCommonAreasSummary" class="technical-common-areas-summary" aria-live="polite"></div>
               <span class="technical-common-areas-chevron" aria-hidden="true">⌄</span>
             </summary>
             <div class="technical-common-areas-content">
@@ -3161,8 +3176,8 @@ body.light-theme .provider-exclusive {
   <script src="/lib/chart.umd.min.js"></script>
   <script src="/js/theme-toggle.js"></script>
   <script src="/js/project-3d.js?v=commercial-six-states-v4"></script>
-  <script src="/js/project-unified.js?v=20"></script>
-    <script src="/js/project.js?v=unified-finance-v3"><!-- ROLE-SEP: bump --></script>
+  <script src="/js/project-unified.js?v=21"></script>
+    <script src="/js/project.js?v=technical-progress-v5"><!-- ROLE-SEP: bump --></script>
   <script src="/js/avaluadores.js?v=2"></script>
 
 </body>

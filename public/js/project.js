@@ -208,6 +208,14 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
     );
   }
 
+  function getProjectWorkPackages({ force = false } = {}) {
+    return cachedProjectGet(
+      'workPackages',
+      () => `/api/projects/${id}/work-packages${force ? `?ts=${Date.now()}` : ''}`,
+      { force }
+    );
+  }
+
   function getProjectDocuments({ force = false } = {}) {
     return cachedProjectGet(
       'documents',
@@ -4814,7 +4822,8 @@ const state = {
     finance: null,
     alerts: [],
     resolved: new Set(),
-    unitProgress: new Map()
+    unitProgress: new Map(),
+    workPackages: []
   },
   filterRole: null,
   collapsed: new Set(PHASES.map(phase => phase.key)),
@@ -4916,6 +4925,17 @@ function isChecklistActive(cl) {
     return normalizeUnitEstadoFrontend(value || 'disponible');
   }
 
+  // La fecha de vencimiento es histórica. Solo genera una alerta mientras la
+  // promesa de pago siga siendo una obligación abierta de la venta.
+  function isCppObligationOpen(unit = {}, sale = {}) {
+    const cashSale = String(sale.modalidadFinanciamiento || '').trim().toLowerCase() === 'al contado';
+    const fallenSale = String(sale.estadoVenta || 'activa').trim().toLowerCase() === 'caida';
+    const delivered = !!sale.fechaEntregaVivienda || /^(si|sí|entregad)/i.test(String(sale.entregaCasa || '').trim());
+    const settled = !!sale.fechaDesembolso || !!sale.fechaRecibidoCheque || delivered;
+    const closedUnit = ['escriturado_traspasado', 'vivienda_entregada'].includes(operationalUnitState(unit.estado));
+    return !!sale.fechaVencimientoCPP && !cashSale && !fallenSale && !settled && !closedUnit;
+  }
+
   function buildOperationalTimelineAlerts() {
     const operational = state.operational || {};
     const units = operational.units || [];
@@ -4927,11 +4947,8 @@ function isChecklistActive(cl) {
     units.forEach(unit => {
       const sale = sales.get(String(unit._id)) || {};
       const unitName = unitDisplayName(unit) || 'Unidad';
-      const stateKey = operationalUnitState(unit.estado);
-      const closed = ['escriturado_traspasado', 'vivienda_entregada'].includes(stateKey);
-      const cashSale = String(sale.modalidadFinanciamiento || '').trim().toLowerCase() === 'al contado';
 
-      if (!closed && !cashSale) {
+      if (isCppObligationOpen(unit, sale)) {
         push(timelineAlert({
           kind: 'cpp', phase: 'FINANCIACION', roles: ['FINANCIERO', 'COMERCIAL'],
           due: sale.fechaVencimientoCPP, warningDays: 60,
@@ -5044,23 +5061,22 @@ function isChecklistActive(cl) {
     const projectTasks = state.checklists.filter(checklist =>
       checklist.role === roleKey && !['CONTRATISTAS', 'OBRA'].includes(checklist.phase) && isChecklistActive(checklist) && checklist.status !== 'COMPLETADO'
     );
-    const unitById = new Map((state.operational?.units || []).map(unit => [String(unit._id), unit]));
-    const unitTasks = [];
+    const packageTasks = [];
     state.checklists.filter(checklist => checklist.role === roleKey && ['CONTRATISTAS', 'OBRA'].includes(checklist.phase)).forEach(checklist => {
       const taskIds = checklist.subtasks?.length
         ? checklist.subtasks.map(item => ({ id:String(item._id || item.id || item.title), title:item.title || item.name }))
         : [{ id:'__checklist__', title:checklist.title }];
-      [...(state.operational?.unitProgress?.entries?.() || [])].filter(([key]) => key.startsWith(`${String(checklist._id)}:`)).forEach(([, row]) => {
+      (state.operational?.workPackages || []).forEach(workPackage => {
         taskIds.forEach(task => {
-          const completed = row.states?.some(item => String(item.subtaskId) === task.id && item.completed);
-          if (!completed) unitTasks.push({
-            title:`${task.title} · ${unitDisplayName(unitById.get(String(row.unitId)) || {})}`,
+          const completed = workPackageTaskDone(workPackage, checklist._id, task.id);
+          if (!completed) packageTasks.push({
+            title:`${task.title} · ${workPackage.name}`,
             dueDate:checklist.dueDate
           });
         });
       });
     });
-    const tasks = [...projectTasks, ...unitTasks];
+    const tasks = [...projectTasks, ...packageTasks];
     const overdueTasks = tasks.filter(task => task.dueDate && new Date(task.dueDate).getTime() < now);
     const alerts = (state.operational?.alerts || []).filter(alert => alert.roles.includes(roleKey));
     const critical = alerts.filter(alert => alert.severity === 'danger');
@@ -5270,8 +5286,9 @@ function isChecklistActive(cl) {
       getProjectVentas({ force }).catch(() => []),
       getProjectFinanceSnapshot({ force }).catch(() => null),
       getProjectExpiryAlertResolutions({ force }).catch(() => ({ resolutions: [] })),
-      getProjectUnitChecklistProgress({ force }).catch(() => ({ progress: [] }))
-    ]).then(([units, sales, finance, resolutions, unitProgress]) => {
+      getProjectUnitChecklistProgress({ force }).catch(() => ({ progress: [] })),
+      getProjectWorkPackages({ force }).catch(() => ({ packages: [] }))
+    ]).then(([units, sales, finance, resolutions, unitProgress, workPackages]) => {
       state.operational.units = Array.isArray(units) ? units : [];
       state.operational.sales = new Map((Array.isArray(sales) ? sales : []).map(sale => [String(sale.unitId), sale]));
       state.operational.finance = finance;
@@ -5281,6 +5298,7 @@ function isChecklistActive(cl) {
         `${String(row.checklistId)}:${String(row.unitId)}`,
         row
       ]));
+      state.operational.workPackages = Array.isArray(workPackages?.packages) ? workPackages.packages : [];
     });
 
     await Promise.all([checklistTask, documentsTask, permitsTask, operationalTask]);
@@ -5299,14 +5317,16 @@ function isChecklistActive(cl) {
   };
 
   window.refreshProjectTimelineData = async () => {
-    const [units, sales, unitProgress] = await Promise.all([
+    const [units, sales, unitProgress, workPackages] = await Promise.all([
       getProjectUnitsAll({ force:true }).catch(() => state.operational.units),
       getProjectVentas({ force:true }).catch(() => [...state.operational.sales.values()]),
-      getProjectUnitChecklistProgress({ force:true }).catch(() => ({ progress:[...state.operational.unitProgress.values()] }))
+      getProjectUnitChecklistProgress({ force:true }).catch(() => ({ progress:[...state.operational.unitProgress.values()] })),
+      getProjectWorkPackages({ force:true }).catch(() => ({ packages:state.operational.workPackages }))
     ]);
     state.operational.units = Array.isArray(units) ? units : [];
     state.operational.sales = new Map((Array.isArray(sales) ? sales : []).map(sale => [String(sale.unitId), sale]));
     state.operational.unitProgress = new Map((unitProgress?.progress || []).map(row => [`${String(row.checklistId)}:${String(row.unitId)}`, row]));
+    state.operational.workPackages = Array.isArray(workPackages?.packages) ? workPackages.packages : [];
     buildOperationalTimelineAlerts();
     renderProyecto();
     window.__BANK73_UNIFIED_REFRESH?.();
@@ -5458,10 +5478,9 @@ return {
       metrics = timelineMetric('aprobados', `${approved}/${active.length}`) + timelineMetric('documentos por vencer', alerts.filter(a => a.kind === 'permit_document').length, alerts.length ? 'is-warning' : '');
     } else if (phaseKey === 'FINANCIACION') {
       title = 'Financiacion operativa'; type = 'Proyecto + ventas';
-      const cppActive = snapshot.units.filter(unit => {
-        const sale = snapshot.sales.get(String(unit._id)) || {};
-        return sale.fechaVencimientoCPP && !['escriturado_traspasado', 'vivienda_entregada'].includes(operationalUnitState(unit.estado));
-      }).length;
+      const cppActive = snapshot.units.filter(unit =>
+        isCppObligationOpen(unit, snapshot.sales.get(String(unit._id)) || {})
+      ).length;
       metrics = timelineMetric('CPP activas', cppActive) + timelineMetric('CPP con alerta', alerts.filter(a => a.kind === 'cpp').length, alerts.some(a => a.kind === 'cpp') ? 'is-warning' : '');
     } else if (phaseKey === 'CONTRATISTAS') {
       title = 'Contratistas y paquetes'; type = 'Proceso recurrente';
@@ -5500,42 +5519,72 @@ return {
     );
   }
 
-  function unitChecklistState(checklist, unitId, subtaskId = '__checklist__') {
-    const row = state.operational?.unitProgress?.get(`${String(checklist._id)}:${String(unitId)}`);
-    return !!row?.states?.find(item => String(item.subtaskId) === String(subtaskId))?.completed;
+  function workPackageTasks(checklist) {
+    return checklist.subtasks?.length
+      ? checklist.subtasks.map(task => ({ id:String(task._id || task.id || task.title), title:task.title || task.name }))
+      : [{ id:'__checklist__', title:checklist.title }];
   }
 
-  function scopedChecklistStats(checklist) {
-    const rows = [...(state.operational?.unitProgress?.entries?.() || [])]
-      .filter(([key]) => key.startsWith(`${String(checklist._id)}:`))
-      .map(([, row]) => row);
-    const taskIds = checklist.subtasks?.length
-      ? checklist.subtasks.map(item => String(item._id || item.id || item.title))
-      : ['__checklist__'];
-    const total = rows.length * taskIds.length;
-    const completed = rows.reduce((sum, row) => sum + taskIds.filter(taskId =>
-      row.states?.some(item => String(item.subtaskId) === taskId && item.completed)
+  function workPackageTaskDone(workPackage, checklistId, subtaskId) {
+    return !!workPackage?.checklistStates?.find(item =>
+      String(item.checklistId) === String(checklistId) && String(item.subtaskId) === String(subtaskId)
+    )?.completed;
+  }
+
+  function workPackagePhaseStats(workPackage, phaseKey, checklists = state.checklists) {
+    const phaseChecklists = checklists.filter(item => item.phase === phaseKey);
+    const total = phaseChecklists.reduce((sum, checklist) => sum + workPackageTasks(checklist).length, 0);
+    const completed = phaseChecklists.reduce((sum, checklist) => sum + workPackageTasks(checklist).filter(task =>
+      workPackageTaskDone(workPackage, checklist._id, task.id)
     ).length, 0);
-    return { assigned:rows.length, completed, total, pct:total ? Math.round(completed / total * 100) : 0 };
+    return { total, completed, pct:total ? Math.round(completed / total * 100) : 0 };
   }
 
-  function renderUnitScopedPhase(phaseKey, checklists) {
+  function workPackagePhaseOverallStats(phaseKey, checklists = state.checklists) {
     const units = timelineUnitsOrdered();
-    return `<div class="timeline-unit-scope">
-      <div class="timeline-unit-scope-head"><div><small>DATO ÚNICO POR UNIDAD</small><strong>${phaseKey === 'OBRA' ? 'Actividades de obra' : 'Actividades de contratistas'}</strong><span>Aplica cada actividad a una unidad o a un rango; la ficha utiliza el mismo registro.</span></div></div>
-      <div class="timeline-scoped-checklists">${checklists.map(checklist => {
-        const stats = scopedChecklistStats(checklist);
-        const role = roleMeta(checklist.role);
-        return `<article class="timeline-scoped-checklist" data-scoped-checklist="${checklist._id}">
-          <div><span class="role-badge" style="--role-color:${role.color};--role-pale:${role.pale}">${role.label}</span><strong>${escapeHtml(checklist.title)}</strong><small>${checklist.subtasks?.length || 1} actividad${(checklist.subtasks?.length || 1) === 1 ? '' : 'es'}</small></div>
-          <div class="timeline-scoped-progress"><i><b style="width:${stats.pct}%"></b></i><span>${stats.pct}%</span><small>${stats.assigned} de ${units.length} unidades asignadas</small></div>
-          <button type="button" class="btn btn-xs js-manage-unit-checklist" data-checklist="${checklist._id}">Gestionar unidades / rango</button>
+    const phaseChecklists = checklists.filter(item => item.phase === phaseKey);
+    const tasksPerUnit = phaseChecklists.reduce((sum, checklist) => sum + workPackageTasks(checklist).length, 0);
+    const total = units.length * tasksPerUnit;
+    const completed = (state.operational?.workPackages || []).reduce((sum, workPackage) => {
+      const packageStats = workPackagePhaseStats(workPackage, phaseKey, phaseChecklists);
+      return sum + packageStats.completed * (workPackage.unitIds?.length || 0);
+    }, 0);
+    return { total, completed:Math.min(total, completed), pct:total ? Math.round(Math.min(total, completed) / total * 100) : 0 };
+  }
+
+  function workPackageScopeLabel(workPackage) {
+    const units = timelineUnitsOrdered();
+    const selected = new Set((workPackage?.unitIds || []).map(String));
+    const indexes = units.map((unit, index) => selected.has(String(unit._id)) ? index : -1).filter(index => index >= 0);
+    if (!indexes.length) return 'Sin unidades';
+    const first = units[Math.min(...indexes)];
+    const last = units[Math.max(...indexes)];
+    return indexes.length === 1
+      ? unitDisplayName(first)
+      : `${unitDisplayName(first)} – ${unitDisplayName(last)}`;
+  }
+
+  function renderWorkPackagePhase(phaseKey, checklists) {
+    const units = timelineUnitsOrdered();
+    const packages = state.operational?.workPackages || [];
+    return `<div class="timeline-work-packages">
+      <div class="timeline-work-packages-head"><div><small>PAQUETES COMPARTIDOS</small><strong>${phaseKey === 'OBRA' ? 'Ejecución de obra' : 'Contratación de obra'}</strong><span>El rango y el contratista se definen una sola vez y se reutilizan en ambos bloques.</span></div><button type="button" class="btn btn-xs js-new-work-package">+ Nuevo paquete</button></div>
+      <div class="timeline-work-package-list">${packages.map(workPackage => {
+        const stats = workPackagePhaseStats(workPackage, phaseKey, checklists);
+        const coverage = units.length ? Math.round((workPackage.unitIds?.length || 0) / units.length * 100) : 0;
+        return `<article class="timeline-work-package" data-work-package="${workPackage._id}">
+          <header><div><small>${escapeHtml(workPackageScopeLabel(workPackage))}</small><strong>${escapeHtml(workPackage.name)}</strong><span>Contratista: <b>${escapeHtml(workPackage.contractorName || 'Sin asignar')}</b></span></div><div class="timeline-package-actions"><button type="button" class="btn btn-ghost btn-xs js-edit-work-package" data-package="${workPackage._id}">Editar paquete</button><button type="button" class="btn btn-ghost btn-xs js-delete-work-package" data-package="${workPackage._id}" aria-label="Eliminar paquete">×</button></div></header>
+          <div class="timeline-package-metrics"><span><small>Cobertura</small><b>${workPackage.unitIds?.length || 0} / ${units.length} unidades</b><em>${coverage}% del proyecto</em></span><span><small>Avance del paquete</small><b>${stats.completed} / ${stats.total} actividades</b><em>${stats.pct}% completado</em></span><i><b style="width:${stats.pct}%"></b></i></div>
+          <div class="timeline-package-checklists">${checklists.map(checklist => {
+            const role = roleMeta(checklist.role);
+            return `<section><div><span class="role-badge" style="--role-color:${role.color};--role-pale:${role.pale}">${role.label}</span><strong>${escapeHtml(checklist.title)}</strong></div>${workPackageTasks(checklist).map(task => `<label><input type="checkbox" data-package-checklist-toggle data-package-id="${workPackage._id}" data-checklist-id="${checklist._id}" data-subtask-id="${escapeHtml(task.id)}" ${workPackageTaskDone(workPackage, checklist._id, task.id) ? 'checked' : ''}><span>${escapeHtml(task.title)}</span></label>`).join('')}</section>`;
+          }).join('') || '<div class="timeline-empty-alerts">No hay checklists en este bloque.</div>'}</div>
         </article>`;
-      }).join('') || '<div class="timeline-empty-alerts">Añade un checklist para convertirlo en actividad por unidad.</div>'}</div>
+      }).join('') || '<div class="timeline-empty-alerts">Crea un paquete para definir su rango, contratista y checklists.</div>'}</div>
     </div>`;
   }
 
-  function timelineCommercialProcess(sale = {}) {
+  function timelineCommercialProcess(sale = {}, unit = {}) {
     const lifePolicy = sale.polizaVidaEntregada === undefined ? !!sale.polizas : !!sale.polizaVidaEntregada;
     const firePolicy = sale.polizaIncendioEntregada === undefined ? !!sale.polizas : !!sale.polizaIncendioEntregada;
     const values = [
@@ -5550,12 +5599,31 @@ return {
     const states = values.map((stage, index) => ({
       complete: stage.every(present) || values.slice(index + 1).some(next => next.some(present)),
       filled: stage.filter(present).length,
-      total: stage.length
+      total: stage.length,
+      inferred: false
     }));
+    const rawUnitState = String(unit?.estado || '').trim().toLowerCase();
+    const unitState = operationalUnitState(rawUnitState);
+    const deliveryEvidence = rawUnitState === 'vivienda_entregada'
+      || !!sale.fechaEntregaVivienda
+      || /^(si|sí|entregad)/i.test(String(sale.entregaCasa || '').trim())
+      || /^(si|sí|entregad)/i.test(String(sale.entregaANATI || '').trim());
+    const minimumStagesByState = {
+      reservado: 1,
+      con_cpp: 2,
+      tramite_legal_activado: 3,
+      escriturado_traspasado: 5
+    };
+    const minimumComplete = deliveryEvidence ? 6 : (minimumStagesByState[unitState] || 0);
+    states.forEach((stage, index) => {
+      if (index >= minimumComplete || stage.complete) return;
+      stage.complete = true;
+      stage.inferred = true;
+    });
     const labels = ['Reserva', 'CPP y contrato', 'Avalúo', 'Protocolo / escrituras', 'Notaría / Registro Público', 'Desembolso y entrega'];
     const complete = states.filter(item => item.complete).length;
     const current = Math.min(states.findIndex(item => !item.complete) < 0 ? 5 : states.findIndex(item => !item.complete), 5);
-    return { complete, pct:Math.round(complete / 6 * 100), current, label:labels[current], states };
+    return { complete, pct:Math.round(complete / 6 * 100), current, label:complete === 6 ? 'Proceso completado' : labels[current], states, inferred:states.some(stage => stage.inferred) };
   }
 
   function renderDeedingUnitProcess() {
@@ -5566,40 +5634,67 @@ return {
     return `<div class="timeline-unit-scope timeline-deeding-process">
       <div class="timeline-unit-scope-head"><div><small>DATO ÚNICO COMERCIAL / LEGAL</small><strong>Proceso desde reserva hasta entrega</strong><span>Estos estados proceden de la ficha de la unidad. Abrir una unidad edita exactamente los mismos campos.</span></div></div>
       <div class="timeline-deeding-grid">${units.map(unit => {
-        const process = timelineCommercialProcess(snapshot.sales.get(String(unit._id)) || {});
-        return `<article class="timeline-deeding-unit"><div><strong>${escapeHtml(unitDisplayName(unit))}</strong><small>${escapeHtml(process.label)} · ${process.complete}/6 etapas</small></div><i><b style="width:${process.pct}%"></b></i><button type="button" class="btn btn-xs js-open-timeline-unit" data-unit-id="${unit._id}">Abrir proceso</button></article>`;
+        const process = timelineCommercialProcess(snapshot.sales.get(String(unit._id)) || {}, unit);
+        return `<article class="timeline-deeding-unit"><div><strong>${escapeHtml(unitDisplayName(unit))}</strong><small>${escapeHtml(process.label)} · ${process.complete}/6 etapas${process.inferred ? ' · según estado de la unidad' : ''}</small></div><i><b style="width:${process.pct}%"></b></i><button type="button" class="btn btn-xs js-open-timeline-unit" data-unit-id="${unit._id}">Abrir proceso</button></article>`;
       }).join('') || '<div class="timeline-empty-alerts">Todavía no hay unidades reservadas o vendidas.</div>'}</div>
     </div>`;
   }
 
-  function openUnitChecklistRange(checklistId) {
-    const checklist = state.checklists.find(item => String(item._id) === String(checklistId));
+  async function refreshWorkPackages() {
+    invalidateProjectDataCache('workPackages');
+    const response = await getProjectWorkPackages({ force:true });
+    state.operational.workPackages = Array.isArray(response?.packages) ? response.packages : [];
+    renderProyecto();
+    window.__BANK73_UNIFIED_REFRESH?.();
+  }
+
+  function openWorkPackageEditor(packageId = '') {
+    const current = (state.operational?.workPackages || []).find(item => String(item._id) === String(packageId));
     const units = timelineUnitsOrdered();
-    if (!checklist || !units.length) return alert('No hay unidades disponibles para esta actividad.');
+    if (!units.length) return alert('No hay unidades disponibles para crear un paquete.');
     const options = units.map((unit, index) => `<option value="${index}">${escapeHtml(unitDisplayName(unit))}</option>`).join('');
-    const tasks = checklist.subtasks?.length ? checklist.subtasks : [{ _id:'__checklist__', title:checklist.title }];
-    openModal(checklist.title, `<div class="timeline-range-editor">
-      <p>Selecciona la primera y la última unidad. Se incluirán todas las unidades comprendidas entre ambas.</p>
+    const selected = new Set((current?.unitIds || []).map(String));
+    const selectedIndexes = units.map((unit, index) => selected.has(String(unit._id)) ? index : -1).filter(index => index >= 0);
+    const fromIndex = selectedIndexes.length ? Math.min(...selectedIndexes) : 0;
+    const toIndex = selectedIndexes.length ? Math.max(...selectedIndexes) : 0;
+    const contractorNames = [...new Set([
+      ...(state.operational?.workPackages || []).map(item => String(item.contractorName || '').trim()),
+      ...[...(state.operational?.sales?.values?.() || [])].map(sale => String(sale.constructora || '').trim())
+    ].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+    openModal(current ? 'Editar paquete de obra' : 'Nuevo paquete de obra', `<div class="timeline-range-editor timeline-package-editor">
+      <p>Este rango y contratista se compartirán entre los bloques Contratistas y Obra.</p>
+      <label>Nombre del paquete<input id="timelinePackageName" maxlength="160" value="${escapeHtml(current?.name || `Paquete ${(state.operational?.workPackages?.length || 0) + 1}`)}" placeholder="Ej. Viviendas 1–13"></label>
+      <label>Contratista<input id="timelinePackageContractor" maxlength="200" list="timelineContractorOptions" value="${escapeHtml(current?.contractorName || '')}" placeholder="Empresa o contratista"><datalist id="timelineContractorOptions">${contractorNames.map(name => `<option value="${escapeHtml(name)}"></option>`).join('')}</datalist></label>
       <div class="timeline-range-selectors"><label>Desde<select id="timelineRangeFrom">${options}</select></label><label>Hasta<select id="timelineRangeTo">${options}</select></label></div>
-      <div class="timeline-range-tasks">${tasks.map(task => `<label><span>${escapeHtml(task.title || task.name)}</span><select data-range-task="${escapeHtml(String(task._id || task.id || task.title))}"><option value="">No cambiar</option><option value="false">Asignar como pendiente</option><option value="true">Marcar completada</option></select></label>`).join('')}</div>
+      <div class="timeline-range-selectors"><label>Inicio<input id="timelinePackageStart" type="date" value="${String(current?.startDate || '').slice(0,10)}"></label><label>Fin previsto<input id="timelinePackageEnd" type="date" value="${String(current?.endDate || '').slice(0,10)}"></label></div>
+      <label>Notas<textarea id="timelinePackageNotes" rows="3" maxlength="3000">${escapeHtml(current?.notes || '')}</textarea></label>
       <small id="timelineRangeCount">1 unidad seleccionada</small>
-    </div>`, 'Aplicar al rango', async () => {
+    </div>`, current ? 'Guardar paquete' : 'Crear paquete', async () => {
       const from = Number(document.getElementById('timelineRangeFrom')?.value || 0);
       const to = Number(document.getElementById('timelineRangeTo')?.value || 0);
       const start = Math.min(from, to); const end = Math.max(from, to);
       const unitIds = units.slice(start, end + 1).map(unit => unit._id);
-      const changes = [...document.querySelectorAll('[data-range-task]')].filter(select => select.value !== '');
-      if (!changes.length) return alert('Indica al menos una actividad que quieras actualizar.');
+      const payload = {
+        name:String(document.getElementById('timelinePackageName')?.value || '').trim(),
+        contractorName:String(document.getElementById('timelinePackageContractor')?.value || '').trim(),
+        unitIds,
+        startDate:document.getElementById('timelinePackageStart')?.value || null,
+        endDate:document.getElementById('timelinePackageEnd')?.value || null,
+        notes:String(document.getElementById('timelinePackageNotes')?.value || '').trim()
+      };
+      if (!payload.name) return alert('Indica un nombre para el paquete.');
       modalPrimary.disabled = true;
       try {
-        await Promise.all(changes.map(select => API.put(`/api/checklists/${checklist._id}/unit-progress`, {
-          unitIds, subtaskId:select.dataset.rangeTask, completed:select.value === 'true'
-        })));
-        invalidateProjectDataCache('unitChecklistProgress');
+        if (current) await API.put(`/api/work-packages/${current._id}`, payload);
+        else await API.post(`/api/projects/${id}/work-packages`, payload);
         modalBackdrop.style.display = 'none';
-        await reloadProyecto();
+        await refreshWorkPackages();
+      } catch (error) {
+        alert(error.message || 'No se pudo guardar el paquete.');
       } finally { modalPrimary.disabled = false; }
     });
+    document.getElementById('timelineRangeFrom').value = String(fromIndex);
+    document.getElementById('timelineRangeTo').value = String(toIndex);
     const updateCount = () => {
       const from = Number(document.getElementById('timelineRangeFrom')?.value || 0);
       const to = Number(document.getElementById('timelineRangeTo')?.value || 0);
@@ -5609,35 +5704,20 @@ return {
     };
     document.getElementById('timelineRangeFrom')?.addEventListener('change', updateCount);
     document.getElementById('timelineRangeTo')?.addEventListener('change', updateCount);
-  }
-
-  function unitScopedChecklistPanelHtml(unitId) {
-    const checklists = state.checklists.filter(item => ['CONTRATISTAS', 'OBRA'].includes(item.phase));
-    if (!checklists.length) return '';
-    return `<details class="unit-side-card unit-shared-checklists" open><summary><strong>Contratistas y obra</strong><span class="parallel-chip">Dato compartido</span><span>⌄</span></summary><div class="unit-shared-checklist-body">${checklists.map(checklist => {
-      const tasks = checklist.subtasks?.length ? checklist.subtasks : [{ _id:'__checklist__', title:checklist.title }];
-      return `<section><h4>${escapeHtml(phaseMeta(checklist.phase).name)} · ${escapeHtml(checklist.title)}</h4>${tasks.map(task => {
-        const taskId = String(task._id || task.id || task.title);
-        return `<label><input type="checkbox" data-unit-checklist-toggle data-checklist-id="${checklist._id}" data-unit-id="${unitId}" data-subtask-id="${escapeHtml(taskId)}" ${unitChecklistState(checklist, unitId, taskId) ? 'checked' : ''}><span>${escapeHtml(task.title || task.name)}</span></label>`;
-      }).join('')}</section>`;
-    }).join('')}</div></details>`;
+    updateCount();
   }
 
   document.addEventListener('change', async event => {
-    const checkbox = event.target.closest('[data-unit-checklist-toggle]');
+    const checkbox = event.target.closest('[data-package-checklist-toggle]');
     if (!checkbox) return;
     checkbox.disabled = true;
     try {
-      await API.put(`/api/checklists/${checkbox.dataset.checklistId}/unit-progress`, {
-        unitIds:[checkbox.dataset.unitId],
+      await API.put(`/api/work-packages/${checkbox.dataset.packageId}/checklist-progress`, {
+        checklistId:checkbox.dataset.checklistId,
         subtaskId:checkbox.dataset.subtaskId,
         completed:checkbox.checked
       });
-      invalidateProjectDataCache('unitChecklistProgress');
-      const response = await getProjectUnitChecklistProgress({ force:true });
-      state.operational.unitProgress = new Map((response?.progress || []).map(row => [`${String(row.checklistId)}:${String(row.unitId)}`, row]));
-      renderProyecto();
-      window.__BANK73_UNIFIED_REFRESH?.();
+      await refreshWorkPackages();
     } catch (error) {
       checkbox.checked = !checkbox.checked;
       alert(error.message || 'No se pudo actualizar la actividad.');
@@ -5730,15 +5810,12 @@ return {
     prUI = permitProgress(__permits);
   }
   if (['CONTRATISTAS', 'OBRA'].includes(ph.key)) {
-    const totals = list.map(scopedChecklistStats);
-    const total = totals.reduce((sum, item) => sum + item.total, 0);
-    const completed = totals.reduce((sum, item) => sum + item.completed, 0);
-    prUI = total ? Math.round(completed / total * 100) : 0;
+    prUI = workPackagePhaseOverallStats(ph.key, list).pct;
   }
   if (ph.key === 'ESCRITURACION') {
     const snapshot = operationalUnitsSnapshot();
     const relevant = snapshot.units.filter(unit => ['reservado', 'con_cpp', 'tramite_legal_activado', 'escriturado_traspasado'].includes(operationalUnitState(unit.estado)));
-    prUI = relevant.length ? Math.round(relevant.reduce((sum, unit) => sum + timelineCommercialProcess(snapshot.sales.get(String(unit._id)) || {}).pct, 0) / relevant.length) : 0;
+    prUI = relevant.length ? Math.round(relevant.reduce((sum, unit) => sum + timelineCommercialProcess(snapshot.sales.get(String(unit._id)) || {}, unit).pct, 0) / relevant.length) : 0;
   }
 
   const collapsedCls = state.collapsed.has(ph.key) ? 'collapsed' : '';
@@ -5760,7 +5837,7 @@ return {
       </div>
       <div class="progress"><div style="width:${prUI}%; --accent:${ph.color}"></div></div> <!-- ✅ usa prUI -->
       ${['CONTRATISTAS', 'OBRA'].includes(ph.key)
-        ? renderUnitScopedPhase(ph.key, list)
+        ? renderWorkPackagePhase(ph.key, list)
         : ph.key === 'ESCRITURACION'
           ? renderDeedingUnitProcess()
           : `<div class="cl-list">${list.map(cl => renderChecklistCard(cl, ph)).join('')}</div>`}
@@ -5853,10 +5930,24 @@ return {
       openOperationalAlerts(button.dataset.phaseAlerts);
     };
   });
-  document.querySelectorAll('.js-manage-unit-checklist').forEach(button => {
+  document.querySelectorAll('.js-new-work-package').forEach(button => {
     button.onclick = event => {
       event.stopPropagation();
-      openUnitChecklistRange(button.dataset.checklist);
+      openWorkPackageEditor();
+    };
+  });
+  document.querySelectorAll('.js-edit-work-package').forEach(button => {
+    button.onclick = event => {
+      event.stopPropagation();
+      openWorkPackageEditor(button.dataset.package);
+    };
+  });
+  document.querySelectorAll('.js-delete-work-package').forEach(button => {
+    button.onclick = async event => {
+      event.stopPropagation();
+      if (!askPinOrAbort('Para eliminar este paquete, introduce el PIN:')) return;
+      await API.del(`/api/work-packages/${button.dataset.package}?pin=${encodeURIComponent(PIN)}`);
+      await refreshWorkPackages();
     };
   });
   document.querySelectorAll('.js-open-timeline-unit').forEach(button => {
@@ -12569,7 +12660,7 @@ function renderCommercialProcessFicha(u = {}, v = {}) {
       ${field('fu-etapa','Etapa',u.etapa)}${field('fu-torre','Torre',u.torre)}${field('fu-nivel','Nivel',u.nivel)}<div class="unit-process-field"><label for="fu-modeloSelect">Modelo de vivienda</label><select id="fu-modeloSelect">${projectModelOptions(u.modelId||u.modelo||'',{includeEmpty:true})}</select><input id="fu-modelo" type="hidden" value="${safeVal(u.modelo||'')}"></div>${number('fu-m2','Área de terreno',u.m2)}${field('fv-numeroFinca','Número de finca',u.numeroFinca)}${field('fv-codigoUbicacion','Código de ubicación',u.codigoUbicacion)}${field('fv-calle','Calle',u.calle)}${number('fv-areaAbierta','Área abierta',u.areaAbierta)}${number('fv-areaCerrada','Área cerrada',u.areaCerrada)}${number('fv-areaTotalConstruccion','Área total de construcción',Number(u.areaTotalConstruccion||0)||Number(u.areaAbierta||0)+Number(u.areaCerrada||0),'readonly aria-readonly="true"')}${number('fv-recamaras','Recámaras',u.recamaras)}${number('fv-banos','Baños',u.banos)}<input id="fu-costo" type="hidden" value="${safeVal(u.costoUnidad||0)}">
     </div></details><details class="unit-side-card construction-card" open><summary><strong>Construcción de la vivienda</strong><span class="parallel-chip">En paralelo</span><span>⌄</span></summary><div class="unit-side-grid">
       ${number('fv-avanceConstruccionPct','Avance de obra (%)',v.avanceConstruccionPct||0)}${select('fv-estatusConstruccion','Fase de obra',[{v:'',l:'Pendiente de construir'},{v:'Obra gris',l:'Obra gris'},{v:'Acabados',l:'Acabados'},{v:'Terminada',l:'Terminada'}],v.estatusConstruccion)}${check('fv-permisoConstruccionMunicipal','Permiso de construcción',v.permisoConstruccionMunicipal)}${field('fv-permisoConstruccionNum','Resolución construcción',v.permisoConstruccionNum)}${date('fv-fechaPermisoConstruccion','Fecha permiso construcción',v.fechaPermisoConstruccion)}${date('fv-permisoConstruccionVencimiento','Vencimiento construcción',v.permisoConstruccionVencimiento)}${check('fv-permisoOcupacion','Permiso de ocupación',v.permisoOcupacion)}${field('fv-permisoOcupacionNum','Resolución ocupación',v.permisoOcupacionNum)}${date('fv-fechaEmisionPermisoOcupacion','Fecha permiso ocupación',v.fechaEmisionPermisoOcupacion)}${field('fv-constructora','Constructora / contratista',v.constructora)}
-    </div></details>${unitScopedChecklistPanelHtml(paymentUnitId)}</aside>
+    </div></details></aside>
     <main class="unit-process-main"><section class="unit-process-heading"><div><h2>Proceso de venta</h2><span>${complete} de 6 etapas completas</span></div>${reservationAge ? `<strong class="unit-reservation-age">${safeVal(reservationAge.label)}</strong>` : ''}<div class="unit-process-progress"><i style="width:${Math.round(complete/6*100)}%"></i></div></section><div class="unit-stages">${stages}</div><section class="unit-comments"><h3>Comentarios</h3><textarea id="fv-comentario" rows="3" placeholder="Añade información útil para el seguimiento">${safeVal(v.comentario)}</textarea></section></main>
     <aside class="unit-process-right">${client(false)}${client(true)}<details class="unit-side-card" open><summary><strong>Referencias personales</strong><span>⌄</span></summary><div class="unit-side-grid">${field('fv-referencia1Nombre','Referencia 1',v.referencia1Nombre)}${field('fv-referencia1Relacion','Relación',v.referencia1Relacion)}${field('fv-referencia1Telefono','Teléfono',v.referencia1Telefono)}${field('fv-referencia2Nombre','Referencia 2',v.referencia2Nombre)}${field('fv-referencia2Relacion','Relación',v.referencia2Relacion)}${field('fv-referencia2Telefono','Teléfono',v.referencia2Telefono)}${select('fv-canalCaptacion','Captación del cliente',captureChannelOptions(captureChannel),captureChannel)}</div></details></aside>
   </div></div>`;
@@ -12608,7 +12699,7 @@ function renderTechnicalUnitFicha(u = {}, v = {}, unitId = '') {
   return `<div class="unit-process-shell technical-process-shell unit-status-${statusKey}">
     <div class="technical-process-summary">
       <section class="unit-summary-card"><span>Modelo</span><strong>${safeVal(u.modelo || 'Sin modelo')}</strong><small>Dato único de la unidad</small></section>
-      <section class="unit-summary-card"><span>Fase de obra</span><strong>${safeVal(phase)}</strong><small data-technical-unit-summary-progress>${progress}% de avance</small></section>
+      <section class="unit-summary-card"><span>Fase de obra</span><strong data-technical-unit-summary-phase>${safeVal(phase)}</strong><small data-technical-unit-summary-progress>${progress}% de avance</small></section>
       <section class="unit-summary-card"><span>Pólizas aplicables</span><strong>${policies.length}</strong><small>CAR / incendio</small></section>
     </div>
     <details class="technical-unit-progress-panel" data-technical-unit-progress data-unit-id="${safeVal(unitId)}">
@@ -12643,7 +12734,6 @@ function renderTechnicalUnitFicha(u = {}, v = {}, unitId = '') {
             ${field('fv-permisoOcupacionNum','Resolución ocupación',v.permisoOcupacionNum)}${date('fv-fechaEmisionPermisoOcupacion','Fecha permiso ocupación',v.fechaEmisionPermisoOcupacion)}${field('fv-constructora','Constructora / contratista',v.constructora)}
           </div>
         </details>
-        ${unitScopedChecklistPanelHtml(unitId)}
       </div>
       <aside class="technical-process-secondary">
         <details class="unit-side-card technical-policy-card">
@@ -12667,6 +12757,22 @@ function technicalUnitProgressAverage(activities = []) {
   if (!applicable.length) return 0;
   const total = applicable.reduce((sum, activity) => sum + Math.min(100, Math.max(0, Number(activity.progressPercent) || 0)), 0);
   return Math.round((total / applicable.length) * 100) / 100;
+}
+
+function technicalConstructionStatusFromProgress(value) {
+  const progress = Math.min(100, Math.max(0, Number(value) || 0));
+  if (progress >= 100) return 'Terminada';
+  if (progress >= 70) return 'Acabados';
+  if (progress > 0) return 'Obra gris';
+  return '';
+}
+
+function technicalConstructionStatusTarget(status = '') {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'terminada' || normalized === 'culminada') return 100;
+  if (normalized === 'acabados') return 85;
+  if (normalized === 'obra gris') return 50;
+  return 0;
 }
 
 function technicalUnitProgressDate(value, author = '') {
@@ -12700,6 +12806,11 @@ function refreshTechnicalUnitProgressUi(panel, progressState) {
   if (progressInput) progressInput.value = displayProgress;
   const summaryProgress = document.querySelector('[data-technical-unit-summary-progress]');
   if (summaryProgress) summaryProgress.textContent = `${displayProgress}% de avance`;
+  const constructionStatus = technicalConstructionStatusFromProgress(progress);
+  const statusSelect = document.getElementById('fv-estatusConstruccion');
+  if (statusSelect) statusSelect.value = constructionStatus;
+  const summaryPhase = document.querySelector('[data-technical-unit-summary-phase]');
+  if (summaryPhase) summaryPhase.textContent = constructionStatus || 'Pendiente de construir';
 }
 
 function renderTechnicalUnitProgress(panel, progressState) {
@@ -12766,6 +12877,7 @@ async function initTechnicalUnitProgress(viewFicha, unitId) {
           const cached = technicalWorkspace?.ventas?.get?.(String(unitId));
           if (cached) {
             cached.avanceConstruccionPct = result.progressPercent;
+            cached.estatusConstruccion = result.constructionStatus;
             cached.enConstruccion = result.progressPercent > 0 && result.progressPercent < 100;
           }
         }
@@ -12787,6 +12899,15 @@ async function initTechnicalUnitProgress(viewFicha, unitId) {
       clearTimeout(saveTimer);
       saveTimer = setTimeout(save, 550);
     };
+    const statusSelect = viewFicha.querySelector('#fv-estatusConstruccion');
+    statusSelect?.addEventListener('change', event => {
+      const target = technicalConstructionStatusTarget(event.target.value);
+      progressState.activities.forEach(activity => {
+        if (activity.applicable !== false) activity.progressPercent = target;
+      });
+      refreshTechnicalUnitProgressUi(panel, progressState);
+      scheduleSave();
+    });
     panel.addEventListener('input', event => {
       const row = event.target.closest('[data-technical-unit-activity]');
       if (event.target.matches('[data-technical-unit-activity-range]') && row) {
@@ -14100,8 +14221,7 @@ function expiryAlertKey(kind, sourceId, due) {
 }
 
 function getCppExpiryAlert(u, venta, { includeOverdue = false } = {}) {
-  if (normalizeUnitEstadoFrontend(u?.estado) === 'escriturado_traspasado') return null;
-  if (String(venta?.modalidadFinanciamiento || '').trim() === 'Al contado') return null;
+  if (!isCppObligationOpen(u, venta)) return null;
 
   const days = daysUntil(venta?.fechaVencimientoCPP);
 
@@ -17588,6 +17708,37 @@ function technicalCommonAreaUpdatedLabel(data = {}) {
   return `Actualizado ${stamp}${data.updatedByLabel ? ` · ${data.updatedByLabel}` : ''}`;
 }
 
+function technicalUnitsAverageProgress() {
+  const values = (technicalWorkspace.units || []).map(unit => {
+    const value = Number(technicalWorkspace.ventas.get(String(unit._id))?.avanceConstruccionPct || 0);
+    return Math.min(100, Math.max(0, Number.isFinite(value) ? value : 0));
+  });
+  return {
+    value: values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0,
+    count: values.length
+  };
+}
+
+function updateTechnicalProjectProgress(commonAreasProgress) {
+  const common = Math.min(100, Math.max(0, Math.round(Number(commonAreasProgress || 0))));
+  const units = technicalUnitsAverageProgress();
+  const global = Math.round((common + units.value) / 2);
+  const indicators = [
+    ['technicalProjectOverallBar', 'technicalProjectOverallValue', global],
+    ['technicalUnitsAverageBar', 'technicalUnitsAverageValue', units.value]
+  ];
+  indicators.forEach(([barId, valueId, value]) => {
+    const bar = document.getElementById(barId);
+    const label = document.getElementById(valueId);
+    if (bar) bar.style.width = `${value}%`;
+    if (label) label.textContent = `${value}%`;
+  });
+  const unitsSummary = document.getElementById('technicalUnitsProgressSummary');
+  if (unitsSummary) unitsSummary.textContent = units.count
+    ? `${units.count} ${units.count === 1 ? 'unidad incluida' : 'unidades incluidas'}`
+    : 'Todavía sin unidades';
+}
+
 function updateTechnicalCommonAreaIndicators() {
   const data = recalculateTechnicalCommonAreas();
   (data.commonAreas || []).forEach(area => {
@@ -17604,7 +17755,8 @@ function updateTechnicalCommonAreaIndicators() {
   const overallValue = document.getElementById('technicalCommonAreasOverallValue');
   if (overallBar) overallBar.style.width = `${overall}%`;
   if (overallValue) overallValue.textContent = `${overall}%`;
-  if (summary) summary.innerHTML = `<span>Avance medio</span><small>${escapeHtml(technicalCommonAreaUpdatedLabel(data))}</small>`;
+  if (summary) summary.textContent = technicalCommonAreaUpdatedLabel(data);
+  updateTechnicalProjectProgress(overall);
 }
 
 function renderTechnicalCommonAreas() {
@@ -19835,19 +19987,17 @@ function unifiedWorkspaceSnapshot() {
       let taskCount = tasks.length;
       let countLabel = 'checks';
       if (['CONTRATISTAS', 'OBRA'].includes(meta.key)) {
-        const totals = tasks.map(scopedChecklistStats);
-        const total = totals.reduce((sum, item) => sum + item.total, 0);
-        const completed = totals.reduce((sum, item) => sum + item.completed, 0);
-        progress = total ? Math.round(completed / total * 100) : 0;
-        taskCount = totals.reduce((sum, item) => sum + item.assigned, 0);
-        countLabel = 'asignaciones';
+        const packages = state.operational?.workPackages || [];
+        progress = workPackagePhaseOverallStats(meta.key, tasks).pct;
+        taskCount = packages.length;
+        countLabel = 'paquetes';
       }
       if (meta.key === 'ESCRITURACION') {
         const snapshot = operationalUnitsSnapshot();
         const relevant = snapshot.units.filter(unit => ['reservado', 'con_cpp', 'tramite_legal_activado', 'escriturado_traspasado'].includes(operationalUnitState(unit.estado)));
         taskCount = relevant.length;
         countLabel = 'unidades';
-        progress = relevant.length ? Math.round(relevant.reduce((sum, unit) => sum + timelineCommercialProcess(snapshot.sales.get(String(unit._id)) || {}).pct, 0) / relevant.length) : 0;
+        progress = relevant.length ? Math.round(relevant.reduce((sum, unit) => sum + timelineCommercialProcess(snapshot.sales.get(String(unit._id)) || {}, unit).pct, 0) / relevant.length) : 0;
       }
       return {
         ...meta,

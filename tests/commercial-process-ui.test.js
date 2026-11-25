@@ -194,7 +194,8 @@ test('el importador cubre los encabezados del Dato Único definitivo y sincroniz
   assert.match(project, /Modelos guardados y unidades actualizadas\./);
   assert.match(project, /if \(\/banos\/i\.test\(id\)\) return 'decimal-flexible'/);
   assert.match(project, /mode === 'decimal-flexible'[^\n]+toFixed\(2\)/);
-  assert.match(project, /normalizeUnitEstadoFrontend\(u\?\.estado\) === 'escriturado_traspasado'\) return null/);
+  assert.match(project, /if \(!isCppObligationOpen\(u, venta\)\) return null/);
+  assert.match(project, /const settled = !!sale\.fechaDesembolso \|\| !!sale\.fechaRecibidoCheque \|\| delivered/);
   assert.match(project, /cppAlertCandidate && !resolvedExpiryAlertKeys\.has\(cppAlertCandidate\.alertKey\)/);
   assert.match(project, /resolvedExpiryAlertKeys\.add\(alertItem\.alertKey\);[\s\S]*?await loadUnits\(\)/);
 });

@@ -359,7 +359,7 @@
   function lifecycleMarkup(lifecycle) {
     const items = Array.isArray(lifecycle) && lifecycle.length ? lifecycle : fallbackSnapshot().lifecycle;
     return items.map((phase, index) => `
-      <button type="button" class="unified-lifecycle-step ${phase.active ? 'is-active' : ''} ${phase.alerts || phase.delayed ? 'has-alert' : ''}" data-lifecycle-phase="${phase.key}" style="--phase-color:${phase.color || LIFECYCLE[index]?.color}">
+      <button type="button" class="unified-lifecycle-step ${phase.active ? 'is-active' : ''} ${phase.checklistDelayed ? 'has-alert' : ''}" data-lifecycle-phase="${phase.key}" style="--phase-color:${phase.color || LIFECYCLE[index]?.color}">
         <span class="unified-step-index">${index + 1}</span>
         <span class="unified-step-copy"><strong>${escapeHtml(phase.name)}</strong><small>${phase.tasks} ${escapeHtml(phase.countLabel || 'checks')}${phase.checklistDelayed ? ` · ${phase.checklistDelayed} vencidos` : ''}</small></span>
         <span class="unified-step-progress">${phase.progress}%</span>
@@ -588,15 +588,51 @@
     document.addEventListener('click', () => closeAppbarMenus());
   }
 
+  function nextAnimationFrame() {
+    return new Promise(resolve => window.requestAnimationFrame(resolve));
+  }
+
+  function summarySectionScrollTop(target, body) {
+    return Math.max(0, target.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop - 12);
+  }
+
+  async function stableSummarySectionTop(target, body) {
+    const startedAt = performance.now();
+    let previousTop = null;
+    let stableFrames = 0;
+    let currentTop = summarySectionScrollTop(target, body);
+
+    while (performance.now() - startedAt < 1200) {
+      await nextAnimationFrame();
+      currentTop = summarySectionScrollTop(target, body);
+      const waitedLongEnough = performance.now() - startedAt >= 180;
+      if (waitedLongEnough && previousTop !== null && Math.abs(currentTop - previousTop) < 1) stableFrames += 1;
+      else stableFrames = 0;
+      if (stableFrames >= 4) break;
+      previousTop = currentTop;
+    }
+    return currentTop;
+  }
+
   async function openSummarySection(sectionId) {
     await openPanel('resumen', 'Resumen global');
-    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-      const target = document.getElementById(sectionId);
-      const body = overlay?.querySelector('.unified-overlay-body');
-      if (!target || !body) return;
-      const top = target.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop - 12;
-      body.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
-    }));
+    const target = document.getElementById(sectionId);
+    const body = overlay?.querySelector('.unified-overlay-body');
+    const pane = document.getElementById('tab-resumen');
+    if (!target || !body || !pane) return;
+
+    await nextAnimationFrame();
+    pane.querySelectorAll('canvas').forEach(canvas => window.Chart?.getChart?.(canvas)?.resize());
+    window.dispatchEvent(new Event('resize'));
+
+    const top = await stableSummarySectionTop(target, body);
+    body.scrollTo({ top, behavior: 'auto' });
+
+    // Corrige cualquier último cambio tardío de tamaño (fuentes, imágenes o Chart.js).
+    await nextAnimationFrame();
+    await nextAnimationFrame();
+    const correctedTop = summarySectionScrollTop(target, body);
+    if (Math.abs(body.scrollTop - correctedTop) > 1) body.scrollTo({ top: correctedTop, behavior: 'auto' });
   }
 
   function buildWorkspace() {

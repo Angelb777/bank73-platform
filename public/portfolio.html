@@ -1016,12 +1016,20 @@
     .create-funding-documents-guide > div { display:grid;gap:4px;padding:10px;border:1px solid #dbeafe;border-radius:11px;background:rgba(255,255,255,.8); }
     .create-funding-documents-guide strong { color:#1e40af;font-size:12px; }
     .create-funding-documents-guide span { color:#64748b;font-size:11px;line-height:1.4; }
+    .create-initial-state-intro { margin:4px 0 14px;color:#64748b;font-size:13px;line-height:1.5; }
+    .create-deferred-processes { margin-top:16px;padding:14px;border:1px solid #dbeafe;border-radius:14px;background:#f8fbff; }
+    .create-deferred-processes-title { margin-bottom:10px;color:#1e40af;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em; }
+    .create-deferred-processes-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
+    .create-deferred-processes-grid article { display:grid;gap:4px;padding:11px 12px;border:1px solid #e2e8f0;border-radius:12px;background:#fff; }
+    .create-deferred-processes-grid strong { color:#0f172a;font-size:13px; }
+    .create-deferred-processes-grid span { color:#64748b;font-size:12px;line-height:1.45; }
     @media (max-width:760px) {
       .create-units-reconciliation,
       .create-funding-summary { grid-template-columns:1fr 1fr; }
       #createProgressChecks .create-progress-item { grid-template-columns:24px minmax(0,1fr); }
       #createProgressChecks .create-checklist-upload { grid-column:2;justify-content:flex-start;flex-wrap:wrap; }
       .create-funding-documents-guide { grid-template-columns:1fr; }
+      .create-deferred-processes-grid { grid-template-columns:1fr; }
     }
     .create-step-card .btn,
     .create-finance-panel .btn,
@@ -1480,7 +1488,7 @@
         <button class="create-step-tab active" type="button" data-create-step="general"><span class="create-step-number">1</span>Datos generales<span class="create-step-status" aria-hidden="true">…</span></button>
         <button class="create-step-tab" type="button" data-create-step="legal"><span class="create-step-number">2</span>Datos legales<span class="create-step-status" aria-hidden="true">…</span></button>
         <button class="create-step-tab" type="button" data-create-step="technical"><span class="create-step-number">3</span>Datos tecnicos<span class="create-step-status" aria-hidden="true">…</span></button>
-        <button class="create-step-tab" type="button" data-create-step="progress"><span class="create-step-number">4</span>Avances<span class="create-step-status" aria-hidden="true">…</span></button>
+        <button class="create-step-tab" type="button" data-create-step="progress"><span class="create-step-number">4</span>Estado inicial<span class="create-step-status" aria-hidden="true">…</span></button>
         <button class="create-step-tab" type="button" data-create-step="financial"><span class="create-step-number">5</span>Datos financieros<span class="create-step-status" aria-hidden="true">…</span></button>
         <button class="create-step-tab" type="button" data-create-step="team"><span class="create-step-number">6</span>Equipo sugerido<span class="create-step-status" aria-hidden="true">…</span></button>
       </div>
@@ -1725,7 +1733,8 @@
 
       <section class="create-step" data-create-panel="progress">
       <div class="create-step-card">
-        <div class="create-section-title">Avances <span class="create-section-kicker">Estado inicial opcional</span></div>
+        <div class="create-section-title">Estado inicial <span class="create-section-kicker">Opcional</span></div>
+        <p class="create-initial-state-intro">Marca únicamente los procesos generales que el proyecto ya tenga completados. Los procesos por unidades se configurarán después en su lugar correspondiente.</p>
         <section id="createFundingDocumentsNotice" class="create-funding-documents-notice" style="display:none;">
           <div class="create-funding-documents-notice-head">
             <span class="create-funding-documents-notice-icon" aria-hidden="true">i</span>
@@ -1745,6 +1754,13 @@
         <div id="createProgressChecks" class="create-progress-list">
           <div class="small muted">Cargando checks...</div>
         </div>
+        <section class="create-deferred-processes" aria-label="Procesos que se configuran después">
+          <div class="create-deferred-processes-title">Se configurará después</div>
+          <div class="create-deferred-processes-grid">
+            <article><strong>Contratistas y Obra</strong><span>Mediante paquetes con rango de unidades, contratista, fechas y sus propios checks.</span></article>
+            <article><strong>Escrituración</strong><span>Desde el proceso comercial de cada unidad, compartiendo siempre el mismo dato.</span></article>
+          </div>
+        </section>
       </div>
       </section>
 
