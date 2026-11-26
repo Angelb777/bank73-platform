@@ -14,6 +14,7 @@ const jwt = require('jsonwebtoken');
 // Middlewares propios
 const authMw = require('./middleware/auth');
 const { requireActiveUser } = require('./middleware/auth');
+const requireLegalAcceptance = require('./middleware/legalAcceptance');
 const errorMw = require('./middleware/error');
 const bankReadOnly = require('./middleware/bankReadOnly');
 const denyAvaluatorBackoffice = require('./middleware/avaluatorBackoffice');
@@ -22,6 +23,7 @@ const audit = require('./utils/audit');
 
 // Rutas
 const authRoutes = require('./routes/auth');
+const legalRoutes = require('./routes/legal');
 const projectRoutes = require('./routes/projects');
 const milestoneRoutes = require('./routes/milestones');
 const documentRoutes = require('./routes/documents');
@@ -243,16 +245,17 @@ app.use('/api', tenantMw);
    Rutas públicas AUTH
    ========================================================================= */
 app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/legal', legalRoutes);
 
 // API movil del avaluador: autenticacion comun y superficie propia.
 // Se monta antes del bloqueo explicito del backoffice para este rol.
 app.use('/api/mobile/v1/inspections/:inspectionId/evidence', uploadLimiter);
-app.use('/api/mobile/v1', authMw, requireActiveUser, mobileAvaluatorRoutes);
+app.use('/api/mobile/v1', authMw, requireActiveUser, requireLegalAcceptance, mobileAvaluatorRoutes);
 
 /* =========================================================================
    Rutas protegidas
    ========================================================================= */
-const guard = [authMw, requireActiveUser, denyAvaluatorBackoffice, requireDeletePin];
+const guard = [authMw, requireActiveUser, requireLegalAcceptance, denyAvaluatorBackoffice, requireDeletePin];
 
 // ✅ 1) Projects primero
 app.use('/api/projects', ...guard, bankReadOnly, projectRoutes);
@@ -309,6 +312,9 @@ app.use('/api/chat', ...guard, chatRoutes);
 app.get('/register', (_req, res) => res.sendFile(path.join(__dirname, 'public/register.html')));
 app.get('/login', (_req, res) => res.sendFile(path.join(__dirname, 'public/login.html')));
 app.get('/pending.html', (_req, res) => res.sendFile(path.join(__dirname, 'public/lib/pending.html')));
+app.get('/legal/terms', (_req, res) => res.sendFile(path.join(__dirname, 'public/legal.html')));
+app.get('/legal/privacy', (_req, res) => res.sendFile(path.join(__dirname, 'public/legal.html')));
+app.get('/legal/legal-notice', (_req, res) => res.sendFile(path.join(__dirname, 'public/legal.html')));
 
 app.get('/', (req, res) => {
   const file = path.join(__dirname, 'public/index.html');

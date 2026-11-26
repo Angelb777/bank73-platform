@@ -6,6 +6,7 @@ const { ROLES } = User;
 const { REQUESTABLE_ROLES } = User;
 const { promoterProfileCompletion } = User;
 const auth = require('../middleware/auth');
+const requireLegalAcceptance = require('../middleware/legalAcceptance');
 const { hashPassword, isHashedPassword, verifyPassword } = require('../utils/passwords');
 const audit = require('../utils/audit');
 const { assignedTenantList, activeAvaluatorBankTenants, tenantKeyFromBankName } = require('../utils/tenants');
@@ -330,7 +331,7 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
-router.get('/promoter-profile', auth, async (req, res) => {
+router.get('/promoter-profile', auth, requireLegalAcceptance, async (req, res) => {
   try {
     const user = await User.findOne({ _id: req.user.userId, tenantKey: req.user.tenantKey }, { password: 0 });
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
@@ -345,7 +346,7 @@ router.get('/promoter-profile', auth, async (req, res) => {
   }
 });
 
-router.patch('/promoter-profile', auth, async (req, res) => {
+router.patch('/promoter-profile', auth, requireLegalAcceptance, async (req, res) => {
   try {
     const user = await User.findOne({ _id: req.user.userId, tenantKey: req.user.tenantKey });
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });

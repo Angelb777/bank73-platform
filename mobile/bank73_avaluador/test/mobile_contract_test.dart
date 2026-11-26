@@ -40,7 +40,10 @@ class FakeTransport implements ApiTransport {
   }
 
   @override
-  Future<Map<String, dynamic>> get(String path) async {
+  Future<Map<String, dynamic>> get(
+    String path, {
+    bool authenticated = true,
+  }) async {
     method = 'GET';
     this.path = path;
     return response;
@@ -105,7 +108,10 @@ class HistoryTransport extends FakeTransport {
   final requestedPaths = <String>[];
 
   @override
-  Future<Map<String, dynamic>> get(String path) async {
+  Future<Map<String, dynamic>> get(
+    String path, {
+    bool authenticated = true,
+  }) async {
     requestedPaths.add(path);
     if (path == '/api/mobile/v1/projects/project-1/inspections') {
       return {

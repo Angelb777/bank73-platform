@@ -18,7 +18,10 @@ import 'mobile_contract_test.dart' show FakeTransport, MemorySessionStore;
 
 class ReportTransport extends FakeTransport {
   @override
-  Future<Map<String, dynamic>> get(String path) async {
+  Future<Map<String, dynamic>> get(
+    String path, {
+    bool authenticated = true,
+  }) async {
     if (path.endsWith('/inspection-pack')) {
       return {
         'inspectionPack': {

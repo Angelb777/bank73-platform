@@ -35,7 +35,7 @@ const API = (() => {
   }
 
   function isPublicPage() {
-    return publicPaths.has(location.pathname);
+    return publicPaths.has(location.pathname) || location.pathname.startsWith('/legal/');
   }
 
   function isAuthEndpoint(path) {

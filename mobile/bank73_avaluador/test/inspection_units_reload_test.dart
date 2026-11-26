@@ -13,7 +13,10 @@ class VisitTransport extends FakeTransport {
   int loads = 0;
 
   @override
-  Future<Map<String, dynamic>> get(String path) async {
+  Future<Map<String, dynamic>> get(
+    String path, {
+    bool authenticated = true,
+  }) async {
     if (path == '/api/mobile/v1/inspections/visit') {
       loads++;
       return {
@@ -157,7 +160,10 @@ void main() {
 
 class _GroupedVisitTransport extends FakeTransport {
   @override
-  Future<Map<String, dynamic>> get(String path) async {
+  Future<Map<String, dynamic>> get(
+    String path, {
+    bool authenticated = true,
+  }) async {
     if (path == '/api/mobile/v1/inspections/visit') {
       return {
         'inspection': {'id': 'visit', 'status': 'draft'},

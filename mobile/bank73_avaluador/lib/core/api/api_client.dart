@@ -10,7 +10,7 @@ import '../storage/secure_session_store.dart';
 import 'api_config.dart';
 
 abstract interface class ApiTransport {
-  Future<Map<String, dynamic>> get(String path);
+  Future<Map<String, dynamic>> get(String path, {bool authenticated = true});
   Future<List<int>> getBytes(String path);
   Future<Map<String, dynamic>> post(
     String path, {
@@ -35,7 +35,8 @@ class ApiClient implements ApiTransport {
   final http.Client _client;
 
   @override
-  Future<Map<String, dynamic>> get(String path) => _request('GET', path);
+  Future<Map<String, dynamic>> get(String path, {bool authenticated = true}) =>
+      _request('GET', path, authenticated: authenticated);
 
   @override
   Future<List<int>> getBytes(String path) async {

@@ -4,13 +4,20 @@ import '../../../core/models/models.dart';
 import '../../../core/providers.dart';
 import '../data/auth_repository.dart';
 
-enum AuthStatus { checking, unauthenticated, authenticating, authenticated }
+enum AuthStatus {
+  checking,
+  unauthenticated,
+  authenticating,
+  legalAcceptanceRequired,
+  authenticated,
+}
 
 class AuthState {
-  const AuthState(this.status, {this.user, this.message});
+  const AuthState(this.status, {this.user, this.message, this.legalVersion});
   final AuthStatus status;
   final AppUser? user;
   final String? message;
+  final String? legalVersion;
 }
 
 final authRepositoryProvider = Provider<AuthRepository>(
@@ -65,6 +72,29 @@ class AuthController extends StateNotifier<AuthState> {
       );
       return;
     }
+    try {
+      final legal = await _repository.legalStatus();
+      if (legal.required) {
+        state = AuthState(
+          AuthStatus.legalAcceptanceRequired,
+          user: user,
+          legalVersion: legal.version,
+        );
+        return;
+      }
+    } catch (_) {
+      // El backend seguirá aplicando el control cuando esté activado. Mientras
+      // los documentos sean borradores, una consulta legal fallida no altera
+      // el comportamiento de autenticación existente.
+    }
+    state = AuthState(AuthStatus.authenticated, user: user);
+  }
+
+  Future<void> acceptLegal() async {
+    final user = state.user;
+    final version = state.legalVersion;
+    if (user == null || version == null) return;
+    await _repository.acceptLegal(version);
     state = AuthState(AuthStatus.authenticated, user: user);
   }
 

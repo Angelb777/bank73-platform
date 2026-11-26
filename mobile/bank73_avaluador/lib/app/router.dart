@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../features/auth/application/auth_controller.dart';
 import '../features/auth/presentation/login_screen.dart';
+import '../features/auth/presentation/legal_screen.dart';
 import '../features/auth/presentation/register_screen.dart';
 import '../features/auth/presentation/splash_screen.dart';
 import '../features/inspections/presentation/inspection_screen.dart';
@@ -37,12 +38,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       final onLogin = state.matchedLocation == '/login';
       final onRegister = state.matchedLocation == '/register';
       final onSplash = state.matchedLocation == '/splash';
+      final onLegal = state.matchedLocation == '/legal';
       if (auth.status == AuthStatus.checking)
         return onSplash ? null : '/splash';
       if (auth.status == AuthStatus.authenticating)
         return onLogin ? null : '/login';
       if (auth.status == AuthStatus.unauthenticated)
-        return onLogin || onRegister ? null : '/login';
+        return onLogin || onRegister || onLegal ? null : '/login';
+      if (auth.status == AuthStatus.legalAcceptanceRequired)
+        return onLegal ? null : '/legal';
       if (onLogin || onRegister || onSplash) return '/portfolio';
       return null;
     },
@@ -50,6 +54,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
+      GoRoute(path: '/legal', builder: (_, __) => const LegalScreen()),
       GoRoute(path: '/portfolio', builder: (_, __) => const PortfolioScreen()),
       GoRoute(
         path: '/projects/:projectId',

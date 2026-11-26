@@ -149,6 +149,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   : () => context.push('/register'),
                               child: const Text('Crear cuenta'),
                             ),
+                            TextButton(
+                              onPressed: busy
+                                  ? null
+                                  : () => context.push('/legal'),
+                              child: const Text(
+                                'Términos, privacidad y aviso legal',
+                              ),
+                            ),
                           ],
                         ),
                       ),

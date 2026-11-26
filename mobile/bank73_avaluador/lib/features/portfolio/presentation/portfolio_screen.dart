@@ -36,7 +36,17 @@ class _PortfolioScreenState extends ConsumerState<PortfolioScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: const Bank73AppBar(title: 'Mi portfolio', showLogout: true),
+    appBar: Bank73AppBar(
+      title: 'Mi portfolio',
+      showLogout: true,
+      actions: [
+        IconButton(
+          tooltip: 'Información legal',
+          onPressed: () => context.push('/legal'),
+          icon: const Icon(Icons.gavel_outlined),
+        ),
+      ],
+    ),
     body: FutureBuilder<List<MobileProject>>(
       future: _future,
       builder: (context, snapshot) {
