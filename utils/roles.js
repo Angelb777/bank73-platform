@@ -19,10 +19,23 @@ const FULL_ACCESS_ROLES = [
   'gerencia',
   'socios',
   'financiero',
-  'contable'
+  'contable',
+  'legal'
 ];
 
-const LIMITED_AREA_ROLES = ['commercial', 'legal', 'tecnico'];
+const PROJECT_EDITOR_ROLES = [
+  'admin',
+  'promoter',
+  'gerencia',
+  'socios',
+  'financiero',
+  'contable',
+  'legal'
+];
+
+const PROJECT_MEDIA_EDITOR_ROLES = [...PROJECT_EDITOR_ROLES, 'bank'];
+
+const LIMITED_AREA_ROLES = ['commercial', 'tecnico'];
 const DOC_DEPARTMENTS = ['commercial', 'tecnico', 'legal'];
 
 function normRole(value) {
@@ -51,6 +64,8 @@ function visibleDocDepartments(roleRaw) {
 module.exports = {
   ROLES,
   FULL_ACCESS_ROLES,
+  PROJECT_EDITOR_ROLES,
+  PROJECT_MEDIA_EDITOR_ROLES,
   LIMITED_AREA_ROLES,
   DOC_DEPARTMENTS,
   normRole,

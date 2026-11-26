@@ -2,15 +2,7 @@
 const mongoose = require('mongoose');
 const Unit = require('../models/Unit');
 const Project = require('../models/Project');
-
-// Estados que cuentan como no disponibles / vendidos
-const SOLD_STATUSES = [
-  'reservado',
-  'con_cpp',
-  'tramite_legal_activado',
-  'escriturado_traspasado',
-  'vivienda_entregada'
-];
+const { SOLD_UNIT_STATUSES } = require('../utils/unitStatus');
 
 function toObjectId(x) {
   try {
@@ -48,7 +40,7 @@ async function recomputeCommercialKpis({ tenantKey, projectId }) {
         unitsTotal: { $sum: 1 },
         unitsSold: {
           $sum: {
-            $cond: [{ $in: ['$estado', SOLD_STATUSES] }, 1, 0]
+            $cond: [{ $in: ['$estado', SOLD_UNIT_STATUSES] }, 1, 0]
           }
         }
       }

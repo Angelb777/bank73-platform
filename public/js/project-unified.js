@@ -232,6 +232,10 @@
         ${metric('Valor comercial', money(commercial.salesValue), 'Precio de venta acumulado')}
         ${metric('Financiación CPP', money(commercial.cppValue), 'Financiación comercial acumulada')}
       </div>
+      <section class="unified-stage-fallen-sales-section" aria-label="Ventas caídas de la etapa">
+        <div class="unified-stage-list-heading"><div><span>Ventas caídas</span><h3>Histórico de ${escapeHtml(stage.name)}</h3></div></div>
+        <div class="unified-stage-fallen-sales-host" data-stage-fallen-sales-host><div class="unified-stage-loading">Cargando ventas caídas…</div></div>
+      </section>
       <section class="unified-stage-commercial-list" aria-label="Unidades comerciales de la etapa">
         <div class="unified-stage-list-heading"><div><span>Detalle comercial</span><h3>Unidades de ${escapeHtml(stage.name)}</h3></div><div class="unified-stage-commercial-tools"><label>Clasificar por estado<select data-stage-commercial-filter><option value="">Todos los estados</option>${statuses.map(([key, label]) => `<option value="${escapeHtml(key)}">${escapeHtml(label)}</option>`).join('')}</select></label><strong><span data-stage-commercial-visible>${units.length}</span> unidades</strong></div></div>
         ${units.length ? `<div class="unified-stage-unit-table">
@@ -301,8 +305,19 @@
           return;
         }
         activeStageMount = mount;
+        if (!activeStageMount) {
+          content.innerHTML = stagePanelHtml(stage, tab);
+          if (tab === 'commercial') {
+            const salesHost = content.querySelector('[data-stage-fallen-sales-host]');
+            const salesMount = await workspaceApi?.mountStageFallenSales?.(stageId, salesHost);
+            if (requestId !== stageTabRequest || stageModal.hidden) {
+              await workspaceApi?.unmountStageSection?.(salesMount);
+              return;
+            }
+            activeStageMount = salesMount;
+          }
+        }
         activeStageTab = tab;
-        if (!activeStageMount) content.innerHTML = stagePanelHtml(stage, tab);
       } catch (error) {
         if (requestId !== stageTabRequest || stageModal.hidden) return;
         console.error(`No se pudo abrir ${tab} para la etapa.`, error);
@@ -379,8 +394,12 @@
       <span><small>Progreso global</small><strong>${globalProgress}%</strong></span>
       <span><small>Etapas</small><strong>${totalStages}</strong></span>
       <span><small>Unidades</small><strong>${totalUnits}</strong></span>
-      <span><small>Comprometidas</small><strong>${committedUnits}</strong></span>
-      <span class="${delayed ? 'has-alert' : ''}"><small>Avisos activos</small><strong>${delayed}</strong></span>`;
+      <span><small>Comprometidas</small><strong>${committedUnits}</strong></span>`;
+    const timelineAlertKpi = unifiedRoot.querySelector('#unifiedTimelineAlertKpi');
+    if (timelineAlertKpi) {
+      timelineAlertKpi.classList.toggle('has-alert', Boolean(delayed));
+      timelineAlertKpi.querySelector('strong').textContent = String(delayed);
+    }
     const host = unifiedRoot.querySelector('#unifiedOverviewCards');
     if (host) host.innerHTML = [
       areaCard('commercial', 'Comercial', snapshot.overview.commercial, '#ef4444'),
@@ -663,7 +682,10 @@
         <div id="unifiedOverviewCards" class="unified-overview-grid"></div>
       </section>
       <section class="unified-timeline-shell">
-        <div class="unified-section-heading"><div><span>Seguimiento</span><h2>Cronograma del proyecto</h2><p>Selecciona un bloque para ver sus checks, responsables, fechas y documentación.</p></div></div>
+        <div class="unified-section-heading unified-timeline-heading">
+          <div><span>Seguimiento</span><h2>Cronograma del proyecto</h2><p>Selecciona un bloque para ver sus checks, responsables, fechas y documentación.</p></div>
+          <span id="unifiedTimelineAlertKpi" class="unified-timeline-kpi"><small>Avisos activos</small><strong>0</strong></span>
+        </div>
         <div id="unifiedLifecycleRail" class="unified-lifecycle-rail">${lifecycleMarkup(fallbackSnapshot().lifecycle)}</div>
         <div id="unifiedTimelineContent"></div>
       </section>

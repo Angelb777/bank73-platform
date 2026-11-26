@@ -144,6 +144,31 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
   }
 
   const PROJECT_DATA_CACHE = Object.create(null);
+  let chartLibraryPromise = null;
+
+  function ensureChartLibrary() {
+    if (typeof window.Chart !== 'undefined') return Promise.resolve(window.Chart);
+    if (chartLibraryPromise) return chartLibraryPromise;
+    chartLibraryPromise = new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-project-chart-library]');
+      if (existing) {
+        existing.addEventListener('load', () => resolve(window.Chart), { once: true });
+        existing.addEventListener('error', () => reject(new Error('No se pudo cargar Chart.js')), { once: true });
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = '/lib/chart.umd.min.js';
+      script.async = true;
+      script.dataset.projectChartLibrary = '1';
+      script.onload = () => resolve(window.Chart);
+      script.onerror = () => reject(new Error('No se pudo cargar Chart.js'));
+      document.head.appendChild(script);
+    }).catch(error => {
+      chartLibraryPromise = null;
+      throw error;
+    });
+    return chartLibraryPromise;
+  }
 
   function invalidateProjectDataCache(keys) {
     const list = Array.isArray(keys) ? keys : [keys];
@@ -284,13 +309,12 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
     invalidateProjectDataCache(['unitsAll', 'ventas', 'portfolio', 'finance', 'expiryAlertResolutions', 'avaluationContext']);
 
     try {
-      if (refreshHeader && typeof refreshTopHeaderKpis === 'function') {
-        await refreshTopHeaderKpis();
-      }
-
       const resumenActive = !!panes.resumen?.classList.contains('active');
-      if (refreshSummary || resumenActive) {
+      const shouldRefreshSummary = refreshSummary || resumenActive;
+      if (shouldRefreshSummary) {
         await refreshSummaryFromServer();
+      } else if (refreshHeader && typeof refreshTopHeaderKpis === 'function') {
+        await refreshTopHeaderKpis();
       }
       window.__PROJECT_3D?.refresh?.();
       window.__BANK73_UNIFIED_REFRESH?.();
@@ -1768,10 +1792,11 @@ function bindDeleteButtonsInModal(clId) {
         alert('Checklist bloqueado: valida los anteriores o desbloquéalo manualmente tocando la tarjeta.');
         return;
       }
-      if (!askPinOrAbort('Para eliminar el documento, introduce el PIN:')) return;
+      const pin = askPinOrAbort('Para eliminar el documento, introduce el PIN:');
+      if (pin === null) return;
       const docId = btn.dataset.doc;
-      try { await API.del(`/api/documents/${docId}`); }
-      catch { await API.post(`/api/documents/${docId}/delete`, { pin: PIN }); }
+      try { await API.del(`/api/documents/${docId}`, { body: JSON.stringify({ pin }) }); }
+      catch { await API.post(`/api/documents/${docId}/delete`, { pin }); }
       await reloadProyecto(false);
       await refreshDocsListInModal(clId);
     };
@@ -1913,7 +1938,10 @@ function setDocsCount(clId, n) {
 
 // ====== Rol del usuario (para visibilidad/validación) ======  // ROLE-SEP
 // TECH DEBT: este espejo frontend debe mantenerse alineado con utils/roles.js hasta modularizar project.js.
-const FULL_ACCESS_ROLES = ['admin','bank','promoter','gerencia','socios','financiero','contable','avaluador'];
+const FULL_ACCESS_ROLES = ['admin','bank','promoter','gerencia','socios','financiero','contable','legal','avaluador'];
+const FULL_EDIT_ROLES = ['admin','promoter','gerencia','socios','financiero','contable','legal'];
+const PROJECT_MEDIA_EDIT_ROLES = [...FULL_EDIT_ROLES, 'bank'];
+const isProjectObserverRole = () => ['bank', 'avaluador'].includes(myRole);
 let myRole = (currentUser.role || 'promoter').toLowerCase().trim();
 
 try {
@@ -1925,11 +1953,11 @@ try {
 let __ALLOWED_ROLES = null; // null => sin filtro (ver todo)
 
 function isPartialProyectoRole() {
-  return ['tecnico','legal','commercial'].includes(myRole) && !FULL_ACCESS_ROLES.includes(myRole);
+  return ['tecnico','commercial'].includes(myRole) && !FULL_ACCESS_ROLES.includes(myRole);
 }
 
 function syncPartialProyectoUI() {
-  const hideIt = isPartialProyectoRole();
+  const hideIt = isPartialProyectoRole() || isProjectObserverRole();
   const globalPhasePanel = document.querySelector('#tab-proyecto .project-tab-lead > .phase, #tab-proyecto > .phase');
   const asideRoles       = document.querySelector('#tab-proyecto aside.roles-panel');
   const phaseActions     = globalPhasePanel?.querySelector('.phase-actions');
@@ -1949,8 +1977,9 @@ function syncPartialProyectoUI() {
 
 
 function applyRoleVisibility() {                                // ROLE-SEP
-  const isAdminOrBank = (myRole === 'admin');
+  const canEditProject = FULL_EDIT_ROLES.includes(myRole);
   const isFull = FULL_ACCESS_ROLES.includes(myRole);            // <- clave
+  document.body.classList.toggle('role-project-observer', isProjectObserverRole());
 
   // Mapas de tabs (botones y panes)
   const tabBtns = {
@@ -1979,8 +2008,8 @@ function applyRoleVisibility() {                                // ROLE-SEP
   const hide = (k) => { if (tabBtns[k]) tabBtns[k].style.display = 'none'; if (tabPanes[k]) tabPanes[k].style.display = 'none'; };
 
   // Controles de estado del proyecto: sólo admin/bank
-  if (statusWrap) statusWrap.style.display = isAdminOrBank ? '' : 'none';
-  if (disbRow)    disbRow.style.display    = isAdminOrBank ? '' : 'none';
+  if (statusWrap) statusWrap.style.display = canEditProject ? '' : 'none';
+  if (disbRow)    disbRow.style.display    = canEditProject ? '' : 'none';
 
   // === Header (descripción + KPIs) ===
   const isPartial = isPartialProyectoRole();
@@ -2124,7 +2153,7 @@ function summaryMediaDataUrl(file) {
 }
 
 function bindSummaryProjectMedia(project = {}) {
-  const canEdit = myRole === 'admin';
+  const canEdit = PROJECT_MEDIA_EDIT_ROLES.includes(myRole);
   const bind = ({ field, buttonId, inputId, imageId, placeholderId }) => {
     const button = document.getElementById(buttonId);
     const input = document.getElementById(inputId);
@@ -4157,13 +4186,18 @@ async function loadSummary() {
       ? `&dateFrom=${encodeURIComponent(activePeriod.from)}&dateTo=${encodeURIComponent(activePeriod.to)}${activePeriod.compareFrom && activePeriod.compareTo ? `&compareDateFrom=${encodeURIComponent(activePeriod.compareFrom)}&compareDateTo=${encodeURIComponent(activePeriod.compareTo)}` : ''}`
       : '';
     // evitar caché del navegador
-    const res = await API.get(`/api/projects/${id}/summary?ts=${Date.now()}${periodQuery}`);
+    // Chart, Resumen y checklist son fuentes independientes. Arrancarlas juntas
+    // evita tres esperas consecutivas en el camino crítico del primer render.
+    const [res, summaryChecklists] = await Promise.all([
+      API.get(`/api/projects/${id}/summary?ts=${Date.now()}${periodQuery}`),
+      activePeriod ? Promise.resolve(null) : getProjectChecklists(),
+      ensureChartLibrary()
+    ]);
     window.__LAST_SUMMARY_PAYLOAD__ = res;
 
     // 🔥 recalcular progreso EXACTAMENTE igual que Proyecto
  if (!activePeriod) try {
-  const raw = await getProjectChecklists();
-  const list = (raw?.checklists || raw || []);
+  const list = (summaryChecklists?.checklists || summaryChecklists || []);
 
   const filtered = list.filter(c => true); // igual que globalProgress (sin onlyPending)
   const total = filtered.reduce((acc, c) => acc + checklistProgress(c), 0);
@@ -4470,75 +4504,6 @@ const resp2 = await fetch(`/api/projects/${id}/summary/export`, {
     // ===== Pintar todo el resumen =====
     await renderSummaryUI(res);
 
-    // ===== Importar Dato Único (bind una sola vez) =====
-    const importBtn = document.getElementById('importDatoUnicoBtn');
-    const datoUnicoInput = document.getElementById('datoUnicoFile');
-    const datoUnicoFileName = document.getElementById('datoUnicoFileName');
-    if (datoUnicoInput && datoUnicoFileName && !datoUnicoInput.dataset.bound) {
-      datoUnicoInput.dataset.bound = '1';
-      datoUnicoInput.addEventListener('change', () => {
-        datoUnicoFileName.textContent = datoUnicoInput.files?.[0]?.name || 'Ningún archivo seleccionado';
-      });
-    }
-    if (importBtn && !importBtn.dataset.bound) {
-      importBtn.dataset.bound = '1';
-      importBtn.addEventListener('click', async () => {
-  if (importBtn.disabled) return;
-
-  try {
-    const input = document.getElementById('datoUnicoFile');
-    const f = input?.files?.[0];
-    if (!f) return alert('Selecciona el Excel primero');
-
-    // 🔒 bloquear botón
-    importBtn.disabled = true;
-    const originalText = importBtn.innerText;
-    importBtn.innerText = 'Importando...';
-
-    const fd = new FormData();
-    fd.append('file', f);
-
-    const resp3 = await fetch(`/api/projects/${id}/import-dato-unico`, {
-      method: 'POST',
-      body: fd,
-      headers: {
-        ...(typeof authHeaders === 'function' ? authHeaders() : {}),
-        ...(typeof tenantHeaders === 'function' ? tenantHeaders() : {}),
-      }
-    });
-
-    if (!resp3.ok) {
-      const txt = await resp3.text().catch(() => '');
-      console.error(txt);
-      let message = txt || 'Error importando Dato Único';
-      try { message = JSON.parse(txt)?.error || message; } catch {}
-      alert(message);
-      return;
-    }
-
-    const json = await resp3.json();
-
-    invalidateProjectDataCache(['unitsAll', 'ventas', 'portfolio', 'finance']);
-    importBtn.innerText = 'Actualizando unidades...';
-    await loadSummary();
-    await refreshTopHeaderKpis();
-    if (typeof window.loadUnits === 'function') await window.loadUnits();
-    if (input) input.value = '';
-    if (datoUnicoFileName) datoUnicoFileName.textContent = 'Ningún archivo seleccionado';
-
-    alert(`Importado: ${json.ventasUpserted} ventas / ${json.unitsUpserted} unidades`);
-
-  } catch (err) {
-    console.error(err);
-    alert(err.message || 'Error importando Dato Único');
-
-  } finally {
-  importBtn.disabled = false;
-  importBtn.innerText = 'Importar Dato Único';
-}
-});
-    }
-
     // Wire de subida Antes/Después
     wireBAUploads();
 
@@ -4581,25 +4546,7 @@ function bindDatoUnicoImportControls() {
         const fd = new FormData();
         fd.append('file', f);
 
-        const resp3 = await fetch(`/api/projects/${id}/import-dato-unico`, {
-          method: 'POST',
-          body: fd,
-          headers: {
-            ...(typeof authHeaders === 'function' ? authHeaders() : {}),
-            ...(typeof tenantHeaders === 'function' ? tenantHeaders() : {}),
-          }
-        });
-
-        if (!resp3.ok) {
-          const txt = await resp3.text().catch(() => '');
-          console.error(txt);
-          let message = txt || 'Error importando Dato Unico';
-          try { message = JSON.parse(txt)?.error || message; } catch {}
-          alert(message);
-          return;
-        }
-
-        const json = await resp3.json();
+        const json = await API.upload(`/api/projects/${id}/import-dato-unico`, fd);
         invalidateProjectDataCache(['unitsAll', 'ventas', 'portfolio', 'finance']);
         importBtn.innerText = 'Actualizando unidades...';
         await loadSummary();
@@ -4834,12 +4781,12 @@ const state = {
 };
 
   // ====== Utilidades ======
-  const PIN = '2580';
   function askPinOrAbort(msg = 'Introduce PIN numérico (4 dígitos):') {
     const v = prompt(msg || '');
-    if (v === null) return false;
-    if (v.trim() !== PIN) { alert('PIN incorrecto'); return false; }
-    return true;
+    if (v === null) return null;
+    const pin = v.trim();
+    if (!pin) { alert('Debes introducir el PIN.'); return null; }
+    return pin;
   }
   function fmtDate(d) { if (!d) return '—'; const x = new Date(d); return isNaN(x) ? '—' : x.toISOString().slice(0,10); }
   function phaseMeta(phaseKey) { return PHASES.find(p=>p.key===phaseKey) || {color:'#e5e7eb', pale:'#f3f4f6', name:phaseKey}; }
@@ -5100,7 +5047,7 @@ function isChecklistActive(cl) {
 
   function renderProjectCover(project = state.project || {}) {
     if (!projectCoverBtn) return;
-    const canEditCover = myRole === 'admin';
+    const canEditCover = PROJECT_MEDIA_EDIT_ROLES.includes(myRole);
     projectCoverBtn.style.display = canEditCover ? '' : 'none';
     if (!canEditCover) return;
 
@@ -5120,7 +5067,7 @@ function isChecklistActive(cl) {
   }
 
   async function saveProjectCover(coverImage) {
-    if (isProjectCoverSaving || myRole !== 'admin') return;
+    if (isProjectCoverSaving || !PROJECT_MEDIA_EDIT_ROLES.includes(myRole)) return;
     setProjectCoverBusy(true);
     try {
       await API.put(`/api/projects/${id}`, { coverImage });
@@ -5219,7 +5166,7 @@ function isChecklistActive(cl) {
   });
 
   async function saveProjectSettingsAuto() {
-    if (myRole === 'bank') return;
+    if (!FULL_EDIT_ROLES.includes(myRole)) return;
     if (isProjectSettingsSaving) return;
     isProjectSettingsSaving = true;
     const previousCurrency = currentProjectCurrency;
@@ -5316,20 +5263,29 @@ function isChecklistActive(cl) {
     window.__BANK73_UNIFIED_REFRESH?.();
   };
 
+  let projectTimelineRefreshPromise = null;
   window.refreshProjectTimelineData = async () => {
-    const [units, sales, unitProgress, workPackages] = await Promise.all([
-      getProjectUnitsAll({ force:true }).catch(() => state.operational.units),
-      getProjectVentas({ force:true }).catch(() => [...state.operational.sales.values()]),
-      getProjectUnitChecklistProgress({ force:true }).catch(() => ({ progress:[...state.operational.unitProgress.values()] })),
-      getProjectWorkPackages({ force:true }).catch(() => ({ packages:state.operational.workPackages }))
-    ]);
-    state.operational.units = Array.isArray(units) ? units : [];
-    state.operational.sales = new Map((Array.isArray(sales) ? sales : []).map(sale => [String(sale.unitId), sale]));
-    state.operational.unitProgress = new Map((unitProgress?.progress || []).map(row => [`${String(row.checklistId)}:${String(row.unitId)}`, row]));
-    state.operational.workPackages = Array.isArray(workPackages?.packages) ? workPackages.packages : [];
-    buildOperationalTimelineAlerts();
-    renderProyecto();
-    window.__BANK73_UNIFIED_REFRESH?.();
+    if (projectTimelineRefreshPromise) return projectTimelineRefreshPromise;
+    projectTimelineRefreshPromise = (async () => {
+      const [units, sales, unitProgress, workPackages] = await Promise.all([
+        getProjectUnitsAll({ force:true }).catch(() => state.operational.units),
+        getProjectVentas({ force:true }).catch(() => [...state.operational.sales.values()]),
+        getProjectUnitChecklistProgress({ force:true }).catch(() => ({ progress:[...state.operational.unitProgress.values()] })),
+        getProjectWorkPackages({ force:true }).catch(() => ({ packages:state.operational.workPackages }))
+      ]);
+      state.operational.units = Array.isArray(units) ? units : [];
+      state.operational.sales = new Map((Array.isArray(sales) ? sales : []).map(sale => [String(sale.unitId), sale]));
+      state.operational.unitProgress = new Map((unitProgress?.progress || []).map(row => [`${String(row.checklistId)}:${String(row.unitId)}`, row]));
+      state.operational.workPackages = Array.isArray(workPackages?.packages) ? workPackages.packages : [];
+      buildOperationalTimelineAlerts();
+      renderProyecto();
+      window.__BANK73_UNIFIED_REFRESH?.();
+    })();
+    try {
+      return await projectTimelineRefreshPromise;
+    } finally {
+      projectTimelineRefreshPromise = null;
+    }
   };
 
   function normalizeChecklist(c) {
@@ -5764,7 +5720,8 @@ return {
    }).join('');
 
    rolesList.querySelectorAll('.role-row').forEach(el=>{
-   el.onclick = () => {
+   el.onclick = event => {
+    if (event.target.closest('.role-task-popover')) return;
     if (isPartialProyectoRole()) return;
     state.filterRole = el.dataset.role;
     renderProyecto();
@@ -5945,8 +5902,9 @@ return {
   document.querySelectorAll('.js-delete-work-package').forEach(button => {
     button.onclick = async event => {
       event.stopPropagation();
-      if (!askPinOrAbort('Para eliminar este paquete, introduce el PIN:')) return;
-      await API.del(`/api/work-packages/${button.dataset.package}?pin=${encodeURIComponent(PIN)}`);
+      const pin = askPinOrAbort('Para eliminar este paquete, introduce el PIN:');
+      if (pin === null) return;
+      await API.del(`/api/work-packages/${button.dataset.package}?pin=${encodeURIComponent(pin)}`);
       await refreshWorkPackages();
     };
   });
@@ -6040,7 +5998,7 @@ return {
         alert('Este checklist está bloqueado hasta validar los anteriores de la fase (o desbloquéalo manualmente tocando la tarjeta).');
         return;
       }
-      const canValidate = (myRole === 'admin' || myRole === 'gerencia');
+      const canValidate = FULL_EDIT_ROLES.includes(myRole);
       if (!canValidate) return alert('Solo Banco/Admin/Gerencia pueden validar.');
       await API.post(`/api/checklists/${idCL}/validate`, { validated: true })
         .catch(() => API.put(`/api/checklists/${idCL}`, { validated: true }));
@@ -6068,8 +6026,9 @@ return {
         alert('Checklist bloqueado: valida los anteriores o desbloquéalo manualmente tocando la tarjeta.');
         return;
       }
-      if (!askPinOrAbort('Para eliminar este checklist, introduce el PIN:')) return;
-      await API.del(`/api/checklists/${idCL}`).catch(() => API.post(`/api/checklists/${idCL}/delete`, {}));
+      const pin = askPinOrAbort('Para eliminar este checklist, introduce el PIN:');
+      if (pin === null) return;
+      await API.del(`/api/checklists/${idCL}?pin=${encodeURIComponent(pin)}`);
       await reloadProyecto();
     };
   });
@@ -7441,8 +7400,8 @@ function financeDisbursementWorkflowCell(entry = {}, saved = false) {
   const promoterOnlyDone = entry.fundingParty === 'promoter' && entry.promoterContributionStatus === 'contributed';
   const requestedDate = financeDateInput(entry.requestedAt);
   const disbursedDate = financeDateInput(entry.disbursementDate || entry.disbursedAt);
-  const canRequest = ['admin', 'promoter'].includes(myRole);
-  const canConfirm = ['admin', 'promoter'].includes(myRole) || (myRole === 'bank' && status === 'requested');
+  const canRequest = FULL_EDIT_ROLES.includes(myRole);
+  const canConfirm = FULL_EDIT_ROLES.includes(myRole);
   const requestDocument = entry.requestDocumentId ? `<button class="finance-report-link" type="button" data-open-request-document="${escapeHtml(entry.requestDocumentId)}">Ver carta</button>` : '';
   const statusHtml = promoterOnlyDone
     ? `<span class="finance-status is-ok">Desembolsado por promotor</span><small>Confirmado por ${escapeHtml(financeActorRoleLabel(entry.promoterContributedByRole || 'promoter'))}</small>`
@@ -7596,8 +7555,8 @@ async function deleteFinanceDisbursementEntry(button) {
   const lineId = card?.dataset.id || '';
   const entryId = row?.dataset.entryId || '';
 
-  if (!['admin', 'promoter', 'bank'].includes(myRole)) {
-    alert('Solo Promotor, Admin o Banco pueden eliminar una partida de desembolso.');
+  if (!FULL_EDIT_ROLES.includes(myRole)) {
+    alert('No tienes permiso para eliminar una partida de desembolso.');
     return;
   }
 
@@ -7853,7 +7812,7 @@ function renderFinanceLoanLines(lines = []) {
                     <td>${isDisbursement ? `<select data-field="inspectionId" ${workflowLocked || (entry.inspectionId && savedEntry) || (FINANCE_AVALUATION_CONTEXT.hasAssignedAvaluator && !(FINANCE_AVALUATION_CONTEXT.reports || []).length) ? 'disabled' : ''}>${financeInspectionOptions(entry.inspectionId, usedReportIds)}</select>${report ? `<button class="finance-report-link" type="button" data-open-inspection="${escapeHtml(report.id)}">Ver PDF</button>` : ''}` : '<span class="small muted">—</span>'}</td>
                     <td>${isDisbursement ? financeDisbursementWorkflowCell(entry, savedEntry) : `<span class="finance-status is-${entryStatus.key}">${isManualAmortization ? 'Manual' : isInterestPayment ? 'Pagado' : entryStatus.label}</span>`}</td>
                     <td><input data-field="notes" value="${escapeHtml(entry.notes || '')}" ${workflowLocked ? 'disabled' : ''}></td>
-                    <td>${['admin', 'promoter', 'bank'].includes(myRole) ? `<button class="btn btn-danger btn-xs" type="button" data-finance-remove-entry>${workflowLocked ? 'Eliminar' : 'Quitar'}</button>` : '<span class="small muted">Bloqueado</span>'}</td>
+                    <td>${FULL_EDIT_ROLES.includes(myRole) ? `<button class="btn btn-danger btn-xs" type="button" data-finance-remove-entry>${workflowLocked ? 'Eliminar' : 'Quitar'}</button>` : '<span class="small muted">Bloqueado</span>'}</td>
                   </tr>
                 `;
               }).join('')}
@@ -8375,6 +8334,7 @@ function getPhaseStatus(ph, { deviationPct = 0.10 } = {}) {
 // -------------------------
 async function loadFinance({ force = true } = {}) {
   try {
+    await ensureChartLibrary();
     const res = await getProjectFinanceSnapshot({ force });
     FINANCE = res.finance;
     FINANCE_KPIS = res.kpis;
@@ -8392,7 +8352,7 @@ async function loadFinance({ force = true } = {}) {
     // ================================
     // ✅ Bind botones PLAN / REAL (solo 1 vez)
     // ================================
-    const canEditFinanceStructure = ['admin', 'bank', 'financiero', 'gerencia', 'socios'].includes(myRole);
+    const canEditFinanceStructure = FULL_EDIT_ROLES.includes(myRole);
     const planBtn = document.getElementById('addPhasePlanBtn');
     if (planBtn) planBtn.hidden = !canEditFinanceStructure;
     if (planBtn && !planBtn.dataset.bound) {
@@ -8755,7 +8715,7 @@ async function importFinancePhaseExcel(file) {
   const button = document.getElementById('financeImportPhaseXlsx');
   if (!FINANCE_SELECTED_PHASE_ID) return alert('Selecciona una fase antes de importar.');
   if (!/\.xlsx$/i.test(file?.name || '')) return alert('Selecciona un archivo Excel .xlsx exportado por Bank73.');
-  if (!confirm(`La importación sustituirá todas las líneas y movimientos actuales de “${FINANCE_SELECTED_PHASE_NAME || 'esta fase'}” por los datos del Excel. Los abonos de clientes se añadirán sin duplicar los ya existentes. ¿Continuar?`)) return;
+  if (!confirm(`La importación sustituirá todas las líneas y movimientos actuales de “${FINANCE_SELECTED_PHASE_NAME || 'esta fase'}” por los datos del Excel. Los abonos de clientes y las ventas caídas se añadirán o actualizarán sin borrar históricos ausentes. ¿Continuar?`)) return;
 
   const originalLabel = button?.textContent || 'Importar Excel';
   try {
@@ -8792,7 +8752,7 @@ async function importFinancePhaseExcel(file) {
     }
     await markProjectDataChanged({ refreshHeader: false });
     const resolvedUnits = Number(result.resolvedAmbiguousUnits || 0);
-    alert(`Importación completada.\nResumen global: ${result.importedPhaseSummary ? 'actualizado' : 'sin hoja Usos y fuentes'}\nLíneas nuevas: ${result.createdLines || 0}\nLíneas sustituidas: ${result.updatedLines || 0}\nMovimientos importados: ${result.importedMovements || 0}\nAmortizaciones por venta vinculadas: ${result.importedSaleAmortizations || 0}\nAbonos de clientes importados: ${result.importedCustomerPayments || 0}\nAbonos ya existentes omitidos: ${result.skippedCustomerPayments || 0}\nAbonos omitidos por fecha no válida: ${result.skippedInvalidCustomerPayments || 0}\nMovimientos anteriores sustituidos: ${result.replacedMovements || 0}${resolvedUnits ? `\nUnidades duplicadas resueltas: ${resolvedUnits}` : ''}${Array.isArray(result.warnings) && result.warnings.length ? `\n\nAvisos:\n${result.warnings.slice(0, 8).join('\n')}` : ''}`);
+    alert(`Importación completada.\nResumen global: ${result.importedPhaseSummary ? 'actualizado' : 'sin hoja Usos y fuentes'}\nLíneas nuevas: ${result.createdLines || 0}\nLíneas sustituidas: ${result.updatedLines || 0}\nMovimientos importados: ${result.importedMovements || 0}\nAmortizaciones por venta vinculadas: ${result.importedSaleAmortizations || 0}\nAbonos de clientes importados: ${result.importedCustomerPayments || 0}\nAbonos ya existentes omitidos: ${result.skippedCustomerPayments || 0}\nAbonos omitidos por fecha no válida: ${result.skippedInvalidCustomerPayments || 0}\nVentas caídas nuevas: ${result.createdFallenSales || 0}\nVentas caídas actualizadas: ${result.updatedFallenSales || 0}\nVentas caídas omitidas: ${result.skippedFallenSales || 0}\nMovimientos anteriores sustituidos: ${result.replacedMovements || 0}${resolvedUnits ? `\nUnidades duplicadas resueltas: ${resolvedUnits}` : ''}${Array.isArray(result.warnings) && result.warnings.length ? `\n\nAvisos:\n${result.warnings.slice(0, 8).join('\n')}` : ''}`);
   } catch (error) {
     console.error('[Finance] error importando Excel', error);
     alert(error.message || 'No se pudo importar el Excel.');
@@ -9989,12 +9949,7 @@ async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = '
   modal.querySelectorAll('[data-finance-phase-tab="lines"], [data-finance-phase-tab="charts"]').forEach(button => {
     button.hidden = !isRealContext;
   });
-  const authUserId = String(API.getAuth()?.userId || '');
-  const canImportPhase = ['admin', 'financiero', 'gerencia', 'socios'].includes(myRole)
-    || (['bank', 'promoter'].includes(myRole)
-      && authUserId
-      && String(FINANCE_PROJECT?.createdBy || '') === authUserId
-      && String(FINANCE_PROJECT?.publishStatus || '') === 'pending');
+  const canImportPhase = FULL_EDIT_ROLES.includes(myRole);
   const importExcelButton = document.getElementById('financeImportPhaseXlsx');
   if (importExcelButton) importExcelButton.hidden = !isRealContext || !canImportPhase;
   const guide = modal.querySelector('.finance-phase-guide');
@@ -10025,14 +9980,14 @@ async function openFinancePhaseLines(phase, initialView = 'plan', initialTab = '
   renderFinanceLoanLines(lines);
   renderFinanceUnitAmortizations();
   await setFinancePhaseModalTab(isRealContext ? initialTab : 'overview');
-  const canEditPhase = ['admin', 'financiero', 'gerencia', 'socios'].includes(myRole);
+  const canEditPhase = FULL_EDIT_ROLES.includes(myRole);
   if (!canEditPhase) {
     modal.querySelectorAll('input, select, textarea').forEach(control => { control.disabled = true; });
     modal.querySelectorAll('[data-save-phase-overview], [data-copy-plan-to-real], #financeAddLoanLineBtn, [data-finance-add-entry], [data-finance-save-line], [data-finance-remove-line], [data-finance-manual-line], [data-remove-budget-row], [data-add-budget-row]').forEach(control => { control.hidden = true; });
     const importExcelInput = document.getElementById('financeImportPhaseXlsxFile');
     if (importExcelInput) importExcelInput.disabled = !canImportPhase;
     if (importExcelButton) importExcelButton.hidden = !isRealContext || !canImportPhase;
-    if (!['admin', 'promoter', 'bank'].includes(myRole)) {
+    if (!FULL_EDIT_ROLES.includes(myRole)) {
       modal.querySelectorAll('[data-finance-remove-entry]').forEach(control => { control.hidden = true; });
     }
   }
@@ -10152,7 +10107,7 @@ function renderUnifiedFinancePhases(phases = []) {
 }
 
 function renderPhases(phases = []) {
-  const canEditFinanceStructure = ['admin', 'bank', 'financiero', 'gerencia', 'socios'].includes(myRole);
+  const canEditFinanceStructure = FULL_EDIT_ROLES.includes(myRole);
   const wrapPlan = document.getElementById('phasesPlanList');
   const wrapReal = document.getElementById('phasesRealList');
 
@@ -10701,7 +10656,7 @@ function ensureFinanceRequirementsModal() {
       <div class="requirements-modal-header-actions"><button class="btn btn-ghost requirements-modal-icon" type="button" data-toggle-finance-requirements-fullscreen aria-label="Pantalla completa" title="Pantalla completa">⛶</button><button class="btn btn-ghost" type="button" data-close-finance-requirements>✕ Cerrar</button></div>
     </header>
     <div class="requirements-copy-toolbar" data-finance-requirements-copy><label>Reutilizar información de <select class="input" data-finance-requirements-source></select></label><button class="btn btn-ghost btn-xs" type="button" data-copy-finance-requirements>Copiar información</button></div>
-    ${['admin','bank'].includes(myRole) ? `<div class="requirements-manage-toolbar"><button class="btn btn-ghost btn-xs" type="button" data-add-finance-requirement>+ Añadir requisito</button><span>La lista solo puede modificarla el banco o el superadmin.</span></div>
+    ${FULL_EDIT_ROLES.includes(myRole) ? `<div class="requirements-manage-toolbar"><button class="btn btn-ghost btn-xs" type="button" data-add-finance-requirement>+ Añadir requisito</button><span>Gestiona la lista de requisitos de esta fase.</span></div>
     <form class="requirement-definition-editor" data-finance-requirement-editor hidden>
       <input type="hidden" data-editor-id>
       <label><span>Nombre del requisito</span><input class="input" data-editor-title maxlength="500" required></label>
@@ -10758,9 +10713,9 @@ function financeRequirementDocsHtml(requirement) {
 }
 
 async function openFinanceRequirements(phase, mode = 'plan', options = {}) {
-  const editable = mode === 'real' && ['admin', 'promoter', 'financiero', 'contable', 'gerencia', 'socios'].includes(myRole);
-  const canUpdateCompletion = true;
-  const canManageDefinitions = ['admin', 'bank'].includes(myRole);
+  const editable = mode === 'real' && FULL_EDIT_ROLES.includes(myRole);
+  const canUpdateCompletion = FULL_EDIT_ROLES.includes(myRole);
+  const canManageDefinitions = FULL_EDIT_ROLES.includes(myRole);
   const modal = ensureFinanceRequirementsModal();
   const embedded = options?.embedded === true || !!modal.closest('.unified-stage-content');
   setFinanceRequirementsFullscreen(modal, false);
@@ -11346,7 +11301,7 @@ function collectPhaseFinancingLinesFromModal() {
 }
 
 function openPhaseEditor(ph = null, focus = 'plan') {
-  if (!['admin', 'bank', 'financiero', 'gerencia', 'socios'].includes(myRole)) {
+  if (!FULL_EDIT_ROLES.includes(myRole)) {
     alert('No tienes permiso para editar las fases financieras.');
     return;
   }
@@ -11876,7 +11831,7 @@ async function apiPatch(url, body) {
 }
 
 async function apiDelete(url, body) {
-  if (API?.delete) return API.delete(url, body);
+  if (API?.del) return API.del(url, { body: JSON.stringify(body || {}) });
   const res = await fetch(url, { method: 'DELETE', headers: mergedHeaders(), body: JSON.stringify(body || {}) });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return parseJson(res);
@@ -12816,7 +12771,7 @@ function refreshTechnicalUnitProgressUi(panel, progressState) {
 function renderTechnicalUnitProgress(panel, progressState) {
   const body = panel.querySelector('#technicalUnitProgressBody');
   if (!body) return;
-  const canEdit = ['admin', 'bank', 'promoter', 'tecnico', 'gerencia'].includes(String(myRole || '').toLowerCase());
+  const canEdit = FULL_EDIT_ROLES.includes(String(myRole || '').toLowerCase()) || myRole === 'tecnico';
   const templateLabel = progressState.templateKind === 'vertical' ? 'Proyecto vertical' : 'Proyecto horizontal';
   body.innerHTML = `
     <div class="technical-unit-progress-intro">
@@ -13527,6 +13482,7 @@ function applyOpenFichaStateVisual(unitState = {}) {
   let latestFinanceExpiryAlerts = [];
   let resolvedExpiryAlertKeys = new Set();
   let fallenSalesCache = [];
+  let fallenSalesStageUnitIds = null;
 
   function pill(txt){ return `<span class="tag">${txt||'-'}</span>`; }
 
@@ -13920,7 +13876,7 @@ function applyOpenFichaStateVisual(unitState = {}) {
   }
 
   function canManageFallenSales() {
-    return !['bank', 'tecnico', 'legal'].includes(myRole) &&
+    return !['bank', 'tecnico'].includes(myRole) &&
       !(myRole === 'commercial' && !!window.__COMMERCIAL_LOCKED);
   }
 
@@ -13987,14 +13943,19 @@ function applyOpenFichaStateVisual(unitState = {}) {
   function populateFallenSalesUnits(units = []) {
     const select = document.getElementById('fallenSaleUnit');
     if (!select) return;
-    select.innerHTML = `<option value="">Sin unidad asociada</option>${units.map(unit =>
+    select.innerHTML = `<option value="">${fallenSalesStageUnitIds ? 'Selecciona una unidad de la fase' : 'Sin unidad asociada'}</option>${units.map(unit =>
       `<option value="${escapeHtml(String(unit._id))}">${escapeHtml(unitDisplayName(unit))}</option>`
     ).join('')}`;
   }
 
-  async function openFallenSales() {
+  async function openFallenSales(stageId = '', { embedded = false } = {}) {
     if (!fallenSalesModal) return;
-    fallenSalesModal.style.display = 'flex';
+    const stage = String(stageId || '') ? foldersCache.find(folder => String(folder._id || '') === String(stageId)) : null;
+    const title = fallenSalesModal.querySelector('.modal-head b');
+    const formHint = document.querySelector('.fallen-sales-form-head span');
+    if (title) title.textContent = stage ? `Ventas caídas · ${stage.name || 'Fase'}` : 'Ventas caídas';
+    if (formHint) formHint.textContent = stage ? 'Selecciona una unidad de esta fase.' : 'La unidad es opcional.';
+    fallenSalesModal.style.display = embedded ? 'none' : 'flex';
     fallenSalesForm.hidden = true;
     if (fallenSalesAddToggle) fallenSalesAddToggle.hidden = !canManageFallenSales();
     const date = document.getElementById('fallenSaleDate');
@@ -14006,8 +13967,16 @@ function applyOpenFichaStateVisual(unitState = {}) {
         apiGet(`/api/ventas/fallen?projectId=${encodeURIComponent(id)}`),
         apiGet(`/api/units?projectId=${encodeURIComponent(id)}`)
       ]);
-      fallenSalesCache = Array.isArray(items) ? items : [];
-      populateFallenSalesUnits(Array.isArray(allUnits) ? allUnits : []);
+      const scopedUnits = String(stageId || '')
+        ? (Array.isArray(allUnits) ? allUnits : []).filter(unit => String(unit.folderId || '') === String(stageId))
+        : (Array.isArray(allUnits) ? allUnits : []);
+      fallenSalesStageUnitIds = String(stageId || '')
+        ? new Set(scopedUnits.map(unit => String(unit._id || '')))
+        : null;
+      fallenSalesCache = (Array.isArray(items) ? items : []).filter(item => (
+        !fallenSalesStageUnitIds || fallenSalesStageUnitIds.has(String(item.unitId || ''))
+      ));
+      populateFallenSalesUnits(scopedUnits);
       renderFallenSalesRows();
       if (status) status.textContent = `${fallenSalesCache.length} desistimiento${fallenSalesCache.length === 1 ? '' : 's'} registrado${fallenSalesCache.length === 1 ? '' : 's'}.`;
     } catch (error) {
@@ -14044,6 +14013,10 @@ function applyOpenFichaStateVisual(unitState = {}) {
       motivoCaida: document.getElementById('fallenSaleReason')?.value,
       observaciones: document.getElementById('fallenSaleNotes')?.value
     };
+    if (fallenSalesStageUnitIds && !body.unitId) {
+      alert('Selecciona una unidad de esta fase para registrar la venta caída.');
+      return;
+    }
     saveButton.disabled = true;
     if (status) status.textContent = 'Guardando desistimiento…';
     try {
@@ -14333,7 +14306,7 @@ function openNoFinanceAlertsPopup() {
 
 function showCppExpiryPopup(alerts = [], { force = false } = {}) {
   latestFinanceExpiryAlerts = Array.isArray(alerts) ? alerts : [];
-  const canResolveExpiryAlerts = ['admin', 'promoter', 'gerencia', 'socios', 'financiero', 'contable', 'commercial'].includes(myRole);
+  const canResolveExpiryAlerts = FULL_EDIT_ROLES.includes(myRole) || myRole === 'commercial';
   updateProjectAlertsButton(latestFinanceExpiryAlerts);
   if (!latestFinanceExpiryAlerts.length) {
     if (force) openNoFinanceAlertsPopup();
@@ -15187,9 +15160,7 @@ function wireUnitCards() {
 
 function wireCommercialFolders() {
   const createFolderButton = document.getElementById('btnCrearCarpetaComercial');
-  const fallenSalesButton = document.getElementById('btnVentasCaidasComercial');
   if (createFolderButton) createFolderButton.onclick = crearCarpetaComercial;
-  if (fallenSalesButton) fallenSalesButton.onclick = openFallenSales;
 
   grid.querySelectorAll('.commercial-folder').forEach(folderEl => {
     folderEl.addEventListener('dragover', ev => {
@@ -15758,7 +15729,7 @@ function scheduleFichaAutosave(delay = 1400) {
   const rawV = ventasMap.get(String(unitId)) || {};
   const v = Object.assign(Object.create(null), rawV);
   if (fichaDesistirCliente) {
-    const canDesist = ['admin', 'promoter', 'gerencia', 'socios', 'financiero', 'contable', 'commercial'].includes(myRole);
+    const canDesist = FULL_EDIT_ROLES.includes(myRole) || myRole === 'commercial';
     const hasClientData = [
       v.clienteNombre, v.primerNombre, v.segundoNombre, v.primerApellido, v.segundoApellido,
       v.cliente2PrimerNombre, v.cliente2SegundoNombre, v.cliente2PrimerApellido, v.cliente2SegundoApellido,
@@ -16242,6 +16213,18 @@ const viewExports = document.createElement('div');
   viewExports.id = 'view-exports';
 
   viewFicha.innerHTML = fichaHTML;
+  const observerMode = isProjectObserverRole();
+  if (observerMode) {
+    viewFicha.querySelectorAll('input, select, textarea').forEach(control => {
+      if (control.matches('input[type="search"]')) return;
+      control.disabled = true;
+      if ('readOnly' in control) control.readOnly = true;
+    });
+    if (fichaGuardar) fichaGuardar.hidden = true;
+    if (fichaDesistirCliente) fichaDesistirCliente.hidden = true;
+  } else if (fichaGuardar) {
+    fichaGuardar.hidden = false;
+  }
   viewDocs.innerHTML = docsHTML;
   viewExports.innerHTML = exportsHTML;
 
@@ -17515,6 +17498,10 @@ if (btnExportarExcel) {
   }
   window.openSharedCreateUnits = openSharedCreateUnits;
   window.openSharedModelsManager = openSharedModelsManager;
+  window.__BANK73_FALLEN_SALES_WORKSPACE = {
+    open: openFallenSales,
+    closeForm: closeFallenSalesForm
+  };
   if (btnCrear) btnCrear.addEventListener('click', () => openSharedCreateUnits('commercial'));
   if (btnCrearModelo) btnCrearModelo.addEventListener('click', () => openSharedModelsManager('commercial'));
   if (modalCrearCerrar) modalCrearCerrar.addEventListener('click', () => modalCrear.style.display='none');
@@ -17680,7 +17667,7 @@ function technicalKpi(label, value, detail, tone = '') {
 }
 
 function technicalCommonAreaCanEdit() {
-  return ['admin', 'bank', 'promoter', 'tecnico', 'gerencia'].includes(String(myRole || '').toLowerCase());
+  return FULL_EDIT_ROLES.includes(String(myRole || '').toLowerCase()) || myRole === 'tecnico';
 }
 
 function technicalCommonAreaAverage(area = {}) {
@@ -19540,7 +19527,7 @@ document.addEventListener('click', async (ev) => {
     if (!docId) return;
     const fromCommercialDossierModal = !!delBtn.closest('.commercial-dossier-row');
 
-    const pin = prompt('Introduce el PIN para eliminar (configurable en .env como DELETE_DOCS_PIN):', '');
+    const pin = prompt('Introduce el PIN compartido de eliminación:', '');
     if (pin === null) return;
 
     try {
@@ -19835,10 +19822,11 @@ function unifiedPhaseTotal(items = []) {
 
 function unifiedWorkspaceSnapshot() {
   const role = String(myRole || '').toLowerCase();
-  const canViewFinance = FULL_ACCESS_ROLES.includes(role) && role !== 'avaluador';
-  const canViewCommercial = canViewFinance || role === 'commercial';
-  const canViewTechnical = canViewFinance || role === 'tecnico' || role === 'bank' || role === 'admin';
-  const canViewSummary = FULL_ACCESS_ROLES.includes(role) && role !== 'avaluador';
+  const canViewAllProjectAreas = !['commercial', 'tecnico'].includes(role);
+  const canViewFinance = canViewAllProjectAreas;
+  const canViewCommercial = canViewAllProjectAreas || role === 'commercial';
+  const canViewTechnical = canViewAllProjectAreas || role === 'tecnico';
+  const canViewSummary = canViewAllProjectAreas;
   const financePhases = Array.isArray(FINANCE?.phases) ? FINANCE.phases : [];
   const commercialData = window.__BANK73_COMMERCIAL_WORKSPACE_DATA?.() || {};
   const folderList = Array.isArray(commercialData.folders) ? commercialData.folders : [];
@@ -19964,12 +19952,12 @@ function unifiedWorkspaceSnapshot() {
       commercial: canViewCommercial,
       finance: canViewFinance,
       technical: canViewTechnical,
-      projectSettings: role === 'admin',
+      projectSettings: FULL_EDIT_ROLES.includes(role),
       unitsWorkspace: canViewFinance || role === 'commercial' || role === 'tecnico',
       documents: true,
-      chat: role !== 'legal',
+      chat: true,
       avaluators: role === 'bank',
-      providers: providersModuleEnabled && !['tecnico', 'legal'].includes(role)
+      providers: providersModuleEnabled && role !== 'tecnico'
     },
     overview: {
       commercial: { value: sold, total: units.length, label: 'unidades comprometidas' },
@@ -20054,6 +20042,16 @@ function restoreStageIntegrationNode(handle) {
   const reference = handle.marker?.parentNode === handle.home ? handle.marker.nextSibling : null;
   handle.home.insertBefore(handle.node, reference);
   handle.marker?.remove();
+}
+
+async function mountUnifiedStageFallenSales(stageId, host) {
+  if (!host) throw new Error('No se encontró el espacio para ventas caídas.');
+  const body = document.querySelector('#fallenSalesModal .fallen-sales-body');
+  const handle = stageIntegrationHandle('commercial-fallen-sales', body);
+  if (!handle) throw new Error('No se pudo preparar el histórico de ventas caídas.');
+  host.replaceChildren(body);
+  await window.__BANK73_FALLEN_SALES_WORKSPACE?.open?.(String(stageId || ''), { embedded: true });
+  return handle;
 }
 
 async function mountUnifiedStageSection(type, stageId, host) {
@@ -20165,6 +20163,7 @@ async function unmountUnifiedStageSection(handle) {
     renderTechnicalUnits();
     handle.node.style.display = 'none';
   }
+  if (handle.type === 'commercial-fallen-sales') window.__BANK73_FALLEN_SALES_WORKSPACE?.closeForm?.();
 }
 
 function exposeUnifiedWorkspace() {
@@ -20174,6 +20173,7 @@ function exposeUnifiedWorkspace() {
     prepareUnitsMode: prepareUnifiedUnitsMode,
     selectLifecyclePhase: selectUnifiedLifecyclePhase,
     mountStageSection: mountUnifiedStageSection,
+    mountStageFallenSales: mountUnifiedStageFallenSales,
     unmountStageSection: unmountUnifiedStageSection,
     openStageFinance(stageId) {
       const phase = (FINANCE?.phases || []).find(item => String(item.stageId || '') === String(stageId || ''));
@@ -20191,11 +20191,24 @@ function exposeUnifiedWorkspace() {
   };
 }
 
+function scheduleInitialOperationalDataLoad(task) {
+  const run = () => Promise.resolve()
+    .then(task)
+    .catch(error => console.warn('No se pudieron completar los datos operativos iniciales.', error));
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(run, { timeout: 500 });
+  } else {
+    window.setTimeout(run, 0);
+  }
+}
+
+let deferredInitialOperationalLoad = null;
+
  // ====== Init ======
 try {
 applyRoleVisibility();
 await syncProvidersModuleVisibility();
-if (!['tecnico','legal'].includes(myRole)) await loadCommercialTemplateStatus();
+if (myRole !== 'tecnico') await loadCommercialTemplateStatus();
 
 if (myRole === 'tecnico') {
   await loadProject();
@@ -20207,9 +20220,13 @@ if (myRole === 'tecnico') {
   renderProyecto();
 } else if (myRole === 'legal') {
   await loadProject();
-  // Legal conserva su vista de checklists y documentos.
-  await loadProyectoData();   // /api/projects/:id/checklists  ✅ permitido
+  await Promise.all([loadSummary(), loadUnits()]);
   renderProyecto();
+  deferredInitialOperationalLoad = async () => {
+    await loadProyectoData();
+    renderProyecto();
+    window.__BANK73_UNIFIED_REFRESH?.();
+  };
   
 } else if (myRole === 'commercial') {
   await loadProject();
@@ -20224,16 +20241,23 @@ if (myRole === 'tecnico') {
   await loadProject();        // ✅
   await Promise.all([
     loadSummary(),
-    loadFinance({ force: false }), // ✅ reutiliza snapshot de resumen si ya existe
-    loadUnits(),
-    loadProyectoData()
+    loadUnits()
   ]);
   renderProyecto();
+  deferredInitialOperationalLoad = async () => {
+    await loadProyectoData();
+    renderProyecto();
+    window.__BANK73_UNIFIED_REFRESH?.();
+  };
 }
 exposeUnifiedWorkspace();
 await window.initializeUnifiedProjectWorkspace?.(window.BANK73_PROJECT_WORKSPACE);
 } finally {
   finishInitialProjectLoad();
+}
+
+if (deferredInitialOperationalLoad) {
+  scheduleInitialOperationalDataLoad(deferredInitialOperationalLoad);
 }
 
 // El chat queda fuera del camino crítico. Los mensajes se descargan al abrir

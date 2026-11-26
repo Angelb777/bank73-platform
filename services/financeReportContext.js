@@ -1,5 +1,7 @@
 'use strict';
 
+const { isSoldUnitStatus } = require('../utils/unitStatus');
+
 const toNum = value => {
   if (value === '' || value === null || value === undefined) return 0;
   const number = Number(String(value).replace(/[, ]/g, ''));
@@ -224,8 +226,7 @@ function buildFinanceControlSummary(doc = {}, project = {}) {
 }
 
 function isSoldLike(status) {
-  return ['reservado', 'con_cpp', 'tramite_legal_activado', 'escriturado_traspasado', 'vivienda_entregada']
-    .includes(String(status || '').toLowerCase());
+  return isSoldUnitStatus(status);
 }
 
 function buildFinanceControlAlerts(control, commercialUnits = [], now = new Date()) {

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { UNIT_STATUSES } = require('../utils/unitStatus');
 
 const UnitSchema = new mongoose.Schema({
   tenantKey: { type: String, index: true },
@@ -78,16 +79,7 @@ const UnitSchema = new mongoose.Schema({
 
   estado: {
     type: String,
-    enum: [
-      'disponible',
-      'inventario',
-      'reservado',
-      'con_cpp',
-      'tramite_legal_activado',
-      'escriturado_traspasado',
-      'vivienda_entregada',
-      'cancelado'
-    ],
+    enum: UNIT_STATUSES,
     default: 'disponible',
     index: true
   },

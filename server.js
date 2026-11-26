@@ -1,10 +1,12 @@
 // server.js
 require('dotenv').config();
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const mongoose = require('mongoose');
 const helmet = require('helmet');
 const cors = require('cors');
+const compression = require('compression');
 const morgan = require('morgan');
 const cron = require('node-cron');
 const jwt = require('jsonwebtoken');
@@ -15,6 +17,7 @@ const { requireActiveUser } = require('./middleware/auth');
 const errorMw = require('./middleware/error');
 const bankReadOnly = require('./middleware/bankReadOnly');
 const denyAvaluatorBackoffice = require('./middleware/avaluatorBackoffice');
+const { requireDeletePin } = require('./utils/deletePin');
 const audit = require('./utils/audit');
 
 // Rutas
@@ -81,6 +84,7 @@ app.use(cors({
     return cb(null, allowedOrigins.includes(origin));
   }
 }));
+app.use(compression({ threshold: 1024 }));
 if (!isProd) {
   app.use(morgan('dev'));
 }
@@ -155,9 +159,25 @@ app.use((req, res, next) => {
 /* =========================================================================
    Static
    ========================================================================= */
+const staticMaxAge = process.env.STATIC_MAX_AGE || '1h';
 const staticOptions = isProd
-  ? { etag: true, lastModified: true, maxAge: 0 }
+  ? { etag: true, lastModified: true, maxAge: staticMaxAge }
   : {};
+const builtAssetRoutes = {
+  '/js/project.js': 'project.min.js',
+  '/js/project-unified.js': 'project-unified.min.js',
+  '/css/theme.css': 'theme.min.css',
+  '/css/project-unified.css': 'project-unified.min.css'
+};
+if (isProd) {
+  Object.entries(builtAssetRoutes).forEach(([routePath, filename]) => {
+    const builtPath = path.join(__dirname, 'public', 'dist', filename);
+    app.get(routePath, (req, res, next) => {
+      if (!fs.existsSync(builtPath)) return next();
+      res.sendFile(builtPath);
+    });
+  });
+}
 app.use('/assets', express.static(path.join(__dirname, 'assets'), staticOptions));
 app.use(express.static(path.join(__dirname, 'public'), staticOptions));
 
@@ -232,7 +252,7 @@ app.use('/api/mobile/v1', authMw, requireActiveUser, mobileAvaluatorRoutes);
 /* =========================================================================
    Rutas protegidas
    ========================================================================= */
-const guard = [authMw, requireActiveUser, denyAvaluatorBackoffice];
+const guard = [authMw, requireActiveUser, denyAvaluatorBackoffice, requireDeletePin];
 
 // ✅ 1) Projects primero
 app.use('/api/projects', ...guard, bankReadOnly, projectRoutes);

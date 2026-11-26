@@ -2,6 +2,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const { requireRole, requireProjectAccess } = require('../middleware/rbac');
+const { PROJECT_EDITOR_ROLES, PROJECT_MEDIA_EDITOR_ROLES } = require('../utils/roles');
 const ProjectPermit = require('../models/ProjectPermit'); 
 const PermitTemplate = require('../models/PermitTemplate');
 
@@ -2010,7 +2011,7 @@ router.get('/:id/technical-common-areas', requireProjectAccess(), async (req, re
 router.put('/:id/technical-common-areas', requireProjectAccess(), async (req, res) => {
   try {
     const role = String(req.user?.role || '').toLowerCase();
-    if (!['admin', 'bank', 'promoter', 'tecnico', 'gerencia'].includes(role)) {
+    if (![...PROJECT_EDITOR_ROLES, 'tecnico'].includes(role)) {
       return res.status(403).json({ error: 'No tienes permiso para actualizar las zonas comunes.' });
     }
     if (!Array.isArray(req.body?.commonAreas)) {
@@ -2075,7 +2076,7 @@ router.get('/:id/technical-unit-progress/:unitId', requireProjectAccess(), async
 router.put('/:id/technical-unit-progress/:unitId', requireProjectAccess(), async (req, res) => {
   try {
     const role = String(req.user?.role || '').toLowerCase();
-    if (!['admin', 'bank', 'promoter', 'tecnico', 'gerencia'].includes(role)) {
+    if (![...PROJECT_EDITOR_ROLES, 'tecnico'].includes(role)) {
       return res.status(403).json({ error: 'No tienes permiso para actualizar el avance de la unidad.' });
     }
     if (!Array.isArray(req.body?.activities)) return res.status(400).json({ error: 'activities debe ser una lista.' });
@@ -2254,7 +2255,7 @@ router.get('/:id/viewer-3d', requireProjectAccess({ commercialOnlySales: false }
 
 router.patch('/:id/viewer-3d/towers/:towerId', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   try {
-    const allowedRoles = new Set(['admin', 'bank', 'promoter', 'gerencia', 'tecnico']);
+    const allowedRoles = new Set([...PROJECT_EDITOR_ROLES, 'tecnico']);
     const role = String(req.user?.role || '').toLowerCase();
     if (!allowedRoles.has(role)) return res.status(403).json({ error: 'No puedes editar el modelo 3D' });
 
@@ -2318,7 +2319,7 @@ router.patch('/:id/viewer-3d/towers/:towerId', requireProjectAccess({ commercial
 router.post('/:id/expiry-alerts/resolve', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   try {
     const role = String(req.user?.role || '').toLowerCase();
-    if (!['admin', 'bank', 'promoter', 'gerencia', 'socios', 'financiero', 'contable', 'commercial'].includes(role)) {
+    if (![...PROJECT_EDITOR_ROLES, 'commercial'].includes(role)) {
       return res.status(403).json({ error: 'No tienes permisos para atender alertas.' });
     }
     const { id } = req.params;
@@ -2429,7 +2430,7 @@ router.get('/:id/checklists', requireProjectAccess({ commercialOnlySales: false 
     const myRole = String(req.user?.role || '').toLowerCase().trim();
 
     // Roles con acceso total
-    const FULL = ['admin','bank','promoter','gerencia','socios','financiero','contable'];
+    const FULL = ['admin','bank','promoter','gerencia','socios','financiero','contable','legal','avaluador'];
 
     // Filtro base por proyecto (acepta datos legacy sin tenantKey)
     const baseFilter = {
@@ -2471,7 +2472,7 @@ router.get('/:id/checklists', requireProjectAccess({ commercialOnlySales: false 
 // - bank:  solo puede cambiar el status del proyecto
 router.put('/:id/insurance-policies', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   try {
-    const allowedRoles = new Set(['admin', 'bank', 'promoter', 'gerencia', 'socios', 'financiero', 'tecnico', 'commercial']);
+    const allowedRoles = new Set([...PROJECT_EDITOR_ROLES, 'tecnico', 'commercial']);
     const role = String(req.user?.role || '').toLowerCase();
     if (!allowedRoles.has(role)) return res.status(403).json({ error: 'No puedes modificar las pólizas del proyecto' });
 
@@ -2603,11 +2604,21 @@ router.put('/:id/housing-models', requireProjectAccess({ commercialOnlySales: fa
   }
 });
 
-router.put('/:id', requireRole('admin'), async (req, res) => {
+router.put(
+  '/:id',
+  requireRole(...PROJECT_MEDIA_EDITOR_ROLES),
+  requireProjectAccess({ commercialOnlySales: false }),
+  async (req, res) => {
   try {
     const { id } = req.params;
-    const tenantKey = req.tenantKey;
+    const tenantKey = String(req.project?.tenantKey || req.tenantKey || '');
     const myRole = String(req.user?.role || '').toLowerCase();
+    if (myRole === 'bank') {
+      const bodyKeys = Object.keys(req.body || {});
+      if (!bodyKeys.length || bodyKeys.some(key => !['coverImage', 'logoImage'].includes(key))) {
+        return res.status(403).json({ error: 'El banco solo puede actualizar la portada y el logo del proyecto.' });
+      }
+    }
 
     // ===== Validación de status permitido =====
     const VALID_STATUS = ['EN_CURSO','PAUSADO','FINALIZADO'];
@@ -2731,7 +2742,7 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
       syncFinancialConditionKpis(payload, payload.financialConditions);
     }
 
-    if (myRole === 'admin') {
+    if (PROJECT_EDITOR_ROLES.includes(myRole)) {
       // Admin conserva la edición completa
       if (typeof req.body.name === 'string')        payload.name = req.body.name.trim();
       if (typeof req.body.description === 'string') payload.description = req.body.description.trim();
@@ -7110,7 +7121,7 @@ async function linkImportedUnitsToHousingModels(project, grouped) {
 
 router.post(
   '/import-dato-unico/preview',
-  requireRole('admin', 'bank', 'promoter'),
+  requireRole(...PROJECT_MEDIA_EDITOR_ROLES),
   uploadDatoUnicoFile,
   async (req, res) => {
     try {
@@ -7153,8 +7164,8 @@ async function requireDatoUnicoImportAccess(req, res, next) {
 // POST /api/projects/:id/import-dato-unico
 router.post(
   '/:id/import-dato-unico',
-  requireRole('admin', 'bank', 'promoter'),
-  requireDatoUnicoImportAccess,
+  requireRole(...PROJECT_EDITOR_ROLES),
+  requireProjectAccess({ commercialOnlySales: false }),
   uploadDatoUnicoFile,
   async (req, res) => {
     try {

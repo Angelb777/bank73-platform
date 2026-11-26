@@ -141,9 +141,29 @@ const API = (() => {
   if (nativeFetch && !window.__API_AUTH_FETCH_PATCHED__) {
     window.__API_AUTH_FETCH_PATCHED__ = true;
     window.fetch = async function apiAuthFetch(input, init = {}) {
-      const res = await nativeFetch(input, init);
       const path = typeof input === 'string' ? input : input?.url;
+      const method = String(init?.method || input?.method || 'GET').toUpperCase();
+      const pathname = normalizePath(path);
+      const destructive = method === 'DELETE' || (method === 'POST' && /\/delete\/?$/i.test(pathname));
+      const nextInit = { ...init };
       const headers = new Headers(init?.headers || input?.headers || {});
+      if (destructive && pathname.startsWith('/api/')) {
+        const url = new URL(path, location.origin);
+        let bodyPin = '';
+        if (typeof init?.body === 'string' && init.body) {
+          try {
+            const parsed = JSON.parse(init.body);
+            bodyPin = String(parsed?.pin || parsed?.deletePin || '');
+          } catch (_) {}
+        }
+        if (!headers.get('x-delete-pin') && !url.searchParams.get('pin') && !bodyPin) {
+          const pin = window.prompt('Introduce el PIN de eliminación:');
+          if (pin === null || !String(pin).trim()) throw new Error('Borrado cancelado.');
+          headers.set('x-delete-pin', String(pin).trim());
+        }
+        nextInit.headers = headers;
+      }
+      const res = await nativeFetch(input, nextInit);
       const hasAuth = headers.has('Authorization') || headers.has('authorization') || !!getToken();
       if (!isPublicPage() && hasAuth && await handleAuthResponse(res, path)) {
         return new Promise(() => {});

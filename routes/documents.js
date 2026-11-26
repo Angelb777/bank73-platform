@@ -22,7 +22,7 @@ const User = require('../models/User');
 const ProjectDocFolderPermission = require('../models/ProjectDocFolderPermission');
 const { PROJECT_DOC_FOLDERS } = ProjectDocFolderPermission;
 const audit = require('../utils/audit');
-const { FULL_ACCESS_ROLES } = require('../utils/roles');
+const { FULL_ACCESS_ROLES, PROJECT_EDITOR_ROLES } = require('../utils/roles');
 const {
   MAX_DOCUMENT_FILE_SIZE,
   fileFilterFor,
@@ -169,11 +169,11 @@ function getUserId(req) {
 }
 
 function isProjectFolderManager(req) {
-  return ['admin', 'promoter'].includes(norm(req.user?.role));
+  return PROJECT_EDITOR_ROLES.includes(norm(req.user?.role));
 }
 
 function canMoveProjectDocs(req) {
-  return ['admin', 'bank', 'promoter'].includes(norm(req.user?.role));
+  return PROJECT_EDITOR_ROLES.includes(norm(req.user?.role));
 }
 
 function includesId(list, id) {
@@ -599,7 +599,7 @@ router.get(
 router.patch(
   '/folder-permissions/:folder',
   attachProjectIdParam,
-  requireRole('admin', 'promoter'),
+  requireRole(...PROJECT_EDITOR_ROLES),
   requireProjectAccess({ commercialOnlySales: false }),
   async (req, res) => {
     try {
@@ -697,7 +697,7 @@ router.post(
 router.delete(
   '/folder-permissions/:folder/subfolders',
   attachProjectIdParam,
-  requireRole('admin', 'promoter'),
+  requireRole(...PROJECT_EDITOR_ROLES),
   requireProjectAccess({ commercialOnlySales: false }),
   async (req, res) => {
     try {
@@ -880,8 +880,8 @@ router.post(
       const subfolder = getRequestedSubfolder(req);
 
       // ---- ACL ----
-      const FULL = ['admin', 'bank', 'promoter', 'gerencia', 'socios', 'financiero', 'contable'];
-      const LIMITED = ['legal', 'tecnico', 'commercial'];
+      const FULL = FULL_ACCESS_ROLES;
+      const LIMITED = ['tecnico', 'commercial'];
       let checklistFolder = '';
 
       let acl = Array.isArray(visibleToRoles)
@@ -1138,7 +1138,7 @@ router.patch(
 
 router.patch(
   '/:id/location',
-  requireRole('admin', 'promoter'),
+  requireRole(...PROJECT_EDITOR_ROLES),
   loadDocAndAttachProject,
   requireProjectAccess({ commercialOnlySales: false }),
   async (req, res) => {
@@ -1267,14 +1267,7 @@ async function deleteDocHandler(req, res) {
     const tenantKey = getTenantKey(req);
     const docId = req.params.docId || req.params.id;
 
-    const pin = (req.body?.pin || req.query?.pin || '').toString().trim();
-    const expectedPin = process.env.DELETE_DOCS_PIN || '2580';
-
-    if (!isFullAccess(role)) {
-      if (pin !== expectedPin) {
-        return res.status(403).json({ error: 'pin_invalid' });
-      }
-    }
+    if (!req.deletePinVerified) return res.status(403).json({ error: 'pin_invalid' });
 
     const doc = await Document.findOne({ _id: docId, tenantKey }).lean();
     if (!doc) return res.status(404).json({ error: 'Documento no encontrado' });

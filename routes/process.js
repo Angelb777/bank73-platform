@@ -15,11 +15,8 @@ const { isFullAccessRole, isLimitedAreaRole } = require('../utils/roles');
 router.use(bankReadOnly);
 
 // ===== Helpers generales =====
-const DELETE_PIN = process.env.PROCESS_DELETE_PIN || '2580';
-
 function requirePin(req, res) {
-  const pin = String(req.body?.pin || req.query?.pin || '');
-  if (pin !== DELETE_PIN) {
+  if (!req.deletePinVerified) {
     return res.status(403).json({ error: 'PIN inválido' });
   }
   return null;

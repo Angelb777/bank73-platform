@@ -12,11 +12,11 @@ const { opportunityFilterFor, applyPublicationAction } = require('../services/fu
 const { fundingProjectFilter } = require('../routes/funding');
 const sift = require('sift').default;
 
-function runBankGuard(method, originalUrl) {
+function runBankGuard(method, originalUrl, body = {}) {
   let nextCalled = false;
   let responseStatus = 200;
   let responseBody;
-  const req = { method, originalUrl, user: { role: 'bank' } };
+  const req = { method, originalUrl, body, user: { role: 'bank' } };
   const res = { status(value) { responseStatus = value; return this; }, json(value) { responseBody = value; return this; } };
   bankReadOnly(req, res, () => { nextCalled = true; });
   return { nextCalled, responseStatus, responseBody };
@@ -106,15 +106,14 @@ test('average sale price uses commercial units and falls back to housing models'
   assert.equal(averageProjectSalePrice({ housingModels: [{ price: 100000, unitsCount: 1 }, { price: 200000, unitsCount: 3 }] }), 175000);
 });
 
-test('bank write guard allows only the explicit bank write workflows', () => {
+test('bank write guard allows project creation and project media only', () => {
   assert.equal(runBankGuard('POST', '/api/projects').nextCalled, true);
-  assert.equal(runBankGuard('POST', '/api/funding/opportunities/abc123/interests').nextCalled, true);
-  assert.equal(runBankGuard('PATCH', '/api/projects/project1/finance/loan-lines/line1/entries/entry1/status').nextCalled, true);
-  assert.equal(runBankGuard('DELETE', '/api/projects/project1/finance/loan-lines/line1/entries/entry1').nextCalled, true);
-  assert.equal(runBankGuard('POST', '/api/projects/project1/finance/phases/phase1/requirements').nextCalled, true);
-  assert.equal(runBankGuard('PATCH', '/api/projects/project1/finance/phases/phase1/requirements/requirement1').nextCalled, true);
-  assert.equal(runBankGuard('PATCH', '/api/projects/project1/finance/phases/phase1/requirements/requirement1/status').nextCalled, true);
-  assert.equal(runBankGuard('DELETE', '/api/projects/project1/finance/phases/phase1/requirements/requirement1').nextCalled, true);
+  assert.equal(runBankGuard('PUT', '/api/projects/project1', { coverImage: null }).nextCalled, true);
+  assert.equal(runBankGuard('PUT', '/api/projects/project1', { logoImage: null }).nextCalled, true);
+  assert.equal(runBankGuard('PUT', '/api/projects/project1', { coverImage: null, status: 'PAUSADO' }).nextCalled, false);
+  assert.equal(runBankGuard('PATCH', '/api/projects/project1/finance/loan-lines/line1/entries/entry1/status').nextCalled, false);
+  assert.equal(runBankGuard('DELETE', '/api/projects/project1/finance/loan-lines/line1/entries/entry1').nextCalled, false);
+  assert.equal(runBankGuard('POST', '/api/projects/project1/finance/phases/phase1/requirements').nextCalled, false);
   const blocked = runBankGuard('PATCH', '/api/projects/abc123');
   assert.equal(blocked.nextCalled, false);
   assert.equal(blocked.responseStatus, 403);

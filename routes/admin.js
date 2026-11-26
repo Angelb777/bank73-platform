@@ -688,10 +688,9 @@ router.get('/tenants/:tenantKey/export', async (req, res) => {
 router.delete('/tenants/:tenantKey', async (req, res) => {
   try {
     const tenantKey = safeTenantKey(req.params.tenantKey);
-    const pin = String(req.body?.pin || '').trim();
     if (!tenantKey) return res.status(400).json({ error: 'Tenant invalido' });
     if (tenantKey === 'bancodemo') return res.status(403).json({ error: 'No se puede eliminar bancodemo.' });
-    if (pin !== '258025') return res.status(403).json({ error: 'PIN incorrecto.' });
+    if (!req.deletePinVerified) return res.status(403).json({ error: 'PIN incorrecto.' });
 
     const [primaryUsers, primaryProjects] = await Promise.all([
       User.countDocuments({ tenantKey }),

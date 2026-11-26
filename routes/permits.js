@@ -130,7 +130,7 @@ router.get('/templates', async (req, res, next) => {
 });
 
 // Crear plantilla
-router.post('/templates', requireRole('admin', 'gerencia'), async (req, res, next) => {
+router.post('/templates', requireRole('admin', 'promoter', 'gerencia', 'socios', 'financiero', 'contable', 'legal'), async (req, res, next) => {
   try {
     const tenantKey = await getTenantKey(req);
     if (!tenantKey) {

@@ -121,4 +121,7 @@ test('el semaforo muestra nombres de tareas y paquetes responsables', () => {
   assert.match(js, /task\.title.*workPackage\.name/s);
   assert.match(css, /\.role-task-popover/);
   assert.match(css, /role-row:hover \.role-task-popover/);
+  assert.match(css, /\.role-row::after\{[^}]*height:8px[^}]*background:transparent/);
+  assert.match(css, /\.role-task-popover\{[^}]*overscroll-behavior:contain[^}]*scrollbar-gutter:stable/);
+  assert.match(js, /event\.target\.closest\('\.role-task-popover'\)/);
 });

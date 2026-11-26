@@ -14,6 +14,7 @@ const { requireProjectAccess } = require('../middleware/rbac'); // ROLE-SEP
 // ✅ recalcular KPIs comerciales y persistir en Project
 const { recomputeCommercialKpis } = require('../services/comercial_kpis');
 const { syncUnitCommercialState } = require('../services/unitCommercialState');
+const { normalizeUnitStatus } = require('../utils/unitStatus');
 
 // ROLE-SEP: marcar este router como "units" para el guard de comerciales
 router.use((req, _res, next) => { req.isUnitsRoute = true; next(); }); // ROLE-SEP
@@ -63,17 +64,6 @@ function textSearchCondition(fields, matchers) {
   return clauses.length === 1 ? clauses[0] : { $and: clauses };
 }
 
-const VALID_UNIT_ESTADOS = [
-  'disponible',
-  'inventario',
-  'reservado',
-  'con_cpp',
-  'tramite_legal_activado',
-  'escriturado_traspasado',
-  'vivienda_entregada',
-  'cancelado'
-];
-
 const TECHNICAL_UNIT_UPDATE_FIELDS = new Set([
   'etapa', 'torre', 'nivel', 'manzana', 'lote', 'estado', 'modelId', 'modelo', 'm2',
   'costoUnidad', 'costoUnidadManual', 'numeroFinca', 'codigoUbicacion', 'calle',
@@ -87,16 +77,7 @@ function sanitizeUnitUpdateForRole(update = {}, role = '') {
 }
 
 function normalizeUnitEstado(estado) {
-  const raw = String(estado || '').trim().toLowerCase();
-  const plain = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const aliases = {
-    'lote libre': 'disponible',
-    'con cpp': 'con_cpp',
-    'tramite legal': 'tramite_legal_activado',
-    'traspasado': 'escriturado_traspasado'
-  };
-  const e = aliases[plain] || raw;
-  return VALID_UNIT_ESTADOS.includes(e) ? e : 'disponible';
+  return normalizeUnitStatus(estado);
 }
 
 function automaticModeForInitialState(estado) {

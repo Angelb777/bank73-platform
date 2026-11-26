@@ -108,6 +108,11 @@ test('Excel export contains the redesigned financial views and totals', async ()
         concept: 'Abono del cliente', recipient: 'promoter', summary: { agreed: 6000, status: 'partial' },
         payments: [{ paymentDate: new Date('2026-03-20T00:00:00Z'), recipient: 'bank', receiptNumber: 'REC-9', amount: 1000 }]
       }]
+    }],
+    fallenSales: [{
+      recordId: 'fallen-1', phaseName: 'Fase 1', unitLabel: '1-A1',
+      clienteNombre: 'Cliente retirado', cedula: '8-123-456', fechaCaida: new Date('2026-03-25T00:00:00Z'),
+      precioVenta: 125000, banco: 'Banco Uno', motivoCaida: 'Desistimiento', observaciones: 'Registro de prueba', origen: 'manual'
     }]
   });
   await finished;
@@ -119,7 +124,7 @@ test('Excel export contains the redesigned financial views and totals', async ()
     fs.writeFileSync(path.join(outputDir, 'finance-preview.xlsx'), output);
   }
   const workbook = XLSX.read(output, { type: 'buffer' });
-  assert.deepEqual(workbook.SheetNames, ['Resumen', 'Usos y fuentes', 'Líneas bancarias', 'Movimientos', 'Abonos clientes']);
+  assert.deepEqual(workbook.SheetNames, ['Resumen', 'Usos y fuentes', 'Líneas bancarias', 'Movimientos', 'Abonos clientes', 'Ventas caídas']);
   const summary = XLSX.utils.sheet_to_json(workbook.Sheets.Resumen, { header: 1, defval: null });
   assert.equal(summary[4][0], 'Financiación aprobada');
   assert.equal(summary[5][0], 650000);
@@ -140,6 +145,12 @@ test('Excel export contains the redesigned financial views and totals', async ()
   assert.equal(payments[5][5], 'REC-9');
   assert.equal(payments[5][9], 5000);
   assert.equal(payments[4].includes('Notas'), false);
+  const fallenSales = XLSX.utils.sheet_to_json(workbook.Sheets['Ventas caídas'], { header: 1, defval: null });
+  assert.equal(fallenSales[4][0], 'Fase');
+  assert.equal(fallenSales[4][2], 'Fecha caída');
+  assert.equal(fallenSales[5][3], '1-A1');
+  assert.equal(fallenSales[5][4], 'Cliente retirado');
+  assert.equal(fallenSales[5][10], 125000);
 
   const importedWorkbook = new ExcelJS.Workbook();
   await importedWorkbook.xlsx.load(output);
@@ -166,6 +177,11 @@ test('Excel export contains the redesigned financial views and totals', async ()
   assert.equal(parsed.customerPayments[0].recipient, 'bank');
   assert.equal(parsed.customerPayments[0].receiptNumber, 'REC-9');
   assert.equal(parsed.customerPayments[0].amount, 1000);
+  assert.equal(parsed.fallenSales.length, 1);
+  assert.equal(parsed.fallenSales[0].recordId, 'fallen-1');
+  assert.equal(parsed.fallenSales[0].unitLabel, '1-A1');
+  assert.equal(parsed.fallenSales[0].clientName, 'Cliente retirado');
+  assert.equal(parsed.fallenSales[0].salePrice, 125000);
 });
 
 test('PDF export produces a non-empty landscape report', async () => {

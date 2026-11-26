@@ -9,6 +9,7 @@ const CommercialFolder = require('../models/CommercialFolder');
 const Project = require('../models/Project');
 const Unit = require('../models/Unit');
 const Venta = require('../models/Venta');
+const FallenSale = require('../models/FallenSale');
 const User = require('../models/User');
 const Inspection = require('../models/Inspection');
 const Document = require('../models/Document');
@@ -27,7 +28,8 @@ const {
   buildFinanceControlAlerts: sharedBuildFinanceControlAlerts
 } = require('../services/financeReportContext');
 const { sanitizePromoterProfile } = require('../utils/promoterProfile');
-const { verifyPassword } = require('../utils/passwords');
+const { isSoldUnitStatus } = require('../utils/unitStatus');
+const { PROJECT_EDITOR_ROLES } = require('../utils/roles');
 const audit = require('../utils/audit');
 const { renderInspectionReport } = require('../services/inspectionReport');
 const inspectionReportContext = require('../services/inspectionReportContext');
@@ -725,6 +727,12 @@ const FINANCE_CUSTOMER_PAYMENT_IMPORT_HEADERS = [
   'Saldo pendiente', 'Estado'
 ];
 
+const FINANCE_FALLEN_SALE_IMPORT_HEADERS = [
+  'Fase', 'ID registro', 'Fecha caída', 'Unidad', 'Cliente', 'Identificación',
+  'Teléfono', 'Correo', 'Segundo cliente', 'Identificación segundo cliente',
+  'Precio de venta', 'Banco', 'Motivo', 'Observaciones', 'Origen'
+];
+
 function normalizeFinanceExcelLabel(value = '') {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toLowerCase().replace(/n[º°]/g, 'n').replace(/[^a-z0-9%]+/g, ' ').trim().replace(/\s+/g, ' ');
@@ -950,8 +958,11 @@ function parseFinancePhaseWorkbook(workbook, phase) {
     || workbook.worksheets.find(ws => normalizeFinanceExcelLabel(ws.name) === 'usos y fuentes');
   const customerPaymentsSheet = workbook.getWorksheet('Abonos clientes')
     || workbook.worksheets.find(ws => normalizeFinanceExcelLabel(ws.name) === 'abonos clientes');
+  const fallenSalesSheet = workbook.getWorksheet('Ventas caídas')
+    || workbook.worksheets.find(ws => normalizeFinanceExcelLabel(ws.name) === 'ventas caidas');
   if (useSourcesSheet) validateFinanceExcelHeaders(useSourcesSheet, FINANCE_USE_SOURCE_IMPORT_HEADERS, errors, warnings);
   if (customerPaymentsSheet) validateFinanceExcelHeaders(customerPaymentsSheet, FINANCE_CUSTOMER_PAYMENT_IMPORT_HEADERS, errors, warnings);
+  if (fallenSalesSheet) validateFinanceExcelHeaders(fallenSalesSheet, FINANCE_FALLEN_SALE_IMPORT_HEADERS, errors, warnings);
   if (errors.length) return { errors, warnings, lines: [], movements: [] };
 
   const phaseKey = normalizedFinanceName(phase?.name || '');
@@ -1157,7 +1168,49 @@ function parseFinancePhaseWorkbook(workbook, phase) {
     }
   }
 
-  return { errors, warnings: [...warnings, ...customerPaymentWarnings], lines, movements, phaseSummary, customerPayments, customerPaymentWarnings };
+  const fallenSales = [];
+  if (fallenSalesSheet) {
+    const seenIds = new Set();
+    for (let rowNumber = 6; rowNumber <= fallenSalesSheet.rowCount; rowNumber += 1) {
+      const row = fallenSalesSheet.getRow(rowNumber);
+      const phaseName = financeExcelText(row.getCell(1));
+      const recordId = financeExcelText(row.getCell(2));
+      const clientName = financeExcelText(row.getCell(5));
+      const unitLabel = financeExcelText(row.getCell(4));
+      if (!phaseName && !recordId && !clientName && !unitLabel && !financeExcelCellValue(row.getCell(3))) continue;
+      if (phaseName && normalizedFinanceName(phaseName) !== phaseKey) {
+        warnings.push(`Ventas caídas, fila ${rowNumber}: se importó en “${phase.name}” aunque el archivo indica “${phaseName}”.`);
+      }
+      if (!clientName) {
+        warnings.push(`Ventas caídas, fila ${rowNumber}: se omitió porque falta el nombre del cliente.`);
+        continue;
+      }
+      const dateWarnings = [];
+      const fallenAt = financeExcelDate(row.getCell(3), { sheet: 'Ventas caídas', row: rowNumber, column: 'Fecha caída', errors: dateWarnings });
+      if (!fallenAt) {
+        warnings.push(`Ventas caídas, fila ${rowNumber}: se omitió porque “Fecha caída” no contiene una fecha válida.`);
+        continue;
+      }
+      if (recordId && seenIds.has(recordId)) {
+        warnings.push(`Ventas caídas, fila ${rowNumber}: se omitió porque el ID registro está duplicado en el archivo.`);
+        continue;
+      }
+      if (recordId) seenIds.add(recordId);
+      const priceWarnings = [];
+      const salePrice = financeExcelNumber(row.getCell(11), { sheet: 'Ventas caídas', row: rowNumber, column: 'Precio de venta', errors: priceWarnings });
+      warnings.push(...priceWarnings.map(message => `${message} Se usó 0.`));
+      fallenSales.push({
+        rowNumber, phaseName, recordId, fallenAt, unitLabel, clientName,
+        idNumber: financeExcelText(row.getCell(6)), phone: financeExcelText(row.getCell(7)),
+        email: financeExcelText(row.getCell(8)), secondClientName: financeExcelText(row.getCell(9)),
+        secondClientId: financeExcelText(row.getCell(10)), salePrice,
+        bank: financeExcelText(row.getCell(12)), reason: financeExcelText(row.getCell(13)) || 'Desistimiento del cliente',
+        notes: financeExcelText(row.getCell(14)), origin: financeExcelText(row.getCell(15))
+      });
+    }
+  }
+
+  return { errors, warnings: [...warnings, ...customerPaymentWarnings], lines, movements, phaseSummary, customerPayments, customerPaymentWarnings, fallenSales };
 }
 
 function commercialClientName(v = {}) {
@@ -1189,7 +1242,7 @@ async function getFinanceCommercialUnits(projectId, tenantKey) {
   }
 
   const [units, ventas] = await Promise.all([
-    Unit.find(unitFilter).select('_id etapa torre nivel manzana lote estado modelo recamaras banos areaAbierta areaCerrada').sort({ manzana: 1, lote: 1 }).lean(),
+    Unit.find(unitFilter).select('_id folderId etapa torre nivel manzana lote estado modelo recamaras banos areaAbierta areaCerrada').sort({ manzana: 1, lote: 1 }).lean(),
     Venta.find(ventaFilter).select('unitId clienteNombre primerNombre segundoNombre primerApellido segundoApellido apellidoCasada banco valor montoFinanciamientoCPP precioVenta numCPP estatusCPP statusBanco customerPaymentAccounts customerPaymentsVersion').lean()
   ]);
 
@@ -1202,6 +1255,7 @@ async function getFinanceCommercialUnits(projectId, tenantKey) {
     const legacyLot = [u.manzana, u.lote].map(value => String(value || '').trim()).filter(Boolean).join('-');
     return {
       unitId: String(u._id),
+      folderId: String(u.folderId || ''),
       lot: displayName,
       unitLabel: displayName,
       rawLot: String(u.lote || '').trim(),
@@ -1229,13 +1283,53 @@ async function getFinanceCommercialUnits(projectId, tenantKey) {
   });
 }
 
+function financeSecondClientName(v = {}) {
+  return v.cliente2Nombre || [
+    v.cliente2PrimerNombre, v.cliente2SegundoNombre,
+    v.cliente2PrimerApellido, v.cliente2SegundoApellido
+  ].filter(Boolean).join(' ').trim();
+}
+
+async function getFinanceFallenSales(projectId, tenantKey, doc, phaseId = '') {
+  const filter = { projectId };
+  if (tenantKey) filter.tenantKey = tenantKey;
+  const [storedAll, legacy, units] = await Promise.all([
+    FallenSale.find(filter).sort({ fechaCaida: -1, createdAt: -1 }).lean(),
+    Venta.find({ ...filter, deletedAt: null, estadoVenta: 'caida' }).lean(),
+    Unit.find({ ...filter, deletedAt: null }).select('_id folderId manzana lote modelo').lean()
+  ]);
+  const unitById = new Map(units.map(unit => [String(unit._id), unit]));
+  const phaseByStage = new Map((doc?.phases || []).map(phase => [String(phase.stageId || ''), phase.name || 'Fase']));
+  const selectedPhase = phaseId ? doc?.phases?.id?.(phaseId) : null;
+  const selectedStageId = String(selectedPhase?.stageId || '');
+  const storedSources = new Set(storedAll.map(item => String(item.sourceVentaId || '')).filter(Boolean));
+  const rows = storedAll.filter(item => !item.deletedAt).map(item => ({ ...item, recordId: String(item._id), legacy: false }));
+  legacy.filter(item => !storedSources.has(String(item._id))).forEach(item => rows.push({
+    recordId: `legacy:${item._id}`, legacy: true, unitId: item.unitId,
+    clienteNombre: commercialClientName(item), cedula: item.cedula || '', celular: item.celular || '',
+    correo: item.correo || '', cliente2Nombre: financeSecondClientName(item), cliente2Cedula: item.cliente2Cedula || '',
+    fechaCaida: item.fechaCaida || item.updatedAt || item.createdAt,
+    motivoCaida: item.motivoCaida || 'Desistimiento del cliente', observaciones: '',
+    precioVenta: toNum(item.precioVenta || item.valor), banco: item.banco || '', origen: 'automatico'
+  }));
+  return rows.map(item => {
+    const unit = unitById.get(String(item.unitId || '')) || {};
+    const stageId = String(unit.folderId || '');
+    return {
+      ...item,
+      unitLabel: item.unidadLabel || financeUnitDisplayName(unit),
+      stageId,
+      phaseName: phaseByStage.get(stageId) || ''
+    };
+  }).filter(item => !phaseId || (selectedStageId && item.stageId === selectedStageId));
+}
+
 function normalizeFinancierBanks(raw = []) {
   return [...new Set((Array.isArray(raw) ? raw : []).map(value => String(value || '').trim()).filter(Boolean))].slice(0, 20);
 }
 
 function isFinanceSoldLikeStatus(status) {
-  return ['reservado', 'con_cpp', 'tramite_legal_activado', 'escriturado_traspasado', 'vivienda_entregada']
-    .includes(String(status || '').toLowerCase());
+  return isSoldUnitStatus(status);
 }
 
 function resolveLogoPath() {
@@ -1497,7 +1591,7 @@ router.post('/projects/:projectId/finance/import', financeExcelUpload, async (re
 
     const project = await loadTenantProject(req, res);
     if (!project) return;
-    const regularImportRole = ['admin', 'financiero', 'gerencia', 'socios'].includes(role);
+    const regularImportRole = PROJECT_EDITOR_ROLES.includes(role);
     const isInitialCreatorImport = ['bank', 'promoter'].includes(role)
       && String(project.createdBy || '') === String(req.user?.userId || req.user?._id || req.user?.id || '')
       && String(project.publishStatus || '') === 'pending';
@@ -1541,6 +1635,9 @@ router.post('/projects/:projectId/finance/import', financeExcelUpload, async (re
     let importedSaleAmortizations = 0;
     let importedCustomerPayments = 0;
     let skippedCustomerPayments = 0;
+    let createdFallenSales = 0;
+    let updatedFallenSales = 0;
+    let skippedFallenSales = 0;
     const skippedInvalidCustomerPayments = (parsed.customerPaymentWarnings || []).length;
     const replacedMovements = currentPhaseLines.reduce((sum, line) => sum + (line?.entries?.length || 0), 0);
     const importedByKey = new Map();
@@ -1587,6 +1684,86 @@ router.post('/projects/:projectId/finance/import', financeExcelUpload, async (re
     }
 
     const commercialUnits = await getFinanceCommercialUnits(req.params.projectId, project.tenantKey);
+    const fallenSaleOperations = [];
+    if ((parsed.fallenSales || []).length) {
+      const stageId = String(phase.stageId || '');
+      const scopedUnits = stageId
+        ? commercialUnits.filter(unit => String(unit.folderId || '') === stageId)
+        : commercialUnits;
+      const unitAliases = new Map();
+      const addAlias = (alias, unit) => {
+        const key = normalizeFinanceUnitAlias(alias);
+        if (!key) return;
+        if (!unitAliases.has(key)) unitAliases.set(key, []);
+        if (!unitAliases.get(key).includes(unit)) unitAliases.get(key).push(unit);
+      };
+      scopedUnits.forEach(unit => {
+        addAlias(unit.lot, unit); addAlias(unit.unitLabel, unit);
+        addAlias(unit.rawLot, unit); addAlias(unit.legacyLot, unit);
+      });
+      const requestedIds = (parsed.fallenSales || [])
+        .map(item => item.recordId)
+        .filter(value => mongoose.isValidObjectId(value));
+      const existingRecords = await FallenSale.find({
+        _id: { $in: requestedIds }, projectId: project._id, tenantKey: project.tenantKey, deletedAt: null
+      }).lean();
+      const existingById = new Map(existingRecords.map(item => [String(item._id), item]));
+      const existingFingerprints = new Set((await FallenSale.find({
+        projectId: project._id, tenantKey: project.tenantKey, deletedAt: null
+      }).select('unitId clienteNombre fechaCaida motivoCaida').lean()).map(item => [
+        String(item.unitId || ''), normalizeFinanceExcelLabel(item.clienteNombre),
+        item.fechaCaida ? new Date(item.fechaCaida).toISOString().slice(0, 10) : '',
+        normalizeFinanceExcelLabel(item.motivoCaida)
+      ].join('|')));
+      for (const item of parsed.fallenSales) {
+        if (String(item.recordId || '').startsWith('legacy:')) {
+          skippedFallenSales += 1;
+          continue;
+        }
+        const matches = financeUnitCandidatesByAlias(unitAliases, item.unitLabel);
+        if (!item.unitLabel || matches.length !== 1) {
+          importWarnings.push(`Ventas caídas, fila ${item.rowNumber}: se omitió porque la unidad “${item.unitLabel || 'vacía'}” ${matches.length > 1 ? 'coincide con varias unidades' : 'no pertenece a esta fase'}.`);
+          skippedFallenSales += 1;
+          continue;
+        }
+        const unit = matches[0];
+        const values = {
+          unitId: unit.unitId, unidadLabel: unit.unitLabel || unit.lot || item.unitLabel,
+          clienteNombre: item.clientName, cedula: item.idNumber, celular: item.phone,
+          correo: item.email, cliente2Nombre: item.secondClientName, cliente2Cedula: item.secondClientId,
+          fechaCaida: item.fallenAt, precioVenta: item.salePrice, banco: item.bank,
+          motivoCaida: item.reason, observaciones: item.notes
+        };
+        if (item.recordId) {
+          const existing = existingById.get(String(item.recordId));
+          if (!existing) {
+            importWarnings.push(`Ventas caídas, fila ${item.rowNumber}: se omitió porque el ID registro no pertenece al proyecto.`);
+            skippedFallenSales += 1;
+            continue;
+          }
+          fallenSaleOperations.push({ updateOne: {
+            filter: { _id: existing._id, projectId: project._id, tenantKey: project.tenantKey, deletedAt: null },
+            update: { $set: values }
+          } });
+          updatedFallenSales += 1;
+          continue;
+        }
+        const fingerprint = [
+          String(unit.unitId || ''), normalizeFinanceExcelLabel(item.clientName),
+          new Date(item.fallenAt).toISOString().slice(0, 10), normalizeFinanceExcelLabel(item.reason)
+        ].join('|');
+        if (existingFingerprints.has(fingerprint)) {
+          skippedFallenSales += 1;
+          continue;
+        }
+        existingFingerprints.add(fingerprint);
+        fallenSaleOperations.push({ insertOne: { document: {
+          tenantKey: project.tenantKey, projectId: project._id, ...values,
+          origen: 'manual', createdBy: req.user?._id || req.user?.userId || null
+        } } });
+        createdFallenSales += 1;
+      }
+    }
     const customerPaymentUpdates = new Map();
     if ((parsed.customerPayments || []).length) {
       const paymentUnitCandidates = new Map();
@@ -1769,14 +1946,15 @@ router.post('/projects/:projectId/finance/import', financeExcelUpload, async (re
       })), { ordered: true });
     }
     await doc.save();
+    if (fallenSaleOperations.length) await FallenSale.bulkWrite(fallenSaleOperations, { ordered: true });
 
     await audit(req, 'finance.loan_lines_imported', {
       targetType: 'project', targetId: project._id, projectId: project._id,
       message: `Excel financiero importado en ${phase.name || 'fase'}`,
-      metadata: { phaseId, createdLines, updatedLines, importedMovements, importedSaleAmortizations, importedCustomerPayments, skippedCustomerPayments, skippedInvalidCustomerPayments, warnings: importWarnings.length, replacedMovements, resolvedAmbiguousUnits: resolvedAmbiguousUnits.size, importedPhaseSummary: !!parsed.phaseSummary }
+      metadata: { phaseId, createdLines, updatedLines, importedMovements, importedSaleAmortizations, importedCustomerPayments, skippedCustomerPayments, skippedInvalidCustomerPayments, createdFallenSales, updatedFallenSales, skippedFallenSales, warnings: importWarnings.length, replacedMovements, resolvedAmbiguousUnits: resolvedAmbiguousUnits.size, importedPhaseSummary: !!parsed.phaseSummary }
     });
     const control = sharedBuildFinanceControlSummary(doc, project || {});
-    res.json({ ok: true, createdLines, updatedLines, importedMovements, importedSaleAmortizations, importedCustomerPayments, skippedCustomerPayments, skippedInvalidCustomerPayments, warnings: importWarnings, replacedMovements, resolvedAmbiguousUnits: resolvedAmbiguousUnits.size, importedPhaseSummary: !!parsed.phaseSummary, financeControl: control });
+    res.json({ ok: true, createdLines, updatedLines, importedMovements, importedSaleAmortizations, importedCustomerPayments, skippedCustomerPayments, skippedInvalidCustomerPayments, createdFallenSales, updatedFallenSales, skippedFallenSales, warnings: importWarnings, replacedMovements, resolvedAmbiguousUnits: resolvedAmbiguousUnits.size, importedPhaseSummary: !!parsed.phaseSummary, financeControl: control });
   } catch (err) {
     console.error('POST finance import error', err);
     res.status(err.status || 500).json({ error: err.status ? err.message : 'No se pudo importar el Excel financiero.' });
@@ -1791,21 +1969,12 @@ router.delete('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId'
     }
 
     const role = String(req.user?.role || '').toLowerCase().trim();
-    if (!['admin', 'promoter', 'bank'].includes(role)) {
+    if (!PROJECT_EDITOR_ROLES.includes(role)) {
       return res.status(403).json({ error: 'Solo Promotor, Admin o Banco pueden eliminar una partida de desembolso.' });
     }
 
-    const credential = String(req.body?.credential || req.body?.password || req.body?.pin || '').trim();
-    if (!credential) return res.status(400).json({ error: 'Introduce tu contraseña o el PIN de eliminación para confirmar.' });
-
+    if (!req.deletePinVerified) return res.status(403).json({ error: 'PIN de eliminación incorrecto.' });
     const actorId = req.user?.userId || req.user?._id || req.user?.id || null;
-    const actor = mongoose.isValidObjectId(actorId) ? await User.findById(actorId).select('password email role') : null;
-    const expectedPin = String(process.env.FINANCE_DELETE_PIN || process.env.PROCESS_DELETE_PIN || '2580').trim();
-    const validAccountPassword = Boolean(actor && verifyPassword(credential, actor.password));
-    const validDeletePin = Boolean(expectedPin && credential === expectedPin);
-    if (!validAccountPassword && !validDeletePin) {
-      return res.status(403).json({ error: 'La contraseña o el PIN no son correctos. No se eliminó la partida.' });
-    }
 
     const project = await loadTenantProject(req, res);
     if (!project) return;
@@ -1833,7 +2002,7 @@ router.delete('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId'
         fundingParty: deletedEntry.fundingParty || 'bank',
         amount: toNum(deletedEntry.disbursementAmount),
         workflowStatus: loanEntryWorkflowStatus(deletedEntry),
-        confirmationMethod: validAccountPassword ? 'account_password' : 'delete_pin',
+        confirmationMethod: 'delete_pin',
         requestDocumentId: deletedEntry.requestDocumentId ? String(deletedEntry.requestDocumentId) : null
       }
     });
@@ -1854,10 +2023,7 @@ router.patch('/projects/:projectId/finance/loan-lines/:lineId/entries/:entryId/s
 
     const role = String(req.user?.role || '').toLowerCase().trim();
     const action = String(req.body?.action || '').toLowerCase().trim();
-    if (['request', 'contribute'].includes(action) && !['admin', 'promoter'].includes(role)) return res.status(403).json({ error: 'Solo el promotor puede realizar esta acción.' });
-    if (action === 'disburse' && !['admin', 'promoter', 'bank'].includes(role)) return res.status(403).json({ error: 'No tienes permisos para confirmar este desembolso.' });
-    if (action === 'return' && !['admin', 'bank'].includes(role)) return res.status(403).json({ error: 'Solo el banco o el superadmin pueden devolver una solicitud.' });
-    if (action === 'acknowledge_return' && !['admin', 'bank', 'promoter'].includes(role)) return res.status(403).json({ error: 'No tienes permisos para atender esta alerta.' });
+    if (!PROJECT_EDITOR_ROLES.includes(role)) return res.status(403).json({ error: 'No tienes permisos para modificar este desembolso.' });
     if (!['request', 'contribute', 'return', 'disburse', 'acknowledge_return'].includes(action)) return res.status(400).json({ error: 'Acción de desembolso no válida.' });
 
     const project = await loadTenantProject(req, res);
@@ -2135,7 +2301,7 @@ router.get('/projects/:projectId/finance/avaluation-context', async (req, res) =
     const actorRole = String(req.user?.role || '').toLowerCase();
     res.json({
       hasAssignedAvaluator: true,
-      canCreateExternal: ['admin', 'bank', 'tecnico', 'financiero', 'contable'].includes(actorRole),
+      canCreateExternal: [...PROJECT_EDITOR_ROLES, 'tecnico'].includes(actorRole),
       assignments: assignments.map(item => ({
         id: String(item._id),
         bankTenantKey: String(item.bankTenantKey || ''),
@@ -2182,7 +2348,7 @@ router.post('/projects/:projectId/finance/external-inspections', externalInspect
   };
   try {
     const role = String(req.user?.role || '').toLowerCase();
-    if (!['admin', 'bank', 'tecnico', 'financiero', 'contable'].includes(role)) {
+    if (![...PROJECT_EDITOR_ROLES, 'tecnico'].includes(role)) {
       return rejectUpload(403, 'No tienes permiso para registrar informes externos.');
     }
     const project = await loadTenantProject(req, res);
@@ -2310,7 +2476,7 @@ router.post('/projects/:projectId/finance/external-inspections', externalInspect
 router.post('/projects/:projectId/finance/inspection-reports/:inspectionId/prepare-disbursement', async (req, res) => {
   try {
     const role = String(req.user?.role || '').toLowerCase();
-    if (!['admin', 'bank', 'tecnico', 'financiero', 'contable'].includes(role)) {
+    if (![...PROJECT_EDITOR_ROLES, 'tecnico'].includes(role)) {
       return res.status(403).json({ error: 'No tienes permiso para preparar desembolsos desde Técnico.' });
     }
     const project = await loadTenantProject(req, res);
@@ -2578,7 +2744,7 @@ function requirementActorRole(req) {
 }
 
 function canManageRequirements(req) {
-  return ['admin', 'bank'].includes(requirementActorRole(req));
+  return PROJECT_EDITOR_ROLES.includes(requirementActorRole(req));
 }
 
 function mergeRequirementStateUpdates(current = [], incoming = []) {
@@ -3172,7 +3338,7 @@ function setFinanceMoneyFormat(ws, rows, columns) {
   }));
 }
 
-async function exportFinanceXlsx({ req, res, projectId, projectName, projectCurrency = 'PAB', updatedAt, doc, kpis, chartsPayload, phaseId = '', commercialUnits = [] }) {
+async function exportFinanceXlsx({ req, res, projectId, projectName, projectCurrency = 'PAB', updatedAt, doc, kpis, chartsPayload, phaseId = '', commercialUnits = [], fallenSales = [] }) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'TrustForBanks';
   wb.created = new Date();
@@ -3416,6 +3582,29 @@ async function exportFinanceXlsx({ req, res, projectId, projectName, projectCurr
   }
   sh4.views = [{ state: 'frozen', ySplit: 5, xSplit: 2, showGridLines: false }];
   sh4.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
+
+  // ===== Ventas caídas (histórico comercial editable e importable) =====
+  const sh5 = wb.addWorksheet('Ventas caídas', { properties: { tabColor: { argb: FINANCE_EXPORT_COLORS.red } } });
+  sh5.columns = [18, 28, 16, 18, 28, 18, 16, 28, 28, 24, 18, 22, 30, 38, 14].map(width => ({ width }));
+  styleFinanceTitle(sh5, 'Histórico de ventas caídas', subtitle, 15);
+  sh5.getRow(5).values = FINANCE_FALLEN_SALE_IMPORT_HEADERS;
+  styleSheetHeaderRow(sh5.getRow(5), FINANCE_EXPORT_COLORS.red);
+  for (const item of (fallenSales || [])) {
+    sh5.addRow([
+      item.phaseName || '', item.recordId || String(item._id || ''), item.fechaCaida ? new Date(item.fechaCaida) : '',
+      item.unitLabel || item.unidadLabel || '', item.clienteNombre || '', item.cedula || '', item.celular || '',
+      item.correo || '', item.cliente2Nombre || '', item.cliente2Cedula || '', toNum(item.precioVenta),
+      item.banco || '', item.motivoCaida || '', item.observaciones || '', item.origen === 'manual' ? 'Manual' : 'Automático'
+    ]);
+  }
+  if (sh5.rowCount > 5) {
+    styleFinanceBody(sh5, 6, sh5.rowCount, 1, 15);
+    for (let row = 6; row <= sh5.rowCount; row += 1) sh5.getRow(row).getCell(3).numFmt = 'dd/mm/yyyy';
+    setFinanceMoneyFormat(sh5, Array.from({ length: sh5.rowCount - 5 }, (_, i) => i + 6), [11]);
+    sh5.autoFilter = { from: 'A5', to: `O${sh5.rowCount}` };
+  }
+  sh5.views = [{ state: 'frozen', ySplit: 5, xSplit: 4, showGridLines: false }];
+  sh5.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
 
   // ===== Hoja Gráficas (si llegan) =====
   const charts = chartsPayload || {};
@@ -3890,9 +4079,14 @@ async function handleFinanceExport(req, res) {
     })();
 
     if (format === 'xlsx') {
-      const commercialUnits = await getFinanceCommercialUnits(projectId, project.tenantKey);
+      const allCommercialUnits = await getFinanceCommercialUnits(projectId, project.tenantKey);
+      const exportStageId = exportPhaseId ? String(doc.phases.id(exportPhaseId)?.stageId || '') : '';
+      const commercialUnits = exportStageId
+        ? allCommercialUnits.filter(unit => String(unit.folderId || '') === exportStageId)
+        : allCommercialUnits;
+      const fallenSales = await getFinanceFallenSales(projectId, project.tenantKey, doc, exportPhaseId);
       return exportFinanceXlsx({
-        req, res, projectId, projectName, projectCurrency, updatedAt, doc, kpis, chartsPayload, phaseId: exportPhaseId, commercialUnits
+        req, res, projectId, projectName, projectCurrency, updatedAt, doc, kpis, chartsPayload, phaseId: exportPhaseId, commercialUnits, fallenSales
       });
     }
 

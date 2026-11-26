@@ -48,11 +48,11 @@ test('avaluador is valid and can be requested in public registration', async () 
   assert.equal(user.roleRequested, null);
 });
 
-test('existing role permissions remain unchanged', () => {
+test('legal has integral project access while commercial and tecnico remain limited', () => {
   assert.deepEqual(FULL_ACCESS_ROLES, [
-    'admin', 'bank', 'promoter', 'gerencia', 'socios', 'financiero', 'contable'
+    'admin', 'bank', 'promoter', 'gerencia', 'socios', 'financiero', 'contable', 'legal'
   ]);
-  assert.deepEqual(LIMITED_AREA_ROLES, ['commercial', 'legal', 'tecnico']);
+  assert.deepEqual(LIMITED_AREA_ROLES, ['commercial', 'tecnico']);
 });
 
 test('avaluador receives read-only access to protected backoffice routes', () => {

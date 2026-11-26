@@ -31,14 +31,20 @@ test('el desistimiento conserva una fotografia del cliente y la unidad', () => {
   assert.equal(snapshot.origen, 'automatico');
 });
 
-test('Comercial ofrece listado y alta manual de ventas caidas', () => {
+test('la ficha comercial de fase ofrece listado y alta manual de ventas caidas', () => {
   const html = read('public/project.html');
   const js = read('public/js/project.js');
+  const unified = read('public/js/project-unified.js');
   const routes = read('routes/ventas.js');
 
   assert.match(html, /id="fallenSalesModal"/);
   assert.match(html, /id="fallenSalesForm"/);
-  assert.match(html, /id="btnVentasCaidasComercial"/);
+  assert.doesNotMatch(html, /id="btnVentasCaidasComercial"/);
+  assert.match(unified, /data-stage-fallen-sales-host/);
+  assert.match(unified, /mountStageFallenSales/);
+  assert.match(js, /mountUnifiedStageFallenSales/);
+  assert.match(js, /__BANK73_FALLEN_SALES_WORKSPACE/);
+  assert.match(js, /fallenSalesStageUnitIds/);
   assert.match(js, /api\/ventas\/fallen/);
   assert.match(routes, /router\.get\([\s\S]*?'\/fallen'/);
   assert.match(routes, /router\.post\([\s\S]*?'\/fallen'/);

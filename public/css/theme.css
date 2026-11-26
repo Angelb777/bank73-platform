@@ -421,6 +421,22 @@ body.light-theme #tab-resumen .summary-chart-box canvas {
   background: transparent;
 }
 
+body.light-theme #tab-resumen .summary-year-pill {
+  background: #eaf2ff;
+  border: 1px solid #bfdbfe;
+  color: #1e3a5f;
+}
+
+body.light-theme #tab-resumen .summary-year-pill strong {
+  color: #0f172a;
+}
+
+body.light-theme #tab-resumen .summary-year-pill.is-fallen {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #be123c;
+}
+
 body.light-theme #tab-finanzas,
 body.light-theme #tab-finanzas .fin-card,
 body.light-theme #tab-finanzas .fin-phase-card {
@@ -10256,6 +10272,34 @@ body.light-theme .project-experience.viewer-active #tab-resumen #summaryHeader .
 body.role-avaluador-readonly .technical-hero::before{content:"Modo observador · Avaluador";position:absolute;z-index:2;top:14px;right:18px;padding:6px 10px;border:1px solid rgba(255,255,255,.2);border-radius:999px;color:#cffafe;background:rgba(8,47,73,.72);font-size:.68rem;font-weight:900;letter-spacing:.06em;text-transform:uppercase}
 body.role-avaluador-readonly #technicalApplyPermitTemplate,body.role-avaluador-readonly #technicalCreateUnits,body.role-avaluador-readonly #technicalCreateModel,body.role-avaluador-readonly #technicalSelectAll,body.role-avaluador-readonly #technicalBatchEdit,body.role-avaluador-readonly #technicalDeleteUnits,body.role-avaluador-readonly #technicalUploadPlans,body.role-avaluador-readonly #technicalAddExternalInspection{display:none!important}
 body.role-avaluador-readonly .technical-permit-state{pointer-events:none;opacity:.7}
+body.role-project-observer #btnCrearLote,
+body.role-project-observer #btnCrearModelo,
+body.role-project-observer #btnEditarSel,
+body.role-project-observer #btnEliminarSel,
+body.role-project-observer #btnCrearCarpetaComercial,
+body.role-project-observer #commercialImportDatoUnicoSlot,
+body.role-project-observer #batchAplicar,
+body.role-project-observer #fichaGuardar,
+body.role-project-observer #fichaDesistirCliente,
+body.role-project-observer #fallenSalesAddToggle,
+body.role-project-observer #addPhasePlanBtn,
+body.role-project-observer #addPhaseRealBtn,
+body.role-project-observer #financeImportPhaseXlsx,
+body.role-project-observer #financeAddLoanLineBtn,
+body.role-project-observer #technicalApplyPermitTemplate,
+body.role-project-observer #technicalCreateUnits,
+body.role-project-observer #technicalCreateModel,
+body.role-project-observer #technicalBatchEdit,
+body.role-project-observer #technicalDeleteUnits,
+body.role-project-observer #technicalUploadPlans,
+body.role-project-observer #technicalAddExternalInspection,
+body.role-project-observer .requirements-manage-toolbar,
+body.role-project-observer .js-add-cl,
+body.role-project-observer .js-del-sub,
+body.role-project-observer .js-complete,
+body.role-project-observer .js-validate,
+body.role-project-observer .js-edit,
+body.role-project-observer .js-del-cl{display:none!important}
 @media (max-width:980px){.technical-inspection-row{grid-template-columns:1fr 1fr}.technical-inspection-actions{justify-content:flex-start}.technical-external-form{grid-template-columns:1fr}.technical-external-wide{grid-column:auto}}
 
 /* Editor comercial en lote, alineado con la ficha comercial por proceso. */

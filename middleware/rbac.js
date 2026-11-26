@@ -375,8 +375,8 @@ function requireProjectAccess(options = {}) {
         return next();
       }
 
-      // GERENCIA / SOCIOS / FINANCIERO / CONTABLE
-      if (['gerencia', 'socios', 'financiero', 'contable'].includes(role)) {
+      // Roles con acceso y edición integral del proyecto.
+      if (['gerencia', 'socios', 'financiero', 'contable', 'legal'].includes(role)) {
         const assigned = isUserAssignedToProject(project, getUserId(req));
 
         if (!assigned) {

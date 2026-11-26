@@ -16,14 +16,12 @@ const { calculateFundingScore } = require('../services/fundingScoring');
 const { financingMetrics, averageProjectSalePrice } = require('../services/fundingMetrics');
 const { opportunityFilterFor, applyPublicationAction } = require('../services/fundingPublication');
 const { moduleEnabled } = require('../services/moduleSettings');
+const { isSoldUnitStatus } = require('../utils/unitStatus');
 const router = express.Router();
 const ADMIN_STATUSES = ProjectFunding.FUNDING_STATUSES;
 const INTEREST_STATUSES = FundingInterest.INTEREST_STATUSES;
 const PUBLIC_FIELDS = new Set(['description','images','location','housingModels','units','prices','financialSummary','phases','score','conclusions','documents']);
-const PORTFOLIO_SOLD_STATUSES = new Set([
-  'reservado', 'con_cpp', 'tramite_legal_activado', 'escriturado_traspasado', 'vivienda_entregada',
-  'en_escrituracion', 'escriturado', 'entregado'
-]);
+const LEGACY_PORTFOLIO_SOLD_STATUSES = new Set(['en_escrituracion', 'escriturado', 'entregado']);
 const role = req => String(req.user?.role || '').toLowerCase();
 const uid = req => req.user?.userId || req.user?._id;
 const canManageFunding = req => ['admin', 'bank'].includes(role(req));
@@ -75,7 +73,7 @@ function summarizeOpportunityUnits(units = [], project = {}) {
     summary.unitsTotal += 1;
     summary.potentialSalesValue += money(unit.precioVenta);
     const status = String(unit.estado ?? unit.status ?? '').toLowerCase();
-    if (PORTFOLIO_SOLD_STATUSES.has(status)) summary.unitsSold += 1;
+    if (isSoldUnitStatus(status) || LEGACY_PORTFOLIO_SOLD_STATUSES.has(status)) summary.unitsSold += 1;
   });
   if (!summary.potentialSalesValue) {
     summary.potentialSalesValue = (project.housingModels || []).reduce(

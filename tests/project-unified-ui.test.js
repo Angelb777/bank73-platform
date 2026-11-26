@@ -64,6 +64,9 @@ test('el resumen reutiliza el avance global del cronograma y mantiene las minigr
   assert.doesNotMatch(unified, /progressValues\.reduce/);
   assert.match(unified, /class="unified-area-chart"[^>]*>.*<em>\$\{pct\}%<\/em>/s);
   assert.match(unifiedCss, /\.unified-headline-kpis>span\{[^}]*text-align:center/);
+  assert.match(unified, /id="unifiedTimelineAlertKpi"[^>]*><small>Avisos activos<\/small>/);
+  assert.doesNotMatch(unified, /id="unifiedHeadlineKpis"[\s\S]*?<small>Avisos activos<\/small>[\s\S]*?<\/button>/);
+  assert.match(unifiedCss, /\.unified-timeline-kpi\{[^}]*text-align:center/);
 });
 
 test('el cronograma tiene superficies y texto especificos para modo oscuro', () => {
@@ -100,9 +103,9 @@ test('la ficha de etapa monta los gestores existentes sin duplicar formularios',
 test('un clic de etapa abre una sola ficha integral', () => {
   assert.match(unified, /openingStageId === requestedStageId/);
   assert.match(unified, /event\.stopPropagation\(\)/);
-  assert.match(html, /project-unified\.css\?v=21/);
-  assert.match(html, /project-unified\.js\?v=21/);
-  assert.match(html, /project\.js\?v=technical-progress-v5/);
+  assert.match(html, /project-unified\.css\?v=23/);
+  assert.match(html, /project-unified\.js\?v=23/);
+  assert.match(html, /project\.js\?v=fallen-sales-phase-v2/);
 });
 
 test('etapas y unidades alterna entre comercial finanzas y tecnica sin duplicar unidades', () => {
@@ -193,6 +196,18 @@ test('el rol tecnico entra directamente en su vista y la ficha de etapa no repit
   assert.match(project, /window\.abrirFichaUnidad\?\.\(unitId, \{ mode:'technical' \}\)/);
 });
 
+test('solo tecnico y comercial pierden el resumen y los demas roles conservan la vista integral', () => {
+  assert.match(project, /const canViewAllProjectAreas = !\['commercial', 'tecnico'\]\.includes\(role\)/);
+  assert.match(project, /summary: canViewSummary/);
+  assert.match(project, /FULL_ACCESS_ROLES = \['admin','bank','promoter','gerencia','socios','financiero','contable','legal','avaluador'\]/);
+});
+
+test('los editores integrales comparten permisos y banco solo edita imagenes del proyecto', () => {
+  assert.match(project, /FULL_EDIT_ROLES = \['admin','promoter','gerencia','socios','financiero','contable','legal'\]/);
+  assert.match(project, /PROJECT_MEDIA_EDIT_ROLES = \[\.\.\.FULL_EDIT_ROLES, 'bank'\]/);
+  assert.match(project, /projectSettings: FULL_EDIT_ROLES\.includes\(role\)/);
+});
+
 test('las tarjetas reservan espacio para avisos y el vacio es legible en modo claro', () => {
   assert.match(unifiedCss, /\.unit-card:has\(\.unit-card-expiry-alerts\)/);
   assert.match(unifiedCss, /body\.light-theme .*commercial-folder-body>\.empty/);
@@ -247,13 +262,18 @@ test('la etapa clicable sustituye la etiqueta secundaria por una pill principal'
   assert.doesNotMatch(unifiedCss, /folder-title::after\{content:"Ficha integral"/);
 });
 
-test('ventas caídas y crear carpeta comparten la barra compacta de filtros', () => {
-  const filterIndex = html.indexOf('class="commercial-filter-bar"');
-  const fallenIndex = html.indexOf('id="btnVentasCaidasComercial"');
+test('ventas caídas es el primer bloque de detalle en Comercial y no abre otro popup', () => {
   const folderIndex = html.indexOf('id="btnCrearCarpetaComercial"');
-  assert.ok(filterIndex >= 0 && fallenIndex > filterIndex && folderIndex > fallenIndex);
+  const fallenSectionIndex = unified.indexOf('class="unified-stage-fallen-sales-section"');
+  const commercialDetailIndex = unified.indexOf('aria-label="Unidades comerciales de la etapa"');
+  assert.ok(folderIndex >= 0);
+  assert.ok(fallenSectionIndex >= 0 && commercialDetailIndex > fallenSectionIndex);
+  assert.doesNotMatch(html, /id="btnVentasCaidasComercial"/);
+  assert.match(unified, /data-stage-fallen-sales-host/);
+  assert.match(unified, /mountStageFallenSales/);
+  assert.doesNotMatch(unified, /openStageFallenSales/);
   assert.doesNotMatch(project, /class="commercial-folders-toolbar"/);
-  assert.match(unifiedCss, /commercial-filter-bar\{grid-template-columns:minmax\(150px,250px\) minmax\(260px,1fr\) auto auto/);
+  assert.match(unifiedCss, /unified-stage-fallen-sales-section/);
 });
 
 test('el fondo unificado no cambia de tono al superar el alto inicial', () => {
@@ -280,10 +300,15 @@ test('el arranque unificado comparte fuentes y aplaza los paneles secundarios', 
   assert.match(project, /function getProjectDocuments\(/);
   assert.match(project, /function getProjectCommercialFolders\(/);
   assert.match(project, /getProjectUnitsAll\(\{ force: refreshCanonicalData \}\)/);
-  assert.match(project, /await Promise\.all\(\[\s*loadSummary\(\),\s*loadFinance/s);
 
   const init = project.slice(project.indexOf('// ====== Init ======'));
   const blockingInit = init.slice(0, init.indexOf('finishInitialProjectLoad();'));
+  const fullRoleInit = blockingInit.slice(blockingInit.indexOf('// Roles full'));
+  assert.match(fullRoleInit, /await Promise\.all\(\[\s*loadSummary\(\),\s*loadUnits\(\)\s*\]\)/);
+  assert.doesNotMatch(fullRoleInit, /loadProyectoData\(\)[\s\S]*?\]\)/);
+  assert.doesNotMatch(fullRoleInit, /loadFinance\(/);
+  assert.match(project, /if \(key === 'finanzas' && !FINANCE\) await loadFinance\(\{ force: false \}\)/);
+  assert.match(init, /scheduleInitialOperationalDataLoad\(deferredInitialOperationalLoad\)/);
   assert.doesNotMatch(blockingInit, /await loadChatMessages\(/);
   assert.doesNotMatch(blockingInit, /await refreshCommercialDossier\(/);
   assert.match(init, /refreshChatUnreadStatus\(\)\.catch/);

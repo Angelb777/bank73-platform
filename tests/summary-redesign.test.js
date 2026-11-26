@@ -23,11 +23,14 @@ test('la cabecera del resumen presenta portada, logo y tres bandas de negocio', 
 test('el resumen comercial usa solo los estados activos y ventas por fecha de reserva', () => {
   const projects = read('routes/projects.js');
   const html = read('public/project.html');
+  const css = read('public/css/theme.css');
   assert.match(projects, /status: 'Lote libre'/);
   assert.match(projects, /status: 'Traspasado', count: U\.escrituradas \+ U\.entregadas/);
   assert.doesNotMatch(projects.match(/const unitsByStatus = \[[\s\S]*?\];/)?.[0] || '', /Cancelada|Vivienda entregada/);
   assert.match(projects, /const d = v\?\.fechaReserva \? new Date\(v\.fechaReserva\)/);
   assert.doesNotMatch(html, /id="sumSalesMonthlySummary"/);
+  assert.match(css, /body\.light-theme #tab-resumen \.summary-year-pill \{[\s\S]*?background:\s*#eaf2ff;[\s\S]*?color:\s*#1e3a5f;/);
+  assert.match(css, /body\.light-theme #tab-resumen \.summary-year-pill\.is-fallen \{[\s\S]*?color:\s*#be123c;/);
 });
 
 test('legal y técnico eliminan gráficas redundantes', () => {

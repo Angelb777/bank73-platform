@@ -23,10 +23,6 @@ function getUserId(req) {
   return req.user?._id || req.user?.userId || req.user?.id;
 }
 
-function getDeletePin(req) {
-  return process.env.DELETE_PIN || process.env.ADMIN_PIN || '1234';
-}
-
 async function attachProjectFromFolder(req, res, next) {
   try {
     const { folderId } = req.params;
@@ -205,17 +201,11 @@ router.patch('/:folderId', attachProjectFromFolder, requireProjectAccess(), asyn
 router.delete('/:folderId', attachProjectFromFolder, requireProjectAccess(), async (req, res, next) => {
   try {
     const { folderId } = req.params;
-    const { pin } = req.body || {};
-
     if (!isObjectId(folderId)) {
       return res.status(400).json({ error: 'folderId inválido' });
     }
 
-    if (!pin) {
-      return res.status(400).json({ error: 'PIN requerido' });
-    }
-
-    if (String(pin) !== String(getDeletePin(req))) {
+    if (!req.deletePinVerified) {
       return res.status(403).json({ error: 'PIN incorrecto' });
     }
 
