@@ -5,6 +5,7 @@
     location.replace('/login');
     return;
   }
+  await window.BANK73_LEGAL_READY;
 
   // ====== Parámetros URL y navegación ======
   const params = new URLSearchParams(location.search);

@@ -47,12 +47,21 @@ test('web registration requires the current legal acceptance and links are a nat
   const registerJs = fs.readFileSync(path.join(__dirname, '../public/js/register.js'), 'utf8');
   const legalJs = fs.readFileSync(path.join(__dirname, '../public/js/legal.js'), 'utf8');
   const legalCss = fs.readFileSync(path.join(__dirname, '../public/css/legal.css'), 'utf8');
+  const portfolioJs = fs.readFileSync(path.join(__dirname, '../public/js/portfolio.js'), 'utf8');
+  const dashboardJs = fs.readFileSync(path.join(__dirname, '../public/js/dashboard.js'), 'utf8');
+  const projectJs = fs.readFileSync(path.join(__dirname, '../public/js/project.js'), 'utf8');
 
   assert.match(registerHtml, /id="termsAccepted"[^>]*required/);
   assert.match(registerHtml, /id="privacyAcknowledged"[^>]*required/);
   assert.match(registerJs, /legalVersion/);
   assert.match(registerJs, /ndaAccepted:\s*true/);
   assert.match(legalJs, /legal-page-footer/);
+  assert.match(legalJs, /window\.BANK73_LEGAL_READY\s*=/);
+  assert.match(legalJs, /typeof API === 'undefined'/);
+  assert.doesNotMatch(legalJs, /window\.API\?\.getToken/);
   assert.doesNotMatch(legalJs, /legal-fixed-links/);
   assert.doesNotMatch(legalCss, /\.legal-fixed-links/);
+  assert.match(portfolioJs, /await window\.BANK73_LEGAL_READY/);
+  assert.match(dashboardJs, /await window\.BANK73_LEGAL_READY/);
+  assert.match(projectJs, /await window\.BANK73_LEGAL_READY/);
 });

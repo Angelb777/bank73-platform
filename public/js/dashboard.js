@@ -1,5 +1,6 @@
 // public/js/dashboard.js  (ADMIN ONLY)
 (async function () {
+  await window.BANK73_LEGAL_READY;
   // ---------- Helpers de autenticación ----------
   function getAuth() {
     try {

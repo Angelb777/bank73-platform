@@ -32,11 +32,7 @@
     return root;
   }
 
-  async function checkAcceptance() {
-    if (!protectedPage || !window.API?.getToken?.()) return;
-    const status = await API.getSilent('/api/legal/status');
-    if (!status || status.ok === false || !status.required) return;
-
+  function waitForAcceptance(status) {
     const gate = gateMarkup(status);
     document.body.appendChild(gate);
     const terms = gate.querySelector('#legalTermsCheck');
@@ -49,26 +45,70 @@
     gate.querySelector('[data-legal-logout]').addEventListener('click', () => {
       API.logout(); location.href = '/login';
     });
-    accept.addEventListener('click', async () => {
-      accept.disabled = true;
-      message.textContent = '';
-      try {
-        await API.post('/api/legal/accept', {
-          version: status.version,
-          termsAccepted: true,
-          ndaAccepted: true,
-          privacyAcknowledged: true,
-          channel: 'web'
-        });
-        location.reload();
-      } catch (error) {
-        message.textContent = error.message || 'No se pudo registrar la aceptación.';
-        sync();
-      }
+    return new Promise(resolve => {
+      accept.addEventListener('click', async () => {
+        accept.disabled = true;
+        message.textContent = '';
+        try {
+          await API.post('/api/legal/accept', {
+            version: status.version,
+            termsAccepted: true,
+            ndaAccepted: true,
+            privacyAcknowledged: true,
+            channel: 'web'
+          });
+          resolve(true);
+          location.reload();
+        } catch (error) {
+          message.textContent = error.message || 'No se pudo registrar la aceptación.';
+          sync();
+        }
+      });
     });
-    accept.focus();
+  }
+
+  function waitForRecovery(error) {
+    const root = document.createElement('div');
+    root.className = 'legal-gate';
+    root.innerHTML = `
+      <section class="legal-gate-dialog" role="dialog" aria-modal="true" aria-labelledby="legalGateErrorTitle">
+        <h2 id="legalGateErrorTitle">No se pudo cargar la aceptación legal</h2>
+        <p>La plataforma no continuará hasta comprobar los documentos vigentes.</p>
+        <p class="legal-gate-message" data-legal-error></p>
+        <div class="legal-gate-actions"><button type="button" class="btn ghost" data-legal-logout>Cerrar sesión</button><button type="button" class="btn" data-legal-retry>Reintentar</button></div>
+      </section>`;
+    document.body.appendChild(root);
+    root.querySelector('[data-legal-error]').textContent = String(error?.message || 'Error temporal de conexión.');
+    root.querySelector('[data-legal-logout]').addEventListener('click', () => {
+      API.logout(); location.href = '/login';
+    });
+    root.querySelector('[data-legal-retry]').addEventListener('click', () => location.reload());
+    return new Promise(() => {});
+  }
+
+  async function loadStatus() {
+    const status = await API.getSilent('/api/legal/status');
+    if (status && status.ok !== false) return status;
+
+    // Recuperación: los metadatos públicos no dependen de la consulta de
+    // aceptaciones y permiten presentar el modal incluso si esa consulta falla.
+    const bundle = await API.getSilent('/api/legal/documents');
+    if (bundle && bundle.ok !== false && bundle.acceptanceEnabled && bundle.enforced) {
+      return { ...bundle, required: true };
+    }
+    throw new Error(status?.error || bundle?.error || 'No se pudo consultar el estado legal.');
+  }
+
+  async function checkAcceptance() {
+    if (!protectedPage || typeof API === 'undefined' || !API.getToken?.()) return true;
+    const status = await loadStatus();
+    if (!status.required) return true;
+    return waitForAcceptance(status);
   }
 
   addLinks();
-  checkAcceptance().catch(error => console.warn('[legal] status check failed:', error));
+  window.BANK73_LEGAL_READY = checkAcceptance().catch(error => {
+    console.warn('[legal] status check failed:', error);
+    return waitForRecovery(error);
+  });
 })();

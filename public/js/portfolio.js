@@ -4,6 +4,7 @@
     location.replace('/login');
     return;
   }
+  await window.BANK73_LEGAL_READY;
 
   const container = document.getElementById('cards');
   const banner = document.getElementById('noProjectsBanner');
