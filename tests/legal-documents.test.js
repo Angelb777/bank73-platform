@@ -58,9 +58,13 @@ test('web registration requires the current legal acceptance and links are a nat
   assert.match(legalJs, /legal-page-footer/);
   assert.match(legalJs, /window\.BANK73_LEGAL_READY\s*=/);
   assert.match(legalJs, /typeof API === 'undefined'/);
+  assert.match(legalJs, /Marca las dos casillas para continuar/);
+  assert.match(legalJs, /Faltan?[^`]*casilla/);
   assert.doesNotMatch(legalJs, /window\.API\?\.getToken/);
   assert.doesNotMatch(legalJs, /legal-fixed-links/);
   assert.doesNotMatch(legalCss, /\.legal-fixed-links/);
+  assert.match(legalCss, /\.legal-check-box/);
+  assert.match(legalCss, /\[data-legal-accept\]:disabled/);
   assert.match(portfolioJs, /await window\.BANK73_LEGAL_READY/);
   assert.match(dashboardJs, /await window\.BANK73_LEGAL_READY/);
   assert.match(projectJs, /await window\.BANK73_LEGAL_READY/);

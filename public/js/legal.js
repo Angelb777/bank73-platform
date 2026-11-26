@@ -24,8 +24,23 @@
           <a href="/legal/privacy" target="_blank" rel="noopener">Política de privacidad</a>
           <a href="/legal/legal-notice" target="_blank" rel="noopener">Aviso legal</a>
         </div>
-        <label class="legal-gate-check"><input id="legalTermsCheck" type="checkbox"> <span>He leído y acepto los Términos y condiciones, incluido el acuerdo de confidencialidad.</span></label>
-        <label class="legal-gate-check"><input id="legalPrivacyCheck" type="checkbox"> <span>Confirmo que he leído la Política de privacidad y protección de datos.</span></label>
+        <div class="legal-gate-instruction">
+          <strong>Marca las dos casillas para continuar</strong>
+          <span>El botón de aceptación se activará cuando confirmes ambas.</span>
+        </div>
+        <div class="legal-gate-consents">
+          <label class="legal-gate-check">
+            <input id="legalTermsCheck" type="checkbox">
+            <span class="legal-check-box" aria-hidden="true"></span>
+            <span class="legal-check-copy"><strong>Acepto los Términos y el NDA</strong><small>He leído y acepto los Términos y condiciones, incluido el acuerdo de confidencialidad.</small></span>
+          </label>
+          <label class="legal-gate-check">
+            <input id="legalPrivacyCheck" type="checkbox">
+            <span class="legal-check-box" aria-hidden="true"></span>
+            <span class="legal-check-copy"><strong>Confirmo la Política de privacidad</strong><small>He leído la Política de privacidad y protección de datos.</small></span>
+          </label>
+        </div>
+        <p class="legal-gate-progress" data-legal-progress aria-live="polite">Faltan 2 casillas por marcar.</p>
         <p class="legal-gate-message" aria-live="polite"></p>
         <div class="legal-gate-actions"><button type="button" class="btn ghost" data-legal-logout>Cerrar sesión</button><button type="button" class="btn" data-legal-accept disabled>Aceptar y continuar</button></div>
       </section>`;
@@ -39,9 +54,20 @@
     const privacy = gate.querySelector('#legalPrivacyCheck');
     const accept = gate.querySelector('[data-legal-accept]');
     const message = gate.querySelector('.legal-gate-message');
-    const sync = () => { accept.disabled = !(terms.checked && privacy.checked); };
+    const progress = gate.querySelector('[data-legal-progress]');
+    const sync = () => {
+      const pending = Number(!terms.checked) + Number(!privacy.checked);
+      accept.disabled = pending > 0;
+      terms.closest('.legal-gate-check')?.classList.toggle('is-checked', terms.checked);
+      privacy.closest('.legal-gate-check')?.classList.toggle('is-checked', privacy.checked);
+      progress.classList.toggle('is-ready', pending === 0);
+      progress.textContent = pending === 0
+        ? 'Todo listo. Ya puedes aceptar y continuar.'
+        : `Falta${pending === 1 ? '' : 'n'} ${pending} casilla${pending === 1 ? '' : 's'} por marcar.`;
+    };
     terms.addEventListener('change', sync);
     privacy.addEventListener('change', sync);
+    sync();
     gate.querySelector('[data-legal-logout]').addEventListener('click', () => {
       API.logout(); location.href = '/login';
     });
