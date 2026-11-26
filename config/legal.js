@@ -1,8 +1,8 @@
 const path = require('path');
 
-const DOCUMENT_VERSION = String(process.env.LEGAL_DOCUMENT_VERSION || 'draft-0.1').trim();
-const DOCUMENTS_APPROVED = process.env.LEGAL_DOCUMENTS_APPROVED === '1';
-const ACCEPTANCE_ENFORCED = DOCUMENTS_APPROVED && process.env.LEGAL_ACCEPTANCE_ENFORCED === '1';
+const DOCUMENT_VERSION = String(process.env.LEGAL_DOCUMENT_VERSION || '1.0.0').trim();
+const DOCUMENTS_APPROVED = process.env.LEGAL_DOCUMENTS_APPROVED !== '0';
+const ACCEPTANCE_ENFORCED = DOCUMENTS_APPROVED && process.env.LEGAL_ACCEPTANCE_ENFORCED !== '0';
 
 const documents = Object.freeze({
   terms: {

@@ -1,13 +1,12 @@
 # Términos y condiciones de uso y acuerdo de confidencialidad
 
-**BORRADOR — NO VIGENTE — versión draft-0.1**  
-**Pendiente de revisión y aprobación jurídica**
+**Versión 1.0.0 — vigente desde el 26 de noviembre de 2026**
 
 ## 1. Titular y aceptación
 
 BANK73 es una plataforma tecnológica titularidad de **DATO ÚNICO, S.A.**, sociedad anónima constituida en la República de Panamá, RUC 155782684-2-2026, DV 80, Folio Real 155782684, constituida e inscrita el 10 de abril de 2026.
 
-El domicilio y los canales formales de contacto se incorporarán una vez verificados y antes de que este documento entre en vigor.
+El canal oficial de contacto es **info@bank73.com**.
 
 Al aceptar este documento, el usuario declara haberlo leído y acepta tanto sus condiciones de uso como el acuerdo de confidencialidad que contiene. Si actúa por cuenta de una entidad, declara disponer de autorización suficiente para usar BANK73 en nombre de esa entidad, sin perjuicio de su responsabilidad personal respecto de sus credenciales, actuaciones y deberes de confidencialidad.
 
@@ -102,7 +101,7 @@ Si una ley o autoridad exige divulgarla, la parte requerida notificará previame
 
 ### 8.6 Duración
 
-La confidencialidad subsistirá después del cierre de la cuenta mientras la información conserve tal carácter. El secreto empresarial, software, know-how, metodología y datos personales permanecerán protegidos durante el periodo establecido por la ley y por su naturaleza. La duración aplicable a otras categorías se validará antes de la aprobación definitiva.
+La confidencialidad subsistirá después del cierre de la cuenta mientras la información conserve tal carácter. El secreto empresarial, software, know-how, metodología y datos personales permanecerán protegidos durante todo el periodo establecido por la ley y por su naturaleza.
 
 ## 9. Propiedad intelectual
 
@@ -124,7 +123,7 @@ El acceso podrá suspenderse si la cuenta deja de estar autorizada, existe un ri
 
 ## 13. Responsabilidad
 
-Cada parte responderá conforme a la ley y los contratos aplicables. Nada excluye responsabilidades que no puedan limitarse, derechos irrenunciables ni responsabilidad por dolo, culpa grave o tratamiento ilícito cuando resulte aplicable. Los límites económicos deberán constar en el contrato comercial y no se fijan en este borrador.
+Cada parte responderá conforme a la ley y los contratos aplicables. Nada excluye responsabilidades que no puedan limitarse, derechos irrenunciables ni responsabilidad por dolo, culpa grave o tratamiento ilícito cuando resulte aplicable. Los límites económicos específicos serán los establecidos en el contrato comercial aplicable.
 
 ## 14. Modificaciones y evidencia
 
@@ -132,8 +131,6 @@ Las modificaciones sustanciales requerirán una nueva aceptación. Las versiones
 
 ## 15. Legislación y contacto
 
-Este documento se regirá por las leyes de la República de Panamá. La jurisdicción y el mecanismo de controversias se coordinarán con los contratos y se confirmarán jurídicamente.
+Este documento se regirá por las leyes de la República de Panamá. Cualquier controversia se someterá a los tribunales competentes conforme a las normas procesales aplicables y, cuando corresponda, a lo pactado válidamente en el contrato celebrado con la organización cliente.
 
-**Domicilio:** [PENDIENTE DE VERIFICACIÓN]  
-**Contacto legal:** [PENDIENTE DE VERIFICACIÓN]  
-**Soporte:** [PENDIENTE DE VERIFICACIÓN]
+**Contacto legal y soporte:** info@bank73.com

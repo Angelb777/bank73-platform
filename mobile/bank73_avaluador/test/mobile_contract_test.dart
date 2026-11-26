@@ -27,6 +27,7 @@ class MemorySessionStore implements SessionStore {
 
 class FakeTransport implements ApiTransport {
   Map<String, dynamic> response = {};
+  Map<String, Map<String, dynamic>> responsesByPath = {};
   String? method;
   String? path;
   Map<String, dynamic>? body;
@@ -36,7 +37,7 @@ class FakeTransport implements ApiTransport {
   Future<Map<String, dynamic>> delete(String path) async {
     method = 'DELETE';
     this.path = path;
-    return response;
+    return responsesByPath[path] ?? response;
   }
 
   @override
@@ -46,7 +47,7 @@ class FakeTransport implements ApiTransport {
   }) async {
     method = 'GET';
     this.path = path;
-    return response;
+    return responsesByPath[path] ?? response;
   }
 
   @override
@@ -64,7 +65,7 @@ class FakeTransport implements ApiTransport {
     method = 'PATCH';
     this.path = path;
     this.body = body;
-    return response;
+    return responsesByPath[path] ?? response;
   }
 
   @override
@@ -77,7 +78,7 @@ class FakeTransport implements ApiTransport {
     this.path = path;
     this.body = body;
     this.authenticated = authenticated;
-    return response;
+    return responsesByPath[path] ?? response;
   }
 
   @override
@@ -157,10 +158,18 @@ void main() {
 
   test('avaluator registration matches the public web registration', () async {
     final transport = FakeTransport()
-      ..response = {
-        'message': 'Registro recibido.',
-        'status': 'pending',
-        'roleRequested': 'avaluador',
+      ..responsesByPath = {
+        '/api/legal/documents?content=1': {
+          'version': '1.0.0',
+          'status': 'approved',
+          'acceptanceEnabled': true,
+          'documents': <Map<String, dynamic>>[],
+        },
+        '/api/auth/register': {
+          'message': 'Registro recibido.',
+          'status': 'pending',
+          'roleRequested': 'avaluador',
+        },
       };
     final repository = AuthRepository(transport, MemorySessionStore(null));
 
@@ -179,6 +188,11 @@ void main() {
       'email': 'ana@example.com',
       'password': 'secret',
       'roleRequested': 'avaluador',
+      'legalVersion': '1.0.0',
+      'termsAccepted': true,
+      'ndaAccepted': true,
+      'privacyAcknowledged': true,
+      'legalChannel': 'mobile',
     });
   });
 

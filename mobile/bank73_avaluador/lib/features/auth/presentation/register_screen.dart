@@ -21,6 +21,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   bool _busy = false;
   bool _obscurePassword = true;
   bool _obscureConfirmation = true;
+  bool _termsAccepted = false;
+  bool _privacyAcknowledged = false;
   String? _error;
   String? _success;
 
@@ -35,6 +37,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (!_termsAccepted || !_privacyAcknowledged) {
+      setState(() {
+        _error = 'Debes aceptar los términos y confirmar la lectura de la política de privacidad.';
+      });
+      return;
+    }
     FocusScope.of(context).unfocus();
     setState(() {
       _busy = true;
@@ -204,6 +212,37 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               validator: (value) => value != _password.text
                   ? 'Las contraseñas no coinciden.'
                   : null,
+            ),
+            const SizedBox(height: 16),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: _termsAccepted,
+              onChanged: _busy
+                  ? null
+                  : (value) => setState(() => _termsAccepted = value == true),
+              title: const Text(
+                'He leído y acepto los Términos y condiciones, incluido el acuerdo de confidencialidad.',
+              ),
+            ),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: _privacyAcknowledged,
+              onChanged: _busy
+                  ? null
+                  : (value) =>
+                        setState(() => _privacyAcknowledged = value == true),
+              title: const Text(
+                'Confirmo que he leído la Política de privacidad y protección de datos.',
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: _busy ? null : () => context.push('/legal'),
+                child: const Text('Consultar documentos legales'),
+              ),
             ),
             if (_error != null) ...[
               const SizedBox(height: 14),

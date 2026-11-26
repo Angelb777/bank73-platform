@@ -2,17 +2,18 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const LegalAcceptance = require('../models/LegalAcceptance');
-const requireLegalAcceptance = require('../middleware/legalAcceptance');
 const { loadLegalBundle, publicBundle } = require('../services/legalDocuments');
 
-test('legal bundle is a non-enforced draft by default and exposes stable hashes', () => {
+test('legal bundle is approved and enforced by default and exposes stable hashes', () => {
   const bundle = loadLegalBundle();
-  assert.equal(bundle.version, 'draft-0.1');
-  assert.equal(bundle.status, 'draft');
-  assert.equal(bundle.acceptanceEnabled, false);
-  assert.equal(bundle.enforced, false);
+  assert.equal(bundle.version, '1.0.0');
+  assert.equal(bundle.status, 'approved');
+  assert.equal(bundle.acceptanceEnabled, true);
+  assert.equal(bundle.enforced, true);
   assert.deepEqual(Object.keys(bundle.documents), ['terms', 'privacy', 'legal_notice']);
   Object.values(bundle.documents).forEach(document => {
     assert.match(document.hash, /^[a-f0-9]{64}$/);
@@ -41,12 +42,17 @@ test('acceptance uniqueness is user plus version, not tenant', () => {
   assert.equal(uniqueIndex[0].tenantKeyAtAcceptance, undefined);
 });
 
-test('disabled legal guard leaves existing authentication flow untouched', async () => {
-  let continued = false;
-  await requireLegalAcceptance(
-    { user: { userId: 'not-used' } },
-    { status: () => { throw new Error('guard should not respond while disabled'); } },
-    () => { continued = true; }
-  );
-  assert.equal(continued, true);
+test('web registration requires the current legal acceptance and links are a natural page footer', () => {
+  const registerHtml = fs.readFileSync(path.join(__dirname, '../public/register.html'), 'utf8');
+  const registerJs = fs.readFileSync(path.join(__dirname, '../public/js/register.js'), 'utf8');
+  const legalJs = fs.readFileSync(path.join(__dirname, '../public/js/legal.js'), 'utf8');
+  const legalCss = fs.readFileSync(path.join(__dirname, '../public/css/legal.css'), 'utf8');
+
+  assert.match(registerHtml, /id="termsAccepted"[^>]*required/);
+  assert.match(registerHtml, /id="privacyAcknowledged"[^>]*required/);
+  assert.match(registerJs, /legalVersion/);
+  assert.match(registerJs, /ndaAccepted:\s*true/);
+  assert.match(legalJs, /legal-page-footer/);
+  assert.doesNotMatch(legalJs, /legal-fixed-links/);
+  assert.doesNotMatch(legalCss, /\.legal-fixed-links/);
 });

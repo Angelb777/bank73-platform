@@ -6,7 +6,6 @@
   };
   const type = pathType[location.pathname] || 'terms';
   const root = document.getElementById('legalDocument');
-  const banner = document.getElementById('legalDraftBanner');
 
   function renderMarkdown(markdown) {
     const fragment = document.createDocumentFragment();
@@ -41,7 +40,6 @@
     fetch('/api/legal/documents').then(response => response.json())
   ]).then(([content, bundle]) => {
     renderMarkdown(content);
-    banner.hidden = bundle.status !== 'draft';
     const selected = bundle.documents?.find(document => document.type === type);
     document.title = `${selected?.title || 'Documento legal'} — BANK73`;
   }).catch(error => { root.textContent = error.message; });

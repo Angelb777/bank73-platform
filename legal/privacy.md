@@ -1,13 +1,12 @@
 # Política de privacidad y protección de datos
 
-**BORRADOR — NO VIGENTE — versión draft-0.1**  
-**Pendiente de revisión y aprobación jurídica**
+**Versión 1.0.0 — vigente desde el 26 de noviembre de 2026**
 
 ## 1. Responsable y alcance
 
 DATO ÚNICO, S.A., sociedad anónima de la República de Panamá, RUC 155782684-2-2026, DV 80, Folio Real 155782684, es titular de BANK73. Esta política se aplica al sitio web, interfaces privadas, aplicación móvil y servicios asociados.
 
-El domicilio y los canales de privacidad se incorporarán una vez verificados.
+El canal oficial para consultas y ejercicio de derechos es **info@bank73.com**.
 
 ## 2. Roles
 
@@ -33,7 +32,7 @@ Las bases podrán ser la relación contractual, obligación legal, consentimient
 
 BANK73 calcula categorías de perfil promotor, scoring de financiación y determinados estados o sugerencias a partir de información del usuario, promotor y proyecto. Son instrumentos de apoyo, pueden ser revisados por usuarios autorizados y no deben producir efectos relevantes sobre una persona sin revisión humana, datos adecuados e información sobre su lógica general, importancia y consecuencias.
 
-La versión definitiva describirá los efectos reales que estos indicadores tengan en cada organización.
+Cada organización responsable deberá informar a los afectados sobre el uso concreto de estos indicadores, su lógica general y sus posibles efectos cuando resulten aplicables a una decisión que les concierna.
 
 ## 7. Destinatarios y confidencialidad
 
@@ -41,7 +40,7 @@ Podrán acceder usuarios autorizados de la organización; usuarios de otras orga
 
 DATO ÚNICO, S.A. mantendrá confidencial la información no pública aportada por bancos, promotores y demás clientes, la utilizará sólo para las finalidades autorizadas, limitará el acceso y exigirá garantías equivalentes a sus proveedores autorizados.
 
-El inventario real de proveedores y subcustodios deberá aprobarse antes de publicar esta política.
+DATO ÚNICO, S.A. mantendrá actualizado el inventario de proveedores y subcustodios y formalizará con ellos las obligaciones de confidencialidad, seguridad y tratamiento exigidas por la normativa aplicable.
 
 ## 8. Transferencias y alojamiento
 
@@ -61,13 +60,13 @@ Ante una violación que represente riesgo se activarán procedimientos de conten
 
 ## 11. Tecnologías locales
 
-La web utiliza almacenamiento local para sesión, tenant, rol y preferencias. La aplicación móvil utiliza almacenamiento seguro del dispositivo. El inventario definitivo de tecnologías externas, incluido el tratamiento de fuentes web, deberá aprobarse antes de la publicación.
+La web utiliza almacenamiento local para sesión, tenant, rol y preferencias. La aplicación móvil utiliza almacenamiento seguro del dispositivo. DATO ÚNICO, S.A. mantendrá controladas y documentadas las tecnologías externas utilizadas por BANK73.
 
 ## 12. Derechos
 
 El titular puede solicitar gratuitamente acceso, rectificación, cancelación, oposición, revocación del consentimiento sin efecto retroactivo, portabilidad y bloqueo cuando proceda, además de información sobre transferencias y perfiles.
 
-Las solicitudes se enviarán a **[CANAL DE PRIVACIDAD PENDIENTE]** e indicarán identidad, derecho ejercido y datos afectados. Podrá requerirse una verificación proporcionada. Se responderá en los plazos de la Ley 81, sin perjuicio de sus excepciones. También puede presentarse denuncia ante la Autoridad Nacional de Transparencia y Acceso a la Información.
+Las solicitudes se enviarán a **info@bank73.com** e indicarán identidad, derecho ejercido y datos afectados. Podrá requerirse una verificación proporcionada. Se responderá en los plazos de la Ley 81, sin perjuicio de sus excepciones. También puede presentarse denuncia ante la Autoridad Nacional de Transparencia y Acceso a la Información.
 
 ## 13. Menores
 
@@ -82,6 +81,4 @@ Las modificaciones se publicarán con versión y fecha. Los cambios sustanciales
 **Responsable:** DATO ÚNICO, S.A.  
 **RUC:** 155782684-2-2026 — **DV:** 80 — **Folio Real:** 155782684  
 **País:** República de Panamá  
-**Domicilio:** [PENDIENTE]  
-**Correo de privacidad:** [PENDIENTE]  
-**Oficial de protección de datos, si se designa:** [PENDIENTE]
+**Correo de privacidad:** info@bank73.com

@@ -78,6 +78,12 @@ class AuthRepository {
     required String email,
     required String password,
   }) async {
+    final legal = await publicLegalDocuments();
+    if (!legal.acceptanceEnabled || legal.version.isEmpty) {
+      throw const FormatException(
+        'No se pudo cargar la versión legal vigente.',
+      );
+    }
     final response = await _api.post(
       '/api/auth/register',
       authenticated: false,
@@ -87,6 +93,11 @@ class AuthRepository {
         'email': email.trim().toLowerCase(),
         'password': password,
         'roleRequested': 'avaluador',
+        'legalVersion': legal.version,
+        'termsAccepted': true,
+        'ndaAccepted': true,
+        'privacyAcknowledged': true,
+        'legalChannel': 'mobile',
       },
     );
     return (response['message'] ??

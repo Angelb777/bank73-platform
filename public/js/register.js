@@ -8,6 +8,12 @@
   const roleSelect = document.getElementById('roleRequested');
   const bankPickerWrap = document.getElementById('bankPickerWrap');
   const bankNameSelect = document.getElementById('bankName');
+  let legalVersion = '';
+
+  fetch('/api/legal/documents')
+    .then(response => response.json())
+    .then(bundle => { legalVersion = String(bundle.version || ''); })
+    .catch(() => { legalVersion = ''; });
 
   // Roles solicitables (todos menos admin). Deben coincidir con models/User.js (roleRequested enum)
   const REQUESTABLE_ROLES = [
@@ -135,6 +141,8 @@
     const password = document.getElementById('password')?.value;
     const roleReq  = getRequestedRole(); // uno de REQUESTABLE_ROLES
     const bankName = bankNameSelect?.value?.trim() || '';
+    const termsAccepted = document.getElementById('termsAccepted')?.checked === true;
+    const privacyAcknowledged = document.getElementById('privacyAcknowledged')?.checked === true;
 
     // Validación mínima de rol (evita valores raros si tocan el DOM)
     if (!REQUESTABLE_ROLES.includes(roleReq)) {
@@ -150,6 +158,18 @@
       return;
     }
 
+    if (!termsAccepted || !privacyAcknowledged) {
+      if (msg) { msg.textContent = 'Debes aceptar los términos y confirmar la lectura de la política de privacidad.'; msg.style.color = 'salmon'; }
+      btn && btn.classList.remove('loading');
+      return;
+    }
+
+    if (!legalVersion) {
+      if (msg) { msg.textContent = 'No se pudo cargar la versión legal vigente. Recarga la página.'; msg.style.color = 'salmon'; }
+      btn && btn.classList.remove('loading');
+      return;
+    }
+
     try {
       const resp = await fetch('/api/auth/register', {
         method: 'POST',
@@ -160,7 +180,12 @@
         body: JSON.stringify({
           name, email, password,
           roleRequested: roleReq,
-          bankName: roleReq === 'bank' ? bankName : ''
+          bankName: roleReq === 'bank' ? bankName : '',
+          legalVersion,
+          termsAccepted: true,
+          ndaAccepted: true,
+          privacyAcknowledged: true,
+          legalChannel: 'web'
         })
       });
 

@@ -86,20 +86,6 @@ class _LegalScreenState extends ConsumerState<LegalScreen> {
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                if (status.status == 'draft')
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    margin: const EdgeInsets.only(bottom: 14),
-                    decoration: BoxDecoration(
-                      color: Bank73Colors.warning.withValues(alpha: .12),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Bank73Colors.warning),
-                    ),
-                    child: const Text(
-                      'Documentos en borrador — no vigentes',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
                 ...status.documents.map(
                   (document) => Card(
                     margin: const EdgeInsets.only(bottom: 12),

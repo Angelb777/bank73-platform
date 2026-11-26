@@ -2,6 +2,8 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Tenant = require('../models/Tenant');
+const LegalAcceptance = require('../models/LegalAcceptance');
 const { ROLES } = User;
 const { REQUESTABLE_ROLES } = User;
 const { promoterProfileCompletion } = User;
@@ -12,6 +14,7 @@ const audit = require('../utils/audit');
 const { assignedTenantList, activeAvaluatorBankTenants, tenantKeyFromBankName } = require('../utils/tenants');
 const { sanitizePromoterProfile } = require('../utils/promoterProfile');
 const { syncPromoterCompaniesToProjects, assertReferencedCompaniesPreserved } = require('../services/promoterCompanySync');
+const { loadLegalBundle } = require('../services/legalDocuments');
 
 const router = express.Router();
 const esc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
@@ -237,6 +240,17 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'name, email y password son requeridos' });
     }
 
+    const legalBundle = loadLegalBundle();
+    if (!legalBundle.acceptanceEnabled) {
+      return res.status(503).json({ error: 'Los documentos legales no están disponibles para aceptación.' });
+    }
+    if (String(req.body?.legalVersion || '') !== legalBundle.version) {
+      return res.status(409).json({ error: 'La versión de los documentos legales ha cambiado. Revísalos de nuevo.', legalVersion: legalBundle.version });
+    }
+    if (req.body?.termsAccepted !== true || req.body?.ndaAccepted !== true || req.body?.privacyAcknowledged !== true) {
+      return res.status(400).json({ error: 'Debes aceptar los términos y el NDA y confirmar la lectura de la política de privacidad.' });
+    }
+
     // Validar roleRequested (acepta todos los nuevos menos 'admin')
 const requested = String(roleRequested || '').trim().toLowerCase();
 
@@ -274,7 +288,35 @@ if (!allowedRequested.includes(requested)) {
       userPayload.promoterProfile = sanitizePromoterProfile(req.body.promoterProfile || req.body.perfilPromotor, { requireAny: true });
     }
 
+    const tenant = req.tenantKey
+      ? await Tenant.findOne({ tenantKey: req.tenantKey }).select('name').lean()
+      : null;
     const user = await User.create(userPayload);
+    const forwarded = req.headers['x-forwarded-for'];
+    const documentHashes = {
+      terms: legalBundle.documents.terms.hash,
+      privacy: legalBundle.documents.privacy.hash,
+      legalNotice: legalBundle.documents.legal_notice.hash
+    };
+    try {
+      await LegalAcceptance.create({
+        userId: user._id,
+        version: legalBundle.version,
+        termsAccepted: true,
+        ndaAccepted: true,
+        privacyAcknowledged: true,
+        acceptedAt: new Date(),
+        tenantKeyAtAcceptance: String(req.tenantKey || ''),
+        tenantNameAtAcceptance: String(tenant?.name || ''),
+        documentHashes,
+        ip: forwarded ? String(forwarded).split(',')[0].trim() : (req.ip || req.socket?.remoteAddress || ''),
+        userAgent: String(req.headers['user-agent'] || '').slice(0, 1000),
+        channel: String(req.body?.legalChannel || '').toLowerCase() === 'mobile' ? 'mobile' : 'web'
+      });
+    } catch (error) {
+      await User.deleteOne({ _id: user._id });
+      throw error;
+    }
 
     await audit(req, 'auth.register_requested', {
       tenantKey: req.tenantKey,
@@ -292,7 +334,8 @@ if (!allowedRequested.includes(requested)) {
     return res.status(201).json({
       message: 'Registro recibido. Tu cuenta está pendiente de aprobación por un administrador.',
       status: 'pending',
-      roleRequested: user.roleRequested
+      roleRequested: user.roleRequested,
+      legalVersion: legalBundle.version
     });
   } catch (e) {
     res.status(500).json({ error: e.message });

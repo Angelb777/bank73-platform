@@ -83,9 +83,8 @@ class AuthController extends StateNotifier<AuthState> {
         return;
       }
     } catch (_) {
-      // El backend seguirá aplicando el control cuando esté activado. Mientras
-      // los documentos sean borradores, una consulta legal fallida no altera
-      // el comportamiento de autenticación existente.
+      // El backend mantiene el control de acceso aunque la consulta de estado
+      // falle temporalmente en el cliente.
     }
     state = AuthState(AuthStatus.authenticated, user: user);
   }

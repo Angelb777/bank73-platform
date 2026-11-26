@@ -8,7 +8,7 @@
   <link href="/css/base.css" rel="stylesheet" />
   <link href="/css/theme.css" rel="stylesheet" />
   <link href="/css/brands.css?v=2" rel="stylesheet" />
-  <link href="/css/legal.css?v=1" rel="stylesheet" />
+  <link href="/css/legal.css?v=2" rel="stylesheet" />
   <link rel="icon" type="image/png" href="/assets/TrustForBanksSimbol.png" />
 </head>
 <body class="bg-gradient">
@@ -52,6 +52,18 @@
           <select id="bankName" disabled></select>
         </div>
 
+        <div class="register-legal-consent">
+          <label class="legal-gate-check">
+            <input type="checkbox" id="termsAccepted" required />
+            <span>He leído y acepto los <a href="/legal/terms" target="_blank" rel="noopener">Términos y condiciones</a>, incluido el acuerdo de confidencialidad.</span>
+          </label>
+          <label class="legal-gate-check">
+            <input type="checkbox" id="privacyAcknowledged" required />
+            <span>Confirmo que he leído la <a href="/legal/privacy" target="_blank" rel="noopener">Política de privacidad y protección de datos</a>.</span>
+          </label>
+          <p class="small muted">También puedes consultar el <a class="link" href="/legal/legal-notice" target="_blank" rel="noopener">Aviso legal</a>.</p>
+        </div>
+
         <button type="submit" class="btn primary stretch" id="submitBtn">
           Crear cuenta
           <span class="spinner" aria-hidden="true"></span>
@@ -69,7 +81,7 @@
   <script src="/js/api.js"></script>
   <script src="/js/login-ui.js"></script>
   <script src="/js/banks.js"></script>
-  <script src="/js/register.js?v=bank-role-only-1"></script>
-  <script src="/js/legal.js?v=1"></script>
+  <script src="/js/register.js?v=legal-v1"></script>
+  <script src="/js/legal.js?v=2"></script>
 </body>
 </html>

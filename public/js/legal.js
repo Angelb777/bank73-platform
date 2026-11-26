@@ -4,7 +4,7 @@
   function addLinks() {
     if (document.querySelector('[data-legal-links]')) return;
     const nav = document.createElement('nav');
-    nav.className = protectedPage ? 'legal-links legal-fixed-links' : 'legal-links';
+    nav.className = 'legal-links legal-page-footer';
     nav.dataset.legalLinks = 'true';
     nav.setAttribute('aria-label', 'Información legal');
     nav.innerHTML = '<a href="/legal/terms">Términos y NDA</a><a href="/legal/privacy">Privacidad</a><a href="/legal/legal-notice">Aviso legal</a>';

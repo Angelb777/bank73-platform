@@ -1,14 +1,12 @@
 # Aviso legal
 
-**BORRADOR — NO VIGENTE — versión draft-0.1**  
-**Pendiente de revisión y aprobación jurídica**
+**Versión 1.0.0 — vigente desde el 26 de noviembre de 2026**
 
 ## 1. Titular
 
 BANK73 es titularidad de **DATO ÚNICO, S.A.**, Sociedad Anónima de la República de Panamá, RUC 155782684-2-2026, DV 80, Folio Real 155782684, constituida e inscrita el 10 de abril de 2026.
 
-**Domicilio:** [PENDIENTE DE VERIFICACIÓN]  
-**Contacto legal:** [PENDIENTE DE VERIFICACIÓN]
+**Contacto legal:** info@bank73.com
 
 ## 2. Objeto
 
@@ -42,8 +40,8 @@ El tratamiento de datos se explica en la Política de privacidad. Toda persona c
 
 ## 8. Seguridad
 
-No se permite explorar o eludir controles de seguridad sin autorización escrita. Los incidentes se comunicarán mediante **[CANAL DE SEGURIDAD PENDIENTE]**.
+No se permite explorar o eludir controles de seguridad sin autorización escrita. Los incidentes se comunicarán mediante **info@bank73.com**.
 
 ## 9. Legislación y cambios
 
-Este aviso se rige por las leyes de la República de Panamá. Su versión vigente y sus cambios estarán accesibles desde el login y el interior de BANK73. La jurisdicción se concretará en los textos y contratos definitivos.
+Este aviso se rige por las leyes de la República de Panamá. Su versión vigente y sus cambios estarán accesibles desde el login y el interior de BANK73. Cualquier controversia se someterá a los tribunales competentes conforme a las normas procesales aplicables y, cuando corresponda, a lo pactado válidamente en el contrato celebrado con la organización cliente.
