@@ -31,6 +31,30 @@ test('una CPP histórica deja de alertar cuando la obligación ya está resuelta
   assert.match(js, /if \(!isCppObligationOpen\(u, venta\)\) return null/);
 });
 
+test('los avisos operativos cesan cuando su obligación real ya terminó', () => {
+  const js = read('public/js/project.js');
+
+  assert.match(js, /function isUnitConstructionComplete\(unit = \{\}, sale = \{\}\)/);
+  assert.match(js, /progress >= 100/);
+  assert.match(js, /sale\.permisoOcupacion/);
+  assert.match(js, /if \(!isUnitConstructionComplete\(unit, sale\)\)/);
+  assert.match(js, /type === 'CAR' && constructionScopeComplete/);
+  assert.match(js, /amortized >= disbursed/);
+  assert.match(js, /requirement\?\.isArchived === true/);
+});
+
+test('el semáforo se sincroniza inmediatamente después de guardar datos del proyecto', () => {
+  const js = read('public/js/project.js');
+
+  assert.match(js, /window\.syncProjectTimelineFromCanonicalData\?\.\(\)/);
+  assert.match(js, /await window\.refreshProjectTimelineData\?\.\(\)/);
+  assert.match(js, /window\.syncProjectTimelineFromCanonicalData = \(\) =>/);
+  assert.match(js, /getProjectFinanceSnapshot\(\{ force:true \}\)/);
+  assert.match(js, /getProjectExpiryAlertResolutions\(\{ force:true \}\)/);
+  assert.match(js, /getProjectDocuments\(\{ force:true \}\)/);
+  assert.match(js, /getProjectPermits\(\{ force:true \}\)/);
+});
+
 test('las fases base conservan sus checklists sin insertar un resumen operativo duplicado', () => {
   const js = read('public/js/project.js');
   const css = read('public/css/project-unified.css');

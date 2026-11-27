@@ -309,6 +309,10 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
     __summaryDirty = true;
     invalidateProjectDataCache(['unitsAll', 'ventas', 'portfolio', 'finance', 'expiryAlertResolutions', 'avaluationContext']);
 
+    // La ficha ya ha recargado sus datos canónicos: repintamos el semáforo
+    // inmediatamente y después confirmamos todas sus fuentes con el servidor.
+    window.syncProjectTimelineFromCanonicalData?.();
+
     try {
       const resumenActive = !!panes.resumen?.classList.contains('active');
       const shouldRefreshSummary = refreshSummary || resumenActive;
@@ -319,9 +323,7 @@ window.__COMMERCIAL_LOCKED = false; // bloquea edición comercial si proyecto no
       }
       window.__PROJECT_3D?.refresh?.();
       window.__BANK73_UNIFIED_REFRESH?.();
-      window.refreshProjectTimelineData?.().catch(error => {
-        console.warn('[Proyecto] No se pudo sincronizar el dato único con el cronograma', error);
-      });
+      await window.refreshProjectTimelineData?.();
     } catch (e) {
       console.warn('[Project] No se pudo refrescar el resumen tras guardar cambios', e);
     }
@@ -4869,6 +4871,10 @@ function isChecklistActive(cl) {
     };
   }
 
+  function operationalAlertKey(alert = {}) {
+    return `${alert.kind}:${String(alert.sourceId || '')}:${alert.due || ''}`;
+  }
+
   function operationalUnitState(value) {
     return normalizeUnitEstadoFrontend(value || 'disponible');
   }
@@ -4882,6 +4888,21 @@ function isChecklistActive(cl) {
     const settled = !!sale.fechaDesembolso || !!sale.fechaRecibidoCheque || delivered;
     const closedUnit = ['escriturado_traspasado', 'vivienda_entregada'].includes(operationalUnitState(unit.estado));
     return !!sale.fechaVencimientoCPP && !cashSale && !fallenSale && !settled && !closedUnit;
+  }
+
+  function isUnitConstructionComplete(unit = {}, sale = {}) {
+    const progress = Number(sale.avanceConstruccionPct || 0);
+    const constructionState = String(sale.estatusConstruccion || sale.faseConstruccion || '').trim().toLowerCase();
+    const hasOccupationPermit = !!sale.permisoOcupacion || !!sale.permisoOcupacionNum || !!sale.fechaEmisionPermisoOcupacion;
+    const delivered = !!sale.fechaEntregaVivienda || /^(si|sí|entregad)/i.test(String(sale.entregaCasa || '').trim());
+    const closedUnit = ['escriturado_traspasado', 'vivienda_entregada'].includes(operationalUnitState(unit.estado));
+    return progress >= 100 || /terminad|complet|finaliz/.test(constructionState) || hasOccupationPermit || delivered || closedUnit;
+  }
+
+  function constructionScopeComplete(unitIds, units = [], sales = new Map()) {
+    const scopeIds = new Set((Array.isArray(unitIds) ? unitIds : []).map(String).filter(Boolean));
+    const covered = scopeIds.size ? units.filter(unit => scopeIds.has(String(unit._id))) : units;
+    return covered.length > 0 && covered.every(unit => isUnitConstructionComplete(unit, sales.get(String(unit._id)) || {}));
   }
 
   function buildOperationalTimelineAlerts() {
@@ -4917,19 +4938,28 @@ function isChecklistActive(cl) {
         }));
       });
 
-      push(timelineAlert({
-        kind: 'construction_permit', phase: 'PERMISOS', roles: ['TECNICO', 'LEGAL'],
-        due: sale.permisoConstruccionVencimiento, warningDays: 60,
-        title: `Permiso de construccion - ${unitName}`,
-        detail: sale.permisoConstruccionNum || 'Permiso por renovar',
-        sourceId: sale._id || unit._id
-      }));
+      if (!isUnitConstructionComplete(unit, sale)) {
+        push(timelineAlert({
+          kind: 'construction_permit', phase: 'PERMISOS', roles: ['TECNICO', 'LEGAL'],
+          due: sale.permisoConstruccionVencimiento, warningDays: 60,
+          title: `Vencimiento del permiso de construccion - ${unitName}`,
+          detail: sale.permisoConstruccionNum || 'Permiso por renovar',
+          sourceId: sale._id || unit._id
+        }));
+      }
     });
 
     (Array.isArray(_allDocs) ? _allDocs : []).forEach(doc => {
       if (!doc?.expiryDate || String(doc.status || 'ACTIVE').toUpperCase() !== 'ACTIVE') return;
       const isPermit = !!doc.permitCode || String(doc.category || '').toLowerCase() === 'permits';
       if (isPermit) {
+        const permitLabel = `${doc.permitCode || ''} ${doc.permitTitle || ''} ${doc.title || ''}`.toLowerCase();
+        const isConstructionDocument = /construcci[oó]n/.test(permitLabel);
+        const unitId = String(doc.unitId?._id || doc.unitId || '');
+        const targetUnit = unitId ? units.find(unit => String(unit._id) === unitId) : null;
+        if (isConstructionDocument && (targetUnit
+          ? isUnitConstructionComplete(targetUnit, sales.get(unitId) || {})
+          : constructionScopeComplete([], units, sales))) return;
         push(timelineAlert({
           kind: 'permit_document', phase: 'PERMISOS', roles: ['TECNICO', 'LEGAL'],
           due: doc.expiryDate, warningDays: 60,
@@ -4951,6 +4981,7 @@ function isChecklistActive(cl) {
 
     projectInsurancePolicies().forEach(policy => {
       const type = String(policy.type || 'CAR').toUpperCase();
+      if (type === 'CAR' && constructionScopeComplete(policy.appliesToAllUnits === false ? policy.unitIds : [], units, sales)) return;
       push(timelineAlert({
         kind: 'insurance_policy', phase: type === 'INCENDIO' ? 'ESCRITURACION' : 'OBRA',
         roles: ['TECNICO', 'FINANCIERO'], due: policy.expiryDate, warningDays: 30,
@@ -4964,17 +4995,24 @@ function isChecklistActive(cl) {
       const balance = Number(line.balanceAfterSales ?? line.balance ?? line.disbursementAmount ?? 0);
       if (balance <= 0) return;
       const entries = Array.isArray(line.entries) && line.entries.length ? line.entries : [line];
-      entries.forEach(entry => push(timelineAlert({
-        kind: 'credit_line', phase: 'FINANCIACION', roles: ['FINANCIERO', 'GERENCIA'],
-        due: entry.maturityDate, warningDays: 120,
-        title: line.name || 'Linea de credito',
-        detail: entry.loanNumber ? `Prestamo ${entry.loanNumber}` : 'Saldo pendiente',
-        sourceId: entry._id || line._id
-      })));
+      entries.forEach(entry => {
+        const disbursed = Number(entry.disbursementAmount ?? line.disbursementAmount ?? 0);
+        const amortized = Number(entry.amortizedAmount ?? 0);
+        if (entry.entryType === 'disbursement' && entry.paymentStatus === 'pending') return;
+        if (!entry.maturityDate || disbursed <= 0 || amortized >= disbursed) return;
+        push(timelineAlert({
+          kind: 'credit_line', phase: 'FINANCIACION', roles: ['FINANCIERO', 'GERENCIA'],
+          due: entry.maturityDate, warningDays: 120,
+          title: line.name || 'Linea de credito',
+          detail: entry.loanNumber ? `Prestamo ${entry.loanNumber}` : 'Saldo pendiente',
+          sourceId: entry._id || line._id
+        }));
+      });
     });
 
     (finance.finance?.phases || []).forEach(phase => {
       (phase.requirements || []).forEach(requirement => {
+        if (requirement?.isArchived === true) return;
         const number = Number(requirement.number);
         const data = requirement.structuredData || {};
         if ([25, 26].includes(number)) {
@@ -5000,7 +5038,7 @@ function isChecklistActive(cl) {
     });
 
     state.operational.alerts = alerts
-      .filter(alert => !state.operational.resolved.has(`${alert.kind}:${alert.sourceId}:${alert.due || ''}`))
+      .filter(alert => !state.operational.resolved.has(operationalAlertKey(alert)))
       .sort((a, b) => (a.severity === b.severity ? (a.days ?? 9999) - (b.days ?? 9999) : a.severity === 'danger' ? -1 : 1));
   }
 
@@ -5028,11 +5066,8 @@ function isChecklistActive(cl) {
     const overdueTasks = tasks.filter(task => task.dueDate && new Date(task.dueDate).getTime() < now);
     const alerts = (state.operational?.alerts || []).filter(alert => alert.roles.includes(roleKey));
     const critical = alerts.filter(alert => alert.severity === 'danger');
-    const tone = overdueTasks.length || critical.length ? 'danger' : (tasks.length || alerts.length ? 'warn' : 'idle');
-    const taskNames = [...new Set([
-      ...tasks.map(task => task.title),
-      ...alerts.map(alert => alert.title)
-    ].filter(Boolean))];
+    const tone = overdueTasks.length || critical.length ? 'danger' : (tasks.length || alerts.length ? 'warn' : 'ok');
+    const taskNames = [...new Set(tasks.map(task => task.title).filter(Boolean))];
     return { tone, tasks, overdueTasks, alerts, critical, taskNames };
   }
 
@@ -5264,18 +5299,34 @@ function isChecklistActive(cl) {
     window.__BANK73_UNIFIED_REFRESH?.();
   };
 
+  window.syncProjectTimelineFromCanonicalData = () => {
+    if (!Array.isArray(unitsCache) || !(ventasMap instanceof Map)) return;
+    state.operational.units = [...unitsCache];
+    state.operational.sales = new Map(ventasMap);
+    buildOperationalTimelineAlerts();
+    renderProyecto();
+  };
+
   let projectTimelineRefreshPromise = null;
   window.refreshProjectTimelineData = async () => {
     if (projectTimelineRefreshPromise) return projectTimelineRefreshPromise;
     projectTimelineRefreshPromise = (async () => {
-      const [units, sales, unitProgress, workPackages] = await Promise.all([
+      const [units, sales, finance, resolutions, documents, permits, unitProgress, workPackages] = await Promise.all([
         getProjectUnitsAll({ force:true }).catch(() => state.operational.units),
         getProjectVentas({ force:true }).catch(() => [...state.operational.sales.values()]),
+        getProjectFinanceSnapshot({ force:true }).catch(() => state.operational.finance),
+        getProjectExpiryAlertResolutions({ force:true }).catch(() => ({ resolutions:[...state.operational.resolved].map(key => ({ key })) })),
+        getProjectDocuments({ force:true }).catch(() => _allDocs),
+        getProjectPermits({ force:true }).catch(() => __permits),
         getProjectUnitChecklistProgress({ force:true }).catch(() => ({ progress:[...state.operational.unitProgress.values()] })),
         getProjectWorkPackages({ force:true }).catch(() => ({ packages:state.operational.workPackages }))
       ]);
       state.operational.units = Array.isArray(units) ? units : [];
       state.operational.sales = new Map((Array.isArray(sales) ? sales : []).map(sale => [String(sale.unitId), sale]));
+      state.operational.finance = finance;
+      state.operational.resolved = new Set((resolutions?.resolutions || []).map(item => String(item?.key || '')).filter(Boolean));
+      _allDocs = Array.isArray(documents) ? documents : _allDocs;
+      __permits = permits || __permits;
       state.operational.unitProgress = new Map((unitProgress?.progress || []).map(row => [`${String(row.checklistId)}:${String(row.unitId)}`, row]));
       state.operational.workPackages = Array.isArray(workPackages?.packages) ? workPackages.packages : [];
       buildOperationalTimelineAlerts();
@@ -5460,14 +5511,57 @@ return {
     </div>`;
   }
 
+  function canResolveOperationalAlert() {
+    return FULL_EDIT_ROLES.includes(myRole) || ['commercial', 'tecnico'].includes(myRole);
+  }
+
+  async function resolveOperationalAlert(alertItem) {
+    if (!alertItem || !canResolveOperationalAlert()) return;
+    const key = operationalAlertKey(alertItem);
+    await API.post(`/api/projects/${id}/expiry-alerts/resolve`, {
+      key,
+      kind: alertItem.kind,
+      sourceId: alertItem.sourceId,
+      due: alertItem.due || ''
+    });
+    state.operational.resolved.add(key);
+    state.operational.alerts = state.operational.alerts.filter(item => operationalAlertKey(item) !== key);
+    latestFinanceExpiryAlerts = latestFinanceExpiryAlerts.filter(item => item.alertKey !== key);
+    resolvedExpiryAlertKeys.add(key);
+    updateProjectAlertsButton(latestFinanceExpiryAlerts);
+    renderProyecto();
+  }
+
+  function bindOperationalAlertResolution(container, { phaseKey = null } = {}) {
+    container?.querySelectorAll('[data-resolve-operational-alert]').forEach(button => {
+      button.onclick = async event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const alertItem = state.operational.alerts.find(item => operationalAlertKey(item) === button.dataset.resolveOperationalAlert);
+        if (!alertItem || button.disabled) return;
+        button.disabled = true;
+        button.textContent = 'Resolviendo...';
+        try {
+          await resolveOperationalAlert(alertItem);
+          if (phaseKey) openOperationalAlerts(phaseKey);
+        } catch (error) {
+          button.disabled = false;
+          button.textContent = 'Resolver';
+          alert(error.message || 'No se pudo resolver la alerta.');
+        }
+      };
+    });
+  }
+
   function openOperationalAlerts(phaseKey) {
     const phase = phaseMeta(phaseKey);
     const alerts = phaseOperationalAlerts(phaseKey);
     const rows = alerts.map(alert => {
       const when = alert.days === null ? 'Atencion requerida' : alert.days < 0 ? `Vencida hace ${Math.abs(alert.days)} dias` : alert.days === 0 ? 'Vence hoy' : `Vence en ${alert.days} dias`;
-      return `<article class="timeline-alert-detail ${alert.severity}"><span class="sem-dot ${alert.severity}"></span><div><strong>${escapeHtml(alert.title)}</strong><small>${escapeHtml([alert.detail, when].filter(Boolean).join(' - '))}</small><em>${alert.roles.map(role => roleMeta(role).label).join(' / ')}</em></div></article>`;
+      return `<article class="timeline-alert-detail ${alert.severity}"><span class="sem-dot ${alert.severity}"></span><div><strong>${escapeHtml(alert.title)}</strong><small>${escapeHtml([alert.detail, when].filter(Boolean).join(' - '))}</small><em>${alert.roles.map(role => roleMeta(role).label).join(' / ')}</em></div>${canResolveOperationalAlert() ? `<button type="button" class="btn btn-xs" data-resolve-operational-alert="${escapeHtml(operationalAlertKey(alert))}">Resolver</button>` : ''}</article>`;
     }).join('');
     openModal(`Alertas - ${phase.name}`, rows || '<div class="timeline-empty-alerts">No hay alertas operativas en este bloque.</div>', 'Cerrar', () => { modalBackdrop.style.display = 'none'; });
+    bindOperationalAlertResolution(modalBody, { phaseKey });
   }
 
   function timelineUnitsOrdered() {
@@ -5699,23 +5793,25 @@ return {
    // métricas para tooltip
    const cntActive  = signal.tasks.length;
    const cntOverdue = signal.overdueTasks.length;
-   const pendingTotal = signal.alerts.length + cntActive;
+   const alertTotal = signal.alerts.length;
    const criticalTotal = signal.critical.length + cntOverdue;
-   const ttl = `Pendientes: ${pendingTotal} · Críticas: ${criticalTotal}`;
+   const ttl = `Tareas: ${cntActive} · Alertas: ${alertTotal} · Críticas: ${criticalTotal}`;
    const tooltipId = `roleTasks-${String(rk).replace(/[^a-z0-9_-]/gi, '')}`;
-   const visibleTaskNames = signal.taskNames.length ? signal.taskNames : ['Sin tareas activas'];
+   const visibleTaskNames = signal.taskNames.length ? signal.taskNames : ['Sin tareas de checklist pendientes'];
+   const visibleAlerts = signal.alerts.length ? signal.alerts : [];
 
    const cls = (state.filterRole === rk) ? 'role-row filter-on' : 'role-row';
    const readOnlyStyle = isPartialProyectoRole() ? ';cursor:default' : '';
    return `<div class="${cls}" data-role="${rk}" style="--role-color:${rm.color}${readOnlyStyle}" tabindex="0" aria-describedby="${tooltipId}" aria-label="${escapeHtml(`${rm.label}. ${ttl}`)}">
     <span class="role-badge" style="--role-color:${rm.color};--role-pale:${rm.pale}">${rm.label}</span>
-    <span class="role-signal-copy"><b>${pendingTotal}</b><small>${pendingTotal ? 'pendientes' : 'al día'}</small></span>
+    <span class="role-signal-copy"><b>${cntActive} ${cntActive === 1 ? 'tarea' : 'tareas'}</b><small>${alertTotal} ${alertTotal === 1 ? 'alerta' : 'alertas'}</small></span>
     <div class="light" title="${ttl}">
     <span class="sem-dot ${semClassFromEmoji(sem)}" aria-hidden="true"></span>
     </div>
     <aside class="role-task-popover" id="${tooltipId}" role="tooltip">
-      <header><strong>${rm.label}</strong><span>${pendingTotal} pendientes${criticalTotal ? ` · ${criticalTotal} críticas` : ''}</span></header>
-      <ul>${visibleTaskNames.map(name => `<li>${escapeHtml(name)}</li>`).join('')}</ul>
+      <header><strong>${rm.label}</strong><span>${cntActive} tareas · ${alertTotal} alertas${criticalTotal ? ` · ${criticalTotal} críticas` : ''}</span></header>
+      <section class="role-popover-section role-popover-tasks"><h4>Tareas de checklist</h4><ul>${visibleTaskNames.map(name => `<li>${escapeHtml(name)}</li>`).join('')}</ul></section>
+      <section class="role-popover-section role-popover-alerts"><h4>Alertas</h4>${visibleAlerts.length ? `<ul>${visibleAlerts.map(alert => `<li class="${alert.severity}"><span>${escapeHtml(alert.title)}</span>${canResolveOperationalAlert() ? `<button type="button" class="btn btn-xs" data-resolve-operational-alert="${escapeHtml(operationalAlertKey(alert))}">Resolver</button>` : ''}</li>`).join('')}</ul>` : '<p>Sin alertas activas</p>'}</section>
     </aside>
    </div>`;
    }).join('');
@@ -5728,6 +5824,7 @@ return {
     renderProyecto();
    };
    });
+   bindOperationalAlertResolution(rolesList);
 
     // Fases
     phasesHost.innerHTML = PHASES.map(ph => renderPhase(ph)).join('');
@@ -5744,6 +5841,7 @@ return {
   }
 
   function semClassFromEmoji(sem) {
+  if (sem === 'ok') return 'ok';
   if (sem === 'idle') return 'idle';
   if (sem === 'warn') return 'warn';
   if (sem === 'danger') return 'danger';
@@ -14253,6 +14351,10 @@ async function getCreditLineExpiryAlerts() {
       const lineBalance = numOr0(line.balanceAfterSales ?? line.balance ?? line.disbursementAmount);
       if (lineBalance <= 0) return [];
       return entries.map(entry => {
+        const disbursed = numOr0(entry?.disbursementAmount ?? line?.disbursementAmount);
+        const amortized = numOr0(entry?.amortizedAmount);
+        if (entry?.entryType === 'disbursement' && entry?.paymentStatus === 'pending') return null;
+        if (disbursed <= 0 || amortized >= disbursed) return null;
         const days = daysUntil(entry?.maturityDate);
         if (days === null || days > 120) return null;
         const due = String(entry.maturityDate).slice(0, 10);
@@ -14435,8 +14537,8 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
                         ? `Fianza de pago · ${escapeHtml(a.phaseName || 'Fase')}${a.bondNumber ? ` · ${escapeHtml(a.bondNumber)}` : ''}`
                         : a.kind === 'engineering_inspection_follow_up'
                           ? `Informe de Inspección de Ingeniería · ${escapeHtml(a.phaseName || 'Fase')}`
-                          : a.kind === 'account_advance_follow_up'
-                            ? `Cuenta Avance · ${escapeHtml(a.phaseName || 'Fase')}`
+                          : ['financial_statements_follow_up', 'account_advance_follow_up'].includes(a.kind)
+                            ? `Actualización de estados financieros · ${escapeHtml(a.phaseName || 'Fase')}`
                     : `Unidad ${a.unit}`}
               </div>
 
@@ -14503,7 +14605,10 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
         ];
         latestFinanceExpiryAlerts = latestFinanceExpiryAlerts.filter(item => item.alertKey !== alertItem.alertKey);
         resolvedExpiryAlertKeys.add(alertItem.alertKey);
+        state.operational.resolved.add(alertItem.alertKey);
+        state.operational.alerts = state.operational.alerts.filter(item => operationalAlertKey(item) !== alertItem.alertKey);
         updateProjectAlertsButton(latestFinanceExpiryAlerts);
+        renderProyecto();
 
         await loadUnits();
 
@@ -14523,11 +14628,17 @@ function showCppExpiryPopup(alerts = [], { force = false } = {}) {
 
 function getInsurancePolicyExpiryAlerts() {
   return projectInsurancePolicies().map(policy => {
+    const policyType = String(policy.type || 'CAR').toUpperCase();
+    if (policyType === 'CAR' && constructionScopeComplete(
+      policy.appliesToAllUnits === false ? policy.unitIds : [],
+      unitsCache,
+      ventasMap
+    )) return null;
     const days = daysUntil(policy.expiryDate);
     if (days === null || days > 30) return null;
     const due = String(policy.expiryDate).slice(0, 10);
     const sourceId = String(policy._id || policy.policyNumber || 'policy');
-    return { kind:'insurance_policy', sourceId, alertKey:expiryAlertKey('insurance_policy', sourceId, due), days, due, policyType:policy.type || 'CAR', policyNumber:policy.policyNumber || '', insurer:policy.insurer || '', banco:policy.bank || '' };
+    return { kind:'insurance_policy', sourceId, alertKey:expiryAlertKey('insurance_policy', sourceId, due), days, due, policyType, policyNumber:policy.policyNumber || '', insurer:policy.insurer || '', banco:policy.bank || '' };
   }).filter(Boolean);
 }
 
@@ -14535,6 +14646,7 @@ async function getRequirementBondExpiryAlerts() {
   try {
     const res = await getProjectFinanceSnapshot();
     return (res?.finance?.phases || []).flatMap(phase => (phase.requirements || []).map(requirement => {
+      if (requirement?.isArchived === true) return null;
       const number = Number(requirement.number);
       if (![25, 26].includes(number)) return null;
       const data = requirement.structuredData || {};
@@ -14565,6 +14677,7 @@ async function getPeriodicRequirementAlerts() {
   try {
     const res = await getProjectFinanceSnapshot();
     return (res?.finance?.phases || []).flatMap(phase => (phase.requirements || []).map(requirement => {
+      if (requirement?.isArchived === true) return null;
       const number = Number(requirement.number);
       if (![7, 27].includes(number)) return null;
       const data = requirement.structuredData || {};

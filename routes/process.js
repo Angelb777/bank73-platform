@@ -675,6 +675,26 @@ router.put('/checklists/:id/subtasks/:sid', attachProjectFromChecklist, requireP
   if (typeof req.body.completed === 'boolean') st.completed = req.body.completed;
   if (typeof req.body.title === 'string') st.title = req.body.title;
   if (req.body.dueDate) st.dueDate = req.body.dueDate;
+
+  // El estado persistido debe coincidir con lo que muestra el frontend. Así,
+  // al terminar todas las subtareas el checklist desaparece del semáforo y la
+  // secuencia siguiente se desbloquea también en el servidor.
+  if (typeof req.body.completed === 'boolean') {
+    const completedCount = cl.subtasks.filter(item => item.completed).length;
+    if (completedCount === cl.subtasks.length) {
+      cl.status = 'COMPLETADO';
+      cl.completedAt = cl.completedAt || new Date();
+      cl.completedBy = cl.completedBy || userName(req);
+    } else if (completedCount > 0) {
+      cl.status = 'EN_PROCESO';
+      cl.completedAt = null;
+      cl.completedBy = '';
+    } else {
+      cl.status = 'PENDIENTE';
+      cl.completedAt = null;
+      cl.completedBy = '';
+    }
+  }
   await cl.save();
   res.json({ ok: true });
 });

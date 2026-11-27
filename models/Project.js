@@ -52,13 +52,19 @@ const projectSchema = new Schema({
           'performance_bond',
           'payment_bond',
           'promissory_note',
+          'construction_permit',
+          'permit_document',
+          'permit_rejected',
           'engineering_inspection_follow_up',
+          'financial_statements_follow_up',
           'account_advance_follow_up'
         ],
         required: true
       },
       sourceId: { type: String, required: true, trim: true },
-      due: { type: String, required: true, trim: true },
+      // Algunas alertas críticas (por ejemplo, un permiso rechazado) no tienen
+      // vencimiento. La clave sigue siendo única mediante kind + sourceId.
+      due: { type: String, trim: true, default: '' },
       resolvedAt: { type: Date, default: Date.now },
       resolvedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
       resolvedByLabel: { type: String, trim: true, default: '' }

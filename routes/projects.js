@@ -2319,7 +2319,7 @@ router.patch('/:id/viewer-3d/towers/:towerId', requireProjectAccess({ commercial
 router.post('/:id/expiry-alerts/resolve', requireProjectAccess({ commercialOnlySales: false }), async (req, res) => {
   try {
     const role = String(req.user?.role || '').toLowerCase();
-    if (![...PROJECT_EDITOR_ROLES, 'commercial'].includes(role)) {
+    if (![...PROJECT_EDITOR_ROLES, 'commercial', 'tecnico'].includes(role)) {
       return res.status(403).json({ error: 'No tienes permisos para atender alertas.' });
     }
     const { id } = req.params;
@@ -2335,12 +2335,17 @@ router.post('/:id/expiry-alerts/resolve', requireProjectAccess({ commercialOnlyS
       'performance_bond',
       'payment_bond',
       'promissory_note',
+      'construction_permit',
+      'permit_document',
+      'permit_rejected',
       'engineering_inspection_follow_up',
+      'financial_statements_follow_up',
       'account_advance_follow_up'
     ].includes(kind)) {
       return res.status(400).json({ error: 'Tipo de alerta no válido' });
     }
-    if (!sourceId || sourceId.length > 80 || !/^\d{4}-\d{2}-\d{2}$/.test(due)) {
+    const allowsNoDueDate = kind === 'permit_rejected';
+    if (!sourceId || sourceId.length > 80 || (!allowsNoDueDate && !/^\d{4}-\d{2}-\d{2}$/.test(due)) || (due && !/^\d{4}-\d{2}-\d{2}$/.test(due))) {
       return res.status(400).json({ error: 'Datos de vencimiento no válidos' });
     }
     const expectedKey = `${kind}:${sourceId}:${due}`;
